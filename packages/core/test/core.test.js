@@ -27,6 +27,17 @@ describe("ReignsAgent core runtime", () => {
     assert.deepEqual(getEligibleCards(cards, runtime.state).map((candidate) => candidate.id), ["open"]);
   });
 
+  it("loops the scheduler after all currently eligible cards have been dismissed", () => {
+    const runtime = createRuntime({
+      cards: [card("repeatable", {}, "pass")],
+      rng: () => 0
+    });
+
+    assert.equal(runtime.draw().id, "repeatable");
+    assert.equal(runtime.choose("pass").nextCard.id, "repeatable");
+    assert.equal(runtime.state.turn, 1);
+  });
+
   it("applies choice effects, advances turns, and detects game over", () => {
     const runtime = createRuntime({
       cards: [
@@ -104,4 +115,3 @@ function card(id, requirements, choiceId, effects = {}) {
     ]
   };
 }
-

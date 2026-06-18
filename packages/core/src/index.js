@@ -45,7 +45,12 @@ export function createRuntime(options = {}) {
 
     draw() {
       assertPlayable(state);
-      const eligible = getEligibleCards(cards, state);
+      let eligible = getEligibleCards(cards, state);
+
+      if (eligible.length === 0 && state.dismissedCards.size > 0) {
+        state.dismissedCards.clear();
+        eligible = getEligibleCards(cards, state);
+      }
 
       if (eligible.length === 0) {
         state.currentCardId = null;
@@ -350,4 +355,3 @@ function clampFaction(value) {
 
   return Math.max(0, Math.min(100, value));
 }
-
