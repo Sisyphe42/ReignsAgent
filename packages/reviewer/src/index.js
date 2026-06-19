@@ -230,13 +230,9 @@ function collectProducedTags(card) {
       }
     }
 
-    for (const item of choice.effects?.acquire ?? []) {
-      for (const tag of item.tags ?? []) {
+    for (const hookEntry of choice.effects?.activateHooks ?? []) {
+      for (const tag of hookEntry.tags ?? []) {
         tags.add(tag);
-      }
-
-      if (item.kind) {
-        tags.add(`kind:${item.kind}`);
       }
     }
   }
@@ -275,7 +271,8 @@ function cloneInitialState(initialState) {
   return {
     ...initialState,
     factions: initialState.factions ? { ...initialState.factions } : undefined,
-    inventory: initialState.inventory ? [...initialState.inventory] : undefined,
+    variables: initialState.variables ? { ...initialState.variables } : undefined,
+    activeHooks: initialState.activeHooks ? [...initialState.activeHooks] : undefined,
     tags: initialState.tags ? { ...initialState.tags } : undefined,
     cardWeights: initialState.cardWeights ? { ...initialState.cardWeights } : undefined,
     factionScales: initialState.factionScales ? { ...initialState.factionScales } : undefined,
@@ -318,4 +315,3 @@ function increment(map, key) {
 function round(value) {
   return Math.round(value * 10000) / 10000;
 }
-

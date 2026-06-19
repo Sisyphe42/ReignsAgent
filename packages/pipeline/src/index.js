@@ -214,7 +214,7 @@ export function buildCardGenerationPrompt({ theme, count, constraints = {}, diag
     `Generate ${count} minimalist Reigns-style cards for: ${theme}.`,
     "Return only JSON with a top-level cards array.",
     "Each card needs id, text, and two concise choices with faction/tag effects.",
-    "Keep equipment, pets, and status effects as abstract tags or inventory entries only.",
+    "Use only low-level tags and variables for custom state; do not create built-in upper-level progression systems.",
     `Constraints: ${JSON.stringify(constraints)}`
   ];
 
@@ -377,4 +377,3 @@ function cardGenerationSchema() {
     }
   };
 }
-

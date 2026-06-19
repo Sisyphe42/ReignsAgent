@@ -64,14 +64,14 @@ describe("ReignsAgent core runtime", () => {
     });
   });
 
-  it("models equipment and pets as abstract tags and hooks only", () => {
-    const favorItem = {
+  it("models customization through low-level variables, tags, and hooks only", () => {
+    const favorHook = {
       id: "court-favor",
-      kind: "equipment",
       tags: ["favored"],
       hooks: {
-        on_acquire({ adjustCardWeight }) {
+        on_acquire({ adjustCardWeight, setVariable }) {
           adjustCardWeight("petition", 10);
+          setVariable("favorDepth", 1);
         },
         on_tick({ scaleFaction }) {
           scaleFaction("people", 0.5);
@@ -87,16 +87,16 @@ describe("ReignsAgent core runtime", () => {
     ];
     const runtime = createRuntime({ cards, rng: () => 0.5 });
 
-    runtime.acquire(favorItem);
+    runtime.activateHook(favorHook);
     assert.equal(runtime.state.tags.favored, true);
-    assert.equal(runtime.state.tags["kind:equipment"], true);
+    assert.equal(runtime.state.variables.favorDepth, 1);
     assert.equal(runtime.draw().id, "petition");
 
     runtime.choose("grant");
     assert.equal(runtime.state.factions.people, 70);
     assert.equal(runtime.state.factionScales.people, 0.5);
 
-    runtime.dismissItem("court-favor");
+    runtime.dismissHook("court-favor");
     assert.equal(runtime.state.tags.favored, undefined);
   });
 });

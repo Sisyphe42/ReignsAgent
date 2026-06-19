@@ -15,8 +15,9 @@ export function createInitialState(options = {}) {
   return {
     turn: options.turn ?? 0,
     factions,
-    inventory: Array.isArray(options.inventory) ? [...options.inventory] : [],
+    variables: { ...(options.variables ?? {}) },
     tags: { ...(options.tags ?? {}) },
+    activeHooks: Array.isArray(options.activeHooks) ? [...options.activeHooks] : [],
     cardWeights: { ...(options.cardWeights ?? {}) },
     factionScales: normalizeFactionScales(options.factionScales),
     dismissedCards: new Set(options.dismissedCards ?? []),
@@ -79,7 +80,7 @@ export function createRuntime(options = {}) {
       state.dismissedCards.add(card.id);
       state.currentCardId = null;
       state.turn += 1;
-      runInventoryHook("on_tick", state, { card, choice });
+      runActiveHooks("on_tick", state, { card, choice });
       state.gameOver = evaluateGameOver(state.factions);
 
       return {
@@ -89,15 +90,15 @@ export function createRuntime(options = {}) {
       };
     },
 
-    acquire(item) {
+    activateHook(hookEntry) {
       assertPlayable(state);
-      acquireItem(state, item);
+      activateHookEntry(state, hookEntry);
       return state;
     },
 
-    dismissItem(itemId) {
+    dismissHook(hookId) {
       assertPlayable(state);
-      dismissItem(state, itemId);
+      dismissHookEntry(state, hookId);
       return state;
     }
   };
@@ -111,7 +112,7 @@ export function getEligibleCards(cards, state) {
       return false;
     }
 
-    return requirementsMatch(card.requirements, state.tags);
+    return requirementsMatch(card.requirements, state);
   });
 }
 
@@ -180,6 +181,16 @@ function applyChoice(choice, state) {
     }
   }
 
+  if (effects.variables) {
+    for (const [variable, value] of Object.entries(effects.variables)) {
+      if (value === null || value === undefined) {
+        delete state.variables[variable];
+      } else {
+        state.variables[variable] = value;
+      }
+    }
+  }
+
   if (effects.factions) {
     for (const [faction, delta] of Object.entries(effects.factions)) {
       assertFaction(faction);
@@ -188,85 +199,87 @@ function applyChoice(choice, state) {
     }
   }
 
-  for (const item of effects.acquire ?? []) {
-    acquireItem(state, item);
+  for (const hookEntry of effects.activateHooks ?? []) {
+    activateHookEntry(state, hookEntry);
   }
 
-  for (const itemId of effects.dismissItems ?? []) {
-    dismissItem(state, itemId);
+  for (const hookId of effects.dismissHooks ?? []) {
+    dismissHookEntry(state, hookId);
   }
 }
 
-function acquireItem(state, item) {
-  if (!item?.id) {
-    throw new CoreError("Inventory entries require an id");
+function activateHookEntry(state, hookEntry) {
+  if (!hookEntry?.id) {
+    throw new CoreError("Hook entries require an id");
   }
 
-  if (state.inventory.some((candidate) => candidate.id === item.id)) {
+  if (state.activeHooks.some((candidate) => candidate.id === hookEntry.id)) {
     return;
   }
 
-  state.inventory.push(item);
-  applyInventoryTags(state, item);
-  runItemHook(item, "on_acquire", state);
+  state.activeHooks.push(hookEntry);
+  applyHookTags(state, hookEntry);
+  runHookEntry(hookEntry, "on_acquire", state);
 }
 
-function dismissItem(state, itemId) {
-  const index = state.inventory.findIndex((item) => item.id === itemId);
+function dismissHookEntry(state, hookId) {
+  const index = state.activeHooks.findIndex((hookEntry) => hookEntry.id === hookId);
   if (index === -1) {
     return;
   }
 
-  const [item] = state.inventory.splice(index, 1);
-  runItemHook(item, "on_dismiss", state);
-  removeInventoryTags(state, item);
+  const [hookEntry] = state.activeHooks.splice(index, 1);
+  runHookEntry(hookEntry, "on_dismiss", state);
+  removeHookTags(state, hookEntry);
 }
 
-function applyInventoryTags(state, item) {
-  for (const tag of item.tags ?? []) {
+function applyHookTags(state, hookEntry) {
+  for (const tag of hookEntry.tags ?? []) {
     state.tags[tag] = true;
   }
-
-  if (item.kind) {
-    state.tags[`kind:${item.kind}`] = true;
-  }
 }
 
-function removeInventoryTags(state, item) {
-  for (const tag of item.tags ?? []) {
+function removeHookTags(state, hookEntry) {
+  for (const tag of hookEntry.tags ?? []) {
     delete state.tags[tag];
   }
 }
 
-function runInventoryHook(name, state, event) {
-  for (const item of [...state.inventory]) {
-    runItemHook(item, name, state, event);
+function runActiveHooks(name, state, event) {
+  for (const hookEntry of [...state.activeHooks]) {
+    runHookEntry(hookEntry, name, state, event);
   }
 }
 
-function runItemHook(item, name, state, event = {}) {
-  const hook = item.hooks?.[name];
+function runHookEntry(hookEntry, name, state, event = {}) {
+  const hook = hookEntry.hooks?.[name];
   if (!hook) {
     return;
   }
 
   if (typeof hook !== "function") {
-    throw new CoreError(`Hook '${name}' on item '${item.id}' must be a function`);
+    throw new CoreError(`Hook '${name}' on '${hookEntry.id}' must be a function`);
   }
 
-  hook(createHookContext(state, item, event));
+  hook(createHookContext(state, hookEntry, event));
 }
 
-function createHookContext(state, item, event) {
+function createHookContext(state, hookEntry, event) {
   return {
     state,
-    item,
+    hookEntry,
     event,
     setTag(tag, value = true) {
       state.tags[tag] = value;
     },
     clearTag(tag) {
       delete state.tags[tag];
+    },
+    setVariable(variable, value) {
+      state.variables[variable] = value;
+    },
+    clearVariable(variable) {
+      delete state.variables[variable];
     },
     adjustCardWeight(cardId, amount) {
       state.cardWeights[cardId] = (state.cardWeights[cardId] ?? 0) + amount;
@@ -304,11 +317,12 @@ function getCurrentCard(cards, state) {
   return cards.find((card) => card.id === state.currentCardId) ?? null;
 }
 
-function requirementsMatch(requirements = {}, tags) {
+function requirementsMatch(requirements = {}, state) {
   return (
-    allMatch(requirements.allTags, tags) &&
-    anyMatch(requirements.anyTags, tags) &&
-    noneMatch(requirements.noneTags, tags)
+    allMatch(requirements.allTags, state.tags) &&
+    anyMatch(requirements.anyTags, state.tags) &&
+    noneMatch(requirements.noneTags, state.tags) &&
+    variablesMatch(requirements.variables, state.variables)
   );
 }
 
@@ -322,6 +336,10 @@ function anyMatch(required = [], tags) {
 
 function noneMatch(blocked = [], tags) {
   return blocked.every((tag) => !tags[tag]);
+}
+
+function variablesMatch(required = {}, variables) {
+  return Object.entries(required).every(([variable, value]) => variables[variable] === value);
 }
 
 function evaluateGameOver(factions) {

@@ -49,7 +49,7 @@ describe("ReignsAgent pipeline", () => {
       name: "stub",
       async generateText(request) {
         assert.equal(request.purpose, "card_generation");
-        assert.match(request.prompt, /abstract tags or inventory entries only/);
+        assert.match(request.prompt, /low-level tags and variables/);
         return JSON.stringify({ cards: sampleCards() });
       },
       async generateAsset(request) {
@@ -128,4 +128,3 @@ function sampleCards() {
     }
   ];
 }
-
