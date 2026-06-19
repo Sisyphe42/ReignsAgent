@@ -1,6 +1,8 @@
 export const FACTIONS = Object.freeze(["faith", "people", "military", "treasury"]);
 
 const DEFAULT_FACTION_VALUE = 50;
+const REQUIREMENT_KEYS = new Set(["allTags", "anyTags", "noneTags", "variables"]);
+const EFFECT_KEYS = new Set(["tags", "variables", "factions", "activateHooks", "dismissHooks"]);
 
 export class CoreError extends Error {
   constructor(message) {
@@ -116,36 +118,68 @@ export function getEligibleCards(cards, state) {
   });
 }
 
-function normalizeCards(cards) {
+export function normalizeCards(cards) {
   if (!Array.isArray(cards)) {
     throw new CoreError("cards must be an array");
   }
+
+  const seenCardIds = new Set();
 
   return cards.map((card) => {
     if (!card?.id) {
       throw new CoreError("Each card requires an id");
     }
 
+    if (seenCardIds.has(card.id)) {
+      throw new CoreError(`Duplicate card id '${card.id}'`);
+    }
+    seenCardIds.add(card.id);
+
     if (!Array.isArray(card.choices) || card.choices.length === 0) {
       throw new CoreError(`Card '${card.id}' requires at least one choice`);
     }
 
+    const weight = card.weight ?? 1;
+    if (!Number.isFinite(weight) || weight <= 0) {
+      throw new CoreError(`Card '${card.id}' weight must be a positive finite number`);
+    }
+
+    const requirements = card.requirements === undefined ? {} : card.requirements;
+    validateRequirements(card.id, requirements);
+    const seenChoiceIds = new Set();
+
     return {
       ...card,
-      weight: card.weight ?? 1,
-      requirements: card.requirements ?? {},
+      weight,
+      requirements,
       choices: card.choices.map((choice) => {
         if (!choice?.id) {
           throw new CoreError(`Card '${card.id}' has a choice without an id`);
         }
 
+        if (seenChoiceIds.has(choice.id)) {
+          throw new CoreError(`Card '${card.id}' has duplicate choice id '${choice.id}'`);
+        }
+        seenChoiceIds.add(choice.id);
+        const effects = choice.effects === undefined ? {} : choice.effects;
+        validateEffects(card.id, choice.id, effects);
+
         return {
           ...choice,
-          effects: choice.effects ?? {}
+          effects
         };
       })
     };
   });
+}
+
+export function validateCards(cards) {
+  try {
+    normalizeCards(cards);
+    return { valid: true, errors: [] };
+  } catch (error) {
+    return { valid: false, errors: [error.message] };
+  }
 }
 
 function normalizeFactions(factions = {}) {
@@ -166,6 +200,77 @@ function normalizeFactionScales(scales = {}) {
   }
 
   return normalized;
+}
+
+function validateRequirements(cardId, requirements) {
+  assertPlainRecord(requirements, `Card '${cardId}' requirements`);
+
+  for (const key of Object.keys(requirements)) {
+    if (!REQUIREMENT_KEYS.has(key)) {
+      throw new CoreError(`Card '${cardId}' has unknown requirement '${key}'`);
+    }
+  }
+
+  assertStringArray(requirements.allTags ?? [], `Card '${cardId}' allTags`);
+  assertStringArray(requirements.anyTags ?? [], `Card '${cardId}' anyTags`);
+  assertStringArray(requirements.noneTags ?? [], `Card '${cardId}' noneTags`);
+
+  if (requirements.variables !== undefined) {
+    assertPlainRecord(requirements.variables, `Card '${cardId}' variables requirement`);
+  }
+}
+
+function validateEffects(cardId, choiceId, effects) {
+  assertPlainRecord(effects, `Choice '${choiceId}' on card '${cardId}' effects`);
+
+  for (const key of Object.keys(effects)) {
+    if (!EFFECT_KEYS.has(key)) {
+      throw new CoreError(`Choice '${choiceId}' on card '${cardId}' has unknown effect '${key}'`);
+    }
+  }
+
+  if (effects.tags !== undefined) {
+    assertPlainRecord(effects.tags, `Choice '${choiceId}' on card '${cardId}' tag effects`);
+  }
+
+  if (effects.variables !== undefined) {
+    assertPlainRecord(effects.variables, `Choice '${choiceId}' on card '${cardId}' variable effects`);
+  }
+
+  if (effects.factions !== undefined) {
+    assertPlainRecord(effects.factions, `Choice '${choiceId}' on card '${cardId}' faction effects`);
+    for (const [faction, delta] of Object.entries(effects.factions)) {
+      assertFaction(faction);
+      if (!Number.isFinite(delta)) {
+        throw new CoreError(`Choice '${choiceId}' on card '${cardId}' faction delta '${faction}' must be finite`);
+      }
+    }
+  }
+
+  if (effects.activateHooks !== undefined) {
+    if (!Array.isArray(effects.activateHooks)) {
+      throw new CoreError(`Choice '${choiceId}' on card '${cardId}' activateHooks must be an array`);
+    }
+    for (const hookEntry of effects.activateHooks) {
+      validateHookEntry(hookEntry, `Choice '${choiceId}' on card '${cardId}'`);
+    }
+  }
+
+  if (effects.dismissHooks !== undefined) {
+    assertStringArray(effects.dismissHooks, `Choice '${choiceId}' on card '${cardId}' dismissHooks`);
+  }
+}
+
+function validateHookEntry(hookEntry, context) {
+  if (!hookEntry?.id) {
+    throw new CoreError(`${context} hook entry requires an id`);
+  }
+
+  assertStringArray(hookEntry.tags ?? [], `${context} hook entry '${hookEntry.id}' tags`);
+
+  if (hookEntry.hooks !== undefined) {
+    assertPlainRecord(hookEntry.hooks, `${context} hook entry '${hookEntry.id}' hooks`);
+  }
 }
 
 function applyChoice(choice, state) {
@@ -209,6 +314,8 @@ function applyChoice(choice, state) {
 }
 
 function activateHookEntry(state, hookEntry) {
+  validateHookEntry(hookEntry, "Runtime");
+
   if (!hookEntry?.id) {
     throw new CoreError("Hook entries require an id");
   }
@@ -363,6 +470,18 @@ function assertPlayable(state) {
 function assertFaction(faction) {
   if (!FACTIONS.includes(faction)) {
     throw new CoreError(`Unknown faction '${faction}'`);
+  }
+}
+
+function assertPlainRecord(value, context) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new CoreError(`${context} must be an object`);
+  }
+}
+
+function assertStringArray(value, context) {
+  if (!Array.isArray(value) || value.some((entry) => typeof entry !== "string" || entry.length === 0)) {
+    throw new CoreError(`${context} must be an array of non-empty strings`);
   }
 }
 

@@ -30,40 +30,58 @@ export function runMonteCarloReview(options = {}) {
     cycles,
     maxTurns,
     seed: baseSeed,
-    graph: analyzeCardGraph(cards, initialState.tags ?? {})
+    graph: analyzeCardGraph(cards, {
+      tags: initialState.tags ?? {},
+      variables: initialState.variables ?? {}
+    })
   });
 }
 
-export function analyzeCardGraph(cards, initialTags = {}) {
+export function analyzeCardGraph(cards, initialState = {}) {
+  const initialTags = initialState.tags ?? initialState;
+  const initialVariables = initialState.variables ?? {};
   const nodes = cards.map((card) => ({
     id: card.id,
     requirements: card.requirements ?? {}
   }));
-  const producedTagsByCard = new Map();
+  const producedSignalsByCard = new Map();
 
   for (const card of cards) {
-    producedTagsByCard.set(card.id, collectProducedTags(card));
+    producedSignalsByCard.set(card.id, collectProducedSignals(card));
   }
 
   const edges = [];
-  for (const [sourceId, producedTags] of producedTagsByCard.entries()) {
+  for (const [sourceId, producedSignals] of producedSignalsByCard.entries()) {
     for (const target of cards) {
       const requiredTags = [
         ...(target.requirements?.allTags ?? []),
         ...(target.requirements?.anyTags ?? [])
       ];
-      const enablingTags = requiredTags.filter((tag) => producedTags.has(tag));
+      const requiredVariables = Object.keys(target.requirements?.variables ?? {});
+      const enablingTags = requiredTags.filter((tag) => producedSignals.tags.has(tag));
+      const enablingVariables = requiredVariables.filter((variable) => producedSignals.variables.has(variable));
 
-      if (enablingTags.length > 0 && sourceId !== target.id) {
-        edges.push({ from: sourceId, to: target.id, tags: enablingTags });
+      if ((enablingTags.length > 0 || enablingVariables.length > 0) && sourceId !== target.id) {
+        const edge = { from: sourceId, to: target.id };
+        if (enablingTags.length > 0) {
+          edge.tags = enablingTags;
+        }
+        if (enablingVariables.length > 0) {
+          edge.variables = enablingVariables;
+        }
+        edges.push(edge);
       }
     }
   }
 
   const producedTags = new Set(initialTrueTags(initialTags));
-  for (const tags of producedTagsByCard.values()) {
-    for (const tag of tags) {
+  const producedVariables = new Set(initialTrueVariables(initialVariables));
+  for (const signals of producedSignalsByCard.values()) {
+    for (const tag of signals.tags) {
       producedTags.add(tag);
+    }
+    for (const variable of signals.variables) {
+      producedVariables.add(variable);
     }
   }
 
@@ -73,7 +91,8 @@ export function analyzeCardGraph(cards, initialTags = {}) {
     isolatedCards: nodes
       .filter((node) => !edges.some((edge) => edge.from === node.id || edge.to === node.id))
       .map((node) => node.id),
-    unsatisfiedRequiredTags: collectUnsatisfiedRequiredTags(cards, producedTags)
+    unsatisfiedRequiredTags: collectUnsatisfiedRequiredTags(cards, producedTags),
+    unsatisfiedRequiredVariables: collectUnsatisfiedRequiredVariables(cards, producedVariables)
   };
 }
 
@@ -105,6 +124,7 @@ function runCycle(runtime, options) {
     turns: runtime.state.turn,
     gameOver: runtime.state.gameOver,
     stalled,
+    terminalReason: terminalReason(runtime.state, stalled, options.maxTurns),
     factions: { ...runtime.state.factions },
     visits,
     choices
@@ -123,15 +143,19 @@ function createAggregate(cards) {
     stalledCycles: 0,
     gameOverCycles: 0,
     gameOverByFaction: Object.fromEntries(FACTIONS.map((faction) => [faction, 0])),
+    terminalReasons: {},
     factionTotals: Object.fromEntries(FACTIONS.map((faction) => [faction, 0])),
     cardVisits: Object.fromEntries(cards.map((card) => [card.id, 0])),
-    choiceVisits: {}
+    choiceVisits: {},
+    turnSamples: []
   };
 }
 
 function recordCycle(aggregate, result) {
   aggregate.cycles += 1;
   aggregate.totalTurns += result.turns;
+  aggregate.turnSamples.push(result.turns);
+  aggregate.terminalReasons[result.terminalReason] = (aggregate.terminalReasons[result.terminalReason] ?? 0) + 1;
 
   if (result.stalled) {
     aggregate.stalledCycles += 1;
@@ -157,6 +181,7 @@ function recordCycle(aggregate, result) {
 
 function buildReport({ aggregate, cards, cycles, maxTurns, seed, graph }) {
   const averageTurns = aggregate.totalTurns / cycles;
+  const sortedTurns = [...aggregate.turnSamples].sort((left, right) => left - right);
   const factionAverages = Object.fromEntries(
     FACTIONS.map((faction) => [faction, round(aggregate.factionTotals[faction] / cycles)])
   );
@@ -171,9 +196,17 @@ function buildReport({ aggregate, cards, cycles, maxTurns, seed, graph }) {
     parameters: { cycles, maxTurns, seed },
     summary: {
       averageTurns: round(averageTurns),
+      minTurns: sortedTurns[0] ?? 0,
+      maxTurns: sortedTurns.at(-1) ?? 0,
+      turnPercentiles: {
+        p10: percentile(sortedTurns, 0.1),
+        p50: percentile(sortedTurns, 0.5),
+        p90: percentile(sortedTurns, 0.9)
+      },
       gameOverRate: round(aggregate.gameOverCycles / cycles),
       stalledRate: round(aggregate.stalledCycles / cycles),
       gameOverByFaction: aggregate.gameOverByFaction,
+      terminalReasons: aggregate.terminalReasons,
       factionAverages
     },
     coverage: {
@@ -217,16 +250,43 @@ function buildWarnings({ aggregate, cards, graph }) {
     });
   }
 
+  if (graph.unsatisfiedRequiredVariables.length > 0) {
+    warnings.push({
+      code: "unsatisfied_required_variables",
+      message: "Some variable requirements cannot be satisfied by initial variables or card effects.",
+      variables: graph.unsatisfiedRequiredVariables
+    });
+  }
+
+  for (const [faction, count] of Object.entries(aggregate.gameOverByFaction)) {
+    const rate = count / aggregate.cycles;
+    if (rate > 0.45) {
+      warnings.push({
+        code: "dominant_game_over_faction",
+        message: "One faction dominates simulated endings.",
+        faction,
+        rate: round(rate)
+      });
+    }
+  }
+
   return warnings;
 }
 
-function collectProducedTags(card) {
+function collectProducedSignals(card) {
   const tags = new Set();
+  const variables = new Set();
 
   for (const choice of card.choices ?? []) {
     for (const [tag, value] of Object.entries(choice.effects?.tags ?? {})) {
       if (value !== false && value !== null && value !== undefined) {
         tags.add(tag);
+      }
+    }
+
+    for (const [variable, value] of Object.entries(choice.effects?.variables ?? {})) {
+      if (value !== null && value !== undefined) {
+        variables.add(variable);
       }
     }
 
@@ -237,7 +297,7 @@ function collectProducedTags(card) {
     }
   }
 
-  return tags;
+  return { tags, variables };
 }
 
 function collectUnsatisfiedRequiredTags(cards, producedTags) {
@@ -261,10 +321,46 @@ function collectUnsatisfiedRequiredTags(cards, producedTags) {
   return [...missing].sort();
 }
 
+function collectUnsatisfiedRequiredVariables(cards, producedVariables) {
+  const missing = new Set();
+
+  for (const card of cards) {
+    for (const variable of Object.keys(card.requirements?.variables ?? {})) {
+      if (!producedVariables.has(variable)) {
+        missing.add(variable);
+      }
+    }
+  }
+
+  return [...missing].sort();
+}
+
 function initialTrueTags(tags) {
   return Object.entries(tags)
     .filter(([, value]) => Boolean(value))
     .map(([tag]) => tag);
+}
+
+function initialTrueVariables(variables) {
+  return Object.entries(variables)
+    .filter(([, value]) => value !== null && value !== undefined)
+    .map(([variable]) => variable);
+}
+
+function terminalReason(state, stalled, maxTurns) {
+  if (state.gameOver) {
+    return `game_over:${state.gameOver.faction}`;
+  }
+
+  if (stalled) {
+    return "stalled";
+  }
+
+  if (state.turn >= maxTurns) {
+    return "max_turns";
+  }
+
+  return "completed";
 }
 
 function cloneInitialState(initialState) {
@@ -314,4 +410,13 @@ function increment(map, key) {
 
 function round(value) {
   return Math.round(value * 10000) / 10000;
+}
+
+function percentile(sortedValues, fraction) {
+  if (sortedValues.length === 0) {
+    return 0;
+  }
+
+  const index = Math.ceil(sortedValues.length * fraction) - 1;
+  return sortedValues[Math.max(0, Math.min(index, sortedValues.length - 1))];
 }

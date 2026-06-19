@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { createInitialState, createRuntime, getEligibleCards } from "../src/index.js";
+import { createInitialState, createRuntime, getEligibleCards, normalizeCards, validateCards } from "../src/index.js";
 
 describe("ReignsAgent core runtime", () => {
   it("creates a headless state with four bounded factions", () => {
@@ -98,6 +98,23 @@ describe("ReignsAgent core runtime", () => {
 
     runtime.dismissHook("court-favor");
     assert.equal(runtime.state.tags.favored, undefined);
+  });
+
+  it("validates card contracts before runtime play", () => {
+    assert.throws(
+      () =>
+        normalizeCards([
+          card("broken", {}, "bad", {
+            factions: { unknown: 1 }
+          })
+        ]),
+      /Unknown faction/
+    );
+
+    assert.deepEqual(validateCards([card("valid", {}, "pass")]), {
+      valid: true,
+      errors: []
+    });
   });
 });
 

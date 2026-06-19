@@ -12,6 +12,7 @@ import {
   parseCardsCsv,
   parseCardsJson,
   stringifyCardsCsv,
+  validateCardSet,
   writeCardsCsv,
   writeCardsJson
 } from "../src/index.js";
@@ -80,6 +81,7 @@ describe("ReignsAgent pipeline", () => {
         warnings: [
           { code: "never_visited_cards", message: "unreached", cardIds: ["hidden"] },
           { code: "unsatisfied_required_tags", message: "missing tags", tags: ["royal"] },
+          { code: "unsatisfied_required_variables", message: "missing variables", variables: ["edictSigned"] },
           { code: "stalled_cycles", message: "no cards", cycles: 2 }
         ]
       }
@@ -87,8 +89,36 @@ describe("ReignsAgent pipeline", () => {
 
     assert.deepEqual(
       feedback.actions.map((action) => action.type),
-      ["relax_requirements", "add_tag_producers", "add_fallback_cards", "rebalance_faction_pressure"]
+      [
+        "relax_requirements",
+        "add_tag_producers",
+        "add_variable_producers",
+        "add_fallback_cards",
+        "rebalance_faction_pressure"
+      ]
     );
+  });
+
+  it("returns aggregate validation diagnostics for malformed card data", () => {
+    const validation = validateCardSet([
+      {
+        id: "duplicate",
+        choices: [{ id: "left", effects: { factions: { faith: 1 } } }]
+      },
+      {
+        id: "duplicate",
+        weight: -1,
+        requirements: { allTags: "not-array" },
+        choices: [{ id: "left", effects: { factions: { unknown: 1 }, typo: true } }]
+      }
+    ]);
+
+    assert.equal(validation.valid, false);
+    assert.match(validation.errors.join("\n"), /Duplicate card id/);
+    assert.match(validation.errors.join("\n"), /weight must be a positive finite number/);
+    assert.match(validation.errors.join("\n"), /allTags must be an array/);
+    assert.match(validation.errors.join("\n"), /unknown faction/);
+    assert.match(validation.errors.join("\n"), /unknown key 'typo'/);
   });
 
   it("builds prompts with reviewer feedback when diagnostics are supplied", () => {

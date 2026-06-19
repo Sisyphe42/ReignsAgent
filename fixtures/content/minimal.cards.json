@@ -1,0 +1,112 @@
+{
+  "cards": [
+    {
+      "id": "edict",
+      "text": "A new edict waits on the desk.",
+      "weight": 1,
+      "choices": [
+        {
+          "id": "sign",
+          "label": "Sign",
+          "effects": {
+            "factions": {
+              "people": -8,
+              "treasury": 6
+            },
+            "variables": {
+              "edictSigned": true
+            },
+            "tags": {
+              "courtAlert": true
+            }
+          }
+        },
+        {
+          "id": "delay",
+          "label": "Delay",
+          "effects": {
+            "factions": {
+              "faith": 4,
+              "military": -4
+            },
+            "variables": {
+              "edictDelayed": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "council",
+      "text": "The council asks how to answer the court.",
+      "weight": 1,
+      "requirements": {
+        "allTags": [
+          "courtAlert"
+        ],
+        "variables": {
+          "edictSigned": true
+        }
+      },
+      "choices": [
+        {
+          "id": "soften",
+          "label": "Soften",
+          "effects": {
+            "factions": {
+              "people": 5,
+              "treasury": -5
+            },
+            "tags": {
+              "courtAlert": false,
+              "settled": true
+            }
+          }
+        },
+        {
+          "id": "hold",
+          "label": "Hold",
+          "effects": {
+            "factions": {
+              "military": 5,
+              "faith": -5
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "aftermath",
+      "text": "The realm studies the result.",
+      "weight": 1,
+      "requirements": {
+        "anyTags": [
+          "settled"
+        ]
+      },
+      "choices": [
+        {
+          "id": "record",
+          "label": "Record",
+          "effects": {
+            "factions": {
+              "faith": 2,
+              "people": 2
+            }
+          }
+        },
+        {
+          "id": "forget",
+          "label": "Forget",
+          "effects": {
+            "factions": {
+              "treasury": 2,
+              "military": 2
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
+

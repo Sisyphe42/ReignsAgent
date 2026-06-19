@@ -4,7 +4,15 @@ import { resolve } from "node:path";
 const modules = [
   {
     path: "packages/core/src/index.js",
-    exports: ["CoreError", "FACTIONS", "createInitialState", "createRuntime", "getEligibleCards"]
+    exports: [
+      "CoreError",
+      "FACTIONS",
+      "createInitialState",
+      "createRuntime",
+      "getEligibleCards",
+      "normalizeCards",
+      "validateCards"
+    ]
   },
   {
     path: "packages/reviewer/src/index.js",
@@ -14,6 +22,7 @@ const modules = [
     path: "packages/pipeline/src/index.js",
     exports: [
       "PipelineError",
+      "assertValidCardSet",
       "buildCardGenerationPrompt",
       "createDiagnosticFeedback",
       "createLLMConnector",
@@ -25,6 +34,7 @@ const modules = [
       "readCardsJson",
       "stringifyCardsCsv",
       "stringifyCardsJson",
+      "validateCardSet",
       "writeCardsCsv",
       "writeCardsJson"
     ]

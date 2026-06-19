@@ -6,9 +6,13 @@ Phase 1 implements `@reigns-agent/core`: a pure runtime with factions, card sche
 
 The repository intentionally contains no built-in upper-level progression systems, provider-specific SDK wiring, or production frontend yet.
 
+The current Phase 1-3 baseline includes card contract validation, fixture verification, package export smoke tests, module boundary checks, Anti-RPG drift checks, unit tests, and integration tests.
+
 ## Commands
 
 ```sh
 npm run verify
 npm test
+npm run content:validate -- fixtures/content/minimal.cards.json
+npm run content:review -- fixtures/content/minimal.cards.json --cycles 100 --maxTurns 20
 ```

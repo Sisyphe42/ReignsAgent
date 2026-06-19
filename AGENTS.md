@@ -35,5 +35,6 @@ Anti-RPG rule: the system may reserve low-level variable/tag interfaces for user
 - [x] Phase 1: Core Headless Runtime & Variable Hook Architecture (Implemented in `packages/core`; low-level variable/tag hooks only, no RPG systems)
 - [x] Phase 2: Monte Carlo Simulation Bot & Graph Analyzer (Implemented in `packages/reviewer`; headless JSON diagnostics, default 100k cycles, no pipeline connectors)
 - [x] Phase 3: AI Pipeline Generator & Diagnostic Feedback Loop (Implemented in `packages/pipeline`; local JSON/CSV exchange, connector interfaces, reviewer feedback actions)
-- [x] Build/Test Gate: Syntax checks, package export smoke tests, module boundary checks, Anti-RPG drift checks, unit tests, integration tests, lockfile, and GitHub Actions CI (Implemented)
+- [x] Phase 1-3 Contract Hardening: Card contract validation, variable-aware graph diagnostics, fixture content verification, and local content validation/review CLI (Implemented)
+- [x] Build/Test Gate: Syntax checks, package export smoke tests, module boundary checks, Anti-RPG drift checks, fixture verification, unit tests, integration tests, lockfile, and GitHub Actions CI (Implemented)
 - [ ] Phase 4: Unified Playable Interface & Local Ingestion Dash (Pending)
