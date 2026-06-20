@@ -33,6 +33,17 @@
       justify-content: space-between;
       box-shadow: 0 12px 30px rgba(0,0,0,0.35);
     }
+    .art {
+      width: min(160px, 48%);
+      aspect-ratio: 1;
+      align-self: center;
+      object-fit: contain;
+      background: #0c0e12;
+      border: 1px solid #2a2f3a;
+      border-radius: 8px;
+      padding: 14px;
+      margin-bottom: 18px;
+    }
     .text { font-size: 19px; line-height: 1.5; }
     .swipes { display: flex; gap: 12px; margin-top: 24px; }
     button {
@@ -56,6 +67,7 @@
   <div class="stage">
     <div class="gauges" id="gauges"></div>
     <div class="card">
+      <img id="art" class="art" alt="" hidden />
       <div class="text" id="text">No build loaded.</div>
       <div class="swipes">
         <button id="left" disabled>◀ Left</button>
@@ -77,6 +89,7 @@
     const escapeHtml = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
 
     let player = null;
+    let assetByCard = new Map();
 
     el("load").addEventListener("click", () => el("file").click());
     el("file").addEventListener("change", async (event) => {
@@ -84,6 +97,7 @@
       if (!file) return;
       try {
         const build = JSON.parse(await file.text());
+        assetByCard = createAssetMap(build.content?.assets ?? []);
         player = createPlayer(build);
         player.on(render);
         const snap = player.start();
@@ -121,14 +135,34 @@
       }
       const card = snap?.currentCard;
       if (card) {
+        const asset = assetByCard.get(card.id);
+        if (asset) {
+          el("art").src = asset.uri;
+          el("art").hidden = false;
+        } else {
+          el("art").removeAttribute("src");
+          el("art").hidden = true;
+        }
         el("text").textContent = card.text ?? card.id;
         el("left").disabled = false;
         el("right").disabled = false;
       } else {
+        el("art").removeAttribute("src");
+        el("art").hidden = true;
         el("text").textContent = snap?.gameOver ? `Your reign ended: ${snap.gameOver.faction}.` : "No card available.";
         el("left").disabled = true;
         el("right").disabled = true;
       }
+    }
+
+    function createAssetMap(assets) {
+      const map = new Map();
+      for (const asset of assets) {
+        if (asset?.cardId && asset?.uri && !map.has(asset.cardId)) {
+          map.set(asset.cardId, asset);
+        }
+      }
+      return map;
     }
   </script>
 </body>

@@ -22,6 +22,17 @@
       justify-content: space-between;
       box-shadow: 0 12px 30px rgba(0,0,0,0.35);
     }
+    .player-art {
+      width: min(160px, 48%);
+      aspect-ratio: 1;
+      align-self: center;
+      object-fit: contain;
+      background: #0c0e12;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px;
+      margin-bottom: 18px;
+    }
     .player-text { font-size: 19px; line-height: 1.5; }
     .player-swipes { display: flex; gap: 12px; margin-top: 24px; }
     .start-wrap { text-align: center; margin-top: 32px; }
@@ -44,6 +55,7 @@
   <main class="stage">
     <div class="gauges" id="gauges"></div>
     <div class="player-card" id="card">
+      <img id="art" class="player-art" alt="" hidden />
       <p class="player-text" id="text">The court is waiting.</p>
       <div class="player-swipes">
         <button id="left" class="btn btn--choice" disabled>◀ Left</button>
@@ -73,6 +85,7 @@
     const escapeHtml = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
 
     let session = null;
+    let assetByCard = new Map();
 
     function render(state) {
       const gauges = el("gauges");
@@ -84,10 +97,20 @@
         gauges.appendChild(div);
       }
       if (state.currentCard) {
+        const asset = assetByCard.get(state.currentCard.id);
+        if (asset) {
+          el("art").src = asset.uri;
+          el("art").hidden = false;
+        } else {
+          el("art").removeAttribute("src");
+          el("art").hidden = true;
+        }
         el("text").textContent = state.currentCard.text ?? state.currentCard.id;
         el("left").disabled = false;
         el("right").disabled = false;
       } else {
+        el("art").removeAttribute("src");
+        el("art").hidden = true;
         el("text").textContent = state.gameOver ? `Your reign ended: ${state.gameOver.faction}.` : "No card available.";
         el("left").disabled = true;
         el("right").disabled = true;
@@ -96,6 +119,8 @@
 
     el("start").addEventListener("click", async () => {
       try {
+        const editor = await api("/api/editor", undefined, "GET");
+        assetByCard = createAssetMap(editor.assets ?? []);
         const result = await api("/api/play/start", {});
         if (result.error) throw new Error(result.error.message);
         session = result.sessionId;
@@ -118,6 +143,16 @@
     }
     el("left").addEventListener("click", () => swipe("left"));
     el("right").addEventListener("click", () => swipe("right"));
+
+    function createAssetMap(assets) {
+      const map = new Map();
+      for (const asset of assets) {
+        if (asset?.cardId && asset?.uri && !map.has(asset.cardId)) {
+          map.set(asset.cardId, asset);
+        }
+      }
+      return map;
+    }
   </script>
 </body>
 </html>

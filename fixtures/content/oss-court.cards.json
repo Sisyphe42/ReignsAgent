@@ -1,0 +1,319 @@
+{
+  "metadata": {
+    "title": "Open Court Sample",
+    "version": "0.2.0",
+    "description": "A complete local test deck for Phase 4 creator, player, diagnostics, and build workflows.",
+    "artLicense": "CC BY 3.0",
+    "artSource": "Game-icons.net SVG icons from the game-icons/icons repository"
+  },
+  "assets": [
+    {
+      "id": "art-attribution",
+      "uri": "assets/sample/ATTRIBUTION.md",
+      "title": "Open Court art attribution",
+      "sourceUrl": "https://github.com/game-icons/icons",
+      "license": "CC BY 3.0",
+      "attribution": "Sample art attribution for Game-icons.net SVG assets"
+    },
+    {
+      "id": "art-gate-audience",
+      "cardId": "gate-audience",
+      "uri": "assets/sample/castle.svg",
+      "title": "Castle",
+      "sourceUrl": "https://github.com/game-icons/icons/blob/master/delapouite/castle.svg",
+      "license": "CC BY 3.0",
+      "attribution": "Castle icon by Delapouite, available on Game-icons.net"
+    },
+    {
+      "id": "art-granary-count",
+      "cardId": "granary-count",
+      "uri": "assets/sample/grain.svg",
+      "title": "Grain",
+      "sourceUrl": "https://github.com/game-icons/icons/blob/master/delapouite/grain.svg",
+      "license": "CC BY 3.0",
+      "attribution": "Grain icon by Delapouite, available on Game-icons.net"
+    },
+    {
+      "id": "art-border-messenger",
+      "cardId": "border-messenger",
+      "uri": "assets/sample/knight-banner.svg",
+      "title": "Knight Banner",
+      "sourceUrl": "https://github.com/game-icons/icons/blob/master/delapouite/knight-banner.svg",
+      "license": "CC BY 3.0",
+      "attribution": "Knight Banner icon by Delapouite, available on Game-icons.net"
+    },
+    {
+      "id": "art-harbor-contract",
+      "cardId": "harbor-contract",
+      "uri": "assets/sample/harbor-dock.svg",
+      "title": "Harbor Dock",
+      "sourceUrl": "https://github.com/game-icons/icons/blob/master/delapouite/harbor-dock.svg",
+      "license": "CC BY 3.0",
+      "attribution": "Harbor Dock icon by Delapouite, available on Game-icons.net"
+    },
+    {
+      "id": "art-chapel-dispute",
+      "cardId": "chapel-dispute",
+      "uri": "assets/sample/church.svg",
+      "title": "Church",
+      "sourceUrl": "https://github.com/game-icons/icons/blob/master/delapouite/church.svg",
+      "license": "CC BY 3.0",
+      "attribution": "Church icon by Delapouite, available on Game-icons.net"
+    },
+    {
+      "id": "art-banner-review",
+      "cardId": "banner-review",
+      "uri": "assets/sample/cross-shield.svg",
+      "title": "Cross Shield",
+      "sourceUrl": "https://github.com/game-icons/icons/blob/master/delapouite/cross-shield.svg",
+      "license": "CC BY 3.0",
+      "attribution": "Cross Shield icon by Delapouite, available on Game-icons.net"
+    },
+    {
+      "id": "art-ledger-council",
+      "cardId": "ledger-council",
+      "uri": "assets/sample/book-cover.svg",
+      "title": "Book Cover",
+      "sourceUrl": "https://github.com/game-icons/icons/blob/master/delapouite/book-cover.svg",
+      "license": "CC BY 3.0",
+      "attribution": "Book Cover icon by Delapouite, available on Game-icons.net"
+    },
+    {
+      "id": "art-dawn-gate",
+      "cardId": "dawn-gate",
+      "uri": "assets/sample/gate.svg",
+      "title": "Gate",
+      "sourceUrl": "https://github.com/game-icons/icons/blob/master/delapouite/gate.svg",
+      "license": "CC BY 3.0",
+      "attribution": "Gate icon by Delapouite, available on Game-icons.net"
+    },
+    {
+      "id": "art-treasury-count",
+      "cardId": "treasury-count",
+      "uri": "assets/sample/coins.svg",
+      "title": "Coins",
+      "sourceUrl": "https://github.com/game-icons/icons/blob/master/delapouite/coins.svg",
+      "license": "CC BY 3.0",
+      "attribution": "Coins icon by Delapouite, available on Game-icons.net"
+    }
+  ],
+  "cards": [
+    {
+      "id": "gate-audience",
+      "text": "At first light, two petitions reach the city gate.",
+      "weight": 2,
+      "choices": [
+        {
+          "id": "left",
+          "label": "Hear the grain plea",
+          "effects": {
+            "factions": { "people": 6, "treasury": -4 },
+            "tags": { "grainRelief": true },
+            "variables": { "openingPetition": "grain" }
+          }
+        },
+        {
+          "id": "right",
+          "label": "Hear the border plea",
+          "effects": {
+            "factions": { "military": 6, "treasury": -3 },
+            "tags": { "borderAlert": true },
+            "variables": { "openingPetition": "border" }
+          }
+        }
+      ]
+    },
+    {
+      "id": "granary-count",
+      "text": "The granary clerks ask whether to release emergency stores.",
+      "weight": 1,
+      "requirements": { "allTags": ["grainRelief"] },
+      "choices": [
+        {
+          "id": "left",
+          "label": "Open the stores",
+          "effects": {
+            "factions": { "people": 8, "treasury": -7, "faith": 2 },
+            "tags": { "granaryOpen": true }
+          }
+        },
+        {
+          "id": "right",
+          "label": "Audit the ledgers",
+          "effects": {
+            "factions": { "treasury": 5, "people": -4 },
+            "tags": { "auditLedger": true }
+          }
+        }
+      ]
+    },
+    {
+      "id": "border-messenger",
+      "text": "A rider reports smoke beyond the northern stones.",
+      "weight": 1,
+      "requirements": { "allTags": ["borderAlert"] },
+      "choices": [
+        {
+          "id": "left",
+          "label": "Raise the banner",
+          "effects": {
+            "factions": { "military": 8, "people": -4, "treasury": -3 },
+            "tags": { "muster": true }
+          }
+        },
+        {
+          "id": "right",
+          "label": "Send an envoy",
+          "effects": {
+            "factions": { "faith": 3, "treasury": -4, "military": -2 },
+            "tags": { "envoySent": true }
+          }
+        }
+      ]
+    },
+    {
+      "id": "harbor-contract",
+      "text": "Merchants offer a dock contract if the court acts before dusk.",
+      "weight": 1,
+      "requirements": { "anyTags": ["granaryOpen", "auditLedger", "envoySent", "muster"] },
+      "choices": [
+        {
+          "id": "left",
+          "label": "Sign the charter",
+          "effects": {
+            "factions": { "treasury": 8, "people": -2 },
+            "tags": { "harborTrade": true }
+          }
+        },
+        {
+          "id": "right",
+          "label": "Delay the charter",
+          "effects": {
+            "factions": { "people": 3, "treasury": -4 },
+            "tags": { "charterDelayed": true }
+          }
+        }
+      ]
+    },
+    {
+      "id": "chapel-dispute",
+      "text": "The chapel asks for a public rite after the morning unrest.",
+      "weight": 1,
+      "requirements": { "anyTags": ["granaryOpen", "envoySent", "charterDelayed"] },
+      "choices": [
+        {
+          "id": "left",
+          "label": "Hold the rite",
+          "effects": {
+            "factions": { "faith": 7, "treasury": -3, "people": 2 },
+            "tags": { "riteHeld": true }
+          }
+        },
+        {
+          "id": "right",
+          "label": "Keep it private",
+          "effects": {
+            "factions": { "people": 3, "faith": -5 },
+            "tags": { "mediated": true }
+          }
+        }
+      ]
+    },
+    {
+      "id": "banner-review",
+      "text": "Captains want an answer before they dismiss the watch.",
+      "weight": 1,
+      "requirements": { "anyTags": ["muster", "auditLedger", "harborTrade"] },
+      "choices": [
+        {
+          "id": "left",
+          "label": "Reward the watch",
+          "effects": {
+            "factions": { "military": 6, "treasury": -4 },
+            "tags": { "watchRewarded": true }
+          }
+        },
+        {
+          "id": "right",
+          "label": "Send them home",
+          "effects": {
+            "factions": { "people": 4, "military": -5 },
+            "tags": { "watchDismissed": true }
+          }
+        }
+      ]
+    },
+    {
+      "id": "ledger-council",
+      "text": "The council asks how much of the day's accounts to reveal.",
+      "weight": 1,
+      "requirements": { "anyTags": ["auditLedger", "harborTrade", "riteHeld", "watchRewarded", "watchDismissed"] },
+      "choices": [
+        {
+          "id": "left",
+          "label": "Publish the accounts",
+          "effects": {
+            "factions": { "people": 4, "treasury": -3, "faith": 1 },
+            "tags": { "ledgerOpen": true }
+          }
+        },
+        {
+          "id": "right",
+          "label": "Seal the accounts",
+          "effects": {
+            "factions": { "treasury": 6, "people": -4 },
+            "tags": { "ledgerSealed": true }
+          }
+        }
+      ]
+    },
+    {
+      "id": "treasury-count",
+      "text": "The treasurer counts the cost of the court's morning.",
+      "weight": 1,
+      "requirements": { "anyTags": ["harborTrade", "ledgerOpen", "ledgerSealed"] },
+      "choices": [
+        {
+          "id": "left",
+          "label": "Spend on repairs",
+          "effects": {
+            "factions": { "people": 5, "treasury": -5, "military": 1 },
+            "tags": { "repairsFunded": true }
+          }
+        },
+        {
+          "id": "right",
+          "label": "Hold reserves",
+          "effects": {
+            "factions": { "treasury": 5, "people": -3, "faith": -1 },
+            "tags": { "reservesHeld": true }
+          }
+        }
+      ]
+    },
+    {
+      "id": "dawn-gate",
+      "text": "By sunset, the gate guard asks what story the city should hear.",
+      "weight": 1,
+      "requirements": { "anyTags": ["repairsFunded", "reservesHeld", "mediated", "watchDismissed"] },
+      "choices": [
+        {
+          "id": "left",
+          "label": "Open the gate",
+          "effects": {
+            "factions": { "people": 5, "faith": 2, "military": -2 },
+            "tags": { "gateOpened": true }
+          }
+        },
+        {
+          "id": "right",
+          "label": "Close the gate",
+          "effects": {
+            "factions": { "military": 5, "treasury": 2, "people": -3 },
+            "tags": { "gateClosed": true }
+          }
+        }
+      ]
+    }
+  ]
+}

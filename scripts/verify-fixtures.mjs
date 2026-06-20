@@ -56,7 +56,7 @@ const playerBuild = await verifyPlayerBuildSmoke();
 console.log(`Fixture verification passed for ${fixturePath} and ${playerBuild.cardCount} player cards.`);
 
 async function verifyPlayerBuildSmoke() {
-  const playerFixturePath = "fixtures/content/player.cards.json";
+  const playerFixturePath = "fixtures/content/oss-court.cards.json";
   const playerCards = await readCardsJson(playerFixturePath);
   const playerValidation = validatePlayerCards(playerCards);
 
@@ -78,9 +78,18 @@ async function verifyPlayerBuildSmoke() {
       throw new Error("Player build did not produce a binary deployable manifest");
     }
 
+    if (!Array.isArray(result.copiedAssets) || result.copiedAssets.length < 1) {
+      throw new Error("Player build did not copy local sample art assets");
+    }
+
     const files = await readdir(outputDir);
     if (!files.includes("player.html") || !files.includes("player-runtime.js")) {
       throw new Error("Player build did not emit standalone player assets");
+    }
+
+    const sampleAsset = join(outputDir, "assets/sample/castle.svg");
+    if (!files.includes("assets") || !(await readFile(sampleAsset, "utf8")).includes("<svg")) {
+      throw new Error("Player build did not emit sample art assets");
     }
 
     const runtimeSource = await readFile(result.playerRuntime, "utf8");

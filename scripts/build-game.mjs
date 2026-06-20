@@ -1,11 +1,12 @@
 #!/usr/bin/env node
-import { readFile, writeFile, mkdir } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { copyFile, readFile, writeFile, mkdir } from "node:fs/promises";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { prepareGameBuild, serializeBuild, validatePlayerCards } from "../packages/interface/src/index.js";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
+const WEB_ROOT = join(ROOT, "packages/interface/web");
 
 /**
  * build-game.mjs assembles a deployable Reigns-style game from a content bundle.
@@ -70,12 +71,14 @@ try {
 
   const playerHtml = await readFile(join(ROOT, "packages/interface/web/standalone-player.html"), "utf8");
   await writeFile(join(outputPath, "player.html"), playerHtml, "utf8");
+  const copiedAssets = await copyLocalBuildAssets(build.content.assets ?? [], outputPath);
 
   console.log(JSON.stringify({
     built: true,
     buildId: build.buildId,
     buildFile,
     playerRuntime: standalonePlayer,
+    copiedAssets,
     cardCount: build.content.cards.length,
     playerChoiceModel: build.player.choiceModel
   }, null, 2));
@@ -108,4 +111,39 @@ function stitchPlayerRuntime(template, coreSource) {
   const inlinedCore = `${coreWithoutExport}\nconst createCoreRuntime = createRuntime;`;
 
   return template.replace("/* CORE_IMPORT_MARKER */", inlinedCore);
+}
+
+async function copyLocalBuildAssets(assets, outputDir) {
+  const copied = [];
+
+  for (const asset of assets) {
+    const uri = asset?.uri;
+    if (typeof uri !== "string") {
+      continue;
+    }
+
+    const normalizedUri = uri.replace(/^\.?\//, "");
+    if (!normalizedUri.startsWith("assets/") || normalizedUri.includes("..")) {
+      continue;
+    }
+
+    const source = resolve(WEB_ROOT, normalizedUri);
+    assertWithin(WEB_ROOT, source, `Asset '${uri}'`);
+
+    const target = resolve(outputDir, normalizedUri);
+    assertWithin(outputDir, target, `Asset output '${uri}'`);
+
+    await mkdir(dirname(target), { recursive: true });
+    await copyFile(source, target);
+    copied.push(uri);
+  }
+
+  return copied;
+}
+
+function assertWithin(root, target, context) {
+  const relativePath = relative(resolve(root), resolve(target));
+  if (relativePath.startsWith("..") || relativePath === "" || resolve(target).includes("\0")) {
+    throw new Error(`${context} escapes its expected root`);
+  }
 }

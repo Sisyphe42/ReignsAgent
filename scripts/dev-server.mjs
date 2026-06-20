@@ -21,13 +21,16 @@ import {
 } from "../packages/interface/src/index.js";
 
 const PORT = Number(process.env.PORT ?? 4321);
+const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const WEB_ROOT = fileURLToPath(new URL("../packages/interface/web", import.meta.url));
+const OSS_SAMPLE_PATH = join(ROOT, "fixtures/content/oss-court.cards.json");
 const MIME = {
   ".html": "text/html; charset=utf-8",
   ".css": "text/css; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
   ".mjs": "text/javascript; charset=utf-8",
   ".json": "application/json; charset=utf-8",
+  ".md": "text/markdown; charset=utf-8",
   ".svg": "image/svg+xml"
 };
 
@@ -37,8 +40,8 @@ const MIME = {
  * production runtime.
  */
 class SessionState {
-  constructor() {
-    this.editor = createCardEditor({ cards: [] });
+  constructor(initialBundle = { cards: [] }) {
+    this.editor = loadEditorFromContent(initialBundle);
     this.sessions = new Map();
   }
 
@@ -49,7 +52,7 @@ class SessionState {
   }
 }
 
-const store = new SessionState();
+const store = new SessionState(await readDefaultSample());
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
@@ -92,6 +95,10 @@ async function handleApi(req, res, url) {
       validation: store.editor.validate(),
       playerValidation: store.editor.validateForPlayer()
     });
+  }
+
+  if (path === "/api/samples/oss-court" && req.method === "GET") {
+    return sendJson(res, JSON.parse(await readFile(OSS_SAMPLE_PATH, "utf8")));
   }
 
   if (path === "/api/editor/import" && req.method === "POST") {
@@ -271,6 +278,14 @@ function sendJson(res, payload) {
     "cache-control": "no-store"
   });
   res.end(body);
+}
+
+async function readDefaultSample() {
+  try {
+    return JSON.parse(await readFile(OSS_SAMPLE_PATH, "utf8"));
+  } catch {
+    return { cards: [] };
+  }
 }
 
 function safeWebPath(requestPath) {
