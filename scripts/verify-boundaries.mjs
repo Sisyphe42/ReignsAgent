@@ -3,7 +3,7 @@ import { dirname, join, resolve } from "node:path";
 
 const sourceFiles = await collectJavaScriptFiles("packages");
 const importPattern = /(?:import|export)\s+(?:[^'"]*?\s+from\s+)?["']([^"']+)["']/g;
-const packageRoots = new Map(["core", "reviewer", "pipeline"].map((name) => [name, resolve("packages", name)]));
+const packageRoots = new Map(["core", "reviewer", "pipeline", "interface"].map((name) => [name, resolve("packages", name)]));
 const violations = [];
 
 for (const file of sourceFiles.filter((path) => path.includes(`${separator()}src${separator()}`))) {
@@ -50,6 +50,10 @@ function isAllowed(packageName, targetPackage) {
     return targetPackage === "pipeline";
   }
 
+  if (packageName === "interface") {
+    return targetPackage === "interface" || targetPackage === "core" || targetPackage === "pipeline" || targetPackage === "reviewer";
+  }
+
   return false;
 }
 
@@ -90,4 +94,3 @@ function packageNameForResolvedPath(path) {
 function separator() {
   return process.platform === "win32" ? "\\" : "/";
 }
-
