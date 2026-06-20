@@ -1,7 +1,15 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { createInitialState, createRuntime, getEligibleCards, normalizeCards, validateCards } from "../src/index.js";
+import {
+  createInitialState,
+  createRuntime,
+  getEligibleCards,
+  normalizeCards,
+  restoreState,
+  serializeState,
+  validateCards
+} from "../src/index.js";
 
 describe("ReignsAgent core runtime", () => {
   it("creates a headless state with four bounded factions", () => {
@@ -68,13 +76,14 @@ describe("ReignsAgent core runtime", () => {
     const favorHook = {
       id: "court-favor",
       tags: ["favored"],
+      data: { scale: 0.5 },
       hooks: {
-        on_acquire({ adjustCardWeight, setVariable }) {
+        on_acquire({ adjustCardWeight, setVariable, data }) {
           adjustCardWeight("petition", 10);
-          setVariable("favorDepth", 1);
+          setVariable("favorDepth", data.scale);
         },
-        on_tick({ scaleFaction }) {
-          scaleFaction("people", 0.5);
+        on_tick({ scaleFaction, data }) {
+          scaleFaction("people", data.scale);
         },
         on_dismiss({ clearTag }) {
           clearTag("favor-active");
@@ -89,7 +98,7 @@ describe("ReignsAgent core runtime", () => {
 
     runtime.activateHook(favorHook);
     assert.equal(runtime.state.tags.favored, true);
-    assert.equal(runtime.state.variables.favorDepth, 1);
+    assert.equal(runtime.state.variables.favorDepth, 0.5);
     assert.equal(runtime.draw().id, "petition");
 
     runtime.choose("grant");
@@ -116,6 +125,137 @@ describe("ReignsAgent core runtime", () => {
       errors: []
     });
   });
+
+  it("serializes JSON-safe snapshots and restores hook functions from a registry", () => {
+    const cards = [card("repeatable", {}, "accept", { factions: { people: 10 } })];
+    const runtime = createRuntime({ cards, rng: () => 0 });
+    runtime.activateHook(scalingHook(0.5));
+
+    const snapshot = runtime.snapshot();
+    const parsedSnapshot = JSON.parse(JSON.stringify(snapshot));
+
+    assert.equal(parsedSnapshot.schemaVersion, 1);
+    assert.equal(parsedSnapshot.activeHooks[0].id, "scale-people");
+    assert.equal(parsedSnapshot.activeHooks[0].requiresRegistry, true);
+    assert.equal("hooks" in parsedSnapshot.activeHooks[0], false);
+    assert.throws(() => restoreState(parsedSnapshot), /Missing hook registry entry/);
+
+    const restoredState = restoreState(parsedSnapshot, {
+      hookRegistry: {
+        "scale-people": scalingHook(0.5).hooks
+      }
+    });
+    const restoredRuntime = createRuntime({ cards, state: restoredState, rng: () => 0 });
+
+    restoredRuntime.draw();
+    restoredRuntime.choose("accept");
+    assert.equal(restoredRuntime.state.factions.people, 60);
+    assert.equal(restoredRuntime.state.factionScales.people, 0.5);
+  });
+
+  it("can restore snapshots without missing hook functions when explicitly allowed", () => {
+    const cards = [card("repeatable", {}, "accept", { factions: { people: 10 } })];
+    const runtime = createRuntime({ cards, rng: () => 0 });
+    runtime.activateHook(scalingHook(0.5));
+
+    const restoredState = restoreState(JSON.parse(JSON.stringify(runtime.snapshot())), {
+      allowMissingHooks: true
+    });
+    const restoredRuntime = createRuntime({ cards, state: restoredState, rng: () => 0 });
+
+    restoredRuntime.draw();
+    restoredRuntime.choose("accept");
+    assert.equal(restoredRuntime.state.factions.people, 60);
+    assert.equal(restoredRuntime.state.factionScales.people, 1);
+  });
+
+  it("restores a snapshot and continues with the same draw and choice behavior", () => {
+    const cards = [
+      card("first", {}, "accept", { variables: { opened: true } }),
+      card("second", { variables: { opened: true } }, "accept", { factions: { treasury: 5 } })
+    ];
+    const runtime = createRuntime({ cards, rng: () => 0 });
+
+    runtime.draw();
+    runtime.choose("accept");
+
+    const restoredState = restoreState(serializeState(runtime.state));
+    const restoredRuntime = createRuntime({ cards, state: restoredState, rng: () => 0 });
+
+    assert.equal(restoredRuntime.state.turn, runtime.state.turn);
+    assert.equal(restoredRuntime.draw().id, runtime.draw().id);
+  });
+
+  it("steps deterministically by drawing when needed and then applying a choice", () => {
+    const runtime = createRuntime({
+      cards: [card("start", {}, "accept", { variables: { accepted: true } })],
+      rng: () => 0
+    });
+
+    const result = runtime.step("accept");
+
+    assert.equal(result.event.type, "choice");
+    assert.equal(result.event.cardId, "start");
+    assert.equal(result.state.turn, 1);
+    assert.equal(result.state.variables.accepted, true);
+    assert.equal(result.nextCard.id, "start");
+  });
+
+  it("records JSON-safe runtime events for draw, choice, hooks, reset, stall, and ending", () => {
+    const repeatRuntime = createRuntime({
+      cards: [card("repeatable", {}, "pass")],
+      rng: () => 0
+    });
+    repeatRuntime.activateHook({ id: "marker", tags: ["marked"], data: { source: "test" } });
+    repeatRuntime.dismissHook("marker");
+    repeatRuntime.draw();
+    repeatRuntime.choose("pass");
+
+    assert.deepEqual(
+      repeatRuntime.events.map((event) => event.type),
+      ["hook_activate", "hook_dismiss", "draw", "choice", "loop_reset", "draw"]
+    );
+    assert.doesNotThrow(() => JSON.stringify(repeatRuntime.events));
+
+    const stalledRuntime = createRuntime({ cards: [] });
+    assert.equal(stalledRuntime.draw(), null);
+    assert.equal(stalledRuntime.events.at(-1).type, "stall");
+
+    const endingRuntime = createRuntime({
+      cards: [card("fall", {}, "accept", { factions: { people: -60 } })],
+      state: { factions: { people: 50 } },
+      rng: () => 0
+    });
+    endingRuntime.draw();
+    endingRuntime.choose("accept");
+
+    assert.equal(endingRuntime.events.at(-1).type, "game_over");
+    assert.equal(endingRuntime.events.at(-1).faction, "people");
+  });
+
+  it("rejects invalid hook contracts and bad snapshots", () => {
+    assert.throws(
+      () =>
+        createRuntime({
+          cards: [],
+          state: {
+            activeHooks: [{ id: "bad", hooks: { on_tick: "nope" } }]
+          }
+        }),
+      /must be a function/
+    );
+    assert.throws(
+      () =>
+        createRuntime({
+          cards: [],
+          state: {
+            activeHooks: [{ id: "bad", hooks: { on_unknown() {} } }]
+          }
+        }),
+      /unknown hook/
+    );
+    assert.throws(() => restoreState({ schemaVersion: 999 }), /Unsupported snapshot schemaVersion/);
+  });
 });
 
 function card(id, requirements, choiceId, effects = {}) {
@@ -130,5 +270,18 @@ function card(id, requirements, choiceId, effects = {}) {
         effects
       }
     ]
+  };
+}
+
+function scalingHook(scale) {
+  return {
+    id: "scale-people",
+    tags: ["scaled"],
+    data: { scale },
+    hooks: {
+      on_tick({ data, scaleFaction }) {
+        scaleFaction("people", data.scale);
+      }
+    }
   };
 }

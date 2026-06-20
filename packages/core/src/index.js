@@ -1,8 +1,10 @@
 export const FACTIONS = Object.freeze(["faith", "people", "military", "treasury"]);
 
 const DEFAULT_FACTION_VALUE = 50;
+const SNAPSHOT_SCHEMA_VERSION = 1;
 const REQUIREMENT_KEYS = new Set(["allTags", "anyTags", "noneTags", "variables"]);
 const EFFECT_KEYS = new Set(["tags", "variables", "factions", "activateHooks", "dismissHooks"]);
+const HOOK_NAMES = new Set(["on_acquire", "on_tick", "on_dismiss"]);
 
 export class CoreError extends Error {
   constructor(message) {
@@ -17,12 +19,12 @@ export function createInitialState(options = {}) {
   return {
     turn: options.turn ?? 0,
     factions,
-    variables: { ...(options.variables ?? {}) },
-    tags: { ...(options.tags ?? {}) },
-    activeHooks: Array.isArray(options.activeHooks) ? [...options.activeHooks] : [],
-    cardWeights: { ...(options.cardWeights ?? {}) },
+    variables: cloneJsonSafe(options.variables ?? {}, "Initial variables"),
+    tags: cloneJsonSafe(options.tags ?? {}, "Initial tags"),
+    activeHooks: normalizeActiveHooks(options.activeHooks ?? [], "Initial state"),
+    cardWeights: cloneJsonSafe(options.cardWeights ?? {}, "Initial card weights"),
     factionScales: normalizeFactionScales(options.factionScales),
-    dismissedCards: new Set(options.dismissedCards ?? []),
+    dismissedCards: new Set(options.dismissedCards ?? options.dismissedCardIds ?? []),
     currentCardId: options.currentCardId ?? null,
     gameOver: evaluateGameOver(factions)
   };
@@ -32,6 +34,7 @@ export function createRuntime(options = {}) {
   const cards = normalizeCards(options.cards ?? []);
   const state = createInitialState(options.state ?? options.initialState ?? {});
   const rng = options.rng ?? Math.random;
+  const events = [];
 
   if (typeof rng !== "function") {
     throw new CoreError("rng must be a function");
@@ -46,22 +49,33 @@ export function createRuntime(options = {}) {
       return cards;
     },
 
+    get events() {
+      return events.map((event) => Object.freeze(cloneJsonSafe(event, "Runtime event")));
+    },
+
+    snapshot() {
+      return serializeState(state);
+    },
+
     draw() {
       assertPlayable(state);
       let eligible = getEligibleCards(cards, state);
 
       if (eligible.length === 0 && state.dismissedCards.size > 0) {
         state.dismissedCards.clear();
+        recordEvent("loop_reset");
         eligible = getEligibleCards(cards, state);
       }
 
       if (eligible.length === 0) {
         state.currentCardId = null;
+        recordEvent("stall");
         return null;
       }
 
       const selected = chooseWeightedCard(eligible, state, rng);
       state.currentCardId = selected.id;
+      recordEvent("draw", { cardId: selected.id });
       return selected;
     },
 
@@ -78,34 +92,125 @@ export function createRuntime(options = {}) {
         throw new CoreError(`Unknown choice '${choiceId}' for card '${card.id}'`);
       }
 
-      applyChoice(choice, state);
+      applyChoice(choice, state, recordEvent);
       state.dismissedCards.add(card.id);
       state.currentCardId = null;
       state.turn += 1;
+      const choiceEvent = recordEvent("choice", { cardId: card.id, choiceId: choice.id });
       runActiveHooks("on_tick", state, { card, choice });
       state.gameOver = evaluateGameOver(state.factions);
 
+      if (state.gameOver) {
+        recordEvent("game_over", state.gameOver);
+      }
+
       return {
+        event: choiceEvent,
         state,
         gameOver: state.gameOver,
         nextCard: state.gameOver ? null : runtime.draw()
       };
     },
 
+    step(choiceId) {
+      assertPlayable(state);
+
+      if (!state.currentCardId) {
+        const drawn = runtime.draw();
+
+        if (!choiceId || !drawn) {
+          return {
+            event: lastEvent(),
+            state,
+            gameOver: state.gameOver,
+            nextCard: drawn
+          };
+        }
+      }
+
+      if (!choiceId) {
+        return {
+          event: null,
+          state,
+          gameOver: state.gameOver,
+          nextCard: getCurrentCard(cards, state)
+        };
+      }
+
+      return runtime.choose(choiceId);
+    },
+
     activateHook(hookEntry) {
       assertPlayable(state);
-      activateHookEntry(state, hookEntry);
+      activateHookEntry(state, hookEntry, recordEvent);
       return state;
     },
 
     dismissHook(hookId) {
       assertPlayable(state);
-      dismissHookEntry(state, hookId);
+      dismissHookEntry(state, hookId, recordEvent);
       return state;
     }
   };
 
+  function recordEvent(type, payload = {}) {
+    const event = {
+      type,
+      turn: state.turn,
+      ...cloneJsonSafe(payload, `Event '${type}' payload`)
+    };
+    events.push(event);
+    return cloneJsonSafe(event, `Event '${type}'`);
+  }
+
+  function lastEvent() {
+    return events.length > 0 ? cloneJsonSafe(events.at(-1), "Runtime event") : null;
+  }
+
   return runtime;
+}
+
+export function serializeState(state) {
+  assertPlainRecord(state, "Runtime state");
+
+  return cloneJsonSafe(
+    {
+      schemaVersion: SNAPSHOT_SCHEMA_VERSION,
+      turn: state.turn ?? 0,
+      factions: state.factions ?? {},
+      variables: state.variables ?? {},
+      tags: state.tags ?? {},
+      cardWeights: state.cardWeights ?? {},
+      factionScales: state.factionScales ?? {},
+      dismissedCardIds: dismissedCardIdsFromState(state),
+      currentCardId: state.currentCardId ?? null,
+      gameOver: state.gameOver ?? null,
+      activeHooks: (state.activeHooks ?? []).map(serializeHookEntry)
+    },
+    "Runtime snapshot"
+  );
+}
+
+export function restoreState(snapshot, options = {}) {
+  assertPlainRecord(snapshot, "Runtime snapshot");
+
+  if (snapshot.schemaVersion !== SNAPSHOT_SCHEMA_VERSION) {
+    throw new CoreError(`Unsupported snapshot schemaVersion '${snapshot.schemaVersion}'`);
+  }
+
+  const activeHooks = restoreHookEntries(snapshot.activeHooks ?? [], options);
+
+  return createInitialState({
+    turn: snapshot.turn ?? 0,
+    factions: snapshot.factions,
+    variables: snapshot.variables ?? {},
+    tags: snapshot.tags ?? {},
+    activeHooks,
+    cardWeights: snapshot.cardWeights ?? {},
+    factionScales: snapshot.factionScales ?? {},
+    dismissedCardIds: snapshot.dismissedCardIds ?? [],
+    currentCardId: snapshot.currentCardId ?? null
+  });
 }
 
 export function getEligibleCards(cards, state) {
@@ -202,6 +307,30 @@ function normalizeFactionScales(scales = {}) {
   return normalized;
 }
 
+function normalizeActiveHooks(activeHooks, context) {
+  if (!Array.isArray(activeHooks)) {
+    throw new CoreError(`${context} activeHooks must be an array`);
+  }
+
+  return activeHooks.map((hookEntry) => normalizeHookEntry(hookEntry, context));
+}
+
+function normalizeHookEntry(hookEntry, context) {
+  validateHookEntry(hookEntry, context);
+
+  const normalized = {
+    id: hookEntry.id,
+    tags: [...(hookEntry.tags ?? [])],
+    data: cloneJsonSafe(hookEntry.data ?? {}, `${context} hook entry '${hookEntry.id}' data`)
+  };
+
+  if (hookEntry.hooks !== undefined) {
+    normalized.hooks = hookEntry.hooks;
+  }
+
+  return normalized;
+}
+
 function validateRequirements(cardId, requirements) {
   assertPlainRecord(requirements, `Card '${cardId}' requirements`);
 
@@ -262,18 +391,34 @@ function validateEffects(cardId, choiceId, effects) {
 }
 
 function validateHookEntry(hookEntry, context) {
-  if (!hookEntry?.id) {
+  assertPlainRecord(hookEntry, `${context} hook entry`);
+
+  if (!hookEntry.id) {
     throw new CoreError(`${context} hook entry requires an id`);
   }
 
   assertStringArray(hookEntry.tags ?? [], `${context} hook entry '${hookEntry.id}' tags`);
 
+  if (hookEntry.data !== undefined) {
+    cloneJsonSafe(hookEntry.data, `${context} hook entry '${hookEntry.id}' data`);
+  }
+
   if (hookEntry.hooks !== undefined) {
     assertPlainRecord(hookEntry.hooks, `${context} hook entry '${hookEntry.id}' hooks`);
+
+    for (const [hookName, hook] of Object.entries(hookEntry.hooks)) {
+      if (!HOOK_NAMES.has(hookName)) {
+        throw new CoreError(`${context} hook entry '${hookEntry.id}' has unknown hook '${hookName}'`);
+      }
+
+      if (typeof hook !== "function") {
+        throw new CoreError(`${context} hook entry '${hookEntry.id}' hook '${hookName}' must be a function`);
+      }
+    }
   }
 }
 
-function applyChoice(choice, state) {
+function applyChoice(choice, state, recordEvent) {
   const effects = choice.effects ?? {};
 
   if (effects.tags) {
@@ -305,31 +450,28 @@ function applyChoice(choice, state) {
   }
 
   for (const hookEntry of effects.activateHooks ?? []) {
-    activateHookEntry(state, hookEntry);
+    activateHookEntry(state, hookEntry, recordEvent);
   }
 
   for (const hookId of effects.dismissHooks ?? []) {
-    dismissHookEntry(state, hookId);
+    dismissHookEntry(state, hookId, recordEvent);
   }
 }
 
-function activateHookEntry(state, hookEntry) {
-  validateHookEntry(hookEntry, "Runtime");
+function activateHookEntry(state, hookEntry, recordEvent = null) {
+  const normalizedHookEntry = normalizeHookEntry(hookEntry, "Runtime");
 
-  if (!hookEntry?.id) {
-    throw new CoreError("Hook entries require an id");
-  }
-
-  if (state.activeHooks.some((candidate) => candidate.id === hookEntry.id)) {
+  if (state.activeHooks.some((candidate) => candidate.id === normalizedHookEntry.id)) {
     return;
   }
 
-  state.activeHooks.push(hookEntry);
-  applyHookTags(state, hookEntry);
-  runHookEntry(hookEntry, "on_acquire", state);
+  state.activeHooks.push(normalizedHookEntry);
+  applyHookTags(state, normalizedHookEntry);
+  recordEvent?.("hook_activate", hookEventPayload(normalizedHookEntry));
+  runHookEntry(normalizedHookEntry, "on_acquire", state);
 }
 
-function dismissHookEntry(state, hookId) {
+function dismissHookEntry(state, hookId, recordEvent = null) {
   const index = state.activeHooks.findIndex((hookEntry) => hookEntry.id === hookId);
   if (index === -1) {
     return;
@@ -338,6 +480,7 @@ function dismissHookEntry(state, hookId) {
   const [hookEntry] = state.activeHooks.splice(index, 1);
   runHookEntry(hookEntry, "on_dismiss", state);
   removeHookTags(state, hookEntry);
+  recordEvent?.("hook_dismiss", hookEventPayload(hookEntry));
 }
 
 function applyHookTags(state, hookEntry) {
@@ -364,10 +507,6 @@ function runHookEntry(hookEntry, name, state, event = {}) {
     return;
   }
 
-  if (typeof hook !== "function") {
-    throw new CoreError(`Hook '${name}' on '${hookEntry.id}' must be a function`);
-  }
-
   hook(createHookContext(state, hookEntry, event));
 }
 
@@ -375,6 +514,7 @@ function createHookContext(state, hookEntry, event) {
   return {
     state,
     hookEntry,
+    data: hookEntry.data,
     event,
     setTag(tag, value = true) {
       state.tags[tag] = value;
@@ -461,6 +601,75 @@ function evaluateGameOver(factions) {
     : null;
 }
 
+function serializeHookEntry(hookEntry) {
+  validateHookEntry(hookEntry, "Runtime snapshot");
+
+  return {
+    id: hookEntry.id,
+    tags: [...(hookEntry.tags ?? [])],
+    data: cloneJsonSafe(hookEntry.data ?? {}, `Runtime snapshot hook '${hookEntry.id}' data`),
+    requiresRegistry: hasHooks(hookEntry)
+  };
+}
+
+function restoreHookEntries(activeHooks, options) {
+  if (!Array.isArray(activeHooks)) {
+    throw new CoreError("Runtime snapshot activeHooks must be an array");
+  }
+
+  return activeHooks.map((hookSnapshot) => restoreHookEntry(hookSnapshot, options));
+}
+
+function restoreHookEntry(hookSnapshot, options) {
+  assertPlainRecord(hookSnapshot, "Runtime snapshot hook");
+
+  if (!hookSnapshot.id) {
+    throw new CoreError("Runtime snapshot hook requires an id");
+  }
+
+  assertStringArray(hookSnapshot.tags ?? [], `Runtime snapshot hook '${hookSnapshot.id}' tags`);
+
+  const registryValue = options.hookRegistry?.[hookSnapshot.id];
+  const registryHooks = registryValue?.hooks ?? registryValue;
+  const restored = {
+    id: hookSnapshot.id,
+    tags: [...(hookSnapshot.tags ?? [])],
+    data: cloneJsonSafe(hookSnapshot.data ?? {}, `Runtime snapshot hook '${hookSnapshot.id}' data`)
+  };
+
+  if (registryHooks) {
+    restored.hooks = registryHooks;
+  } else if (hookSnapshot.requiresRegistry && !options.allowMissingHooks) {
+    throw new CoreError(`Missing hook registry entry for '${hookSnapshot.id}'`);
+  }
+
+  return normalizeHookEntry(restored, "Runtime snapshot");
+}
+
+function hookEventPayload(hookEntry) {
+  return {
+    hookId: hookEntry.id,
+    tags: [...(hookEntry.tags ?? [])],
+    data: cloneJsonSafe(hookEntry.data ?? {}, `Hook '${hookEntry.id}' event data`)
+  };
+}
+
+function hasHooks(hookEntry) {
+  return Object.keys(hookEntry.hooks ?? {}).length > 0;
+}
+
+function dismissedCardIdsFromState(state) {
+  if (state.dismissedCards instanceof Set) {
+    return [...state.dismissedCards];
+  }
+
+  if (Array.isArray(state.dismissedCards)) {
+    return [...state.dismissedCards];
+  }
+
+  return [];
+}
+
 function assertPlayable(state) {
   if (state.gameOver) {
     throw new CoreError("Game is over");
@@ -483,6 +692,38 @@ function assertStringArray(value, context) {
   if (!Array.isArray(value) || value.some((entry) => typeof entry !== "string" || entry.length === 0)) {
     throw new CoreError(`${context} must be an array of non-empty strings`);
   }
+}
+
+function cloneJsonSafe(value, context) {
+  if (value === null || typeof value === "string" || typeof value === "boolean") {
+    return value;
+  }
+
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) {
+      throw new CoreError(`${context} must contain only finite numbers`);
+    }
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((entry, index) => cloneJsonSafe(entry, `${context}[${index}]`));
+  }
+
+  if (value && Object.getPrototypeOf(value) === Object.prototype) {
+    const clone = {};
+
+    for (const [key, entry] of Object.entries(value)) {
+      if (entry === undefined) {
+        throw new CoreError(`${context}.${key} must not be undefined`);
+      }
+      clone[key] = cloneJsonSafe(entry, `${context}.${key}`);
+    }
+
+    return clone;
+  }
+
+  throw new CoreError(`${context} must be JSON-safe`);
 }
 
 function clampFaction(value) {

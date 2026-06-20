@@ -11,6 +11,8 @@ const modules = [
       "createRuntime",
       "getEligibleCards",
       "normalizeCards",
+      "restoreState",
+      "serializeState",
       "validateCards"
     ]
   },
