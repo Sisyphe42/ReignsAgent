@@ -6,7 +6,7 @@ Phase 1 implements `@reigns-agent/core`: a pure runtime with factions, card sche
 
 The repository intentionally contains no built-in upper-level progression systems or provider-specific SDK wiring. The interface package coordinates the existing modules without moving game rules, generation logic, or reviewer simulation into the frontend layer.
 
-The current baseline includes card contract validation, player-card validation, fixture verification, package export smoke tests, module boundary checks, Anti-RPG drift checks, deployable player smoke tests, unit tests, and integration tests. `fixtures/content/oss-court.cards.json` is a complete local sample deck with CC BY 3.0 SVG art assets from Game-icons.net.
+The current baseline includes card contract validation, player-card validation, fixture verification, package export smoke tests, module boundary checks, Anti-RPG drift checks, deployable player smoke tests, unit tests, and integration tests. `fixtures/content/oss-court.cards.json` is a complete local sample deck with CC BY 3.0 SVG art assets from Game-icons.net, `en`/`zh-Hans` i18n metadata, and policy-gated presentation customization.
 
 ## Commands
 
@@ -104,3 +104,9 @@ const build = prepareGameBuild({ editor, buildId: "small-court-preview" });
 
 console.log(diagnostics.healthScore, session.factions, build.player.choiceModel);
 ```
+
+## Presentation And i18n
+
+Content may define `metadata.presentation.css.variables` for theme-level CSS custom properties. Raw CSS, HTML, and JS slots are normalized and exported for trusted hosts, but built-in players only apply raw CSS when `metadata.presentation.policy.allowCssText` is true and never execute HTML/JS by default.
+
+Content may define `metadata.i18n` plus per-card `i18n` entries. `createPlaySession({ locale })` and deployable `createPlayer(build, { locale })` resolve locale fallback and return localized card text and choice labels.

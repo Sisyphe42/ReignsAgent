@@ -98,6 +98,13 @@ async function verifyPlayerBuildSmoke() {
     }
 
     const build = JSON.parse(await readFile(result.buildFile, "utf8"));
+    if (!build.player?.i18n?.supportedLocales?.includes("zh-Hans")) {
+      throw new Error("Player build did not preserve i18n locale metadata");
+    }
+    if (build.presentation?.active?.html !== false || build.presentation?.active?.js !== false) {
+      throw new Error("Player build enabled unsafe presentation extensions by default");
+    }
+
     await writeFile(join(outputDir, "package.json"), `${JSON.stringify({ type: "module" }, null, 2)}\n`, "utf8");
     const runtimeModule = await import(`${pathToFileURL(result.playerRuntime).href}?smoke=${Date.now()}`);
 
@@ -110,6 +117,11 @@ async function verifyPlayerBuildSmoke() {
 
     if (!start.currentCard || Object.keys(start.factions).length !== 4) {
       throw new Error("Player runtime could not start from the deployable build");
+    }
+
+    player.setLocale("zh-Hans");
+    if (!player.snapshot().currentCard.text.includes("请愿")) {
+      throw new Error("Player runtime did not localize the active card");
     }
 
     const afterSwipe = player.swipe("left");

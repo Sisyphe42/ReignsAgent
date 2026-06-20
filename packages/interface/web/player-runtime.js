@@ -22,6 +22,8 @@ export function createPlayer(build, options = {}) {
   }
 
   const rng = options.rng ?? Math.random;
+  const i18n = build.player?.i18n ?? build.content?.metadata?.i18n ?? {};
+  let locale = resolvePlayerLocale(options.locale, i18n);
   const runtime = createCoreRuntime({ cards, rng });
   const listeners = new Set();
 
@@ -36,7 +38,7 @@ export function createPlayer(build, options = {}) {
 
     get currentCard() {
       const card = runtime.cards.find((candidate) => candidate.id === runtime.state.currentCardId) ?? null;
-      return card ? cloneCard(card) : null;
+      return card ? localizePlayerCard(cloneCard(card), locale, i18n) : null;
     },
 
     get gameOver() {
@@ -46,6 +48,12 @@ export function createPlayer(build, options = {}) {
     on(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);
+    },
+
+    setLocale(nextLocale) {
+      locale = resolvePlayerLocale(nextLocale, i18n);
+      this.emit();
+      return locale;
     },
 
     start() {
@@ -106,6 +114,48 @@ function cloneCard(card) {
     choices: card.choices.map((choice) => ({ ...choice, effects: { ...(choice.effects ?? {}) } })),
     requirements: { ...(card.requirements ?? {}) }
   };
+}
+
+function resolvePlayerLocale(requestedLocale, i18n = {}) {
+  const defaultLocale = typeof i18n.defaultLocale === "string" && i18n.defaultLocale.length > 0 ? i18n.defaultLocale : "en";
+  const supportedLocales = Array.isArray(i18n.supportedLocales) ? i18n.supportedLocales : [];
+
+  if (typeof requestedLocale !== "string" || requestedLocale.length === 0) {
+    return defaultLocale;
+  }
+
+  if (supportedLocales.length === 0 || supportedLocales.includes(requestedLocale)) {
+    return requestedLocale;
+  }
+
+  const language = requestedLocale.split("-")[0];
+  return supportedLocales.find((locale) => locale.split("-")[0] === language) ?? defaultLocale;
+}
+
+function localizePlayerCard(card, locale, i18n) {
+  const defaultLocale = resolvePlayerLocale(null, i18n);
+  const localizedCard = pickLocaleEntry(card.i18n, locale, defaultLocale);
+  return {
+    ...card,
+    locale,
+    text: localizedCard?.text ?? card.text,
+    choices: card.choices.map((choice) => {
+      const cardChoice = localizedCard?.choices?.[choice.id] ?? {};
+      const choiceEntry = pickLocaleEntry(choice.i18n, locale, defaultLocale);
+      return {
+        ...choice,
+        label: choiceEntry?.label ?? cardChoice.label ?? choice.label
+      };
+    })
+  };
+}
+
+function pickLocaleEntry(entries, locale, defaultLocale) {
+  if (!entries || typeof entries !== "object" || Array.isArray(entries)) {
+    return null;
+  }
+
+  return entries[locale] ?? entries[locale?.split("-")[0]] ?? entries[defaultLocale] ?? null;
 }
 
 export const PLAYER_RUNTIME_VERSION = 1;

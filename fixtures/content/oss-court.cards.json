@@ -4,7 +4,28 @@
     "version": "0.2.0",
     "description": "A complete local test deck for Phase 4 creator, player, diagnostics, and build workflows.",
     "artLicense": "CC BY 3.0",
-    "artSource": "Game-icons.net SVG icons from the game-icons/icons repository"
+    "artSource": "Game-icons.net SVG icons from the game-icons/icons repository",
+    "i18n": {
+      "defaultLocale": "en",
+      "supportedLocales": ["en", "zh-Hans"]
+    },
+    "presentation": {
+      "schemaVersion": 1,
+      "css": {
+        "variables": {
+          "--accent": "#d2a94a",
+          "--accent-2": "#76a9b8"
+        },
+        "text": ""
+      },
+      "html": {},
+      "js": {},
+      "policy": {
+        "allowCssText": false,
+        "allowHtml": false,
+        "allowJs": false
+      }
+    }
   },
   "assets": [
     {
@@ -101,6 +122,15 @@
     {
       "id": "gate-audience",
       "text": "At first light, two petitions reach the city gate.",
+      "i18n": {
+        "zh-Hans": {
+          "text": "晨光初起，两份请愿送到城门。",
+          "choices": {
+            "left": { "label": "听粮仓请愿" },
+            "right": { "label": "听边境急报" }
+          }
+        }
+      },
       "weight": 2,
       "choices": [
         {
@@ -126,6 +156,15 @@
     {
       "id": "granary-count",
       "text": "The granary clerks ask whether to release emergency stores.",
+      "i18n": {
+        "zh-Hans": {
+          "text": "粮仓书记询问是否释放应急储粮。",
+          "choices": {
+            "left": { "label": "打开粮仓" },
+            "right": { "label": "审查账册" }
+          }
+        }
+      },
       "weight": 1,
       "requirements": { "allTags": ["grainRelief"] },
       "choices": [
@@ -150,6 +189,15 @@
     {
       "id": "border-messenger",
       "text": "A rider reports smoke beyond the northern stones.",
+      "i18n": {
+        "zh-Hans": {
+          "text": "骑手报告北方界石外升起烟柱。",
+          "choices": {
+            "left": { "label": "升起军旗" },
+            "right": { "label": "派出使者" }
+          }
+        }
+      },
       "weight": 1,
       "requirements": { "allTags": ["borderAlert"] },
       "choices": [
@@ -174,6 +222,15 @@
     {
       "id": "harbor-contract",
       "text": "Merchants offer a dock contract if the court acts before dusk.",
+      "i18n": {
+        "zh-Hans": {
+          "text": "商人提出码头契约，要求宫廷在黄昏前决定。",
+          "choices": {
+            "left": { "label": "签署特许" },
+            "right": { "label": "推迟特许" }
+          }
+        }
+      },
       "weight": 1,
       "requirements": { "anyTags": ["granaryOpen", "auditLedger", "envoySent", "muster"] },
       "choices": [
@@ -198,6 +255,15 @@
     {
       "id": "chapel-dispute",
       "text": "The chapel asks for a public rite after the morning unrest.",
+      "i18n": {
+        "zh-Hans": {
+          "text": "礼拜堂请求在清晨骚动后举行公开仪式。",
+          "choices": {
+            "left": { "label": "举行仪式" },
+            "right": { "label": "私下处理" }
+          }
+        }
+      },
       "weight": 1,
       "requirements": { "anyTags": ["granaryOpen", "envoySent", "charterDelayed"] },
       "choices": [
@@ -222,6 +288,15 @@
     {
       "id": "banner-review",
       "text": "Captains want an answer before they dismiss the watch.",
+      "i18n": {
+        "zh-Hans": {
+          "text": "队长们想在解散守望前得到答复。",
+          "choices": {
+            "left": { "label": "奖赏守望" },
+            "right": { "label": "让其归营" }
+          }
+        }
+      },
       "weight": 1,
       "requirements": { "anyTags": ["muster", "auditLedger", "harborTrade"] },
       "choices": [
@@ -246,6 +321,15 @@
     {
       "id": "ledger-council",
       "text": "The council asks how much of the day's accounts to reveal.",
+      "i18n": {
+        "zh-Hans": {
+          "text": "议会询问今日账目应公开多少。",
+          "choices": {
+            "left": { "label": "公开账目" },
+            "right": { "label": "封存账目" }
+          }
+        }
+      },
       "weight": 1,
       "requirements": { "anyTags": ["auditLedger", "harborTrade", "riteHeld", "watchRewarded", "watchDismissed"] },
       "choices": [
@@ -270,6 +354,15 @@
     {
       "id": "treasury-count",
       "text": "The treasurer counts the cost of the court's morning.",
+      "i18n": {
+        "zh-Hans": {
+          "text": "司库核算宫廷这一上午的代价。",
+          "choices": {
+            "left": { "label": "拨款修缮" },
+            "right": { "label": "保留储备" }
+          }
+        }
+      },
       "weight": 1,
       "requirements": { "anyTags": ["harborTrade", "ledgerOpen", "ledgerSealed"] },
       "choices": [
@@ -294,6 +387,15 @@
     {
       "id": "dawn-gate",
       "text": "By sunset, the gate guard asks what story the city should hear.",
+      "i18n": {
+        "zh-Hans": {
+          "text": "日落时，城门卫兵询问城市该听见怎样的说法。",
+          "choices": {
+            "left": { "label": "打开城门" },
+            "right": { "label": "关闭城门" }
+          }
+        }
+      },
       "weight": 1,
       "requirements": { "anyTags": ["repairsFunded", "reservesHeld", "mediated", "watchDismissed"] },
       "choices": [

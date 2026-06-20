@@ -13,6 +13,7 @@ const api = async (path, options = {}) => {
 };
 
 const el = (id) => document.getElementById(id);
+const requestedLocale = new URLSearchParams(window.location.search).get("locale") || navigator.language || "en";
 const setStatus = (node, message, kind = "") => {
   node.textContent = message;
   node.className = `status ${kind ? `status--${kind}` : ""}`;
@@ -20,10 +21,12 @@ const setStatus = (node, message, kind = "") => {
 
 const SAMPLE_URL = "/api/samples/oss-court";
 let assetByCard = new Map();
+let appliedPresentationVariables = new Set();
 
 async function refreshEditor() {
   const data = await api("/api/editor");
   assetByCard = createAssetMap(data.assets ?? []);
+  applyPresentation(data.metadata?.presentation);
   el("meta-title").value = data.metadata?.title ?? "";
   renderCards(data.cards);
   const playerReady = data.playerValidation?.valid;
@@ -157,7 +160,7 @@ let playSession = null;
 
 el("play-start").addEventListener("click", async () => {
   try {
-    const result = await api("/api/play/start", { method: "POST", body: {} });
+    const result = await api("/api/play/start", { method: "POST", body: { locale: requestedLocale } });
     if (result.error) throw new Error(result.error.message);
     playSession = result.sessionId;
     renderPlay(result);
@@ -196,15 +199,29 @@ function renderPlay(state) {
       art.hidden = true;
     }
     el("play-text").textContent = state.currentCard.text ?? state.currentCard.id;
+    setChoiceButtonLabels(state.currentCard);
     el("swipe-left").disabled = false;
     el("swipe-right").disabled = false;
   } else {
     art.removeAttribute("src");
     art.hidden = true;
     el("play-text").textContent = state.gameOver ? "The reign has ended." : "No card available.";
+    resetChoiceButtonLabels();
     el("swipe-left").disabled = true;
     el("swipe-right").disabled = true;
   }
+}
+
+function setChoiceButtonLabels(card) {
+  const left = card.choices?.find((choice) => choice.id === "left");
+  const right = card.choices?.find((choice) => choice.id === "right");
+  el("swipe-left").textContent = `◀ ${left?.label ?? "Left"}`;
+  el("swipe-right").textContent = `${right?.label ?? "Right"} ▶`;
+}
+
+function resetChoiceButtonLabels() {
+  el("swipe-left").textContent = "◀ Left";
+  el("swipe-right").textContent = "Right ▶";
 }
 
 function renderGauges(gauges) {
@@ -288,6 +305,29 @@ el("build-export").addEventListener("click", async () => {
 
 function serializeBuild(build) {
   return JSON.stringify(build, null, 2);
+}
+
+function applyPresentation(presentation = {}) {
+  for (const name of appliedPresentationVariables) {
+    document.documentElement.style.removeProperty(name);
+  }
+  appliedPresentationVariables = new Set();
+
+  const variables = presentation?.css?.variables ?? {};
+  for (const [name, value] of Object.entries(variables)) {
+    if (name.startsWith("--")) {
+      document.documentElement.style.setProperty(name, String(value));
+      appliedPresentationVariables.add(name);
+    }
+  }
+
+  let style = document.getElementById("presentation-css");
+  if (!style) {
+    style = document.createElement("style");
+    style.id = "presentation-css";
+    document.head.appendChild(style);
+  }
+  style.textContent = presentation?.policy?.allowCssText === true ? (presentation?.css?.text ?? "") : "";
 }
 
 refreshEditor().catch((error) => setStatus(el("editor-status"), error.message, "err"));

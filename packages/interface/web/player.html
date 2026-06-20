@@ -83,6 +83,7 @@
     const el = (id) => document.getElementById(id);
     const setStatus = (msg, kind = "") => { el("status").textContent = msg; el("status").className = `status ${kind ? `status--${kind}` : ""}`; };
     const escapeHtml = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+    const requestedLocale = new URLSearchParams(window.location.search).get("locale") || navigator.language || "en";
 
     let session = null;
     let assetByCard = new Map();
@@ -106,12 +107,14 @@
           el("art").hidden = true;
         }
         el("text").textContent = state.currentCard.text ?? state.currentCard.id;
+        setChoiceButtonLabels(state.currentCard);
         el("left").disabled = false;
         el("right").disabled = false;
       } else {
         el("art").removeAttribute("src");
         el("art").hidden = true;
         el("text").textContent = state.gameOver ? `Your reign ended: ${state.gameOver.faction}.` : "No card available.";
+        resetChoiceButtonLabels();
         el("left").disabled = true;
         el("right").disabled = true;
       }
@@ -121,7 +124,8 @@
       try {
         const editor = await api("/api/editor", undefined, "GET");
         assetByCard = createAssetMap(editor.assets ?? []);
-        const result = await api("/api/play/start", {});
+        applyPresentation(editor.metadata?.presentation);
+        const result = await api("/api/play/start", { locale: requestedLocale });
         if (result.error) throw new Error(result.error.message);
         session = result.sessionId;
         render(result);
@@ -143,6 +147,35 @@
     }
     el("left").addEventListener("click", () => swipe("left"));
     el("right").addEventListener("click", () => swipe("right"));
+
+    function setChoiceButtonLabels(card) {
+      const left = card.choices?.find((choice) => choice.id === "left");
+      const right = card.choices?.find((choice) => choice.id === "right");
+      el("left").textContent = `◀ ${left?.label ?? "Left"}`;
+      el("right").textContent = `${right?.label ?? "Right"} ▶`;
+    }
+
+    function resetChoiceButtonLabels() {
+      el("left").textContent = "◀ Left";
+      el("right").textContent = "Right ▶";
+    }
+
+    function applyPresentation(presentation = {}) {
+      const variables = presentation?.css?.variables ?? {};
+      for (const [name, value] of Object.entries(variables)) {
+        if (name.startsWith("--")) {
+          document.documentElement.style.setProperty(name, String(value));
+        }
+      }
+
+      let style = document.getElementById("presentation-css");
+      if (!style) {
+        style = document.createElement("style");
+        style.id = "presentation-css";
+        document.head.appendChild(style);
+      }
+      style.textContent = presentation?.policy?.allowCssText === true ? (presentation?.css?.text ?? "") : "";
+    }
 
     function createAssetMap(assets) {
       const map = new Map();

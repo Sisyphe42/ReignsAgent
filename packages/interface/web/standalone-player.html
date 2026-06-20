@@ -87,6 +87,7 @@
     const el = (id) => document.getElementById(id);
     const setStatus = (msg) => { el("status").textContent = msg; };
     const escapeHtml = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+    const requestedLocale = new URLSearchParams(window.location.search).get("locale") || navigator.language || "en";
 
     let player = null;
     let assetByCard = new Map();
@@ -98,7 +99,8 @@
       try {
         const build = JSON.parse(await file.text());
         assetByCard = createAssetMap(build.content?.assets ?? []);
-        player = createPlayer(build);
+        applyPresentation(build.presentation);
+        player = createPlayer(build, { locale: requestedLocale });
         player.on(render);
         const snap = player.start();
         render(snap);
@@ -144,15 +146,46 @@
           el("art").hidden = true;
         }
         el("text").textContent = card.text ?? card.id;
+        setChoiceButtonLabels(card);
         el("left").disabled = false;
         el("right").disabled = false;
       } else {
         el("art").removeAttribute("src");
         el("art").hidden = true;
         el("text").textContent = snap?.gameOver ? `Your reign ended: ${snap.gameOver.faction}.` : "No card available.";
+        resetChoiceButtonLabels();
         el("left").disabled = true;
         el("right").disabled = true;
       }
+    }
+
+    function setChoiceButtonLabels(card) {
+      const left = card.choices?.find((choice) => choice.id === "left");
+      const right = card.choices?.find((choice) => choice.id === "right");
+      el("left").textContent = `◀ ${left?.label ?? "Left"}`;
+      el("right").textContent = `${right?.label ?? "Right"} ▶`;
+    }
+
+    function resetChoiceButtonLabels() {
+      el("left").textContent = "◀ Left";
+      el("right").textContent = "Right ▶";
+    }
+
+    function applyPresentation(presentation = {}) {
+      const variables = presentation?.css?.variables ?? {};
+      for (const [name, value] of Object.entries(variables)) {
+        if (name.startsWith("--")) {
+          document.documentElement.style.setProperty(name, String(value));
+        }
+      }
+
+      let style = document.getElementById("presentation-css");
+      if (!style) {
+        style = document.createElement("style");
+        style.id = "presentation-css";
+        document.head.appendChild(style);
+      }
+      style.textContent = presentation?.policy?.allowCssText === true ? (presentation?.css?.text ?? "") : "";
     }
 
     function createAssetMap(assets) {
