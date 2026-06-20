@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { describe, it } from "node:test";
 
@@ -19,14 +18,19 @@ describe("Phase 4 interface integration", () => {
 
     try {
       await waitForServer(port, server);
-      const bundle = JSON.parse(await readFile("fixtures/content/player.cards.json", "utf8"));
+      const initialEditor = await api(port, "/api/editor");
+      assert.equal(initialEditor.cards.length, 9);
+      assert.equal(initialEditor.assets.length > 0, true);
+
+      const bundle = await api(port, "/api/samples/oss-court");
+      assert.equal(bundle.assets.length > 0, true);
 
       const imported = await api(port, "/api/editor/import", {
         method: "POST",
         body: { bundle }
       });
       assert.equal(imported.imported, true);
-      assert.equal(imported.cardCount, 3);
+      assert.equal(imported.cardCount, 9);
 
       const editor = await api(port, "/api/editor");
       assert.equal(editor.playerValidation.valid, true);
@@ -51,7 +55,8 @@ describe("Phase 4 interface integration", () => {
 
       const buildResult = await api(port, "/api/build/prepare", { method: "POST", body: {} });
       assert.equal(buildResult.build.player.choiceModel, "binary");
-      assert.equal(buildResult.build.content.cards.length, 3);
+      assert.equal(buildResult.build.content.cards.length, 9);
+      assert.equal(buildResult.build.content.assets.length > 0, true);
     } finally {
       await stopServer(server);
     }

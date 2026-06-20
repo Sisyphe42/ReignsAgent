@@ -119,6 +119,17 @@ textarea { resize: vertical; font-family: ui-monospace, "SFMono-Regular", monosp
   padding: 10px 12px;
 }
 .card-row__head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.card-row__meta { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.card-row__art {
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #0c0e12;
+  object-fit: contain;
+  padding: 4px;
+  flex: 0 0 auto;
+}
 .card-row__id { font-weight: 600; font-size: 13px; }
 .card-row__choices { font-size: 11px; color: var(--muted); margin-top: 4px; }
 .card-row__edit { display: flex; gap: 6px; }
@@ -143,6 +154,17 @@ textarea { resize: vertical; font-family: ui-monospace, "SFMono-Regular", monosp
   display: flex;
   flex-direction: column;
   justify-content: space-between;
+}
+.card__art {
+  width: min(140px, 45%);
+  aspect-ratio: 1;
+  align-self: center;
+  object-fit: contain;
+  background: #0c0e12;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 14px;
 }
 .card__text { font-size: 16px; margin: 0 0 14px; }
 .card__choices { display: flex; gap: 10px; }

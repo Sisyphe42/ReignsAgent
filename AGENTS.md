@@ -38,3 +38,4 @@ Anti-RPG rule: the system may reserve low-level variable/tag interfaces for user
 - [x] Phase 1-3 Contract Hardening: Card contract validation, variable-aware graph diagnostics, fixture content verification, and local content validation/review CLI (Implemented)
 - [x] Build/Test Gate: Syntax checks, package export smoke tests, module boundary checks, Anti-RPG drift checks, fixture verification, unit tests, integration tests, lockfile, and GitHub Actions CI (Implemented)
 - [x] Phase 4: Unified Playable Interface & Local Ingestion Dash (Implemented in `packages/interface` and `scripts/dev-server.mjs`; local creator dashboard/player preview APIs, player-card validation, diagnostics projection, connector request preview, deployable player build assembly, and Phase 4 gates)
+- [x] Phase 4 Sample Content Pack: Complete local test deck with Game-icons.net CC BY 3.0 SVG art assets, dashboard sample loading, player art previews, and deployable asset copying (Implemented)

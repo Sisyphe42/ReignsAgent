@@ -18,33 +18,12 @@ const setStatus = (node, message, kind = "") => {
   node.className = `status ${kind ? `status--${kind}` : ""}`;
 };
 
-const SAMPLE_DECK = {
-  metadata: { title: "Sample Court", version: "0.1.0" },
-  cards: [
-    {
-      id: "tax",
-      text: "A new tax is proposed.",
-      weight: 1,
-      choices: [
-        { id: "left", label: "Reject", effects: { factions: { people: 6, treasury: -6 } } },
-        { id: "right", label: "Enact", effects: { factions: { people: -6, treasury: 8 }, tags: { taxed: true } } }
-      ]
-    },
-    {
-      id: "relief",
-      text: "The treasury offers relief.",
-      weight: 1,
-      requirements: { allTags: ["taxed"] },
-      choices: [
-        { id: "left", label: "Accept", effects: { factions: { people: 5, treasury: -5 }, tags: { taxed: false } } },
-        { id: "right", label: "Refuse", effects: { factions: { faith: 3, military: 2 } } }
-      ]
-    }
-  ]
-};
+const SAMPLE_URL = "/api/samples/oss-court";
+let assetByCard = new Map();
 
 async function refreshEditor() {
   const data = await api("/api/editor");
+  assetByCard = createAssetMap(data.assets ?? []);
   el("meta-title").value = data.metadata?.title ?? "";
   renderCards(data.cards);
   const playerReady = data.playerValidation?.valid;
@@ -62,9 +41,13 @@ function renderCards(cards) {
     const row = document.createElement("div");
     row.className = "card-row";
     const choices = (card.choices ?? []).map((c) => c.id).join(", ");
+    const asset = assetByCard.get(card.id);
     row.innerHTML = `
       <div class="card-row__head">
-        <span class="card-row__id">${escapeHtml(card.id)}</span>
+        <div class="card-row__meta">
+          ${asset ? `<img class="card-row__art" src="${escapeAttribute(asset.uri)}" alt="" />` : ""}
+          <span class="card-row__id">${escapeHtml(card.id)}</span>
+        </div>
         <div class="card-row__edit">
           <input type="text" data-edit-text value="${escapeHtml(card.text ?? "")}" />
           <button class="btn" data-save>Save</button>
@@ -95,6 +78,20 @@ function escapeHtml(value) {
   })[ch]);
 }
 
+function escapeAttribute(value) {
+  return escapeHtml(value).replace(/`/g, "&#96;");
+}
+
+function createAssetMap(assets) {
+  const map = new Map();
+  for (const asset of assets) {
+    if (asset?.cardId && asset?.uri && !map.has(asset.cardId)) {
+      map.set(asset.cardId, asset);
+    }
+  }
+  return map;
+}
+
 async function importContent(content) {
   const result = await api("/api/editor/import", {
     method: "POST",
@@ -104,7 +101,10 @@ async function importContent(content) {
   await refreshEditor();
 }
 
-el("load-sample").addEventListener("click", () => importContent(SAMPLE_DECK));
+el("load-sample").addEventListener("click", async () => {
+  const sample = await api(SAMPLE_URL);
+  await importContent(sample);
+});
 el("ingest-paste").addEventListener("click", () => {
   const text = el("ingest-text").value.trim();
   if (!text) {
@@ -185,11 +185,22 @@ el("swipe-right").addEventListener("click", () => swipe("right"));
 
 function renderPlay(state) {
   renderGauges(state.gauges ?? {});
+  const art = el("play-art");
   if (state.currentCard) {
+    const asset = assetByCard.get(state.currentCard.id);
+    if (asset) {
+      art.src = asset.uri;
+      art.hidden = false;
+    } else {
+      art.removeAttribute("src");
+      art.hidden = true;
+    }
     el("play-text").textContent = state.currentCard.text ?? state.currentCard.id;
     el("swipe-left").disabled = false;
     el("swipe-right").disabled = false;
   } else {
+    art.removeAttribute("src");
+    art.hidden = true;
     el("play-text").textContent = state.gameOver ? "The reign has ended." : "No card available.";
     el("swipe-left").disabled = true;
     el("swipe-right").disabled = true;
