@@ -24,6 +24,7 @@ describe("Phase 4 interface integration", () => {
 
       const bundle = await api(port, "/api/samples/oss-court");
       assert.equal(bundle.assets.length > 0, true);
+      assert.equal(bundle.metadata.i18n.supportedLocales.includes("zh-Hans"), true);
 
       const imported = await api(port, "/api/editor/import", {
         method: "POST",
@@ -35,9 +36,10 @@ describe("Phase 4 interface integration", () => {
       const editor = await api(port, "/api/editor");
       assert.equal(editor.playerValidation.valid, true);
 
-      const started = await api(port, "/api/play/start", { method: "POST", body: {} });
+      const started = await api(port, "/api/play/start", { method: "POST", body: { locale: "zh-Hans" } });
       assert.match(started.sessionId, /^s_/);
       assert.equal(started.currentCard.choices.some((choice) => choice.id === "left"), true);
+      assert.match(started.currentCard.text, /请愿/);
 
       const swiped = await api(port, "/api/play/swipe", {
         method: "POST",

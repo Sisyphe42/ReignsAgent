@@ -12,6 +12,9 @@ import { runMonteCarloReview } from "../../reviewer/src/index.js";
 
 const PLAYER_SCHEMA_VERSION = 1;
 const BUILD_SCHEMA_VERSION = 1;
+const I18N_SCHEMA_VERSION = 1;
+const PRESENTATION_SCHEMA_VERSION = 1;
+const DEFAULT_LOCALE = "en";
 const PLAYER_CHOICE_IDS = new Set(["left", "right"]);
 
 /**
@@ -77,6 +80,123 @@ export function validatePlayerCards(cards) {
   }
 
   return { valid: errors.length === 0, errors };
+}
+
+/**
+ * createI18nCatalog normalizes locale metadata for interface and player use.
+ * Card text remains plain data; localization is resolved at the interface edge.
+ */
+export function createI18nCatalog(input = {}) {
+  const source = input?.i18n ?? input ?? {};
+  if (!source || typeof source !== "object" || Array.isArray(source)) {
+    throw new InterfaceError("i18n catalog must be an object");
+  }
+
+  const defaultLocale = isNonEmptyString(source.defaultLocale) ? source.defaultLocale : DEFAULT_LOCALE;
+  const requestedLocales = Array.isArray(source.supportedLocales)
+    ? source.supportedLocales
+    : Array.isArray(source.locales)
+      ? source.locales
+      : [];
+  const supportedLocales = [...new Set([defaultLocale, ...requestedLocales])];
+
+  for (const locale of supportedLocales) {
+    if (!isNonEmptyString(locale)) {
+      throw new InterfaceError("i18n supportedLocales must contain only non-empty strings");
+    }
+  }
+
+  return {
+    schemaVersion: I18N_SCHEMA_VERSION,
+    defaultLocale,
+    supportedLocales,
+    messages: cloneJsonSafe(source.messages ?? {}, "i18n messages")
+  };
+}
+
+export function resolveLocale(requestedLocale, catalogOrMetadata = {}) {
+  const source = catalogOrMetadata?.i18n ?? catalogOrMetadata ?? {};
+  const defaultLocale = isNonEmptyString(source.defaultLocale) ? source.defaultLocale : DEFAULT_LOCALE;
+  const supportedLocales = Array.isArray(source.supportedLocales) ? source.supportedLocales : [];
+
+  if (!isNonEmptyString(requestedLocale)) {
+    return defaultLocale;
+  }
+
+  if (supportedLocales.length === 0 || supportedLocales.includes(requestedLocale)) {
+    return requestedLocale;
+  }
+
+  const language = requestedLocale.split("-")[0];
+  const regionalMatch = supportedLocales.find((locale) => locale.split("-")[0] === language);
+  return regionalMatch ?? defaultLocale;
+}
+
+export function localizeCards(cards, options = {}) {
+  return cloneCards(cards).map((card) => localizeCard(card, options));
+}
+
+export function localizeCard(card, options = {}) {
+  assertPlainRecord(card, "Card");
+  const i18n = options.i18n ?? options.metadata?.i18n ?? {};
+  const locale = resolveLocale(options.locale, i18n);
+  const defaultLocale = resolveLocale(null, i18n);
+  const localizedCard = pickLocaleEntry(card.i18n, locale, defaultLocale);
+  const localizedChoices = card.choices?.map((choice) => {
+    const cardChoice = localizedCard?.choices?.[choice.id] ?? {};
+    const choiceEntry = pickLocaleEntry(choice.i18n, locale, defaultLocale);
+    return {
+      ...choice,
+      label: choiceEntry?.label ?? cardChoice.label ?? choice.label
+    };
+  });
+
+  return cloneJsonSafe(
+    {
+      ...card,
+      locale,
+      text: localizedCard?.text ?? card.text,
+      choices: localizedChoices ?? card.choices
+    },
+    `Localized card '${card.id ?? "unknown"}'`
+  );
+}
+
+/**
+ * normalizePresentationConfig keeps customization explicit and policy-gated.
+ * CSS variables are safe to apply. Raw CSS, HTML, and JS are preserved for
+ * trusted downstream hosts but are disabled by default in built-in players.
+ */
+export function normalizePresentationConfig(config = {}) {
+  const source = config?.presentation ?? config ?? {};
+  if (!source || typeof source !== "object" || Array.isArray(source)) {
+    throw new InterfaceError("Presentation config must be an object");
+  }
+
+  const css = source.css ?? {};
+  assertPlainRecord(css, "Presentation css");
+
+  const policy = normalizePresentationPolicy(source.policy ?? {});
+  const cssText = css.text ?? source.cssText ?? "";
+  if (typeof cssText !== "string") {
+    throw new InterfaceError("Presentation css.text must be a string");
+  }
+
+  return {
+    schemaVersion: PRESENTATION_SCHEMA_VERSION,
+    css: {
+      variables: normalizeCssVariables(css.variables ?? source.cssVariables ?? {}),
+      text: cssText
+    },
+    html: normalizeStringSlots(source.html ?? {}),
+    js: normalizeStringSlots(source.js ?? {}),
+    policy,
+    active: {
+      cssText: policy.allowCssText,
+      html: policy.allowHtml,
+      js: policy.allowJs
+    }
+  };
 }
 
 /**
@@ -209,6 +329,8 @@ export function loadEditorFromContent(source) {
  */
 export function createPlaySession(options = {}) {
   const cards = cloneCards(options.cards ?? []);
+  const i18n = createI18nCatalog(options.i18n ?? options.metadata?.i18n ?? {});
+  let locale = resolveLocale(options.locale, i18n);
   const playerValidation = validatePlayerCards(cards);
   if (!playerValidation.valid) {
     throw new InterfaceError(`Player cards are invalid:\n- ${playerValidation.errors.join("\n- ")}`);
@@ -236,11 +358,20 @@ export function createPlaySession(options = {}) {
 
     get currentCard() {
       const card = runtime.cards.find((candidate) => candidate.id === runtime.state.currentCardId) ?? null;
-      return card ? cloneJsonSafe(card, "Session current card") : null;
+      return card ? localizeCard(card, { locale, i18n }) : null;
     },
 
     get events() {
       return cloneJsonSafe(runtime.events, "Session events");
+    },
+
+    get locale() {
+      return locale;
+    },
+
+    setLocale(nextLocale) {
+      locale = resolveLocale(nextLocale, i18n);
+      return locale;
     },
 
     state() {
@@ -259,7 +390,7 @@ export function createPlaySession(options = {}) {
 
     draw() {
       const card = runtime.draw();
-      return card ? cloneJsonSafe(card, "Session draw") : null;
+      return card ? localizeCard(card, { locale, i18n }) : null;
     },
 
     swipe(direction) {
@@ -271,12 +402,12 @@ export function createPlaySession(options = {}) {
         choice: direction,
         factions: cloneJsonSafe(runtime.state.factions, "Session factions"),
         gameOver: runtime.state.gameOver ? cloneJsonSafe(runtime.state.gameOver, "Session game over") : null,
-        nextCard: result.nextCard ? cloneJsonSafe(result.nextCard, "Session next card") : null
+        nextCard: result.nextCard ? localizeCard(result.nextCard, { locale, i18n }) : null
       };
     },
 
     restore(snapshot) {
-      const next = createPlaySession({ cards, state: snapshot, rng });
+      const next = createPlaySession({ cards, state: snapshot, rng, i18n, locale });
       return next;
     }
   };
@@ -412,6 +543,8 @@ export function buildGenerationPlan({ config, diagnostics = null }) {
  */
 export function prepareGameBuild({ editor, config = null, buildId = null }) {
   const bundle = editor?.toBundle ? editor.toBundle() : createContentBundle(editor ?? {});
+  const i18n = createI18nCatalog(bundle.metadata?.i18n ?? {});
+  const presentation = normalizePresentationConfig(bundle.metadata?.presentation ?? {});
   const playerValidation = validatePlayerCards(bundle.cards);
   if (!playerValidation.valid) {
     throw new InterfaceError(`Cannot build: player cards are invalid:\n- ${playerValidation.errors.join("\n- ")}`);
@@ -426,8 +559,10 @@ export function prepareGameBuild({ editor, config = null, buildId = null }) {
     player: {
       schemaVersion: PLAYER_SCHEMA_VERSION,
       choiceModel: "binary",
-      factions: [...FACTIONS]
+      factions: [...FACTIONS],
+      i18n
     },
+    presentation,
     content: bundle,
     config: config ? cloneJsonSafe(config, "Build config") : null
   };
@@ -488,6 +623,57 @@ function requireChoice(card, choiceId) {
     throw new InterfaceError(`Choice '${choiceId}' was not found on card '${card.id}'`);
   }
   return choice;
+}
+
+function pickLocaleEntry(entries, locale, defaultLocale) {
+  if (!entries || typeof entries !== "object" || Array.isArray(entries)) {
+    return null;
+  }
+
+  return entries[locale] ?? entries[locale?.split("-")[0]] ?? entries[defaultLocale] ?? null;
+}
+
+function normalizeCssVariables(variables) {
+  assertPlainRecord(variables, "Presentation css variables");
+  const result = {};
+
+  for (const [name, value] of Object.entries(variables)) {
+    if (!name.startsWith("--")) {
+      throw new InterfaceError(`CSS variable '${name}' must start with --`);
+    }
+    if (typeof value !== "string" && typeof value !== "number") {
+      throw new InterfaceError(`CSS variable '${name}' must be a string or number`);
+    }
+    result[name] = String(value);
+  }
+
+  return result;
+}
+
+function normalizePresentationPolicy(policy) {
+  assertPlainRecord(policy, "Presentation policy");
+  return {
+    allowCssText: Boolean(policy.allowCssText),
+    allowHtml: Boolean(policy.allowHtml),
+    allowJs: Boolean(policy.allowJs)
+  };
+}
+
+function normalizeStringSlots(slots) {
+  assertPlainRecord(slots, "Presentation slots");
+  const result = {};
+
+  for (const [name, value] of Object.entries(slots)) {
+    if (!isNonEmptyString(name)) {
+      throw new InterfaceError("Presentation slot names must be non-empty strings");
+    }
+    if (typeof value !== "string") {
+      throw new InterfaceError(`Presentation slot '${name}' must be a string`);
+    }
+    result[name] = value;
+  }
+
+  return result;
 }
 
 function computeHealthScore(summary, warnings) {

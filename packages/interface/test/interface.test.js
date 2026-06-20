@@ -5,10 +5,14 @@ import {
   buildGenerationPlan,
   createCardEditor,
   createConnectorConfig,
+  createI18nCatalog,
   createPlaySession,
   loadEditorFromContent,
+  localizeCard,
+  normalizePresentationConfig,
   prepareGameBuild,
   projectFactionGauges,
+  resolveLocale,
   runDiagnostics,
   serializeBuild,
   summarizeDiagnostics,
@@ -75,6 +79,60 @@ describe("ReignsAgent interface controller", () => {
     const snapshot = session.state();
     const restored = createPlaySession({ cards, state: snapshot, rng: () => 0 });
     assert.equal(restored.turn, session.turn);
+  });
+
+  it("localizes cards and play sessions through an i18n catalog", () => {
+    const i18n = createI18nCatalog({
+      defaultLocale: "en",
+      supportedLocales: ["en", "zh-Hans"]
+    });
+    const cards = [
+      {
+        id: "gate",
+        text: "Open the gate.",
+        i18n: {
+          "zh-Hans": {
+            text: "打开城门。",
+            choices: {
+              left: { label: "开放" },
+              right: { label: "关闭" }
+            }
+          }
+        },
+        choices: [
+          { id: "left", label: "Open", effects: { factions: { people: 2 } } },
+          { id: "right", label: "Close", effects: { factions: { military: 2 } } }
+        ]
+      }
+    ];
+
+    assert.equal(resolveLocale("zh-CN", i18n), "zh-Hans");
+    assert.equal(localizeCard(cards[0], { locale: "zh-Hans", i18n }).text, "打开城门。");
+
+    const session = createPlaySession({ cards, i18n, locale: "zh-CN", rng: () => 0 });
+    assert.equal(session.start().text, "打开城门。");
+    assert.equal(session.currentCard.choices[0].label, "开放");
+  });
+
+  it("normalizes presentation customization behind explicit policy flags", () => {
+    const presentation = normalizePresentationConfig({
+      css: {
+        variables: { "--accent": "#d0a44a" },
+        text: ".card { outline: 1px solid red; }"
+      },
+      html: { bodyEnd: "<div>trusted host only</div>" },
+      js: { module: "console.log('trusted host only')" }
+    });
+
+    assert.equal(presentation.css.variables["--accent"], "#d0a44a");
+    assert.equal(presentation.css.text.includes("outline"), true);
+    assert.deepEqual(presentation.active, { cssText: false, html: false, js: false });
+
+    const trusted = normalizePresentationConfig({
+      css: { variables: {}, text: ".stage { padding: 1px; }" },
+      policy: { allowCssText: true, allowHtml: true, allowJs: true }
+    });
+    assert.deepEqual(trusted.active, { cssText: true, html: true, js: true });
   });
 
   it("ends the session when a faction leaves its bounds", () => {
@@ -209,6 +267,8 @@ describe("ReignsAgent interface controller", () => {
     assert.equal(build.buildId, "twin-1");
     assert.equal(build.player.choiceModel, "binary");
     assert.deepEqual(build.player.factions, ["faith", "people", "military", "treasury"]);
+    assert.equal(build.player.i18n.defaultLocale, "en");
+    assert.equal(build.presentation.active.js, false);
     assert.equal(build.content.cards.length, 2);
 
     const serialized = serializeBuild(build);

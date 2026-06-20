@@ -186,7 +186,12 @@ async function handleApi(req, res, url) {
         error: { message: "Cards are not player-ready", validation: playerValidation }
       });
     }
-    const session = createPlaySession({ cards, rng: Math.random });
+    const session = createPlaySession({
+      cards,
+      metadata: store.editor.metadata,
+      locale: body?.locale,
+      rng: Math.random
+    });
     const sessionId = `s_${Date.now().toString(36)}`;
     store.sessions.set(sessionId, session);
     const card = session.start();
