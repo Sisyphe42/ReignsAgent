@@ -1,5 +1,6 @@
 import { readFile, writeFile } from "node:fs/promises";
 
+const CONTENT_SCHEMA_VERSION = 1;
 const CSV_COLUMNS = [
   "cardId",
   "text",
@@ -13,6 +14,22 @@ const PIPELINE_FACTIONS = new Set(["faith", "people", "military", "treasury"]);
 const REQUIREMENT_KEYS = new Set(["allTags", "anyTags", "noneTags", "variables"]);
 const EFFECT_KEYS = new Set(["tags", "variables", "factions", "activateHooks", "dismissHooks"]);
 
+export function createContentBundle({ cards, metadata = {}, assets = [] }) {
+  const normalizedCards = normalizeCards(cards);
+  const validation = validateContentBundle({ schemaVersion: CONTENT_SCHEMA_VERSION, metadata, cards: normalizedCards, assets });
+
+  if (!validation.valid) {
+    throw new PipelineError(`Content bundle validation failed:\n- ${validation.errors.join("\n- ")}`);
+  }
+
+  return {
+    schemaVersion: CONTENT_SCHEMA_VERSION,
+    metadata: normalizeMetadata(metadata),
+    cards: normalizedCards,
+    assets: normalizeAssets(assets)
+  };
+}
+
 export async function readCardsJson(path) {
   const contents = await readFile(path, "utf8");
   return parseCardsJson(contents);
@@ -23,7 +40,7 @@ export async function writeCardsJson(path, cards) {
 }
 
 export function parseCardsJson(source) {
-  const data = typeof source === "string" ? JSON.parse(source) : source;
+  const data = parseJsonSource(source, "JSON card data");
   const cards = Array.isArray(data) ? data : data?.cards;
 
   if (!Array.isArray(cards)) {
@@ -35,6 +52,32 @@ export function parseCardsJson(source) {
 
 export function stringifyCardsJson(cards) {
   return `${JSON.stringify({ cards: normalizeCards(cards) }, null, 2)}\n`;
+}
+
+export async function readContentJson(path) {
+  const contents = await readFile(path, "utf8");
+  return parseContentJson(contents);
+}
+
+export async function writeContentJson(path, bundle) {
+  await writeFile(path, stringifyContentJson(bundle), "utf8");
+}
+
+export function parseContentJson(source) {
+  const data = parseJsonSource(source, "JSON content bundle");
+  const bundle = Array.isArray(data)
+    ? createContentBundle({ cards: data })
+    : createContentBundle({
+        metadata: data.metadata ?? {},
+        cards: data.cards,
+        assets: data.assets ?? []
+      });
+
+  return bundle;
+}
+
+export function stringifyContentJson(bundle) {
+  return `${JSON.stringify(createContentBundle(bundle), null, 2)}\n`;
 }
 
 export async function readCardsCsv(path) {
@@ -143,6 +186,41 @@ export function assertValidCardSet(cards) {
   return validation;
 }
 
+export function validateContentBundle(bundle) {
+  const errors = [];
+  const warnings = [];
+
+  if (!isPlainRecord(bundle)) {
+    return {
+      valid: false,
+      errors: ["Content bundle must be an object"],
+      warnings
+    };
+  }
+
+  if (bundle.schemaVersion !== undefined && bundle.schemaVersion !== CONTENT_SCHEMA_VERSION) {
+    errors.push(`Unsupported content schemaVersion '${bundle.schemaVersion}'`);
+  }
+
+  if (bundle.metadata !== undefined && !isPlainRecord(bundle.metadata)) {
+    errors.push("Content bundle metadata must be an object");
+  }
+
+  const cardValidation = validateCardSet(bundle.cards);
+  errors.push(...cardValidation.errors);
+  warnings.push(...cardValidation.warnings);
+
+  if (bundle.assets !== undefined) {
+    validateAssets(bundle.assets, errors);
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+    warnings
+  };
+}
+
 export function createLLMConnector(connector) {
   if (!connector?.name) {
     throw new PipelineError("Connector requires a name");
@@ -150,6 +228,10 @@ export function createLLMConnector(connector) {
 
   if (typeof connector.generateText !== "function") {
     throw new PipelineError("Connector requires generateText(request)");
+  }
+
+  if (connector.generateAsset !== undefined && typeof connector.generateAsset !== "function") {
+    throw new PipelineError("Connector generateAsset must be a function when provided");
   }
 
   return {
@@ -161,13 +243,8 @@ export function createLLMConnector(connector) {
 
 export async function generateCardDrafts({ connector, theme, count, constraints = {}, diagnostics = null }) {
   const llm = createLLMConnector(connector);
-  const prompt = buildCardGenerationPrompt({ theme, count, constraints, diagnostics });
-  const response = await llm.generateText({
-    purpose: "card_generation",
-    prompt,
-    responseFormat: "json",
-    schema: cardGenerationSchema()
-  });
+  const request = buildCardGenerationRequest({ theme, count, constraints, diagnostics });
+  const response = await llm.generateText(request);
 
   return parseCardsJson(extractTextPayload(response));
 }
@@ -180,13 +257,10 @@ export async function generateAssetDrafts({ connector, cards, style = "minimal m
   }
 
   const assets = [];
-  for (const card of cards.map(normalizeCard)) {
+  for (const card of normalizeCards(cards)) {
+    const request = buildAssetGenerationRequest({ card, style });
     assets.push(
-      await llm.generateAsset({
-        purpose: "card_asset_generation",
-        cardId: card.id,
-        prompt: `${style}: ${card.text ?? card.id}`
-      })
+      await llm.generateAsset(request)
     );
   }
 
@@ -196,65 +270,140 @@ export async function generateAssetDrafts({ connector, cards, style = "minimal m
 export function createDiagnosticFeedback(report) {
   const warnings = report?.diagnostics?.warnings ?? [];
   const actions = [];
+  const seenActions = new Set();
 
   for (const warning of warnings) {
     if (warning.code === "never_visited_cards") {
-      actions.push({
+      addAction(actions, seenActions, {
         type: "relax_requirements",
+        severity: warning.severity ?? "error",
         target: warning.cardIds ?? [],
-        reason: warning.message
+        reason: warning.message,
+        sourceWarning: warning.code
+      });
+    }
+
+    if (warning.code === "unreachable_cards") {
+      addAction(actions, seenActions, {
+        type: "repair_reachability",
+        severity: warning.severity ?? "error",
+        target: warning.cardIds ?? [],
+        reason: warning.message,
+        sourceWarning: warning.code
+      });
+    }
+
+    if (warning.code === "low_card_cycle_coverage") {
+      addAction(actions, seenActions, {
+        type: "raise_card_exposure",
+        severity: warning.severity ?? "warning",
+        target: (warning.cards ?? []).map((card) => card.cardId),
+        reason: warning.message,
+        sourceWarning: warning.code
       });
     }
 
     if (warning.code === "unsatisfied_required_tags") {
-      actions.push({
+      addAction(actions, seenActions, {
         type: "add_tag_producers",
+        severity: warning.severity ?? "error",
         target: warning.tags ?? [],
-        reason: warning.message
+        reason: warning.message,
+        sourceWarning: warning.code
       });
     }
 
     if (warning.code === "unsatisfied_required_variables") {
-      actions.push({
+      addAction(actions, seenActions, {
         type: "add_variable_producers",
+        severity: warning.severity ?? "error",
         target: warning.variables ?? [],
-        reason: warning.message
+        reason: warning.message,
+        sourceWarning: warning.code
       });
     }
 
     if (warning.code === "stalled_cycles") {
-      actions.push({
+      addAction(actions, seenActions, {
         type: "add_fallback_cards",
+        severity: warning.severity ?? "error",
         target: "scheduler",
-        reason: warning.message
+        reason: warning.message,
+        sourceWarning: warning.code
       });
     }
 
-    if (warning.code === "dominant_game_over_faction") {
-      actions.push({
+    if (warning.code === "dominant_game_over_faction" || warning.code === "high_game_over_rate") {
+      addAction(actions, seenActions, {
         type: "rebalance_faction_pressure",
-        target: warning.faction,
-        reason: warning.message
+        severity: warning.severity ?? "warning",
+        target: warning.faction ?? "all",
+        reason: warning.message,
+        sourceWarning: warning.code
       });
     }
   }
 
   const gameOverByFaction = report?.summary?.gameOverByFaction ?? {};
   const cycles = report?.parameters?.cycles ?? 0;
-  for (const [faction, count] of Object.entries(gameOverByFaction)) {
-    if (cycles > 0 && count / cycles > 0.45) {
-      actions.push({
-        type: "rebalance_faction_pressure",
-        target: faction,
-        reason: `More than 45% of simulated endings hit ${faction}.`
-      });
+  const hasModernBalanceWarning = warnings.some((warning) =>
+    ["dominant_game_over_faction", "high_game_over_rate"].includes(warning.code)
+  );
+  if (!hasModernBalanceWarning) {
+    for (const [faction, count] of Object.entries(gameOverByFaction)) {
+      if (cycles > 0 && count / cycles > 0.45) {
+        addAction(actions, seenActions, {
+          type: "rebalance_faction_pressure",
+          severity: "warning",
+          target: faction,
+          reason: `More than 45% of simulated endings hit ${faction}.`,
+          sourceWarning: "legacy_game_over_balance"
+        });
+      }
     }
   }
 
   return {
     schemaVersion: 1,
     sourceModule: report?.module ?? "ReignsAgent-Reviewer",
+    summary: {
+      actionCount: actions.length,
+      errorCount: actions.filter((action) => action.severity === "error").length,
+      warningCount: actions.filter((action) => action.severity === "warning").length
+    },
     actions
+  };
+}
+
+export function buildCardGenerationRequest({ theme, count, constraints = {}, diagnostics = null }) {
+  const prompt = buildCardGenerationPrompt({ theme, count, constraints, diagnostics });
+
+  return {
+    requestId: createRequestId("card_generation", prompt),
+    purpose: "card_generation",
+    prompt,
+    responseFormat: "json",
+    schema: cardGenerationSchema(),
+    metadata: {
+      theme,
+      count,
+      hasDiagnostics: Boolean(diagnostics)
+    }
+  };
+}
+
+export function buildAssetGenerationRequest({ card, style = "minimal monochrome card portrait" }) {
+  const normalizedCard = normalizeCard(card);
+  const prompt = `${style}: ${normalizedCard.text ?? normalizedCard.id}`;
+
+  return {
+    requestId: createRequestId("card_asset_generation", `${normalizedCard.id}:${prompt}`),
+    purpose: "card_asset_generation",
+    cardId: normalizedCard.id,
+    prompt,
+    metadata: {
+      style
+    }
   };
 }
 
@@ -286,6 +435,75 @@ export class PipelineError extends Error {
   constructor(message) {
     super(message);
     this.name = "PipelineError";
+  }
+}
+
+function parseJsonSource(source, context) {
+  if (typeof source !== "string") {
+    return source;
+  }
+
+  try {
+    return JSON.parse(extractJsonPayload(source));
+  } catch (error) {
+    throw new PipelineError(`${context} contains invalid JSON: ${error.message}`);
+  }
+}
+
+function extractJsonPayload(source) {
+  const fenced = source.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  return fenced ? fenced[1].trim() : source.trim();
+}
+
+function normalizeMetadata(metadata) {
+  if (!isPlainRecord(metadata)) {
+    throw new PipelineError("Content bundle metadata must be an object");
+  }
+
+  return { ...metadata };
+}
+
+function normalizeAssets(assets) {
+  const errors = [];
+  validateAssets(assets, errors);
+
+  if (errors.length > 0) {
+    throw new PipelineError(`Asset validation failed:\n- ${errors.join("\n- ")}`);
+  }
+
+  return assets.map((asset) => ({ ...asset }));
+}
+
+function validateAssets(assets, errors) {
+  if (!Array.isArray(assets)) {
+    errors.push("Content bundle assets must be an array");
+    return;
+  }
+
+  const seenAssetIds = new Set();
+  for (const [index, asset] of assets.entries()) {
+    const context = `Asset at index ${index}`;
+
+    if (!isPlainRecord(asset)) {
+      errors.push(`${context} must be an object`);
+      continue;
+    }
+
+    if (!isNonEmptyString(asset.id)) {
+      errors.push(`${context} requires a non-empty id`);
+    } else if (seenAssetIds.has(asset.id)) {
+      errors.push(`Duplicate asset id '${asset.id}'`);
+    } else {
+      seenAssetIds.add(asset.id);
+    }
+
+    if (asset.cardId !== undefined && !isNonEmptyString(asset.cardId)) {
+      errors.push(`${context}.cardId must be a non-empty string`);
+    }
+
+    if (asset.uri !== undefined && !isNonEmptyString(asset.uri)) {
+      errors.push(`${context}.uri must be a non-empty string`);
+    }
   }
 }
 
@@ -571,14 +789,37 @@ function parseWeight(value) {
 
 function extractTextPayload(response) {
   if (typeof response === "string") {
-    return response;
+    return extractJsonPayload(response);
   }
 
   if (typeof response?.text === "string") {
-    return response.text;
+    return extractJsonPayload(response.text);
   }
 
   throw new PipelineError("generateText must return a string or an object with a text field");
+}
+
+function addAction(actions, seenActions, action) {
+  const key = `${action.type}:${JSON.stringify(action.target)}`;
+
+  if (seenActions.has(key)) {
+    return;
+  }
+
+  seenActions.add(key);
+  actions.push(action);
+}
+
+function createRequestId(purpose, text) {
+  let hash = 2166136261;
+  const input = `${purpose}:${text}`;
+
+  for (let index = 0; index < input.length; index += 1) {
+    hash ^= input.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+
+  return `${purpose}:${(hash >>> 0).toString(16).padStart(8, "0")}`;
 }
 
 function cardGenerationSchema() {

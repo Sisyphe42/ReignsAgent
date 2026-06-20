@@ -41,5 +41,9 @@ if (!cliResult.validation.valid || cliResult.report.module !== "ReignsAgent-Revi
   throw new Error("Content tool fixture review failed");
 }
 
-console.log(`Fixture verification passed for ${fixturePath}.`);
+const feedback = cliResult.report.diagnostics.warnings.length === 0 ? null : cliResult.report.diagnostics.warnings;
+if (feedback !== null && !Array.isArray(feedback)) {
+  throw new Error("Content tool fixture warnings are malformed");
+}
 
+console.log(`Fixture verification passed for ${fixturePath}.`);
