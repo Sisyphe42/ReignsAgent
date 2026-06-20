@@ -8,10 +8,12 @@
   ],
   "scripts": {
     "build": "node scripts/check-syntax.mjs && node scripts/verify-exports.mjs && node scripts/verify-boundaries.mjs && node scripts/verify-anti-rpg.mjs && node scripts/verify-fixtures.mjs",
+    "build:game": "node scripts/build-game.mjs",
     "content:validate": "node scripts/content-tool.mjs validate",
     "content:review": "node scripts/content-tool.mjs review",
     "content:convert": "node scripts/content-tool.mjs convert",
     "content:feedback": "node scripts/content-tool.mjs feedback",
+    "dev:interface": "node scripts/dev-server.mjs",
     "test:unit": "node --test \"packages/**/*.test.js\"",
     "test:integration": "node --test \"test/**/*.test.js\"",
     "test": "npm run test:unit && npm run test:integration",

@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ReignsAgent Player</title>
+  <link rel="stylesheet" href="/assets/dashboard.css" />
+  <style>
+    .stage {
+      max-width: 460px;
+      margin: 24px auto;
+      padding: 0 16px;
+    }
+    .player-card {
+      background: linear-gradient(160deg, #262b36, #181b22);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 28px;
+      min-height: 220px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      box-shadow: 0 12px 30px rgba(0,0,0,0.35);
+    }
+    .player-text { font-size: 19px; line-height: 1.5; }
+    .player-swipes { display: flex; gap: 12px; margin-top: 24px; }
+    .start-wrap { text-align: center; margin-top: 32px; }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand__mark">RA</span>
+      <div>
+        <h1>ReignsAgent Player</h1>
+        <p class="brand__tag">Preview</p>
+      </div>
+    </div>
+    <nav class="topbar__nav">
+      <a href="/">Back to dashboard</a>
+    </nav>
+  </header>
+
+  <main class="stage">
+    <div class="gauges" id="gauges"></div>
+    <div class="player-card" id="card">
+      <p class="player-text" id="text">The court is waiting.</p>
+      <div class="player-swipes">
+        <button id="left" class="btn btn--choice" disabled>◀ Left</button>
+        <button id="right" class="btn btn--choice" disabled>Right ▶</button>
+      </div>
+    </div>
+    <div class="start-wrap">
+      <button id="start" class="btn btn--primary">Start reign</button>
+    </div>
+    <div id="status" class="status"></div>
+  </main>
+
+  <script type="module">
+    const api = async (path, body, method = "POST") => {
+      const res = await fetch(path, {
+        method,
+        headers: { "content-type": "application/json" },
+        body: body !== undefined ? JSON.stringify(body) : undefined
+      });
+      const text = await res.text();
+      const json = text ? JSON.parse(text) : null;
+      if (!res.ok || json?.error) throw new Error(json?.error?.message ?? `Request failed: ${res.status}`);
+      return json;
+    };
+    const el = (id) => document.getElementById(id);
+    const setStatus = (msg, kind = "") => { el("status").textContent = msg; el("status").className = `status ${kind ? `status--${kind}` : ""}`; };
+    const escapeHtml = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+
+    let session = null;
+
+    function render(state) {
+      const gauges = el("gauges");
+      gauges.innerHTML = "";
+      for (const [name, gauge] of Object.entries(state.gauges ?? {})) {
+        const div = document.createElement("div");
+        div.className = "gauge";
+        div.innerHTML = `<div class="gauge__name">${escapeHtml(name)} · ${gauge.value}</div><div class="gauge__bar"><div class="gauge__fill" style="width:${gauge.left}%"></div></div>`;
+        gauges.appendChild(div);
+      }
+      if (state.currentCard) {
+        el("text").textContent = state.currentCard.text ?? state.currentCard.id;
+        el("left").disabled = false;
+        el("right").disabled = false;
+      } else {
+        el("text").textContent = state.gameOver ? `Your reign ended: ${state.gameOver.faction}.` : "No card available.";
+        el("left").disabled = true;
+        el("right").disabled = true;
+      }
+    }
+
+    el("start").addEventListener("click", async () => {
+      try {
+        const result = await api("/api/play/start", {});
+        if (result.error) throw new Error(result.error.message);
+        session = result.sessionId;
+        render(result);
+        setStatus("Reign started", "ok");
+      } catch (error) {
+        setStatus(error.message, "err");
+      }
+    });
+
+    async function swipe(direction) {
+      if (!session) return;
+      try {
+        const result = await api("/api/play/swipe", { sessionId: session, direction });
+        render(result);
+        if (result.gameOver) setStatus(`Game over: ${result.gameOver.faction}`, "err");
+      } catch (error) {
+        setStatus(error.message, "err");
+      }
+    }
+    el("left").addEventListener("click", () => swipe("left"));
+    el("right").addEventListener("click", () => swipe("right"));
+  </script>
+</body>
+</html>

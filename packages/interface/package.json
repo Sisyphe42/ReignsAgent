@@ -1,0 +1,9 @@
+{
+  "name": "@reigns-agent/interface",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Headless creator orchestration for ReignsAgent: in-memory card editing, Reigns-style play sessions, render-ready diagnostics projection, AI connector configuration, and deployable build assembly. Contains no game rules, AI generation, or simulation logic.",
+  "exports": {
+    ".": "./src/index.js"
+  }
+}

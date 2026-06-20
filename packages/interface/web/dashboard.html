@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ReignsAgent Creator</title>
+  <link rel="stylesheet" href="/assets/dashboard.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand__mark">RA</span>
+      <div>
+        <h1>ReignsAgent Creator</h1>
+        <p class="brand__tag">Creator workspace</p>
+      </div>
+    </div>
+    <nav class="topbar__nav">
+      <a href="/">Dashboard</a>
+      <a href="/play">Play preview</a>
+    </nav>
+  </header>
+
+  <main class="layout">
+    <section class="panel panel--ingest">
+      <h2>Ingest</h2>
+      <label class="file">
+        <input type="file" id="ingest-file" accept=".json,application/json" />
+        <span>Choose JSON</span>
+      </label>
+      <textarea id="ingest-text" rows="6" placeholder="Paste content bundle JSON"></textarea>
+      <div class="row">
+        <button id="ingest-paste" class="btn btn--primary">Import pasted JSON</button>
+        <button id="load-sample" class="btn">Load sample deck</button>
+      </div>
+      <div id="ingest-status" class="status"></div>
+    </section>
+
+    <section class="panel panel--editor">
+      <h2>Cards</h2>
+      <div class="row row--between">
+        <input id="meta-title" type="text" placeholder="Deck title" />
+        <button id="meta-save" class="btn">Save title</button>
+      </div>
+      <div class="cards" id="card-list"></div>
+      <details class="add">
+        <summary>Add card</summary>
+        <div class="add__form">
+          <input id="add-id" type="text" placeholder="card id" />
+          <input id="add-text" type="text" placeholder="card text" />
+          <button id="add-create" class="btn btn--primary">Create card</button>
+        </div>
+      </details>
+      <div id="editor-status" class="status"></div>
+    </section>
+
+    <section class="panel panel--preview">
+      <h2>Play Preview</h2>
+      <div class="gauges" id="gauges"></div>
+      <div class="card" id="play-card">
+        <p class="card__text" id="play-text">No session.</p>
+        <div class="card__choices">
+          <button id="swipe-left" class="btn btn--choice" disabled>◀ Left</button>
+          <button id="swipe-right" class="btn btn--choice" disabled>Right ▶</button>
+        </div>
+      </div>
+      <button id="play-start" class="btn btn--primary">Start preview</button>
+      <div id="play-status" class="status"></div>
+    </section>
+
+    <section class="panel panel--diagnostics">
+      <h2>Diagnostics</h2>
+      <div class="row">
+        <label>Cycles <input id="diag-cycles" type="number" value="500" min="1" /></label>
+        <label>Max turns <input id="diag-turns" type="number" value="40" min="1" /></label>
+        <label>Seed <input id="diag-seed" type="number" value="1" /></label>
+        <button id="diag-run" class="btn btn--primary">Run review</button>
+      </div>
+      <div class="health" id="health" hidden>
+        <div class="health__score" id="health-score">--</div>
+        <div class="health__headline" id="health-headline"></div>
+      </div>
+      <ul class="warnings" id="warnings"></ul>
+    </section>
+
+    <section class="panel panel--ai">
+      <h2>Connector</h2>
+      <div class="row">
+        <input id="ai-provider" type="text" placeholder="provider (e.g. stub)" value="stub" />
+        <input id="ai-theme" type="text" placeholder="theme" value="small kingdom" />
+        <input id="ai-count" type="number" value="8" min="1" />
+        <button id="ai-plan" class="btn btn--primary">Build plan</button>
+      </div>
+      <pre id="ai-output" class="output"></pre>
+    </section>
+
+    <section class="panel panel--build">
+      <h2>Build</h2>
+      <button id="build-prepare" class="btn">Preview build</button>
+      <button id="build-export" class="btn btn--primary">Export .game.json</button>
+      <pre id="build-output" class="output"></pre>
+    </section>
+  </main>
+
+  <script type="module" src="/assets/dashboard.js"></script>
+</body>
+</html>
