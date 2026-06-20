@@ -1,45 +1,94 @@
-import { FACTIONS, createRuntime, getEligibleCards } from "../../core/src/index.js";
+import { FACTIONS, createRuntime } from "../../core/src/index.js";
 
+const REPORT_SCHEMA_VERSION = 1;
 const DEFAULT_CYCLES = 100000;
 const DEFAULT_MAX_TURNS = 100;
+const DEFAULT_SAMPLE_LIMIT = 3;
+const DEFAULT_THRESHOLDS = Object.freeze({
+  dominantGameOverRate: 0.45,
+  highGameOverRate: 0.8,
+  lowCardCycleRate: 0.05,
+  stalledRate: 0
+});
+
+export class ReviewerError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "ReviewerError";
+  }
+}
 
 export function runMonteCarloReview(options = {}) {
-  const cards = options.cards ?? [];
-  const cycles = normalizePositiveInteger(options.cycles ?? DEFAULT_CYCLES, "cycles");
-  const maxTurns = normalizePositiveInteger(options.maxTurns ?? DEFAULT_MAX_TURNS, "maxTurns");
-  const baseSeed = normalizeSeed(options.seed ?? 1);
-  const choose = options.choose ?? chooseRandomChoice;
-  const initialState = options.initialState ?? {};
+  const config = normalizeReviewOptions(options);
+  const aggregate = createAggregate(config.cards);
+  const samples = [];
 
-  if (typeof choose !== "function") {
-    throw new TypeError("choose must be a function");
-  }
+  for (let cycle = 0; cycle < config.cycles; cycle += 1) {
+    const result = runSimulationCycle({
+      cards: config.cards,
+      maxTurns: config.maxTurns,
+      seed: config.seed + cycle,
+      choose: config.choose,
+      initialState: config.initialState,
+      includeEvents: config.includeSampleEvents && samples.length < config.sampleLimit
+    });
 
-  const aggregate = createAggregate(cards);
-
-  for (let cycle = 0; cycle < cycles; cycle += 1) {
-    const rng = createSeededRng(baseSeed + cycle);
-    const runtime = createRuntime({ cards, state: cloneInitialState(initialState), rng });
-    const result = runCycle(runtime, { maxTurns, choose, rng });
     recordCycle(aggregate, result);
+
+    if (samples.length < config.sampleLimit) {
+      samples.push(createCycleSample(result));
+    }
   }
 
   return buildReport({
     aggregate,
-    cards,
-    cycles,
-    maxTurns,
-    seed: baseSeed,
-    graph: analyzeCardGraph(cards, {
-      tags: initialState.tags ?? {},
-      variables: initialState.variables ?? {}
+    cards: config.cards,
+    cycles: config.cycles,
+    maxTurns: config.maxTurns,
+    seed: config.seed,
+    thresholds: config.thresholds,
+    sampleLimit: config.sampleLimit,
+    includeSampleEvents: config.includeSampleEvents,
+    samples,
+    graph: analyzeCardGraph(config.cards, {
+      tags: config.initialState.tags ?? {},
+      variables: config.initialState.variables ?? {}
     })
   });
 }
 
+export function runSimulationCycle(options = {}) {
+  const cards = options.cards ?? [];
+  const maxTurns = normalizePositiveInteger(options.maxTurns ?? DEFAULT_MAX_TURNS, "maxTurns");
+  const seed = normalizeSeed(options.seed ?? 1);
+  const rng = options.rng ?? createSeededRng(seed);
+  const choose = options.choose ?? chooseRandomChoice;
+
+  if (typeof rng !== "function") {
+    throw new ReviewerError("rng must be a function");
+  }
+
+  if (typeof choose !== "function") {
+    throw new ReviewerError("choose must be a function");
+  }
+
+  const runtime = createRuntime({
+    cards,
+    state: cloneInitialState(options.initialState ?? {}),
+    rng
+  });
+
+  return runCycle(runtime, {
+    maxTurns,
+    choose,
+    rng,
+    seed,
+    includeEvents: Boolean(options.includeEvents)
+  });
+}
+
 export function analyzeCardGraph(cards, initialState = {}) {
-  const initialTags = initialState.tags ?? initialState;
-  const initialVariables = initialState.variables ?? {};
+  const { tags: initialTags, variables: initialVariables } = normalizeInitialSignals(initialState);
   const nodes = cards.map((card) => ({
     id: card.id,
     requirements: card.requirements ?? {}
@@ -57,9 +106,11 @@ export function analyzeCardGraph(cards, initialState = {}) {
         ...(target.requirements?.allTags ?? []),
         ...(target.requirements?.anyTags ?? [])
       ];
-      const requiredVariables = Object.keys(target.requirements?.variables ?? {});
+      const requiredVariables = Object.entries(target.requirements?.variables ?? {});
       const enablingTags = requiredTags.filter((tag) => producedSignals.tags.has(tag));
-      const enablingVariables = requiredVariables.filter((variable) => producedSignals.variables.has(variable));
+      const enablingVariables = requiredVariables
+        .filter(([variable, value]) => signalHasVariable(producedSignals.variables, variable, value))
+        .map(([variable]) => variable);
 
       if ((enablingTags.length > 0 || enablingVariables.length > 0) && sourceId !== target.id) {
         const edge = { from: sourceId, to: target.id };
@@ -75,15 +126,12 @@ export function analyzeCardGraph(cards, initialState = {}) {
   }
 
   const producedTags = new Set(initialTrueTags(initialTags));
-  const producedVariables = new Set(initialTrueVariables(initialVariables));
+  const producedVariables = initialVariableSignals(initialVariables);
   for (const signals of producedSignalsByCard.values()) {
-    for (const tag of signals.tags) {
-      producedTags.add(tag);
-    }
-    for (const variable of signals.variables) {
-      producedVariables.add(variable);
-    }
+    mergeSignals({ tags: producedTags, variables: producedVariables }, signals);
   }
+
+  const reachability = analyzeReachability(cards, initialTags, initialVariables);
 
   return {
     nodes,
@@ -91,8 +139,25 @@ export function analyzeCardGraph(cards, initialState = {}) {
     isolatedCards: nodes
       .filter((node) => !edges.some((edge) => edge.from === node.id || edge.to === node.id))
       .map((node) => node.id),
+    initiallyEligibleCards: reachability.initiallyEligibleCards,
+    reachableCards: reachability.reachableCards,
+    unreachableCards: reachability.unreachableCards,
     unsatisfiedRequiredTags: collectUnsatisfiedRequiredTags(cards, producedTags),
     unsatisfiedRequiredVariables: collectUnsatisfiedRequiredVariables(cards, producedVariables)
+  };
+}
+
+function normalizeReviewOptions(options) {
+  return {
+    cards: options.cards ?? [],
+    cycles: normalizePositiveInteger(options.cycles ?? DEFAULT_CYCLES, "cycles"),
+    maxTurns: normalizePositiveInteger(options.maxTurns ?? DEFAULT_MAX_TURNS, "maxTurns"),
+    seed: normalizeSeed(options.seed ?? 1),
+    choose: options.choose ?? chooseRandomChoice,
+    initialState: cloneInitialState(options.initialState ?? {}),
+    thresholds: normalizeThresholds(options.thresholds ?? {}),
+    sampleLimit: normalizeNonNegativeInteger(options.sampleLimit ?? DEFAULT_SAMPLE_LIMIT, "sampleLimit"),
+    includeSampleEvents: Boolean(options.includeSampleEvents)
   };
 }
 
@@ -109,31 +174,49 @@ function runCycle(runtime, options) {
       state: runtime.state,
       rng: options.rng
     });
+    const selectedChoiceId = resolveChoiceId(selectedChoice);
 
-    if (!selectedChoice?.id) {
-      throw new TypeError("choose must return a choice with an id");
+    if (!currentCard.choices.some((choice) => choice.id === selectedChoiceId)) {
+      throw new ReviewerError(`Choice '${selectedChoiceId}' is not valid for card '${currentCard.id}'`);
     }
 
-    increment(choices, `${currentCard.id}:${selectedChoice.id}`);
-    const step = runtime.choose(selectedChoice.id);
+    increment(choices, `${currentCard.id}:${selectedChoiceId}`);
+    const step = runtime.choose(selectedChoiceId);
     currentCard = step.nextCard;
     stalled = !runtime.state.gameOver && currentCard === null;
   }
 
+  const terminal = terminalReason(runtime.state, stalled, options.maxTurns);
+
   return {
+    schemaVersion: REPORT_SCHEMA_VERSION,
+    seed: options.seed,
     turns: runtime.state.turn,
     gameOver: runtime.state.gameOver,
     stalled,
-    terminalReason: terminalReason(runtime.state, stalled, options.maxTurns),
-    factions: { ...runtime.state.factions },
-    visits,
-    choices
+    terminalReason: terminal,
+    finalFactions: { ...runtime.state.factions },
+    cardVisits: Object.fromEntries(visits),
+    choiceVisits: Object.fromEntries(choices),
+    events: options.includeEvents ? runtime.events : undefined
   };
 }
 
 function chooseRandomChoice({ card, rng }) {
   const index = Math.floor(rng() * card.choices.length);
   return card.choices[Math.min(index, card.choices.length - 1)];
+}
+
+function resolveChoiceId(choice) {
+  if (typeof choice === "string") {
+    return choice;
+  }
+
+  if (!choice?.id) {
+    throw new ReviewerError("choose must return a choice id string or a choice with an id");
+  }
+
+  return choice.id;
 }
 
 function createAggregate(cards) {
@@ -146,7 +229,9 @@ function createAggregate(cards) {
     terminalReasons: {},
     factionTotals: Object.fromEntries(FACTIONS.map((faction) => [faction, 0])),
     cardVisits: Object.fromEntries(cards.map((card) => [card.id, 0])),
+    cardCycleVisits: Object.fromEntries(cards.map((card) => [card.id, 0])),
     choiceVisits: {},
+    choiceCycleVisits: {},
     turnSamples: []
   };
 }
@@ -167,19 +252,25 @@ function recordCycle(aggregate, result) {
   }
 
   for (const faction of FACTIONS) {
-    aggregate.factionTotals[faction] += result.factions[faction];
+    aggregate.factionTotals[faction] += result.finalFactions[faction];
   }
 
-  for (const [cardId, count] of result.visits.entries()) {
+  for (const [cardId, count] of Object.entries(result.cardVisits)) {
     aggregate.cardVisits[cardId] = (aggregate.cardVisits[cardId] ?? 0) + count;
+    if (count > 0) {
+      aggregate.cardCycleVisits[cardId] = (aggregate.cardCycleVisits[cardId] ?? 0) + 1;
+    }
   }
 
-  for (const [choiceId, count] of result.choices.entries()) {
+  for (const [choiceId, count] of Object.entries(result.choiceVisits)) {
     aggregate.choiceVisits[choiceId] = (aggregate.choiceVisits[choiceId] ?? 0) + count;
+    if (count > 0) {
+      aggregate.choiceCycleVisits[choiceId] = (aggregate.choiceCycleVisits[choiceId] ?? 0) + 1;
+    }
   }
 }
 
-function buildReport({ aggregate, cards, cycles, maxTurns, seed, graph }) {
+function buildReport({ aggregate, cards, cycles, maxTurns, seed, thresholds, sampleLimit, includeSampleEvents, samples, graph }) {
   const averageTurns = aggregate.totalTurns / cycles;
   const sortedTurns = [...aggregate.turnSamples].sort((left, right) => left - right);
   const factionAverages = Object.fromEntries(
@@ -188,63 +279,126 @@ function buildReport({ aggregate, cards, cycles, maxTurns, seed, graph }) {
   const cardVisitRates = Object.fromEntries(
     Object.entries(aggregate.cardVisits).map(([cardId, count]) => [cardId, round(count / cycles)])
   );
-  const warnings = buildWarnings({ aggregate, cards, graph });
+  const cardCycleRates = Object.fromEntries(
+    Object.entries(aggregate.cardCycleVisits).map(([cardId, count]) => [cardId, round(count / cycles)])
+  );
+  const choiceCycleRates = Object.fromEntries(
+    Object.entries(aggregate.choiceCycleVisits).map(([choiceId, count]) => [choiceId, round(count / cycles)])
+  );
+  const terminalReasonRates = Object.fromEntries(
+    Object.entries(aggregate.terminalReasons).map(([reason, count]) => [reason, round(count / cycles)])
+  );
+  const unvisitedCards = cards.map((card) => card.id).filter((cardId) => (aggregate.cardVisits[cardId] ?? 0) === 0);
+  const lowCycleCards = Object.entries(cardCycleRates)
+    .filter(([, rate]) => rate > 0 && rate < thresholds.lowCardCycleRate)
+    .map(([cardId, rate]) => ({ cardId, rate }));
+  const coverage = {
+    cardVisitRates,
+    cardCycleRates,
+    choiceVisits: aggregate.choiceVisits,
+    choiceCycleRates,
+    unvisitedCards,
+    lowCycleCards
+  };
+  const summary = {
+    averageTurns: round(averageTurns),
+    minTurns: sortedTurns[0] ?? 0,
+    maxTurns: sortedTurns.at(-1) ?? 0,
+    turnPercentiles: {
+      p10: percentile(sortedTurns, 0.1),
+      p50: percentile(sortedTurns, 0.5),
+      p90: percentile(sortedTurns, 0.9)
+    },
+    gameOverRate: round(aggregate.gameOverCycles / cycles),
+    stalledRate: round(aggregate.stalledCycles / cycles),
+    gameOverByFaction: aggregate.gameOverByFaction,
+    terminalReasons: aggregate.terminalReasons,
+    terminalReasonRates,
+    factionAverages
+  };
+  const warnings = buildWarnings({ aggregate, cards, graph, summary, coverage, thresholds });
 
   return {
-    schemaVersion: 1,
+    schemaVersion: REPORT_SCHEMA_VERSION,
     module: "ReignsAgent-Reviewer",
-    parameters: { cycles, maxTurns, seed },
-    summary: {
-      averageTurns: round(averageTurns),
-      minTurns: sortedTurns[0] ?? 0,
-      maxTurns: sortedTurns.at(-1) ?? 0,
-      turnPercentiles: {
-        p10: percentile(sortedTurns, 0.1),
-        p50: percentile(sortedTurns, 0.5),
-        p90: percentile(sortedTurns, 0.9)
-      },
-      gameOverRate: round(aggregate.gameOverCycles / cycles),
-      stalledRate: round(aggregate.stalledCycles / cycles),
-      gameOverByFaction: aggregate.gameOverByFaction,
-      terminalReasons: aggregate.terminalReasons,
-      factionAverages
-    },
-    coverage: {
-      cardVisitRates,
-      choiceVisits: aggregate.choiceVisits
-    },
+    parameters: { cycles, maxTurns, seed, sampleLimit, includeSampleEvents },
+    thresholds,
+    summary,
+    coverage,
     graph,
+    samples,
     diagnostics: {
-      warnings
+      warnings,
+      warningCounts: countWarningsBySeverity(warnings)
     }
   };
 }
 
-function buildWarnings({ aggregate, cards, graph }) {
-  const warnings = [];
-  const neverVisited = cards
-    .map((card) => card.id)
-    .filter((cardId) => (aggregate.cardVisits[cardId] ?? 0) === 0);
+function createCycleSample(result) {
+  const sample = {
+    seed: result.seed,
+    turns: result.turns,
+    terminalReason: result.terminalReason,
+    gameOver: result.gameOver,
+    finalFactions: result.finalFactions,
+    cardVisits: result.cardVisits,
+    choiceVisits: result.choiceVisits
+  };
 
-  if (neverVisited.length > 0) {
+  if (result.events) {
+    sample.events = result.events;
+  }
+
+  return sample;
+}
+
+function buildWarnings({ aggregate, cards, graph, summary, coverage, thresholds }) {
+  const warnings = [];
+
+  if (coverage.unvisitedCards.length > 0) {
     warnings.push({
       code: "never_visited_cards",
+      severity: "error",
       message: "Some cards were never reached during simulation.",
-      cardIds: neverVisited
+      cardIds: coverage.unvisitedCards
     });
   }
 
-  if (aggregate.stalledCycles > 0) {
+  if (coverage.lowCycleCards.length > 0) {
+    warnings.push({
+      code: "low_card_cycle_coverage",
+      severity: "warning",
+      message: "Some cards were reached in very few simulated cycles.",
+      threshold: thresholds.lowCardCycleRate,
+      cards: coverage.lowCycleCards
+    });
+  }
+
+  if (summary.stalledRate > thresholds.stalledRate) {
     warnings.push({
       code: "stalled_cycles",
+      severity: "error",
       message: "Some cycles ended because no eligible card was available.",
-      cycles: aggregate.stalledCycles
+      cycles: aggregate.stalledCycles,
+      rate: summary.stalledRate,
+      threshold: thresholds.stalledRate
+    });
+  }
+
+  if (summary.gameOverRate > thresholds.highGameOverRate) {
+    warnings.push({
+      code: "high_game_over_rate",
+      severity: "warning",
+      message: "Most simulated cycles ended in a game-over state.",
+      rate: summary.gameOverRate,
+      threshold: thresholds.highGameOverRate
     });
   }
 
   if (graph.unsatisfiedRequiredTags.length > 0) {
     warnings.push({
       code: "unsatisfied_required_tags",
+      severity: "error",
       message: "Some card requirements cannot be satisfied by initial tags or card effects.",
       tags: graph.unsatisfiedRequiredTags
     });
@@ -253,19 +407,31 @@ function buildWarnings({ aggregate, cards, graph }) {
   if (graph.unsatisfiedRequiredVariables.length > 0) {
     warnings.push({
       code: "unsatisfied_required_variables",
+      severity: "error",
       message: "Some variable requirements cannot be satisfied by initial variables or card effects.",
       variables: graph.unsatisfiedRequiredVariables
     });
   }
 
-  for (const [faction, count] of Object.entries(aggregate.gameOverByFaction)) {
+  if (graph.unreachableCards.length > 0) {
+    warnings.push({
+      code: "unreachable_cards",
+      severity: "error",
+      message: "Some cards cannot be reached from the initial state through declared tag or variable effects.",
+      cardIds: graph.unreachableCards
+    });
+  }
+
+  for (const [faction, count] of Object.entries(summary.gameOverByFaction)) {
     const rate = count / aggregate.cycles;
-    if (rate > 0.45) {
+    if (rate > thresholds.dominantGameOverRate) {
       warnings.push({
         code: "dominant_game_over_faction",
+        severity: "warning",
         message: "One faction dominates simulated endings.",
         faction,
-        rate: round(rate)
+        rate: round(rate),
+        threshold: thresholds.dominantGameOverRate
       });
     }
   }
@@ -273,9 +439,19 @@ function buildWarnings({ aggregate, cards, graph }) {
   return warnings;
 }
 
+function countWarningsBySeverity(warnings) {
+  return warnings.reduce(
+    (counts, warning) => {
+      counts[warning.severity] = (counts[warning.severity] ?? 0) + 1;
+      return counts;
+    },
+    { error: 0, warning: 0, info: 0 }
+  );
+}
+
 function collectProducedSignals(card) {
   const tags = new Set();
-  const variables = new Set();
+  const variables = new Map();
 
   for (const choice of card.choices ?? []) {
     for (const [tag, value] of Object.entries(choice.effects?.tags ?? {})) {
@@ -286,7 +462,7 @@ function collectProducedSignals(card) {
 
     for (const [variable, value] of Object.entries(choice.effects?.variables ?? {})) {
       if (value !== null && value !== undefined) {
-        variables.add(variable);
+        addVariableSignal(variables, variable, value);
       }
     }
 
@@ -298,6 +474,54 @@ function collectProducedSignals(card) {
   }
 
   return { tags, variables };
+}
+
+function analyzeReachability(cards, initialTags, initialVariables) {
+  const available = {
+    tags: new Set(initialTrueTags(initialTags)),
+    variables: initialVariableSignals(initialVariables)
+  };
+  const initiallyEligibleCards = cards
+    .filter((card) => requirementsAreSatisfied(card.requirements ?? {}, available))
+    .map((card) => card.id);
+  const reachable = new Set();
+  let changed = true;
+
+  while (changed) {
+    changed = false;
+
+    for (const card of cards) {
+      if (reachable.has(card.id) || !requirementsAreSatisfied(card.requirements ?? {}, available)) {
+        continue;
+      }
+
+      reachable.add(card.id);
+      mergeSignals(available, collectProducedSignals(card));
+      changed = true;
+    }
+  }
+
+  const reachableCards = cards.map((card) => card.id).filter((cardId) => reachable.has(cardId));
+
+  return {
+    initiallyEligibleCards,
+    reachableCards,
+    unreachableCards: cards.map((card) => card.id).filter((cardId) => !reachable.has(cardId))
+  };
+}
+
+function requirementsAreSatisfied(requirements, available) {
+  const allTags = requirements.allTags ?? [];
+  const anyTags = requirements.anyTags ?? [];
+  const noneTags = requirements.noneTags ?? [];
+  const variables = requirements.variables ?? {};
+
+  return (
+    allTags.every((tag) => available.tags.has(tag)) &&
+    (anyTags.length === 0 || anyTags.some((tag) => available.tags.has(tag))) &&
+    noneTags.every((tag) => !available.tags.has(tag)) &&
+    Object.entries(variables).every(([variable, value]) => signalHasVariable(available.variables, variable, value))
+  );
 }
 
 function collectUnsatisfiedRequiredTags(cards, producedTags) {
@@ -325,8 +549,8 @@ function collectUnsatisfiedRequiredVariables(cards, producedVariables) {
   const missing = new Set();
 
   for (const card of cards) {
-    for (const variable of Object.keys(card.requirements?.variables ?? {})) {
-      if (!producedVariables.has(variable)) {
+    for (const [variable, value] of Object.entries(card.requirements?.variables ?? {})) {
+      if (!signalHasVariable(producedVariables, variable, value)) {
         missing.add(variable);
       }
     }
@@ -335,16 +559,79 @@ function collectUnsatisfiedRequiredVariables(cards, producedVariables) {
   return [...missing].sort();
 }
 
+function normalizeInitialSignals(initialState) {
+  if ("tags" in initialState || "variables" in initialState) {
+    return {
+      tags: initialState.tags ?? {},
+      variables: initialState.variables ?? {}
+    };
+  }
+
+  return {
+    tags: initialState,
+    variables: {}
+  };
+}
+
 function initialTrueTags(tags) {
   return Object.entries(tags)
     .filter(([, value]) => Boolean(value))
     .map(([tag]) => tag);
 }
 
-function initialTrueVariables(variables) {
-  return Object.entries(variables)
-    .filter(([, value]) => value !== null && value !== undefined)
-    .map(([variable]) => variable);
+function initialVariableSignals(variables) {
+  const signals = new Map();
+
+  for (const [variable, value] of Object.entries(variables)) {
+    if (value !== null && value !== undefined) {
+      addVariableSignal(signals, variable, value);
+    }
+  }
+
+  return signals;
+}
+
+function mergeSignals(target, source) {
+  for (const tag of source.tags) {
+    target.tags.add(tag);
+  }
+
+  for (const [variable, values] of source.variables.entries()) {
+    for (const value of values) {
+      addVariableSignalKey(target.variables, variable, value);
+    }
+  }
+}
+
+function addVariableSignal(signals, variable, value) {
+  addVariableSignalKey(signals, variable, stableValueKey(value));
+}
+
+function addVariableSignalKey(signals, variable, valueKey) {
+  if (!signals.has(variable)) {
+    signals.set(variable, new Set());
+  }
+
+  signals.get(variable).add(valueKey);
+}
+
+function signalHasVariable(signals, variable, value) {
+  return signals.get(variable)?.has(stableValueKey(value)) ?? false;
+}
+
+function stableValueKey(value) {
+  if (Array.isArray(value)) {
+    return `[${value.map(stableValueKey).join(",")}]`;
+  }
+
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableValueKey(value[key])}`)
+      .join(",")}}`;
+  }
+
+  return JSON.stringify(value);
 }
 
 function terminalReason(state, stalled, maxTurns) {
@@ -390,7 +677,15 @@ function createSeededRng(seed) {
 
 function normalizePositiveInteger(value, name) {
   if (!Number.isInteger(value) || value <= 0) {
-    throw new TypeError(`${name} must be a positive integer`);
+    throw new ReviewerError(`${name} must be a positive integer`);
+  }
+
+  return value;
+}
+
+function normalizeNonNegativeInteger(value, name) {
+  if (!Number.isInteger(value) || value < 0) {
+    throw new ReviewerError(`${name} must be a non-negative integer`);
   }
 
   return value;
@@ -398,10 +693,25 @@ function normalizePositiveInteger(value, name) {
 
 function normalizeSeed(value) {
   if (!Number.isInteger(value)) {
-    throw new TypeError("seed must be an integer");
+    throw new ReviewerError("seed must be an integer");
   }
 
   return value;
+}
+
+function normalizeThresholds(thresholds) {
+  const normalized = {
+    ...DEFAULT_THRESHOLDS,
+    ...thresholds
+  };
+
+  for (const [name, value] of Object.entries(normalized)) {
+    if (!Number.isFinite(value) || value < 0 || value > 1) {
+      throw new ReviewerError(`threshold '${name}' must be between 0 and 1`);
+    }
+  }
+
+  return normalized;
 }
 
 function increment(map, key) {

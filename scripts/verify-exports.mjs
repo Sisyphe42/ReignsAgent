@@ -18,7 +18,7 @@ const modules = [
   },
   {
     path: "packages/reviewer/src/index.js",
-    exports: ["analyzeCardGraph", "runMonteCarloReview"]
+    exports: ["ReviewerError", "analyzeCardGraph", "runMonteCarloReview", "runSimulationCycle"]
   },
   {
     path: "packages/pipeline/src/index.js",
