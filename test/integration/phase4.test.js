@@ -59,6 +59,46 @@ describe("Phase 4 interface integration", () => {
       assert.equal(buildResult.build.player.choiceModel, "binary");
       assert.equal(buildResult.build.content.cards.length, 9);
       assert.equal(buildResult.build.content.assets.length > 0, true);
+
+      // Granular choice editing: set a label, then patch a single faction delta.
+      const firstCardId = editor.cards[0].id;
+      const firstChoiceId = editor.cards[0].choices[0].id;
+      const labeled = await api(port, `/api/editor/cards/${firstCardId}/choices/${firstChoiceId}`, {
+        method: "PATCH",
+        body: { label: "Tuned label" }
+      });
+      assert.equal(labeled.card.choices.find((c) => c.id === firstChoiceId).label, "Tuned label");
+
+      const factionSet = await api(
+        port,
+        `/api/editor/cards/${firstCardId}/choices/${firstChoiceId}/effects/faction/people`,
+        { method: "POST", body: { value: -7 } }
+      );
+      assert.equal(
+        factionSet.card.choices.find((c) => c.id === firstChoiceId).effects.factions.people,
+        -7
+      );
+
+      const factionCleared = await api(
+        port,
+        `/api/editor/cards/${firstCardId}/choices/${firstChoiceId}/effects/faction/people`,
+        { method: "DELETE" }
+      );
+      const clearedEffects = factionCleared.card.choices.find((c) => c.id === firstChoiceId).effects;
+      assert.equal(clearedEffects.factions?.people === undefined, true);
+
+      // Snapshot/restore round-trips the working bundle through the server.
+      const snapshot = await api(port, "/api/editor/snapshot");
+      assert.equal(snapshot.bundle.cards.length, editor.cards.length);
+      assert.equal(snapshot.validation.valid, true);
+
+      const restored = await api(port, "/api/editor/restore", {
+        method: "POST",
+        body: { bundle: snapshot.bundle }
+      });
+      assert.equal(restored.restored, true);
+      assert.equal(restored.cardCount, snapshot.bundle.cards.length);
+      assert.equal(restored.playerValidation.valid, true);
     } finally {
       await stopServer(server);
     }
