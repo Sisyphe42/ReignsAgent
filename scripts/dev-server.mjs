@@ -128,13 +128,13 @@ async function handleApi(req, res, url) {
     return sendJson(res, { card, validation: store.editor.validate() });
   }
 
-  if (path.startsWith("/api/editor/cards/") && req.method === "PUT") {
+  if (path.startsWith("/api/editor/cards/") && req.method === "PUT" && isCardRootPath(path)) {
     const cardId = decodeURIComponent(path.slice("/api/editor/cards/".length));
     const card = store.editor.updateCard(cardId, body.changes ?? {});
     return sendJson(res, { card, validation: store.editor.validate() });
   }
 
-  if (path.startsWith("/api/editor/cards/") && req.method === "DELETE") {
+  if (path.startsWith("/api/editor/cards/") && req.method === "DELETE" && isCardRootPath(path)) {
     const cardId = decodeURIComponent(path.slice("/api/editor/cards/".length));
     const removed = store.editor.removeCard(cardId);
     return sendJson(res, { removed, validation: store.editor.validate() });
@@ -143,6 +143,25 @@ async function handleApi(req, res, url) {
   if (path === "/api/editor/metadata" && req.method === "PATCH") {
     const metadata = store.editor.setMetadata(body.metadata ?? {});
     return sendJson(res, { metadata });
+  }
+
+  if (path === "/api/editor/snapshot" && req.method === "GET") {
+    return sendJson(res, { bundle: store.editor.toBundle(), validation: store.editor.validate() });
+  }
+
+  if (path === "/api/editor/restore" && req.method === "POST") {
+    const editor = store.loadEditor(body?.bundle ?? body);
+    return sendJson(res, {
+      restored: true,
+      cardCount: editor.cardCount(),
+      validation: editor.validate(),
+      playerValidation: editor.validateForPlayer()
+    });
+  }
+
+  const choiceMatch = matchChoicePath(path);
+  if (choiceMatch) {
+    return handleChoiceRoute(req, res, choiceMatch, body);
   }
 
   if (path === "/api/editor/validate" && req.method === "GET") {
@@ -244,6 +263,112 @@ async function handleApi(req, res, url) {
 
   res.writeHead(404, { "content-type": "application/json" });
   res.end(JSON.stringify({ error: { message: `Unknown API route: ${req.method} ${path}` } }));
+}
+
+/**
+ * isCardRootPath returns true only when the path targets a whole card
+ * (a single segment after /api/editor/cards/), so granular choice routes
+ * like /api/editor/cards/:id/choices/:cid/... are not shadowed.
+ */
+function isCardRootPath(path) {
+  const rest = path.slice("/api/editor/cards/".length);
+  return rest.length > 0 && !rest.includes("/");
+}
+
+/**
+ * matchChoicePath recognizes the granular choice-editing routes:
+ *   PATCH  /api/editor/cards/:cardId/choices/:choiceId          { label?, effects? }
+ *   POST   /api/editor/cards/:cardId/choices/:choiceId/effects/faction/:faction  { delta }
+ *   POST   /api/editor/cards/:cardId/choices/:choiceId/effects/tag/:tag          { value }
+ *   POST   /api/editor/cards/:cardId/choices/:choiceId/effects/variable/:variable { value }
+ *   DELETE /api/editor/cards/:cardId/choices/:choiceId/effects/faction/:faction
+ *   DELETE /api/editor/cards/:cardId/choices/:choiceId/effects/tag/:tag
+ *   DELETE /api/editor/cards/:cardId/choices/:choiceId/effects/variable/:variable
+ * Returns a descriptor object or null when the path is not a choice route.
+ */
+function matchChoicePath(path) {
+  const prefix = "/api/editor/cards/";
+  if (!path.startsWith(prefix)) {
+    return null;
+  }
+
+  const rest = path.slice(prefix.length);
+  const segments = rest.split("/").map(decodeURIComponent);
+  const [cardId, choicesSegment, choiceId, effectsSegment, kind, target] = segments;
+
+  if (choicesSegment !== "choices" || !cardId || !choiceId) {
+    return null;
+  }
+
+  if (effectsSegment === undefined) {
+    return { route: "choice", cardId, choiceId };
+  }
+
+  if (effectsSegment !== "effects" || !kind || !target) {
+    return null;
+  }
+
+  if (!["faction", "tag", "variable"].includes(kind)) {
+    return null;
+  }
+
+  return { route: "effect", cardId, choiceId, kind, target };
+}
+
+function handleChoiceRoute(req, res, match, body) {
+  if (match.route === "choice") {
+    if (req.method !== "PATCH") {
+      throw new Error(`Choice route requires PATCH, got ${req.method}`);
+    }
+    let card;
+    if (body?.label !== undefined) {
+      card = store.editor.setChoiceLabel(match.cardId, match.choiceId, body.label);
+    }
+    if (body?.effects !== undefined) {
+      card = store.editor.setChoiceEffects(match.cardId, match.choiceId, body.effects);
+    }
+    return sendJson(res, { card, validation: store.editor.validate() });
+  }
+
+  if (req.method !== "POST" && req.method !== "DELETE") {
+    throw new Error(`Effect route requires POST or DELETE, got ${req.method}`);
+  }
+
+  const card = store.editor.findCard(match.cardId);
+  if (!card) {
+    throw new Error(`Card '${match.cardId}' was not found`);
+  }
+  const choice = card.choices?.find((candidate) => candidate.id === match.choiceId);
+  if (!choice) {
+    throw new Error(`Choice '${match.choiceId}' was not found on card '${match.cardId}'`);
+  }
+
+  const effects = { ...(choice.effects ?? {}) };
+  const bucket = match.kind === "faction" ? "factions" : `${match.kind}s`;
+
+  if (req.method === "DELETE") {
+    delete effects[bucket]?.[match.target];
+  } else {
+    const value = body?.value;
+    if (value === undefined) {
+      throw new Error(`Effect route requires a 'value' field for ${match.kind}`);
+    }
+    if (value === null || value === false) {
+      delete effects[bucket]?.[match.target];
+    } else {
+      effects[bucket] = { ...(effects[bucket] ?? {}), [match.target]: value };
+    }
+  }
+
+  // Clean up emptied sub-objects so the stored effects stay tidy.
+  for (const key of ["factions", "tags", "variables"]) {
+    if (effects[key] !== undefined && Object.keys(effects[key]).length === 0) {
+      delete effects[key];
+    }
+  }
+
+  const updated = store.editor.setChoiceEffects(match.cardId, match.choiceId, effects);
+  return sendJson(res, { card: updated, validation: store.editor.validate() });
 }
 
 async function readJsonBody(req) {
