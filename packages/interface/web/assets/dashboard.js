@@ -1,3 +1,5 @@
+import { attachSwipe } from "/assets/swipe-input.js";
+
 const api = async (path, options = {}) => {
   const res = await fetch(path, {
     method: options.method ?? "GET",
@@ -473,6 +475,17 @@ el("add-create").addEventListener("click", async () => {
 });
 
 let playSession = null;
+let lastPlayState = null;
+
+function canSwipePlay() {
+  return Boolean(playSession) && !lastPlayState?.gameOver && lastPlayState?.currentCard;
+}
+
+attachSwipe({
+  element: el("play-card"),
+  onSwipe: (direction) => swipe(direction),
+  canSwipe: canSwipePlay
+});
 
 el("play-start").addEventListener("click", async () => {
   try {
@@ -487,7 +500,7 @@ el("play-start").addEventListener("click", async () => {
 });
 
 async function swipe(direction) {
-  if (!playSession) return;
+  if (!canSwipePlay()) return;
   try {
     const result = await api("/api/play/swipe", { method: "POST", body: { sessionId: playSession, direction } });
     renderPlay(result);
@@ -503,6 +516,7 @@ el("swipe-left").addEventListener("click", () => swipe("left"));
 el("swipe-right").addEventListener("click", () => swipe("right"));
 
 function renderPlay(state) {
+  lastPlayState = state;
   renderGauges(state.gauges ?? {});
   const art = el("play-art");
   if (state.currentCard) {

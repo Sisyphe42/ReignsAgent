@@ -35,7 +35,17 @@
     }
     .player-text { font-size: 19px; line-height: 1.5; }
     .player-swipes { display: flex; gap: 12px; margin-top: 24px; }
-    .start-wrap { text-align: center; margin-top: 32px; }
+    .start-wrap { text-align: center; margin-top: 32px; display: flex; gap: 10px; justify-content: center; }
+    .swipe-hint { font-size: 11px; color: #8a8f99; text-align: center; margin: 12px 0 0; }
+    .player-card { transition: transform 0.18s ease-out; touch-action: pan-y; user-select: none; }
+    .player-card.swiping { transition: none; cursor: grabbing; }
+    .player-card[data-swipe-hint="left"] { box-shadow: -6px 12px 30px rgba(217,106,106,0.35); }
+    .player-card[data-swipe-hint="right"] { box-shadow: 6px 12px 30px rgba(106,217,143,0.35); }
+    .summary { background: #1f232c; border: 1px solid #2a2f3a; border-radius: 8px; padding: 14px; margin-top: 16px; }
+    .summary__title { font-size: 14px; font-weight: 600; margin: 0 0 6px; }
+    .summary__line { font-size: 12px; color: #8a8f99; margin: 2px 0; }
+    @media (prefers-reduced-motion: reduce) { .player-card { transition: none; } }
+    button:focus-visible { outline: 2px solid #c9a24b; outline-offset: 2px; }
   </style>
 </head>
 <body>
@@ -54,21 +64,26 @@
 
   <main class="stage">
     <div class="gauges" id="gauges"></div>
-    <div class="player-card" id="card">
+    <div class="player-card" id="card" role="group" aria-label="Current card">
       <img id="art" class="player-art" alt="" hidden />
-      <p class="player-text" id="text">The court is waiting.</p>
+      <p class="player-text" id="text" aria-live="polite">The court is waiting.</p>
       <div class="player-swipes">
-        <button id="left" class="btn btn--choice" disabled>◀ Left</button>
-        <button id="right" class="btn btn--choice" disabled>Right ▶</button>
+        <button id="left" class="btn btn--choice" disabled aria-label="Swipe left">◀ Left</button>
+        <button id="right" class="btn btn--choice" disabled aria-label="Swipe right">Right ▶</button>
       </div>
+      <p class="swipe-hint" id="swipe-hint" hidden>Drag the card or use ← → keys</p>
     </div>
+    <div class="summary" id="summary" hidden aria-live="polite"></div>
     <div class="start-wrap">
       <button id="start" class="btn btn--primary">Start reign</button>
+      <button id="restart" class="btn" hidden>Play again</button>
     </div>
-    <div id="status" class="status"></div>
+    <div id="status" class="status" role="status" aria-live="polite"></div>
   </main>
 
   <script type="module">
+    import { attachSwipe } from "/assets/swipe-input.js";
+
     const api = async (path, body, method = "POST") => {
       const res = await fetch(path, {
         method,
@@ -87,8 +102,20 @@
 
     let session = null;
     let assetByCard = new Map();
+    let lastResult = null;
+
+    function canSwipe() {
+      return Boolean(session) && !lastResult?.gameOver && lastResult?.currentCard;
+    }
+
+    attachSwipe({
+      element: el("card"),
+      onSwipe: (direction) => swipe(direction),
+      canSwipe
+    });
 
     function render(state) {
+      lastResult = state;
       const gauges = el("gauges");
       gauges.innerHTML = "";
       for (const [name, gauge] of Object.entries(state.gauges ?? {})) {
@@ -97,6 +124,7 @@
         div.innerHTML = `<div class="gauge__name">${escapeHtml(name)} · ${gauge.value}</div><div class="gauge__bar"><div class="gauge__fill" style="width:${gauge.left}%"></div></div>`;
         gauges.appendChild(div);
       }
+      el("swipe-hint").hidden = !state.currentCard || state.gameOver;
       if (state.currentCard) {
         const asset = assetByCard.get(state.currentCard.id);
         if (asset) {
@@ -110,17 +138,37 @@
         setChoiceButtonLabels(state.currentCard);
         el("left").disabled = false;
         el("right").disabled = false;
+        el("summary").hidden = true;
+        el("restart").hidden = true;
       } else {
         el("art").removeAttribute("src");
         el("art").hidden = true;
-        el("text").textContent = state.gameOver ? `Your reign ended: ${state.gameOver.faction}.` : "No card available.";
+        el("text").textContent = state.gameOver ? "Your reign has ended." : "No card available.";
         resetChoiceButtonLabels();
         el("left").disabled = true;
         el("right").disabled = true;
+        if (state.gameOver) {
+          renderSummary(state);
+          el("restart").hidden = false;
+        }
       }
     }
 
-    el("start").addEventListener("click", async () => {
+    function renderSummary(state) {
+      const summary = el("summary");
+      const faction = state.gameOver?.faction ?? "—";
+      const lines = Object.entries(state.factions ?? {})
+        .map(([name, value]) => `<div class="summary__line">${escapeHtml(name)}: ${value}</div>`)
+        .join("");
+      summary.innerHTML = `
+        <p class="summary__title">Reign ended · ${escapeHtml(faction)}</p>
+        <div class="summary__line">Turns survived: ${state.turn ?? 0}</div>
+        ${lines}
+      `;
+      summary.hidden = false;
+    }
+
+    async function startReign() {
       try {
         const editor = await api("/api/editor", undefined, "GET");
         assetByCard = createAssetMap(editor.assets ?? []);
@@ -133,10 +181,13 @@
       } catch (error) {
         setStatus(error.message, "err");
       }
-    });
+    }
+
+    el("start").addEventListener("click", startReign);
+    el("restart").addEventListener("click", startReign);
 
     async function swipe(direction) {
-      if (!session) return;
+      if (!canSwipe()) return;
       try {
         const result = await api("/api/play/swipe", { sessionId: session, direction });
         render(result);
