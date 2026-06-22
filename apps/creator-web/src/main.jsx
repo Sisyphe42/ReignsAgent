@@ -15,6 +15,7 @@ const PANELS = [
 const FACTIONS = ["faith", "people", "military", "treasury"];
 const SKINS = [
   ["workbench", "Workbench"],
+  ["famicom", "Famicom"],
   ["arcade", "Arcade"],
   ["terminal", "Terminal"]
 ];
@@ -152,7 +153,6 @@ function App() {
               {SKINS.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
             </select>
           </label>
-          <a className="link-button" href="/classic">Classic</a>
           <a className="link-button" href="/play">Player</a>
         </div>
       </header>
@@ -565,6 +565,10 @@ function SettingsPanel({ editor, onRefresh, onStatus }) {
           <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Deck title" />
           <button className="btn" onClick={() => void saveTitle()}>Save title</button>
         </div>
+      </div>
+      <div className="subsection subsection--plain">
+        <h3>Fallback</h3>
+        <a className="fallback-link" href="/classic">Open classic dashboard</a>
       </div>
       <div className="subsection">
         <h3>Connector Plan</h3>

@@ -45,6 +45,29 @@
   --font-ui: "Trebuchet MS", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
 }
 
+:root[data-skin="famicom"] {
+  --bg: #efe4cc;
+  --bg-grid: rgba(33, 31, 28, 0.08);
+  --surface: #f8efd9;
+  --surface-2: #fff8e8;
+  --surface-3: #e8dac2;
+  --ink: #211f1c;
+  --muted: #6d6256;
+  --subtle: #8c8174;
+  --border: #24211d;
+  --border-strong: #181512;
+  --accent: #b52222;
+  --accent-2: #275c9a;
+  --danger: #b52222;
+  --ok: #1f8b58;
+  --button-ink: #fff8e8;
+  --shadow: rgba(36, 33, 29, 0.24);
+  --radius: 0px;
+  --font-ui: "Courier New", "Cascadia Mono", ui-monospace, monospace;
+  --font-data: "Courier New", "Cascadia Mono", ui-monospace, monospace;
+  color-scheme: light;
+}
+
 :root[data-skin="terminal"] {
   --bg: #07100c;
   --bg-grid: rgba(104, 255, 149, 0.045);
@@ -102,12 +125,35 @@ body::before {
   mask-image: linear-gradient(180deg, #000 0, transparent 86%);
 }
 
+:root[data-skin="famicom"] body {
+  background:
+    linear-gradient(90deg, transparent 23px, var(--bg-grid) 24px),
+    linear-gradient(180deg, #f8efd9 0, var(--bg) 18rem),
+    repeating-linear-gradient(0deg, transparent 0 7px, rgba(36, 33, 29, 0.035) 7px 8px),
+    var(--bg);
+}
+
+:root[data-skin="famicom"] body::before {
+  opacity: 0.28;
+  background-image:
+    linear-gradient(90deg, rgba(36, 33, 29, 0.09) 1px, transparent 1px),
+    linear-gradient(180deg, rgba(36, 33, 29, 0.08) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+
 button,
 input,
 textarea,
 select {
   font: inherit;
   color-scheme: dark;
+}
+
+:root[data-skin="famicom"] button,
+:root[data-skin="famicom"] input,
+:root[data-skin="famicom"] textarea,
+:root[data-skin="famicom"] select {
+  color-scheme: light;
 }
 
 button,
@@ -161,6 +207,18 @@ select {
   box-shadow: 0 18px 42px var(--shadow);
 }
 
+:root[data-skin="famicom"] .topbar,
+:root[data-skin="famicom"] .panel,
+:root[data-skin="famicom"] .card-editor,
+:root[data-skin="famicom"] .choice-editor,
+:root[data-skin="famicom"] .metric,
+:root[data-skin="famicom"] .empty-state,
+:root[data-skin="famicom"] .subsection,
+:root[data-skin="famicom"] .play-card {
+  border-width: 2px;
+  box-shadow: 5px 5px 0 rgba(36, 33, 29, 0.18);
+}
+
 .brand {
   display: flex;
   align-items: center;
@@ -195,6 +253,17 @@ select {
   height: 7px;
   border: 1px solid currentColor;
   content: "";
+}
+
+:root[data-skin="famicom"] .brand__mark {
+  color: #fff8e8;
+  background: var(--accent);
+  border-width: 2px;
+  box-shadow: 4px 4px 0 rgba(36, 33, 29, 0.22);
+}
+
+:root[data-skin="famicom"] .brand__mark::after {
+  background: var(--accent-2);
 }
 
 .brand h1 {
@@ -332,6 +401,30 @@ select {
   background: var(--accent);
 }
 
+:root[data-skin="famicom"] .rail__item {
+  border-width: 2px;
+}
+
+:root[data-skin="famicom"] .rail__item:hover,
+:root[data-skin="famicom"] .rail__item--active {
+  box-shadow: 3px 3px 0 rgba(36, 33, 29, 0.18);
+}
+
+:root[data-skin="famicom"] .rail__item--active {
+  color: #fff8e8;
+  background: #1c211b;
+}
+
+:root[data-skin="famicom"] .rail__item--active .rail__meta,
+:root[data-skin="famicom"] .rail__item--active small {
+  color: #efe4cc;
+}
+
+:root[data-skin="famicom"] .rail__item--active small {
+  border-color: #efe4cc;
+  background: transparent;
+}
+
 .rail__meta {
   grid-area: meta;
   color: var(--subtle);
@@ -406,6 +499,17 @@ select {
   height: 3px;
   background: linear-gradient(90deg, var(--accent), var(--accent-2), transparent 72%);
   content: "";
+}
+
+:root[data-skin="famicom"] .panel::before {
+  height: 8px;
+  background: repeating-linear-gradient(
+    90deg,
+    var(--accent) 0 28px,
+    var(--surface-2) 28px 38px,
+    var(--accent-2) 38px 66px,
+    var(--surface-2) 66px 76px
+  );
 }
 
 .panel-head {
@@ -560,6 +664,21 @@ select {
   background: color-mix(in srgb, var(--surface-3) 88%, #000);
 }
 
+:root[data-skin="famicom"] .btn,
+:root[data-skin="famicom"] .link-button,
+:root[data-skin="famicom"] .file-button {
+  border-width: 2px;
+  box-shadow: 3px 3px 0 rgba(36, 33, 29, 0.22);
+  font-weight: 700;
+}
+
+:root[data-skin="famicom"] .btn:hover,
+:root[data-skin="famicom"] .link-button:hover,
+:root[data-skin="famicom"] .file-button:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 rgba(36, 33, 29, 0.24);
+}
+
 .btn:active,
 .link-button:active,
 .file-button:active {
@@ -582,6 +701,17 @@ select {
 .btn--primary:hover {
   color: var(--button-ink);
   background: var(--accent);
+}
+
+:root[data-skin="famicom"] .btn--primary {
+  color: #fff8e8 !important;
+  background: var(--accent) !important;
+  border-color: var(--accent) !important;
+}
+
+:root[data-skin="famicom"] .btn--primary:hover {
+  color: #fff8e8 !important;
+  background: #9f1e1e !important;
 }
 
 .btn--choice {
@@ -723,6 +853,26 @@ summary {
   padding: 14px;
   margin-top: 14px;
   box-shadow: none;
+}
+
+.subsection--plain {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.fallback-link {
+  display: inline-flex;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.fallback-link:hover {
+  color: var(--ink);
 }
 
 .empty-state {
