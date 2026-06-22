@@ -1462,3 +1462,41 @@ summary {
     grid-template-columns: 1fr;
   }
 }
+
+:root[data-skin="phantom"] :is(.metric, .card-editor, .choice-editor, .empty-state, .subsection:not(.subsection--plain)) {
+  isolation: isolate;
+  overflow: visible;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  clip-path: none !important;
+}
+
+:root[data-skin="phantom"] :is(.metric, .card-editor, .choice-editor, .empty-state, .subsection:not(.subsection--plain))::before,
+:root[data-skin="phantom"] :is(.metric, .card-editor, .choice-editor, .empty-state, .subsection:not(.subsection--plain))::after {
+  position: absolute;
+  content: "";
+  pointer-events: none;
+}
+
+:root[data-skin="phantom"] :is(.metric, .card-editor, .choice-editor, .empty-state, .subsection:not(.subsection--plain))::before {
+  inset: 0;
+  z-index: 0;
+  background: #09090a;
+  clip-path: polygon(0 8%, 96% 0, 100% 91%, 4% 100%);
+  filter: drop-shadow(8px 8px 0 rgba(215, 25, 32, 0.62));
+}
+
+:root[data-skin="phantom"] :is(.metric, .card-editor, .choice-editor, .empty-state, .subsection:not(.subsection--plain))::after {
+  inset: 5px 8px 8px 6px;
+  z-index: 1;
+  background:
+    radial-gradient(circle, rgba(9, 9, 10, 0.12) 0 1px, transparent 1.35px) right top / 12px 12px,
+    #d8d2c6;
+  clip-path: polygon(0 7%, 96% 0, 100% 90%, 3% 100%);
+}
+
+:root[data-skin="phantom"] :is(.metric, .card-editor, .choice-editor, .empty-state, .subsection:not(.subsection--plain)) > * {
+  position: relative;
+  z-index: 2;
+}
