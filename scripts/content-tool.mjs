@@ -1,13 +1,21 @@
 #!/usr/bin/env node
 import { extname } from "node:path";
+import { readFile } from "node:fs/promises";
 
-import { readCardsCsv, readCardsJson, validateCardSet } from "../packages/pipeline/src/index.js";
+import {
+  createDiagnosticFeedback,
+  readCardsCsv,
+  readCardsJson,
+  validateCardSet,
+  writeCardsCsv,
+  writeCardsJson
+} from "../packages/pipeline/src/index.js";
 import { runMonteCarloReview } from "../packages/reviewer/src/index.js";
 
 const [command, filePath, ...flags] = process.argv.slice(2);
 
 try {
-  if (!command || !filePath || !["validate", "review"].includes(command)) {
+  if (!command || !filePath || !["validate", "review", "convert", "feedback"].includes(command)) {
     usage();
     process.exitCode = 1;
   } else if (command === "validate") {
@@ -17,7 +25,7 @@ try {
     if (!validation.valid) {
       process.exitCode = 1;
     }
-  } else {
+  } else if (command === "review") {
     const cards = await loadCards(filePath);
     const validation = validateCardSet(cards);
     if (!validation.valid) {
@@ -28,6 +36,27 @@ try {
       const report = runMonteCarloReview({ cards, ...options });
       writeJson({ filePath, cards: cards.length, validation, report });
     }
+  } else if (command === "convert") {
+    const outputPath = flags[0];
+    if (!outputPath) {
+      throw new Error("convert requires an output path");
+    }
+
+    const cards = await loadCards(filePath);
+    const validation = validateCardSet(cards);
+    if (!validation.valid) {
+      writeJson({ filePath, cards: cards.length, validation });
+      process.exitCode = 1;
+    } else {
+      await writeCards(outputPath, cards);
+      writeJson({ inputPath: filePath, outputPath, cards: cards.length, validation });
+    }
+  } else if (command === "feedback") {
+    const report = JSON.parse(await readFile(filePath, "utf8"));
+    writeJson({
+      filePath,
+      feedback: createDiagnosticFeedback(report)
+    });
   }
 } catch (error) {
   writeJson({
@@ -47,6 +76,17 @@ async function loadCards(filePath) {
   }
 
   return readCardsJson(filePath);
+}
+
+async function writeCards(filePath, cards) {
+  const extension = extname(filePath).toLowerCase();
+
+  if (extension === ".csv") {
+    await writeCardsCsv(filePath, cards);
+    return;
+  }
+
+  await writeCardsJson(filePath, cards);
 }
 
 function parseReviewFlags(flags) {
@@ -101,8 +141,9 @@ function usage() {
   writeJson({
     usage: [
       "node scripts/content-tool.mjs validate <cards.json|cards.csv>",
-      "node scripts/content-tool.mjs review <cards.json|cards.csv> [--cycles n] [--maxTurns n] [--seed n]"
+      "node scripts/content-tool.mjs review <cards.json|cards.csv> [--cycles n] [--maxTurns n] [--seed n]",
+      "node scripts/content-tool.mjs convert <cards.json|cards.csv> <output.json|output.csv>",
+      "node scripts/content-tool.mjs feedback <review-report.json>"
     ]
   });
 }
-

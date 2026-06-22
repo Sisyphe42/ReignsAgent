@@ -1,21 +1,31 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
+import { promisify } from "node:util";
 
 import {
+  buildAssetGenerationRequest,
+  buildCardGenerationRequest,
   buildCardGenerationPrompt,
+  createContentBundle,
   createDiagnosticFeedback,
   generateAssetDrafts,
   generateCardDrafts,
+  parseContentJson,
   parseCardsCsv,
   parseCardsJson,
+  stringifyContentJson,
   stringifyCardsCsv,
+  validateContentBundle,
   validateCardSet,
   writeCardsCsv,
   writeCardsJson
 } from "../src/index.js";
+
+const execFileAsync = promisify(execFile);
 
 describe("ReignsAgent pipeline", () => {
   it("round-trips cards through JSON and CSV without core simulation logic", () => {
@@ -45,15 +55,34 @@ describe("ReignsAgent pipeline", () => {
     }
   });
 
+  it("round-trips content bundles with metadata and assets", () => {
+    const bundle = createContentBundle({
+      metadata: { title: "Court Test", version: "0.1.0" },
+      cards: sampleCards(),
+      assets: [{ id: "opening-portrait", cardId: "opening", uri: "memory://opening" }]
+    });
+    const parsed = parseContentJson(stringifyContentJson(bundle));
+
+    assert.equal(parsed.schemaVersion, 1);
+    assert.equal(parsed.metadata.title, "Court Test");
+    assert.equal(parsed.assets[0].cardId, "opening");
+    assert.deepEqual(validateContentBundle(parsed), { valid: true, errors: [], warnings: [] });
+  });
+
   it("uses connector boundaries for card and asset generation", async () => {
     const connector = {
       name: "stub",
       async generateText(request) {
         assert.equal(request.purpose, "card_generation");
+        assert.match(request.requestId, /^card_generation:/);
+        assert.equal(request.metadata.theme, "small kingdom");
         assert.match(request.prompt, /low-level tags and variables/);
-        return JSON.stringify({ cards: sampleCards() });
+        return {
+          text: `\`\`\`json\n${JSON.stringify({ cards: sampleCards() })}\n\`\`\``
+        };
       },
       async generateAsset(request) {
+        assert.match(request.requestId, /^card_asset_generation:/);
         return { cardId: request.cardId, prompt: request.prompt, uri: `memory://${request.cardId}` };
       }
     };
@@ -72,6 +101,25 @@ describe("ReignsAgent pipeline", () => {
     );
   });
 
+  it("builds stable generation requests without calling a connector", () => {
+    const first = buildCardGenerationRequest({
+      theme: "small kingdom",
+      count: 2,
+      constraints: { tone: "dry" }
+    });
+    const second = buildCardGenerationRequest({
+      theme: "small kingdom",
+      count: 2,
+      constraints: { tone: "dry" }
+    });
+    const assetRequest = buildAssetGenerationRequest({ card: sampleCards()[0], style: "ink portrait" });
+
+    assert.equal(first.requestId, second.requestId);
+    assert.equal(first.schema.required[0], "cards");
+    assert.equal(assetRequest.cardId, "opening");
+    assert.match(assetRequest.prompt, /ink portrait/);
+  });
+
   it("turns reviewer diagnostics into generation feedback actions", () => {
     const feedback = createDiagnosticFeedback({
       module: "ReignsAgent-Reviewer",
@@ -80,9 +128,17 @@ describe("ReignsAgent pipeline", () => {
       diagnostics: {
         warnings: [
           { code: "never_visited_cards", message: "unreached", cardIds: ["hidden"] },
+          { code: "unreachable_cards", severity: "error", message: "unreachable", cardIds: ["hidden"] },
+          {
+            code: "low_card_cycle_coverage",
+            severity: "warning",
+            message: "low coverage",
+            cards: [{ cardId: "rare", rate: 0.01 }]
+          },
           { code: "unsatisfied_required_tags", message: "missing tags", tags: ["royal"] },
           { code: "unsatisfied_required_variables", message: "missing variables", variables: ["edictSigned"] },
-          { code: "stalled_cycles", message: "no cards", cycles: 2 }
+          { code: "stalled_cycles", message: "no cards", cycles: 2 },
+          { code: "high_game_over_rate", severity: "warning", message: "too many endings" }
         ]
       }
     });
@@ -91,12 +147,17 @@ describe("ReignsAgent pipeline", () => {
       feedback.actions.map((action) => action.type),
       [
         "relax_requirements",
+        "repair_reachability",
+        "raise_card_exposure",
         "add_tag_producers",
         "add_variable_producers",
         "add_fallback_cards",
         "rebalance_faction_pressure"
       ]
     );
+    assert.equal(feedback.summary.actionCount, 7);
+    assert.equal(feedback.summary.errorCount, 5);
+    assert.equal(feedback.summary.warningCount, 2);
   });
 
   it("returns aggregate validation diagnostics for malformed card data", () => {
@@ -135,6 +196,24 @@ describe("ReignsAgent pipeline", () => {
     assert.match(prompt, /succession crisis/);
     assert.match(prompt, /Reviewer feedback/);
     assert.match(prompt, /rebalance_faction_pressure/);
+  });
+
+  it("converts card files through the local content tool", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "reigns-agent-convert-"));
+
+    try {
+      const jsonPath = join(dir, "cards.json");
+      const csvPath = join(dir, "cards.csv");
+
+      await writeCardsJson(jsonPath, sampleCards());
+      const { stdout } = await execFileAsync(process.execPath, ["scripts/content-tool.mjs", "convert", jsonPath, csvPath]);
+      const result = JSON.parse(stdout);
+
+      assert.equal(result.cards, 1);
+      assert.match(await readFile(csvPath, "utf8"), /opening/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });
 
