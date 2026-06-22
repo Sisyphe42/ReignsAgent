@@ -3,13 +3,13 @@ import { createRoot } from "react-dom/client";
 import "./styles.css";
 
 const PANELS = [
-  ["overview", "Overview"],
-  ["content", "Content"],
-  ["story", "Story"],
-  ["review", "Review"],
-  ["preview", "Preview"],
-  ["build", "Build"],
-  ["settings", "Settings"]
+  { id: "overview", label: "Overview", group: "Project" },
+  { id: "content", label: "Content", group: "Authoring" },
+  { id: "story", label: "Story", group: "Authoring" },
+  { id: "review", label: "Review", group: "Quality" },
+  { id: "preview", label: "Preview", group: "Quality" },
+  { id: "build", label: "Build", group: "Release" },
+  { id: "settings", label: "Settings", group: "Release" }
 ];
 
 const FACTIONS = ["faith", "people", "military", "treasury"];
@@ -47,6 +47,7 @@ function App() {
 
   const assetsByCard = useMemo(() => createAssetMap(editor?.assets ?? []), [editor]);
   const playerReady = editor?.playerValidation?.valid === true;
+  const activePanelLabel = PANELS.find((panel) => panel.id === activePanel)?.label ?? "Workspace";
 
   useEffect(() => {
     document.documentElement.dataset.skin = skin;
@@ -139,6 +140,11 @@ function App() {
             <p>{editor?.metadata?.title ?? "Project workspace"}</p>
           </div>
         </div>
+        <div className="topbar__readout" aria-label="Current workspace state">
+          <span>{activePanelLabel}</span>
+          <span>{editor?.cards?.length ?? 0} cards</span>
+          <span>{playerReady ? "player ready" : "player blocked"}</span>
+        </div>
         <div className="topbar__tools">
           <label className="skin-select">
             Skin
@@ -153,21 +159,25 @@ function App() {
 
       <div className="workspace">
         <nav className="rail" aria-label="Creator panels">
-          {PANELS.map(([id, label]) => (
+          {PANELS.map(({ id, label, group }, index) => (
             <button
               key={id}
               className={activePanel === id ? "rail__item rail__item--active" : "rail__item"}
               type="button"
               onClick={() => setActivePanel(id)}
             >
-              <span>{label}</span>
+              <span className="rail__meta">{String(index + 1).padStart(2, "0")} / {group}</span>
+              <span className="rail__label">{label}</span>
               <small>{panelStatus(id, { editor, playerReady, diagnostics, build })}</small>
             </button>
           ))}
         </nav>
 
         <main className="stage">
-          <div className="stage__status" role="status">{busy || status}</div>
+          <div className="stage__status" role="status">
+            <span>Local session</span>
+            <strong>{busy || status}</strong>
+          </div>
           {activePanel === "overview" && (
             <Overview
               editor={editor}
