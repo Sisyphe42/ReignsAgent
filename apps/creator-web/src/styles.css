@@ -1484,19 +1484,89 @@ summary {
   z-index: 0;
   background: #09090a;
   clip-path: polygon(0 8%, 96% 0, 100% 91%, 4% 100%);
-  filter: drop-shadow(8px 8px 0 rgba(215, 25, 32, 0.62));
+  filter: drop-shadow(10px 10px 0 rgba(215, 25, 32, 0.82));
+  transition: transform 170ms cubic-bezier(.2, 1.55, .42, .98), filter 170ms ease;
 }
 
 :root[data-skin="phantom"] :is(.metric, .card-editor, .choice-editor, .empty-state, .subsection:not(.subsection--plain))::after {
   inset: 5px 8px 8px 6px;
   z-index: 1;
   background:
+    linear-gradient(110deg, transparent 0 72%, rgba(215, 25, 32, 0.16) 72.2% 100%),
     radial-gradient(circle, rgba(9, 9, 10, 0.12) 0 1px, transparent 1.35px) right top / 12px 12px,
-    #d8d2c6;
+    #f7f2e9;
   clip-path: polygon(0 7%, 96% 0, 100% 90%, 3% 100%);
+  transition: transform 170ms cubic-bezier(.2, 1.55, .42, .98), background-position 180ms ease;
 }
 
 :root[data-skin="phantom"] :is(.metric, .card-editor, .choice-editor, .empty-state, .subsection:not(.subsection--plain)) > * {
   position: relative;
   z-index: 2;
+}
+
+:root[data-skin="phantom"] :is(.metric, .card-editor, .choice-editor, .empty-state, .subsection:not(.subsection--plain))::selection {
+  color: #f7f2e9;
+  background: #d71920;
+}
+
+:root[data-skin="phantom"] :is(.metric, .card-editor, .choice-editor, .empty-state, .subsection:not(.subsection--plain)):hover::before,
+:root[data-skin="phantom"] :is(.metric, .card-editor, .choice-editor, .empty-state, .subsection:not(.subsection--plain)):focus-within::before {
+  transform: translate(-5px, -5px) rotate(-1.4deg);
+  filter: drop-shadow(15px 14px 0 rgba(215, 25, 32, 0.9));
+}
+
+:root[data-skin="phantom"] :is(.metric, .card-editor, .choice-editor, .empty-state, .subsection:not(.subsection--plain)):hover::after,
+:root[data-skin="phantom"] :is(.metric, .card-editor, .choice-editor, .empty-state, .subsection:not(.subsection--plain)):focus-within::after {
+  transform: translate(-9px, -8px) rotate(1.1deg);
+}
+
+:root[data-skin="phantom"] :is(.metric, .card-editor, .choice-editor, .empty-state, .subsection:not(.subsection--plain)):hover > *,
+:root[data-skin="phantom"] :is(.metric, .card-editor, .choice-editor, .empty-state, .subsection:not(.subsection--plain)):focus-within > * {
+  transform: translate(-7px, -6px) rotate(0.3deg);
+}
+
+:root[data-skin="phantom"] :is(.metric, .card-editor, .choice-editor, .empty-state, .subsection:not(.subsection--plain)) > * {
+  transition: transform 170ms cubic-bezier(.2, 1.55, .42, .98);
+}
+
+:root[data-skin="phantom"] .btn,
+:root[data-skin="phantom"] .link-button,
+:root[data-skin="phantom"] .file-button,
+:root[data-skin="phantom"] .rail__item {
+  transform-origin: 18% 50%;
+}
+
+:root[data-skin="phantom"] .btn:hover,
+:root[data-skin="phantom"] .link-button:hover,
+:root[data-skin="phantom"] .file-button:hover,
+:root[data-skin="phantom"] .btn:focus-visible,
+:root[data-skin="phantom"] .link-button:focus-visible,
+:root[data-skin="phantom"] .file-button:focus-visible {
+  animation: phantom-menu-pop 220ms cubic-bezier(.17, 1.7, .32, 1) both;
+}
+
+:root[data-skin="phantom"] .rail__item:hover,
+:root[data-skin="phantom"] .rail__item:focus-visible {
+  animation: phantom-menu-pop 220ms cubic-bezier(.17, 1.7, .32, 1) both;
+}
+
+@keyframes phantom-menu-pop {
+  0% {
+    transform: translate(0, 0) rotate(-1deg) scale(1);
+  }
+  58% {
+    transform: translate(-9px, -5px) rotate(-3.2deg) scale(1.055);
+  }
+  100% {
+    transform: translate(-6px, -3px) rotate(-2.2deg) scale(1.035);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root[data-skin="phantom"] *,
+  :root[data-skin="phantom"] *::before,
+  :root[data-skin="phantom"] *::after {
+    animation-duration: 1ms !important;
+    transition-duration: 1ms !important;
+  }
 }
