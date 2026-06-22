@@ -204,6 +204,13 @@ textarea { resize: vertical; font-family: ui-monospace, "SFMono-Regular", monosp
 .card__text { font-size: 16px; margin: 0 0 14px; }
 .card__choices { display: flex; gap: 10px; }
 
+.card { transition: transform 0.18s ease-out; touch-action: pan-y; user-select: none; }
+.card.swiping { transition: none; cursor: grabbing; }
+.card[data-swipe-hint="left"] { box-shadow: -6px 12px 30px rgba(217, 106, 106, 0.35); }
+.card[data-swipe-hint="right"] { box-shadow: 6px 12px 30px rgba(106, 217, 143, 0.35); }
+.btn:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { .card { transition: none; } }
+
 .health { display: flex; align-items: center; gap: 12px; margin: 12px 0; }
 .health__score { font-size: 32px; font-weight: 700; color: var(--accent); }
 .health__headline { color: var(--muted); font-size: 13px; }

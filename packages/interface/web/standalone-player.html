@@ -46,6 +46,17 @@
     }
     .text { font-size: 19px; line-height: 1.5; }
     .swipes { display: flex; gap: 12px; margin-top: 24px; }
+    .start-wrap { text-align: center; margin-top: 24px; display: flex; gap: 10px; justify-content: center; }
+    .swipe-hint { font-size: 11px; color: #8a8f99; text-align: center; margin: 12px 0 0; }
+    .summary { background: #1f232c; border: 1px solid #2a2f3a; border-radius: 8px; padding: 14px; margin-top: 16px; }
+    .summary__title { font-size: 14px; font-weight: 600; margin: 0 0 6px; }
+    .summary__line { font-size: 12px; color: #8a8f99; margin: 2px 0; }
+    .card { transition: transform 0.18s ease-out; touch-action: pan-y; user-select: none; }
+    .card.swiping { transition: none; cursor: grabbing; }
+    .card[data-swipe-hint="left"] { box-shadow: -6px 12px 30px rgba(217,106,106,0.35); }
+    .card[data-swipe-hint="right"] { box-shadow: 6px 12px 30px rgba(106,217,143,0.35); }
+    @media (prefers-reduced-motion: reduce) { .card { transition: none; } }
+    button:focus-visible { outline: 2px solid #c9a24b; outline-offset: 2px; }
     button {
       flex: 1;
       background: #1f232c;
@@ -59,26 +70,28 @@
     button:hover:not(:disabled) { border-color: #c9a24b; }
     button:disabled { opacity: 0.4; cursor: not-allowed; }
     .primary { background: #c9a24b; color: #1a1405; font-weight: 600; border-color: #c9a24b; }
-    .start-wrap { text-align: center; margin-top: 24px; }
     .status { margin-top: 16px; font-size: 13px; color: #8a8f99; text-align: center; min-height: 18px; }
   </style>
 </head>
 <body>
   <div class="stage">
     <div class="gauges" id="gauges"></div>
-    <div class="card">
+    <div class="card" id="card" role="group" aria-label="Current card">
       <img id="art" class="art" alt="" hidden />
-      <div class="text" id="text">No build loaded.</div>
+      <div class="text" id="text" aria-live="polite">No build loaded.</div>
       <div class="swipes">
-        <button id="left" disabled>◀ Left</button>
-        <button id="right" disabled>Right ▶</button>
+        <button id="left" disabled aria-label="Swipe left">◀ Left</button>
+        <button id="right" disabled aria-label="Swipe right">Right ▶</button>
       </div>
+      <div class="swipe-hint" id="swipe-hint" hidden>Drag the card or use ← → keys</div>
     </div>
+    <div class="summary" id="summary" hidden aria-live="polite"></div>
     <div class="start-wrap">
       <input type="file" id="file" accept=".json,application/json" hidden />
       <button class="primary" id="load">Load build</button>
+      <button id="restart" hidden>Play again</button>
     </div>
-    <div class="status" id="status"></div>
+    <div class="status" id="status" role="status" aria-live="polite"></div>
   </div>
 
   <script type="module">
@@ -91,6 +104,86 @@
 
     let player = null;
     let assetByCard = new Map();
+    let lastSnap = null;
+
+    // attachSwipe is inlined here (mirroring packages/interface/web/assets/swipe-input.js)
+    // so the deployed player.html needs no repo-relative imports.
+    function attachSwipe(options) {
+      const element = options.element;
+      const onSwipe = options.onSwipe;
+      const canSwipe = typeof options.canSwipe === "function" ? options.canSwipe : () => true;
+      const reducedMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      const THRESHOLD = 0.28;
+      const MAX_TILT = 14;
+      let dragging = false, startX = 0, currentX = 0, pointerId = null;
+
+      const onKey = (event) => {
+        if (!canSwipe()) return;
+        if (event.key === "ArrowLeft" || event.key === "a" || event.key === "A") { event.preventDefault(); onSwipe("left"); }
+        else if (event.key === "ArrowRight" || event.key === "d" || event.key === "D") { event.preventDefault(); onSwipe("right"); }
+      };
+      const onDown = (event) => {
+        if (!canSwipe() || dragging) return;
+        if (event.pointerType === "mouse" && event.button !== 0) return;
+        dragging = true; pointerId = event.pointerId; startX = currentX = event.clientX;
+        try { element.setPointerCapture?.(event.pointerId); } catch {}
+        element.classList.add("swiping");
+      };
+      const onMove = (event) => {
+        if (!dragging || event.pointerId !== pointerId) return;
+        currentX = event.clientX;
+        if (reducedMotion) return;
+        const width = element.offsetWidth || 1;
+        const delta = Math.max(-width, Math.min(width, currentX - startX));
+        const fraction = delta / width;
+        element.style.transform = `translateX(${delta}px) rotate(${fraction * MAX_TILT}deg)`;
+        element.dataset.swipeHint = fraction <= -THRESHOLD ? "left" : fraction >= THRESHOLD ? "right" : "";
+      };
+      const finish = () => {
+        const width = element.offsetWidth || 1;
+        const fraction = (currentX - startX) / width;
+        dragging = false; pointerId = null;
+        element.style.transform = ""; delete element.dataset.swipeHint;
+        element.classList.remove("swiping");
+        if (Math.abs(fraction) >= THRESHOLD && canSwipe()) onSwipe(fraction < 0 ? "left" : "right");
+      };
+      const onTouchStart = (event) => {
+        if (!canSwipe() || dragging || event.touches.length !== 1) return;
+        dragging = true; startX = currentX = event.touches[0].clientX;
+        element.classList.add("swiping");
+      };
+      const onMoveTouch = (event) => {
+        if (!dragging || event.touches.length !== 1) return;
+        currentX = event.touches[0].clientX;
+        if (reducedMotion) return;
+        const width = element.offsetWidth || 1;
+        const delta = Math.max(-width, Math.min(width, currentX - startX));
+        const fraction = delta / width;
+        element.style.transform = `translateX(${delta}px) rotate(${fraction * MAX_TILT}deg)`;
+        element.dataset.swipeHint = fraction <= -THRESHOLD ? "left" : fraction >= THRESHOLD ? "right" : "";
+      };
+
+      window.addEventListener("keydown", onKey);
+      element.addEventListener("pointerdown", onDown);
+      element.addEventListener("pointermove", onMove);
+      element.addEventListener("pointerup", finish);
+      element.addEventListener("pointercancel", finish);
+      element.addEventListener("touchstart", onTouchStart, { passive: true });
+      element.addEventListener("touchmove", onMoveTouch, { passive: true });
+      element.addEventListener("touchend", finish);
+    }
+
+    function canSwipe() {
+      return Boolean(player) && !lastSnap?.gameOver && lastSnap?.currentCard;
+    }
+
+    // Inlined swipe input (no import) so the shipped player.html stays
+    // self-contained — same principle as the inlined core runtime.
+    attachSwipe({
+      element: el("card"),
+      onSwipe: (direction) => swipe(direction),
+      canSwipe
+    });
 
     el("load").addEventListener("click", () => el("file").click());
     el("file").addEventListener("change", async (event) => {
@@ -110,11 +203,22 @@
       }
     });
 
+    el("restart").addEventListener("click", () => {
+      if (!player) return;
+      try {
+        const snap = player.start();
+        render(snap);
+        setStatus("Reign restarted");
+      } catch (error) {
+        setStatus(error.message);
+      }
+    });
+
     el("left").addEventListener("click", () => swipe("left"));
     el("right").addEventListener("click", () => swipe("right"));
 
     function swipe(direction) {
-      if (!player) return;
+      if (!canSwipe()) return;
       try {
         const snap = player.swipe(direction);
         render(snap);
@@ -125,6 +229,7 @@
     }
 
     function render(snap) {
+      lastSnap = snap;
       const gauges = el("gauges");
       gauges.innerHTML = "";
       const factions = snap?.factions ?? {};
@@ -135,6 +240,7 @@
         div.innerHTML = `<div class="gauge__name">${escapeHtml(name)} · ${v}</div><div class="gauge__bar"><div class="gauge__fill" style="width:${v}%"></div></div>`;
         gauges.appendChild(div);
       }
+      el("swipe-hint").hidden = !snap?.currentCard || snap?.gameOver;
       const card = snap?.currentCard;
       if (card) {
         const asset = assetByCard.get(card.id);
@@ -149,14 +255,34 @@
         setChoiceButtonLabels(card);
         el("left").disabled = false;
         el("right").disabled = false;
+        el("summary").hidden = true;
+        el("restart").hidden = true;
       } else {
         el("art").removeAttribute("src");
         el("art").hidden = true;
-        el("text").textContent = snap?.gameOver ? `Your reign ended: ${snap.gameOver.faction}.` : "No card available.";
+        el("text").textContent = snap?.gameOver ? "Your reign has ended." : "No card available.";
         resetChoiceButtonLabels();
         el("left").disabled = true;
         el("right").disabled = true;
+        if (snap?.gameOver) {
+          renderSummary(snap);
+          el("restart").hidden = false;
+        }
       }
+    }
+
+    function renderSummary(snap) {
+      const summary = el("summary");
+      const faction = snap.gameOver?.faction ?? "—";
+      const lines = Object.entries(snap.factions ?? {})
+        .map(([name, value]) => `<div class="summary__line">${escapeHtml(name)}: ${value}</div>`)
+        .join("");
+      summary.innerHTML = `
+        <p class="summary__title">Reign ended · ${escapeHtml(faction)}</p>
+        <div class="summary__line">Turns survived: ${snap.turn ?? 0}</div>
+        ${lines}
+      `;
+      summary.hidden = false;
     }
 
     function setChoiceButtonLabels(card) {
