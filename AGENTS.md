@@ -31,6 +31,25 @@ Anti-RPG rule: the system may reserve low-level variable/tag interfaces for user
 - **Git & Review Rule**: The Agent must maintain a clean Git history. Never squash multiple phases into one commit. Ensure all unit tests pass *before* calling `git commit`. Include what was changed and what to review in the commit body.
 - **AGENTS.md Review Rule**: Progress tracking updates under `## 4. Implementation Progress` may be made as part of feature work. Other edits to this file are allowed when they improve project direction, architecture, or agent behavior, but they require manual review before being committed.
 
+## 3.1 Branch, Build, Commit, PR, and Merge Workflow
+- **Stable Line**: `master` is the stable integration branch. It must stay buildable and should only receive reviewed PR merges or explicitly approved direct maintenance commits.
+- **Branch Naming Rule**: Branches use a small folder-style prefix plus the intended PR title as a lowercase kebab-case slug: `feature/<pr-title-slug>`, `docs/<pr-title-slug>`, `fix/<pr-title-slug>`, `release/<version-or-title>`, or short-lived `phase/<milestone-title>`. Examples: `feature/dashboard-choice-effects-editor`, `feature/live-dev-server-watch-mode`, `docs/branch-pr-workflow`, and `release/v0.1-stabilization`. Do not use agent/tool prefixes as project branch names.
+- **Phase Tracking Rule**: Phases are product milestones, not daily development branches. Track phases with GitHub milestones, labels, PR titles, and optional tags such as `phase-4-complete`. Use a `phase-...` branch only as a short-lived integration branch when multiple feature PRs must be staged together.
+- **Planned Branch Rule**: Pre-created planning branches are allowed only for near-term work that is already on the roadmap. Before starting work on an older planning branch, rebase or recreate it from the latest stable `master`.
+- **Work Start Flow**: Update local refs, verify the working tree is clean, then create or switch to the categorized PR-slug branch. Keep each branch scoped to one reviewable PR.
+- **Build/Test Gate**: Before committing, run `npm run verify`. For deployable player changes, also run `npm run build:game -- fixtures/content/oss-court.cards.json <temporary-output-dir>`. For frontend-visible changes, run the local dev server and smoke test the dashboard/player in a browser.
+- **Commit Rule**: Commit only after the relevant gate is green. Commit messages must include what changed, what was tested, and what reviewers should inspect. Do not bundle unrelated phases or unrelated feature areas into one commit.
+- **PR Rule**: Push the branch and open a PR with a concise summary, test evidence, risk notes, and the manual review checklist. Draft PRs are allowed for early feedback; ready PRs require a green local gate first.
+- **Merge Rule**: Merge only after CI is green and the required manual review boundaries below are satisfied. Prefer a normal merge or squash according to repository policy, but never erase meaningful phase history without explicit approval.
+- **Cleanup Rule**: After merge, delete the temporary feature branch locally and remotely, update local `master`, and create or update milestone tags when a phase is complete.
+
+## 3.2 Manual Review Boundaries
+- **Must Be Reviewed By User Before Merge**: Changes to product direction, game design scope, Anti-RPG constraints, module boundaries, public data contracts, security/privacy behavior, connector/API credential handling, deploy/publishing behavior, and any non-progress edit to this AGENTS.md file.
+- **Should Be Reviewed By User Before Merge**: User-facing frontend workflow changes, visual/interaction changes, generated sample content, localization tone, documentation that changes creator expectations, and large refactors even when tests are green.
+- **Agent May Self-Prepare Without Waiting**: Running build/test gates, creating feature branches, making focused implementation commits, pushing branches, opening PRs, updating PR descriptions, attaching test evidence, and deleting temporary branches after an approved merge.
+- **Agent May Self-Merge Only When Explicitly Authorized**: Low-risk mechanical fixes, test-only changes, CI/config maintenance, or documentation typo fixes may be self-merged only when the user has explicitly granted that permission for the PR or maintenance window.
+- **Never Self-Merge**: AGENTS.md governance changes, architecture changes, player-facing gameplay changes, branch strategy changes, connector/security changes, or anything that failed a gate and was fixed without subsequent verification.
+
 ## 4. Implementation Progress
 - [x] Phase 1: Core Headless Runtime & Variable Hook Architecture (Implemented in `packages/core`; low-level variable/tag hooks, snapshot/restore, deterministic step API, JSON-safe event log, no RPG systems)
 - [x] Phase 2: Monte Carlo Simulation Bot & Graph Analyzer (Implemented in `packages/reviewer`; headless JSON diagnostics, default 100k cycles, single-cycle simulator, event samples, coverage metrics, configurable thresholds, no pipeline connectors)
