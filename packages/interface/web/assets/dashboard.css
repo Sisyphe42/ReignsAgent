@@ -135,6 +135,41 @@ textarea { resize: vertical; font-family: ui-monospace, "SFMono-Regular", monosp
 .card-row__edit { display: flex; gap: 6px; }
 .card-row input { font-size: 12px; }
 
+.card-row__badge { font-size: 10px; padding: 2px 6px; border-radius: 4px; margin-left: 6px; }
+.badge--ok { background: rgba(106, 217, 143, 0.15); color: var(--ok); border: 1px solid rgba(106, 217, 143, 0.3); }
+.badge--err { background: rgba(217, 106, 106, 0.15); color: var(--danger); border: 1px solid rgba(217, 106, 106, 0.3); }
+
+.effects { margin-top: 8px; }
+.effects > summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+.effects__body { margin-top: 10px; display: flex; flex-direction: column; gap: 12px; }
+
+.choice-editor {
+  background: #0c0e12;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px;
+}
+.choice-editor__head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.choice-editor__id { font-weight: 600; font-size: 12px; min-width: 48px; }
+.choice-editor__label { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); flex: 1; }
+.choice-editor__label input { flex: 1; }
+.choice-editor__group { margin-top: 8px; }
+.choice-editor__group-title { display: block; font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+.choice-editor__factions { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
+.faction-field { display: flex; flex-direction: column; gap: 2px; font-size: 10px; color: var(--muted); }
+.faction-field input { font-size: 12px; width: 100%; }
+.choice-editor__advanced { margin-top: 8px; }
+.choice-editor__advanced summary { cursor: pointer; color: var(--muted); font-size: 11px; }
+.choice-editor__advanced textarea { margin-top: 6px; font-size: 11px; }
+
+.key-row { display: flex; gap: 4px; align-items: center; margin-top: 4px; }
+.key-row input { font-size: 11px; }
+.key-row [data-key-name] { flex: 1; }
+.key-row [data-key-value] { flex: 1; }
+
+.btn--ghost { background: transparent; border: 1px dashed var(--border); color: var(--muted); font-size: 11px; padding: 4px 8px; margin-top: 4px; }
+.btn--ghost:hover { border-color: var(--accent); color: var(--ink); }
+
 .add summary { cursor: pointer; color: var(--muted); font-size: 13px; }
 .add__form { display: flex; gap: 8px; margin-top: 10px; }
 

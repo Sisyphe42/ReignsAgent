@@ -20,6 +20,7 @@ const setStatus = (node, message, kind = "") => {
 };
 
 const SAMPLE_URL = "/api/samples/oss-court";
+const FACTION_LIST = ["faith", "people", "military", "treasury"];
 let assetByCard = new Map();
 let appliedPresentationVariables = new Set();
 
@@ -28,7 +29,7 @@ async function refreshEditor() {
   assetByCard = createAssetMap(data.assets ?? []);
   applyPresentation(data.metadata?.presentation);
   el("meta-title").value = data.metadata?.title ?? "";
-  renderCards(data.cards);
+  renderCards(data.cards, data.validation);
   const playerReady = data.playerValidation?.valid;
   setStatus(
     el("editor-status"),
@@ -37,42 +38,357 @@ async function refreshEditor() {
   );
 }
 
-function renderCards(cards) {
+const cardRows = new Map(); // cardId -> { row, expandedCard }
+
+function renderCards(cards, validation) {
   const list = el("card-list");
-  list.innerHTML = "";
-  for (const card of cards) {
-    const row = document.createElement("div");
-    row.className = "card-row";
-    const choices = (card.choices ?? []).map((c) => c.id).join(", ");
-    const asset = assetByCard.get(card.id);
-    row.innerHTML = `
-      <div class="card-row__head">
-        <div class="card-row__meta">
-          ${asset ? `<img class="card-row__art" src="${escapeAttribute(asset.uri)}" alt="" />` : ""}
-          <span class="card-row__id">${escapeHtml(card.id)}</span>
-        </div>
-        <div class="card-row__edit">
-          <input type="text" data-edit-text value="${escapeHtml(card.text ?? "")}" />
-          <button class="btn" data-save>Save</button>
-          <button class="btn" data-delete>✕</button>
-        </div>
-      </div>
-      <div class="card-row__choices">choices: ${escapeHtml(choices)}</div>
-    `;
-    row.querySelector("[data-save]").addEventListener("click", async () => {
-      const text = row.querySelector("[data-edit-text]").value;
-      await api(`/api/editor/cards/${encodeURIComponent(card.id)}`, {
-        method: "PUT",
-        body: { changes: { text } }
-      });
-      await refreshEditor();
-    });
-    row.querySelector("[data-delete]").addEventListener("click", async () => {
-      await api(`/api/editor/cards/${encodeURIComponent(card.id)}`, { method: "DELETE" });
-      await refreshEditor();
-    });
-    list.appendChild(row);
+  const seen = new Set(cards.map((card) => card.id));
+
+  // Remove rows for cards that no longer exist.
+  for (const [cardId, entry] of cardRows) {
+    if (!seen.has(cardId)) {
+      entry.row.remove();
+      cardRows.delete(cardId);
+    }
   }
+
+  // Create or update rows in order, preserving DOM (and input focus).
+  cards.forEach((card, index) => {
+    let entry = cardRows.get(card.id);
+    if (!entry) {
+      entry = { row: buildCardRow(card), expandedCard: null };
+      cardRows.set(card.id, entry);
+      wireCardRow(entry, card);
+    }
+    if (entry.row.parentElement !== list || [...list.children][index] !== entry.row) {
+      list.insertBefore(entry.row, [...list.children][index] ?? null);
+    }
+    syncCardRow(entry, card, validationForCard(validation, card));
+  });
+}
+
+function buildCardRow(card) {
+  const row = document.createElement("div");
+  row.className = "card-row";
+  row.dataset.cardId = card.id;
+  row.innerHTML = `
+    <div class="card-row__head">
+      <div class="card-row__meta">
+        <img class="card-row__art" alt="" hidden />
+        <span class="card-row__id"></span>
+        <span class="card-row__badge" hidden></span>
+      </div>
+      <div class="card-row__edit">
+        <input type="text" data-edit-text />
+        <button class="btn" data-save type="button">Save</button>
+        <button class="btn" data-delete type="button">✕</button>
+      </div>
+    </div>
+    <div class="card-row__choices"></div>
+    <details class="effects">
+      <summary>Edit choices</summary>
+      <div class="effects__body"></div>
+    </details>
+  `;
+  return row;
+}
+
+function wireCardRow(entry, card) {
+  const { row } = entry;
+  const cardId = card.id;
+
+  row.querySelector("[data-save]").addEventListener("click", async () => {
+    const text = row.querySelector("[data-edit-text]").value;
+    await api(`/api/editor/cards/${encodeURIComponent(cardId)}`, {
+      method: "PUT",
+      body: { changes: { text } }
+    });
+    await refreshEditor();
+  });
+
+  row.querySelector("[data-delete]").addEventListener("click", async () => {
+    await api(`/api/editor/cards/${encodeURIComponent(cardId)}`, { method: "DELETE" });
+    cardRows.delete(cardId);
+    await refreshEditor();
+  });
+}
+
+function syncCardRow(entry, card, cardValidation) {
+  const { row } = entry;
+  const asset = assetByCard.get(card.id);
+  const art = row.querySelector(".card-row__art");
+  if (asset) {
+    art.src = asset.uri;
+    art.hidden = false;
+  } else {
+    art.removeAttribute("src");
+    art.hidden = true;
+  }
+  row.querySelector(".card-row__id").textContent = card.id;
+
+  // Text input: update only if not focused, to avoid clobbering the caret.
+  const textInput = row.querySelector("[data-edit-text]");
+  if (document.activeElement !== textInput) {
+    textInput.value = card.text ?? "";
+  }
+
+  const badge = row.querySelector(".card-row__badge");
+  if (cardValidation) {
+    badge.hidden = false;
+    badge.textContent = cardValidation.valid ? "player-ready" : "invalid";
+    badge.className = `card-row__badge badge badge--${cardValidation.valid ? "ok" : "err"}`;
+  } else {
+    badge.hidden = true;
+  }
+
+  const choicesLine = (card.choices ?? []).map((c) => c.id).join(", ");
+  row.querySelector(".card-row__choices").textContent = `choices: ${choicesLine}`;
+
+  syncEffectsEditor(entry, card);
+}
+
+function validationForCard(validation, card) {
+  const messages = validation?.errors ?? [];
+  const mine = messages.filter((message) => message.includes(`'${card.id}'`) || message.includes(`Card '${card.id}'`));
+  return { valid: mine.length === 0, errors: mine };
+}
+
+/**
+ * syncEffectsEditor builds (once) and then refreshes a structured per-choice
+ * editor inside the card row. Structured fields patch single effects through
+ * the granular routes; the advanced JSON textarea replaces the whole effects
+ * object through setChoiceEffects. Inputs are never rebuilt while focused, so
+ * typing in a field keeps the caret position.
+ */
+function syncEffectsEditor(entry, card) {
+  const body = entry.row.querySelector(".effects__body");
+
+  // Build a choice editor once per choice id; reuse on subsequent syncs.
+  const existing = new Map([...body.children].map((node) => [node.dataset.choiceId, node]));
+  const seen = new Set();
+
+  for (const choice of card.choices ?? []) {
+    seen.add(choice.id);
+    let node = existing.get(choice.id);
+    if (!node) {
+      node = buildChoiceEditor(card.id, choice);
+      body.appendChild(node);
+    }
+    syncChoiceEditor(node, choice);
+  }
+  for (const [choiceId, node] of existing) {
+    if (!seen.has(choiceId)) {
+      node.remove();
+    }
+  }
+}
+
+function buildChoiceEditor(cardId, choice) {
+  const node = document.createElement("div");
+  node.className = "choice-editor";
+  node.dataset.choiceId = choice.id;
+  node.innerHTML = `
+    <div class="choice-editor__head">
+      <span class="choice-editor__id"></span>
+      <label class="choice-editor__label">label
+        <input type="text" data-choice-label />
+      </label>
+    </div>
+    <div class="choice-editor__group">
+      <span class="choice-editor__group-title">faction deltas</span>
+      <div class="choice-editor__factions" data-factions></div>
+    </div>
+    <div class="choice-editor__group">
+      <span class="choice-editor__group-title">tags</span>
+      <div data-tags></div>
+      <button type="button" class="btn btn--ghost" data-add-tag>+ tag</button>
+    </div>
+    <div class="choice-editor__group">
+      <span class="choice-editor__group-title">variables</span>
+      <div data-variables></div>
+      <button type="button" class="btn btn--ghost" data-add-variable>+ variable</button>
+    </div>
+    <details class="choice-editor__advanced">
+      <summary>Advanced JSON</summary>
+      <textarea data-effects-json rows="4" spellcheck="false"></textarea>
+      <button type="button" class="btn" data-apply-json>Apply JSON</button>
+    </details>
+  `;
+
+  node.querySelector(".choice-editor__id").textContent = choice.id;
+
+  const cardPath = `/api/editor/cards/${encodeURIComponent(cardId)}`;
+  const choicePath = `${cardPath}/choices/${encodeURIComponent(choice.id)}`;
+
+  node.querySelector("[data-choice-label]").addEventListener("change", async (event) => {
+    await api(choicePath, { method: "PATCH", body: { label: event.target.value } });
+    await refreshEditor();
+  });
+
+  const factionsEl = node.querySelector("[data-factions]");
+  for (const faction of FACTION_LIST) {
+    const field = document.createElement("label");
+    field.className = "faction-field";
+    field.innerHTML = `<span>${faction}</span><input type="number" data-faction="${faction}" /></label>`;
+    const input = field.querySelector("input");
+    input.addEventListener("change", async () => {
+      const raw = input.value.trim();
+      if (raw === "") {
+        await api(`${choicePath}/effects/faction/${faction}`, { method: "DELETE" });
+      } else {
+        const delta = Number(raw);
+        if (Number.isFinite(delta)) {
+          await api(`${choicePath}/effects/faction/${faction}`, { method: "POST", body: { value: delta } });
+        }
+      }
+      await refreshEditor();
+    });
+    factionsEl.appendChild(field);
+  }
+
+  node.querySelector("[data-add-tag]").addEventListener("click", () => {
+    addKeyRow(node.querySelector("[data-tags]"), "tag", "true", async (key, value) => {
+      const cleaned = value.trim() === "" || value === "false" ? null : value === "true" ? true : value;
+      await applyEffectEntry(choicePath, "tag", key, cleaned);
+    });
+  });
+  node.querySelector("[data-add-variable]").addEventListener("click", () => {
+    addKeyRow(node.querySelector("[data-variables]"), "variable", "", async (key, value) => {
+      const parsed = parseScalar(value);
+      await applyEffectEntry(choicePath, "variable", key, parsed);
+    });
+  });
+
+  const jsonInput = node.querySelector("[data-effects-json]");
+  node.querySelector("[data-apply-json]").addEventListener("click", async () => {
+    try {
+      const effects = JSON.parse(jsonInput.value);
+      await api(choicePath, { method: "PATCH", body: { effects } });
+      await refreshEditor();
+      setStatus(el("editor-status"), `Effects saved for ${choice.id}`, "ok");
+    } catch (error) {
+      setStatus(el("editor-status"), error.message, "err");
+    }
+  });
+
+  return node;
+}
+
+function syncChoiceEditor(node, choice) {
+  const effects = choice.effects ?? {};
+  const labelInput = node.querySelector("[data-choice-label]");
+  if (document.activeElement !== labelInput) {
+    labelInput.value = choice.label ?? "";
+  }
+
+  for (const faction of FACTION_LIST) {
+    const input = node.querySelector(`[data-faction="${faction}"]`);
+    if (document.activeElement !== input) {
+      const delta = effects.factions?.[faction];
+      input.value = delta === undefined ? "" : String(delta);
+    }
+  }
+
+  syncKeyRows(node.querySelector("[data-tags]"), Object.entries(effects.tags ?? {}), "tag");
+  syncKeyRows(node.querySelector("[data-variables]"), Object.entries(effects.variables ?? {}), "variable");
+
+  const jsonInput = node.querySelector("[data-effects-json]");
+  if (document.activeElement !== jsonInput) {
+    jsonInput.value = JSON.stringify(effects, null, 2);
+  }
+}
+
+function syncKeyRows(container, entries, kind) {
+  const existing = [...container.querySelectorAll("[data-key-row]")];
+  const keys = entries.map(([key]) => key);
+  for (const row of existing) {
+    if (!keys.includes(row.dataset.key)) {
+      row.remove();
+    }
+  }
+  for (const [key, value] of entries) {
+    let row = container.querySelector(`[data-key-row][data-key="${cssEscape(key)}"]`);
+    if (!row) {
+      row = buildKeyRow(key, kind);
+      container.appendChild(row);
+    }
+    const valueInput = row.querySelector("[data-key-value]");
+    if (document.activeElement !== valueInput) {
+      valueInput.value = typeof value === "boolean" ? (value ? "true" : "false") : String(value ?? "");
+    }
+  }
+}
+
+function buildKeyRow(key, kind) {
+  const row = document.createElement("div");
+  row.className = "key-row";
+  row.dataset.keyRow = "";
+  row.dataset.key = key;
+  row.innerHTML = `
+    <input type="text" data-key-name value="${escapeAttribute(key)}" />
+    <input type="text" data-key-value />
+    <button type="button" class="btn btn--ghost" data-key-remove>✕</button>
+  `;
+  return row;
+}
+
+function addKeyRow(container, kind, defaultText, onApply) {
+  const row = buildKeyRow("", kind);
+  row.querySelector("[data-key-value]").value = defaultText;
+  container.appendChild(row);
+  const nameInput = row.querySelector("[data-key-name]");
+  nameInput.focus();
+
+  const apply = async () => {
+    const key = row.querySelector("[data-key-name]").value.trim();
+    const value = row.querySelector("[data-key-value]").value;
+    if (!key) {
+      setStatus(el("editor-status"), `${kind} needs a name`, "err");
+      return;
+    }
+    try {
+      await onApply(key, value);
+      await refreshEditor();
+    } catch (error) {
+      setStatus(el("editor-status"), error.message, "err");
+    }
+  };
+  row.querySelector("[data-key-value]").addEventListener("change", apply);
+  row.querySelector("[data-key-remove]").addEventListener("click", async () => {
+    const key = row.querySelector("[data-key-name]").value.trim();
+    if (key) {
+      try {
+        await onApply(key, null);
+        await refreshEditor();
+      } catch (error) {
+        setStatus(el("editor-status"), error.message, "err");
+      }
+    } else {
+      row.remove();
+    }
+  });
+}
+
+async function applyEffectEntry(choicePath, kind, key, value) {
+  if (value === null) {
+    await api(`${choicePath}/effects/${kind}/${encodeURIComponent(key)}`, { method: "DELETE" });
+  } else {
+    await api(`${choicePath}/effects/${kind}/${encodeURIComponent(key)}`, { method: "POST", body: { value } });
+  }
+}
+
+function parseScalar(text) {
+  const trimmed = text.trim();
+  if (trimmed === "") return null;
+  if (trimmed === "true") return true;
+  if (trimmed === "false") return false;
+  const num = Number(trimmed);
+  if (trimmed !== "" && Number.isFinite(num)) return num;
+  return trimmed;
+}
+
+function cssEscape(value) {
+  return CSS?.escape ? CSS.escape(value) : String(value).replace(/"/g, '\\"');
 }
 
 function escapeHtml(value) {
