@@ -14,6 +14,8 @@ The current baseline includes card contract validation, player-card validation, 
 npm run verify
 npm test
 npm run dev:interface
+npm run dev:dashboard
+npm run build:dashboard
 npm run build:game -- fixtures/content/oss-court.cards.json dist/player
 npm run content:validate -- fixtures/content/minimal.cards.json
 npm run content:review -- fixtures/content/minimal.cards.json --cycles 100 --maxTurns 20
@@ -23,7 +25,7 @@ npm run content:feedback -- review-report.json
 
 ## Creator dashboard
 
-`npm run dev:interface` starts a zero-dependency local server (default `http://localhost:4321`) serving the creator dashboard (`/`) and the player preview (`/play`):
+`npm run dev:dashboard` starts the Vite/React creator workspace (default `http://127.0.0.1:5173`) and proxies API/assets to `npm run dev:interface`. Start both commands during dashboard development. `npm run dev:interface` starts the local API/static server (default `http://localhost:4321`) and serves the built React dashboard at `/` when `npm run build:dashboard` has produced `apps/creator-web/dist`; the legacy dashboard remains available at `/classic`, and player preview remains at `/play`.
 
 - **Ingest** — import a local `.cards.json` / content bundle or paste JSON; the Open Court sample deck loads with one click.
 - **Edit** — full structured card/choice editor: card text, per-choice labels, faction deltas (faith/people/military/treasury), tag and variable key/value rows, and an advanced JSON escape hatch. Edits preserve input focus and patch through granular routes. A live `player-ready`/`invalid` badge per card reflects server validation.

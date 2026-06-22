@@ -41,10 +41,11 @@ Anti-RPG rule: the system may reserve low-level variable/tag interfaces for user
 - **Cleanup**: After merged PRs, delete temporary branches locally and remotely, update `master`, and create/update milestone tags when a phase is complete.
 
 ## 4. Repository Map
+- `apps/creator-web`: Vite/React creator dashboard workspace. It consumes the existing local API and keeps visual skins isolated from core product logic.
 - `packages/core`: Pure headless game runtime. No UI, IO, AI generation, or deployment logic.
 - `packages/reviewer`: Headless Monte Carlo simulation, graph diagnostics, and balance reports.
 - `packages/pipeline`: Local import/export, content bundle handling, generation request contracts, and reviewer feedback actions.
-- `packages/interface`: Creator workflow orchestration plus the current web dashboard/player surfaces.
+- `packages/interface`: Creator workflow orchestration plus legacy web dashboard/player surfaces and deployable player templates.
 - `scripts`: Local tools including the dev server, content CLI, build-game assembler, and verification gates.
 - `fixtures`: Sample and validation content used by tests and local demos.
 - `test`: Cross-package integration tests.

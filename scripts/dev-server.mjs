@@ -23,6 +23,7 @@ import {
 const PORT = Number(process.env.PORT ?? 4321);
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const WEB_ROOT = fileURLToPath(new URL("../packages/interface/web", import.meta.url));
+const CREATOR_WEB_DIST = join(ROOT, "apps/creator-web/dist");
 const OSS_SAMPLE_PATH = join(ROOT, "fixtures/content/oss-court.cards.json");
 const MIME = {
   ".html": "text/html; charset=utf-8",
@@ -60,6 +61,10 @@ const server = createServer(async (req, res) => {
 
   try {
     if (req.method === "GET" && (path === "/" || path === "/index.html")) {
+      return sendFile(res, creatorWebFile("index.html") ?? join(WEB_ROOT, "dashboard.html"));
+    }
+
+    if (req.method === "GET" && path === "/classic") {
       return sendFile(res, join(WEB_ROOT, "dashboard.html"));
     }
 
@@ -68,7 +73,7 @@ const server = createServer(async (req, res) => {
     }
 
     if (req.method === "GET" && path.startsWith("/assets/")) {
-      return sendFile(res, safeWebPath(path));
+      return sendFile(res, creatorWebFile(path.replace(/^\/+/, "")) ?? safeWebPath(path));
     }
 
     if (path.startsWith("/api/")) {
@@ -425,6 +430,15 @@ function safeWebPath(requestPath) {
     throw new Error(`Asset path escapes web root: ${requestPath}`);
   }
   return candidate;
+}
+
+function creatorWebFile(requestPath) {
+  const candidate = resolve(CREATOR_WEB_DIST, requestPath.replace(/^\/+/, ""));
+  const relativePath = relative(CREATOR_WEB_DIST, candidate);
+  if (relativePath.startsWith("..") || relativePath === "" || resolve(candidate).includes("\0")) {
+    return null;
+  }
+  return existsSync(candidate) ? candidate : null;
 }
 
 server.listen(PORT, () => {
