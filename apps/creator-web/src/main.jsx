@@ -16,6 +16,7 @@ const FACTIONS = ["faith", "people", "military", "treasury"];
 const SKINS = [
   ["workbench", "Workbench"],
   ["famicom", "Famicom"],
+  ["phantom", "Phantom"],
   ["arcade", "Arcade"],
   ["terminal", "Terminal"]
 ];
