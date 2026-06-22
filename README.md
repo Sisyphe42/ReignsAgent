@@ -21,6 +21,20 @@ npm run content:convert -- fixtures/content/minimal.cards.json tmp.cards.csv
 npm run content:feedback -- review-report.json
 ```
 
+## Creator dashboard
+
+`npm run dev:interface` starts a zero-dependency local server (default `http://localhost:4321`) serving the creator dashboard (`/`) and the player preview (`/play`):
+
+- **Ingest** — import a local `.cards.json` / content bundle or paste JSON; the Open Court sample deck loads with one click.
+- **Edit** — full structured card/choice editor: card text, per-choice labels, faction deltas (faith/people/military/treasury), tag and variable key/value rows, and an advanced JSON escape hatch. Edits preserve input focus and patch through granular routes. A live `player-ready`/`invalid` badge per card reflects server validation.
+- **Preview** — Reigns-style swipe over the headless core via keyboard (← → / A D), pointer drag, touch, or buttons. The end-of-run summary shows turns survived and the losing faction; "Play again" restarts.
+- **Diagnose** — run the reviewer headlessly; clickable warnings jump to the referenced card row.
+- **Build** — assemble and export a self-contained deployable `.game.json`.
+
+The left workflow rail (Ingest → Edit → Preview → Diagnose → Build) reports per-step status. In-progress editor work is saved to `localStorage` and offered for restore on reload (server-validated through `/api/editor/restore`); the deployable player itself stays stateless.
+
+`npm run build:game -- <bundle.json> <out.dir>` stitches a deployable player (`player.html` + `player-runtime.js`) that imports only the headless core — no pipeline, reviewer, or dashboard code ships to players.
+
 ## Core Runtime Example
 
 ```js

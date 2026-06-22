@@ -23,11 +23,14 @@ const setStatus = (node, message, kind = "") => {
 
 const SAMPLE_URL = "/api/samples/oss-court";
 const FACTION_LIST = ["faith", "people", "military", "treasury"];
+const PERSIST_KEY = "reigns-agent.editor.v1";
 let assetByCard = new Map();
 let appliedPresentationVariables = new Set();
+let lastEditorState = null;
 
 async function refreshEditor() {
   const data = await api("/api/editor");
+  lastEditorState = data;
   assetByCard = createAssetMap(data.assets ?? []);
   applyPresentation(data.metadata?.presentation);
   el("meta-title").value = data.metadata?.title ?? "";
@@ -38,6 +41,81 @@ async function refreshEditor() {
     `${data.cards.length} cards · validation ${data.validation.valid ? "ok" : "failed"} · player-ready ${playerReady ? "yes" : "no"}`,
     data.validation.valid ? "ok" : "err"
   );
+  updateRail({ cards: data.cards.length, playerReady, validation: data.validation });
+  schedulePersist();
+}
+
+function updateRail({ cards, playerReady, validation }) {
+  setRail("ingest", cards > 0 ? `${cards} cards` : "—", cards > 0);
+  setRail("edit", validation?.valid ? "valid" : "invalid", validation?.valid);
+  setRail("preview", playerReady ? "ready" : "blocked", playerReady);
+}
+
+function setRail(step, text, ok) {
+  const node = el(`rail-${step}`);
+  if (!node) return;
+  node.textContent = text;
+  node.dataset.ok = ok === true ? "true" : ok === false ? "false" : "";
+}
+
+function setRailDynamic(step, text, ok) {
+  setRail(step, text, ok);
+}
+
+/**
+ * Persistence: debounce-save the editor bundle to localStorage after mutations,
+ * and offer to restore an in-progress session on load. Restore goes through
+ * /api/editor/restore so the server re-validates before applying. The
+ * deployable player is unaffected — this is a creator-dashboard convenience.
+ */
+let persistTimer = null;
+function schedulePersist() {
+  if (persistTimer) clearTimeout(persistTimer);
+  persistTimer = setTimeout(persistEditor, 600);
+}
+
+async function persistEditor() {
+  try {
+    const snap = await api("/api/editor/snapshot");
+    localStorage.setItem(PERSIST_KEY, JSON.stringify({ savedAt: Date.now(), bundle: snap.bundle }));
+  } catch {
+    // Persistence is best-effort; ignore storage/network failures silently.
+  }
+}
+
+async function offerRestore() {
+  let raw;
+  try {
+    raw = localStorage.getItem(PERSIST_KEY);
+  } catch {
+    return;
+  }
+  if (!raw) return;
+  let entry;
+  try {
+    entry = JSON.parse(raw);
+  } catch {
+    return;
+  }
+  if (!entry?.bundle?.cards?.length) return;
+  setStatus(el("ingest-status"), `Restoring ${entry.bundle.cards.length} cards from saved session…`, "");
+  try {
+    await api("/api/editor/restore", { method: "POST", body: { bundle: entry.bundle } });
+    await refreshEditor();
+    setStatus(el("ingest-status"), "Restored saved session", "ok");
+  } catch (error) {
+    setStatus(el("ingest-status"), `Restore failed: ${error.message}`, "err");
+  }
+}
+
+/** focusCard scrolls to and flashes a card row so diagnostic warnings can link in. */
+function focusCard(cardId) {
+  const entry = cardRows.get(cardId);
+  if (!entry) return;
+  entry.row.scrollIntoView({ behavior: "smooth", block: "center" });
+  entry.row.classList.remove("flash");
+  void entry.row.offsetWidth; // restart animation
+  entry.row.classList.add("flash");
 }
 
 const cardRows = new Map(); // cardId -> { row, expandedCard }
@@ -586,12 +664,19 @@ el("diag-run").addEventListener("click", async () => {
     for (const warning of result.warnings) {
       const li = document.createElement("li");
       li.className = `warning warning--${warning.severity}`;
+      const cardIds = warning.details?.cardIds ?? [];
       li.innerHTML = `<span class="warning__code">${escapeHtml(warning.code)}</span> · ${escapeHtml(warning.message)}`;
+      if (cardIds.length > 0) {
+        li.title = `Jump to ${cardIds.join(", ")}`;
+        li.style.cursor = "pointer";
+        li.addEventListener("click", () => focusCard(cardIds[0]));
+      }
       list.appendChild(li);
     }
     if (result.warnings.length === 0) {
       list.innerHTML = '<li class="warning">No diagnostics warnings.</li>';
     }
+    setRailDynamic("diagnose", `${result.healthScore}/100`, result.healthScore >= 70);
   } catch (error) {
     setStatus(el("play-status"), error.message, "err");
   }
@@ -619,8 +704,10 @@ el("build-prepare").addEventListener("click", async () => {
   try {
     const result = await api("/api/build/prepare", { method: "POST", body: {} });
     el("build-output").textContent = serializeBuild(result.build);
+    setRailDynamic("build", "previewed", true);
   } catch (error) {
     el("build-output").textContent = error.message;
+    setRailDynamic("build", "failed", false);
   }
 });
 
@@ -628,8 +715,10 @@ el("build-export").addEventListener("click", async () => {
   try {
     const result = await api("/api/build/export", { method: "POST", body: {} });
     el("build-output").textContent = `Exported → ${result.outputPath}\nbuildId: ${result.buildId}`;
+    setRailDynamic("build", "exported", true);
   } catch (error) {
     el("build-output").textContent = error.message;
+    setRailDynamic("build", "failed", false);
   }
 });
 
@@ -660,4 +749,10 @@ function applyPresentation(presentation = {}) {
   style.textContent = presentation?.policy?.allowCssText === true ? (presentation?.css?.text ?? "") : "";
 }
 
-refreshEditor().catch((error) => setStatus(el("editor-status"), error.message, "err"));
+// Bootstrap: load server state, then offer to restore any saved in-progress work.
+// Restore is best-effort and goes through /api/editor/restore so the server
+// re-validates before applying; if it fails or there's nothing saved, the
+// server's default sample deck stays in place.
+refreshEditor()
+  .then(offerRestore)
+  .catch((error) => setStatus(el("editor-status"), error.message, "err"));
