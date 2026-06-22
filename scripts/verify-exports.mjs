@@ -48,6 +48,30 @@ const modules = [
       "writeCardsCsv",
       "writeCardsJson"
     ]
+  },
+  {
+    path: "packages/interface/src/index.js",
+    exports: [
+      "FACTION_KEYS",
+      "InterfaceError",
+      "buildGenerationPlan",
+      "createCardEditor",
+      "createConnectorConfig",
+      "createI18nCatalog",
+      "createPlaySession",
+      "loadEditorFromContent",
+      "localizeCard",
+      "localizeCards",
+      "normalizePresentationConfig",
+      "prepareGameBuild",
+      "projectFactionGauges",
+      "resolveLocale",
+      "runDiagnostics",
+      "serializeBuild",
+      "summarizeDiagnostics",
+      "summarizeFeedback",
+      "validatePlayerCards"
+    ]
   }
 ];
 

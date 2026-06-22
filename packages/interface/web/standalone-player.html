@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ReignsAgent Player</title>
+  <style>
+    body {
+      margin: 0;
+      background: #0f1115;
+      color: #e8e6e1;
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+      padding: 24px;
+    }
+    .stage { width: 100%; max-width: 440px; }
+    .gauges { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 16px; }
+    .gauge { background: #1f232c; border-radius: 6px; padding: 8px; }
+    .gauge__name { font-size: 11px; color: #8a8f99; text-transform: capitalize; }
+    .gauge__bar { height: 6px; background: #0c0e12; border-radius: 3px; overflow: hidden; margin-top: 4px; }
+    .gauge__fill { height: 100%; background: #6d8fd6; }
+    .card {
+      background: linear-gradient(160deg, #262b36, #181b22);
+      border: 1px solid #2a2f3a;
+      border-radius: 8px;
+      padding: 28px;
+      min-height: 220px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      box-shadow: 0 12px 30px rgba(0,0,0,0.35);
+    }
+    .art {
+      width: min(160px, 48%);
+      aspect-ratio: 1;
+      align-self: center;
+      object-fit: contain;
+      background: #0c0e12;
+      border: 1px solid #2a2f3a;
+      border-radius: 8px;
+      padding: 14px;
+      margin-bottom: 18px;
+    }
+    .text { font-size: 19px; line-height: 1.5; }
+    .swipes { display: flex; gap: 12px; margin-top: 24px; }
+    button {
+      flex: 1;
+      background: #1f232c;
+      color: #e8e6e1;
+      border: 1px solid #2a2f3a;
+      border-radius: 8px;
+      padding: 14px;
+      font-size: 15px;
+      cursor: pointer;
+    }
+    button:hover:not(:disabled) { border-color: #c9a24b; }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
+    .primary { background: #c9a24b; color: #1a1405; font-weight: 600; border-color: #c9a24b; }
+    .start-wrap { text-align: center; margin-top: 24px; }
+    .status { margin-top: 16px; font-size: 13px; color: #8a8f99; text-align: center; min-height: 18px; }
+  </style>
+</head>
+<body>
+  <div class="stage">
+    <div class="gauges" id="gauges"></div>
+    <div class="card">
+      <img id="art" class="art" alt="" hidden />
+      <div class="text" id="text">No build loaded.</div>
+      <div class="swipes">
+        <button id="left" disabled>◀ Left</button>
+        <button id="right" disabled>Right ▶</button>
+      </div>
+    </div>
+    <div class="start-wrap">
+      <input type="file" id="file" accept=".json,application/json" hidden />
+      <button class="primary" id="load">Load build</button>
+    </div>
+    <div class="status" id="status"></div>
+  </div>
+
+  <script type="module">
+    import { createPlayer } from "./player-runtime.js";
+
+    const el = (id) => document.getElementById(id);
+    const setStatus = (msg) => { el("status").textContent = msg; };
+    const escapeHtml = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+    const requestedLocale = new URLSearchParams(window.location.search).get("locale") || navigator.language || "en";
+
+    let player = null;
+    let assetByCard = new Map();
+
+    el("load").addEventListener("click", () => el("file").click());
+    el("file").addEventListener("change", async (event) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      try {
+        const build = JSON.parse(await file.text());
+        assetByCard = createAssetMap(build.content?.assets ?? []);
+        applyPresentation(build.presentation);
+        player = createPlayer(build, { locale: requestedLocale });
+        player.on(render);
+        const snap = player.start();
+        render(snap);
+        setStatus("Reign started");
+      } catch (error) {
+        setStatus(error.message);
+      }
+    });
+
+    el("left").addEventListener("click", () => swipe("left"));
+    el("right").addEventListener("click", () => swipe("right"));
+
+    function swipe(direction) {
+      if (!player) return;
+      try {
+        const snap = player.swipe(direction);
+        render(snap);
+        if (snap.gameOver) setStatus(`Reign ended: ${snap.gameOver.faction}`);
+      } catch (error) {
+        setStatus(error.message);
+      }
+    }
+
+    function render(snap) {
+      const gauges = el("gauges");
+      gauges.innerHTML = "";
+      const factions = snap?.factions ?? {};
+      for (const [name, value] of Object.entries(factions)) {
+        const v = Math.max(0, Math.min(100, value));
+        const div = document.createElement("div");
+        div.className = "gauge";
+        div.innerHTML = `<div class="gauge__name">${escapeHtml(name)} · ${v}</div><div class="gauge__bar"><div class="gauge__fill" style="width:${v}%"></div></div>`;
+        gauges.appendChild(div);
+      }
+      const card = snap?.currentCard;
+      if (card) {
+        const asset = assetByCard.get(card.id);
+        if (asset) {
+          el("art").src = asset.uri;
+          el("art").hidden = false;
+        } else {
+          el("art").removeAttribute("src");
+          el("art").hidden = true;
+        }
+        el("text").textContent = card.text ?? card.id;
+        setChoiceButtonLabels(card);
+        el("left").disabled = false;
+        el("right").disabled = false;
+      } else {
+        el("art").removeAttribute("src");
+        el("art").hidden = true;
+        el("text").textContent = snap?.gameOver ? `Your reign ended: ${snap.gameOver.faction}.` : "No card available.";
+        resetChoiceButtonLabels();
+        el("left").disabled = true;
+        el("right").disabled = true;
+      }
+    }
+
+    function setChoiceButtonLabels(card) {
+      const left = card.choices?.find((choice) => choice.id === "left");
+      const right = card.choices?.find((choice) => choice.id === "right");
+      el("left").textContent = `◀ ${left?.label ?? "Left"}`;
+      el("right").textContent = `${right?.label ?? "Right"} ▶`;
+    }
+
+    function resetChoiceButtonLabels() {
+      el("left").textContent = "◀ Left";
+      el("right").textContent = "Right ▶";
+    }
+
+    function applyPresentation(presentation = {}) {
+      const variables = presentation?.css?.variables ?? {};
+      for (const [name, value] of Object.entries(variables)) {
+        if (name.startsWith("--")) {
+          document.documentElement.style.setProperty(name, String(value));
+        }
+      }
+
+      let style = document.getElementById("presentation-css");
+      if (!style) {
+        style = document.createElement("style");
+        style.id = "presentation-css";
+        document.head.appendChild(style);
+      }
+      style.textContent = presentation?.policy?.allowCssText === true ? (presentation?.css?.text ?? "") : "";
+    }
+
+    function createAssetMap(assets) {
+      const map = new Map();
+      for (const asset of assets) {
+        if (asset?.cardId && asset?.uri && !map.has(asset.cardId)) {
+          map.set(asset.cardId, asset);
+        }
+      }
+      return map;
+    }
+  </script>
+</body>
+</html>

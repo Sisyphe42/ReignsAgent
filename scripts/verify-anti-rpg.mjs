@@ -1,7 +1,7 @@
 import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 
-const roots = ["packages", "test"];
+const roots = ["packages", "scripts", "test"];
 const bannedPatterns = [
   /\binventory\b/i,
   /\bequipment\b/i,
@@ -18,6 +18,10 @@ const violations = [];
 
 for (const root of roots) {
   for (const file of await collectJavaScriptFiles(root)) {
+    if (file.endsWith(`${separator()}verify-anti-rpg.mjs`)) {
+      continue;
+    }
+
     const text = await readFile(file, "utf8");
 
     for (const pattern of bannedPatterns) {
@@ -33,7 +37,7 @@ if (violations.length > 0) {
   throw new Error(`Anti-RPG verification failed:\n${violations.join("\n")}`);
 }
 
-console.log("Anti-RPG verification passed for implementation and tests.");
+console.log("Anti-RPG verification passed for implementation scripts and tests.");
 
 async function collectJavaScriptFiles(directory) {
   const entries = await readdir(directory, { withFileTypes: true });
@@ -55,3 +59,6 @@ async function collectJavaScriptFiles(directory) {
   return result;
 }
 
+function separator() {
+  return process.platform === "win32" ? "\\" : "/";
+}

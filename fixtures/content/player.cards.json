@@ -1,0 +1,74 @@
+{
+  "metadata": {
+    "title": "Minimal Court",
+    "version": "0.1.0"
+  },
+  "cards": [
+    {
+      "id": "edict",
+      "text": "A new edict waits on the desk.",
+      "weight": 1,
+      "choices": [
+        {
+          "id": "left",
+          "label": "Delay",
+          "effects": {
+            "factions": { "faith": 4, "military": -4 },
+            "variables": { "edictDelayed": true }
+          }
+        },
+        {
+          "id": "right",
+          "label": "Sign",
+          "effects": {
+            "factions": { "people": -8, "treasury": 6 },
+            "variables": { "edictSigned": true },
+            "tags": { "courtAlert": true }
+          }
+        }
+      ]
+    },
+    {
+      "id": "council",
+      "text": "The council asks how to answer the court.",
+      "weight": 1,
+      "requirements": {
+        "allTags": ["courtAlert"],
+        "variables": { "edictSigned": true }
+      },
+      "choices": [
+        {
+          "id": "left",
+          "label": "Hold",
+          "effects": { "factions": { "military": 5, "faith": -5 } }
+        },
+        {
+          "id": "right",
+          "label": "Soften",
+          "effects": {
+            "factions": { "people": 5, "treasury": -5 },
+            "tags": { "courtAlert": false, "settled": true }
+          }
+        }
+      ]
+    },
+    {
+      "id": "aftermath",
+      "text": "The realm studies the result.",
+      "weight": 1,
+      "requirements": { "anyTags": ["settled"] },
+      "choices": [
+        {
+          "id": "left",
+          "label": "Forget",
+          "effects": { "factions": { "treasury": 2, "military": 2 } }
+        },
+        {
+          "id": "right",
+          "label": "Record",
+          "effects": { "factions": { "faith": 2, "people": 2 } }
+        }
+      ]
+    }
+  ]
+}

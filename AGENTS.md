@@ -37,4 +37,6 @@ Anti-RPG rule: the system may reserve low-level variable/tag interfaces for user
 - [x] Phase 3: AI Pipeline Generator & Diagnostic Feedback Loop (Implemented in `packages/pipeline`; local JSON/CSV/content-bundle exchange, stable connector request contracts, reviewer feedback action plans, local conversion/feedback commands)
 - [x] Phase 1-3 Contract Hardening: Card contract validation, variable-aware graph diagnostics, fixture content verification, and local content validation/review CLI (Implemented)
 - [x] Build/Test Gate: Syntax checks, package export smoke tests, module boundary checks, Anti-RPG drift checks, fixture verification, unit tests, integration tests, lockfile, and GitHub Actions CI (Implemented)
-- [ ] Phase 4: Unified Playable Interface & Local Ingestion Dash (Pending)
+- [x] Phase 4: Unified Playable Interface & Local Ingestion Dash (Implemented in `packages/interface` and `scripts/dev-server.mjs`; local creator dashboard/player preview APIs, player-card validation, diagnostics projection, connector request preview, deployable player build assembly, and Phase 4 gates)
+- [x] Phase 4 Sample Content Pack: Complete local test deck with Game-icons.net CC BY 3.0 SVG art assets, dashboard sample loading, player art previews, and deployable asset copying (Implemented)
+- [x] Phase 4 Presentation/i18n Extension Interfaces: Policy-gated presentation config for CSS variables/raw CSS/HTML/JS slots plus locale catalog, localized card/session/player runtime resolution, and sample `en`/`zh-Hans` content (Implemented)
