@@ -27,6 +27,8 @@ const PERSIST_KEY = "reigns-agent.editor.v1";
 let assetByCard = new Map();
 let appliedPresentationVariables = new Set();
 let lastEditorState = null;
+let lastDiagnosticsSummary = "Not run";
+let lastBuildSummary = "Not prepared";
 
 async function refreshEditor() {
   const data = await api("/api/editor");
@@ -41,14 +43,20 @@ async function refreshEditor() {
     `${data.cards.length} cards · validation ${data.validation.valid ? "ok" : "failed"} · player-ready ${playerReady ? "yes" : "no"}`,
     data.validation.valid ? "ok" : "err"
   );
+  renderOverview(data);
+  renderStorySummary(data);
   updateRail({ cards: data.cards.length, playerReady, validation: data.validation });
   schedulePersist();
 }
 
 function updateRail({ cards, playerReady, validation }) {
-  setRail("ingest", cards > 0 ? `${cards} cards` : "—", cards > 0);
-  setRail("edit", validation?.valid ? "valid" : "invalid", validation?.valid);
+  setRail("overview", cards > 0 ? "ready" : "empty", cards > 0);
+  setRail("content", cards > 0 ? `${cards} cards` : "empty", cards > 0);
+  setRail("story", cards > 0 ? "mapped" : "empty", cards > 0);
+  setRail("review", lastDiagnosticsSummary === "Not run" ? "not run" : lastDiagnosticsSummary, lastDiagnosticsSummary !== "Not run" ? true : null);
   setRail("preview", playerReady ? "ready" : "blocked", playerReady);
+  setRail("build", lastBuildSummary === "Not prepared" ? "not prepared" : lastBuildSummary.toLowerCase(), lastBuildSummary !== "Not prepared" ? true : null);
+  setRail("settings", "ok", true);
 }
 
 function setRail(step, text, ok) {
@@ -60,6 +68,41 @@ function setRail(step, text, ok) {
 
 function setRailDynamic(step, text, ok) {
   setRail(step, text, ok);
+}
+
+function switchPanel(panelName) {
+  const target = document.querySelector(`[data-panel="${panelName}"]`);
+  if (!target) return;
+
+  for (const panel of document.querySelectorAll("[data-panel]")) {
+    const active = panel === target;
+    panel.hidden = !active;
+    panel.classList.toggle("panel--active", active);
+  }
+
+  for (const control of document.querySelectorAll("[data-panel-target]")) {
+    const active = control.dataset.panelTarget === panelName;
+    if (control.classList.contains("rail__step")) {
+      control.setAttribute("aria-current", active ? "page" : "false");
+    }
+  }
+}
+
+function renderOverview(data) {
+  el("overview-title").textContent = data.metadata?.title || "Untitled";
+  el("overview-cards").textContent = String(data.cards.length);
+  el("overview-validation").textContent = data.validation.valid ? "Valid" : "Invalid";
+  el("overview-validation").dataset.ok = data.validation.valid ? "true" : "false";
+  el("overview-player").textContent = data.playerValidation?.valid ? "Ready" : "Blocked";
+  el("overview-player").dataset.ok = data.playerValidation?.valid ? "true" : "false";
+  el("overview-diagnostics").textContent = lastDiagnosticsSummary;
+  el("overview-build").textContent = lastBuildSummary;
+}
+
+function renderStorySummary(data) {
+  el("story-card-count").textContent = `${data.cards.length} cards`;
+  el("story-ending-status").textContent = data.cards.length > 0 ? "Data-authored" : "No content";
+  el("story-reachability").textContent = lastDiagnosticsSummary === "Not run" ? "Run review" : lastDiagnosticsSummary;
 }
 
 /**
@@ -112,6 +155,7 @@ async function offerRestore() {
 function focusCard(cardId) {
   const entry = cardRows.get(cardId);
   if (!entry) return;
+  switchPanel("content");
   entry.row.scrollIntoView({ behavior: "smooth", block: "center" });
   entry.row.classList.remove("flash");
   void entry.row.offsetWidth; // restart animation
@@ -491,6 +535,10 @@ function createAssetMap(assets) {
   return map;
 }
 
+for (const control of document.querySelectorAll("[data-panel-target]")) {
+  control.addEventListener("click", () => switchPanel(control.dataset.panelTarget));
+}
+
 async function importContent(content) {
   const result = await api("/api/editor/import", {
     method: "POST",
@@ -521,7 +569,8 @@ el("ingest-file").addEventListener("change", async (event) => {
 
 el("meta-save").addEventListener("click", async () => {
   await api("/api/editor/metadata", { method: "PATCH", body: { metadata: { title: el("meta-title").value } } });
-  setStatus(el("editor-status"), "Title saved", "ok");
+  setStatus(el("settings-status"), "Title saved", "ok");
+  await refreshEditor();
 });
 
 el("add-create").addEventListener("click", async () => {
@@ -585,6 +634,7 @@ async function swipe(direction) {
     if (result.gameOver) {
       setStatus(el("play-status"), `Game over: ${result.gameOver.faction}`, "err");
     }
+    el("play-debug").textContent = `Turn ${result.turn ?? 0} · session ${playSession}`;
   } catch (error) {
     setStatus(el("play-status"), error.message, "err");
   }
@@ -596,6 +646,9 @@ el("swipe-right").addEventListener("click", () => swipe("right"));
 function renderPlay(state) {
   lastPlayState = state;
   renderGauges(state.gauges ?? {});
+  el("play-debug").textContent = state.sessionId
+    ? `Turn ${state.turn ?? 0} · session ${state.sessionId}`
+    : `Turn ${state.turn ?? 0} · ${state.gameOver ? "ended" : "active"}`;
   const art = el("play-art");
   if (state.currentCard) {
     const asset = assetByCard.get(state.currentCard.id);
@@ -659,6 +712,11 @@ el("diag-run").addEventListener("click", async () => {
     el("health").hidden = false;
     el("health-score").textContent = result.healthScore;
     el("health-headline").textContent = result.headline;
+    lastDiagnosticsSummary = `${result.healthScore}/100`;
+    if (lastEditorState) {
+      renderOverview(lastEditorState);
+      renderStorySummary(lastEditorState);
+    }
     const list = el("warnings");
     list.innerHTML = "";
     for (const warning of result.warnings) {
@@ -676,7 +734,7 @@ el("diag-run").addEventListener("click", async () => {
     if (result.warnings.length === 0) {
       list.innerHTML = '<li class="warning">No diagnostics warnings.</li>';
     }
-    setRailDynamic("diagnose", `${result.healthScore}/100`, result.healthScore >= 70);
+    setRailDynamic("review", `${result.healthScore}/100`, result.healthScore >= 70);
   } catch (error) {
     setStatus(el("play-status"), error.message, "err");
   }
@@ -704,6 +762,8 @@ el("build-prepare").addEventListener("click", async () => {
   try {
     const result = await api("/api/build/prepare", { method: "POST", body: {} });
     el("build-output").textContent = serializeBuild(result.build);
+    lastBuildSummary = "Previewed";
+    if (lastEditorState) renderOverview(lastEditorState);
     setRailDynamic("build", "previewed", true);
   } catch (error) {
     el("build-output").textContent = error.message;
@@ -715,6 +775,8 @@ el("build-export").addEventListener("click", async () => {
   try {
     const result = await api("/api/build/export", { method: "POST", body: {} });
     el("build-output").textContent = `Exported → ${result.outputPath}\nbuildId: ${result.buildId}`;
+    lastBuildSummary = "Exported";
+    if (lastEditorState) renderOverview(lastEditorState);
     setRailDynamic("build", "exported", true);
   } catch (error) {
     el("build-output").textContent = error.message;

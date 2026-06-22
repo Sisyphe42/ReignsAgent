@@ -26,7 +26,7 @@ Anti-RPG rule: the system may reserve low-level variable/tag interfaces for user
 - **Lifecycle Hooks**: Variable/tag hooks may implement `on_acquire`, `on_tick`, and `on_dismiss` to modify card pool weights and faction scales dynamically. These hooks are engine-level extension points only, not a mandate to build item systems or UI.
 
 ## 3. Maintenance Protocols
-- **Agent Duty**: Every time a new feature, module, or hook is implemented, the Agent MUST update this file under the `## 4. Implementation Progress` section.
+- **Documentation Duty**: When a new feature, module, or hook changes product behavior, architecture, or roadmap direction, update the relevant project documentation (`README.md`, `ROADMAP.md`, or package docs). Keep this file focused on durable agent rules and constraints.
 - **Zero-Pollution Rule**: Do not mix Module A game logic with Module B AI generation logic.
 - **Git & Review Rule**: The Agent must maintain a clean Git history. Never squash multiple phases into one commit. Ensure all unit tests pass *before* calling `git commit`. Include what was changed and what to review in the commit body.
 - **Review Economy Rule**: Default to completing routine engineering workflow automatically. Ask the user for review only when a decision is high-impact, ambiguous, or difficult to undo.
@@ -40,12 +40,14 @@ Anti-RPG rule: the system may reserve low-level variable/tag interfaces for user
 - **Ask First Only For High-Impact Operations**: Ask before making a private repo public, force-pushing `master`, deleting protected branches or release tags, publishing external packages/builds, changing production deployment state, deleting remote releases/artifacts, rotating or deleting credentials, irreversible data changes, or ambiguous product decisions.
 - **Cleanup**: After merged PRs, delete temporary branches locally and remotely, update `master`, and create/update milestone tags when a phase is complete.
 
-## 4. Implementation Progress
-- [x] Phase 1: Core Headless Runtime & Variable Hook Architecture (Implemented in `packages/core`; low-level variable/tag hooks, snapshot/restore, deterministic step API, JSON-safe event log, no RPG systems)
-- [x] Phase 2: Monte Carlo Simulation Bot & Graph Analyzer (Implemented in `packages/reviewer`; headless JSON diagnostics, default 100k cycles, single-cycle simulator, event samples, coverage metrics, configurable thresholds, no pipeline connectors)
-- [x] Phase 3: AI Pipeline Generator & Diagnostic Feedback Loop (Implemented in `packages/pipeline`; local JSON/CSV/content-bundle exchange, stable connector request contracts, reviewer feedback action plans, local conversion/feedback commands)
-- [x] Phase 1-3 Contract Hardening: Card contract validation, variable-aware graph diagnostics, fixture content verification, and local content validation/review CLI (Implemented)
-- [x] Build/Test Gate: Syntax checks, package export smoke tests, module boundary checks, Anti-RPG drift checks, fixture verification, unit tests, integration tests, lockfile, and GitHub Actions CI (Implemented)
-- [x] Phase 4: Unified Playable Interface & Local Ingestion Dash (Implemented in `packages/interface` and `scripts/dev-server.mjs`; local creator dashboard/player preview APIs, player-card validation, diagnostics projection, connector request preview, deployable player build assembly, and Phase 4 gates)
-- [x] Phase 4 Sample Content Pack: Complete local test deck with Game-icons.net CC BY 3.0 SVG art assets, dashboard sample loading, player art previews, and deployable asset copying (Implemented)
-- [x] Phase 4 Presentation/i18n Extension Interfaces: Policy-gated presentation config for CSS variables/raw CSS/HTML/JS slots plus locale catalog, localized card/session/player runtime resolution, and sample `en`/`zh-Hans` content (Implemented)
+## 4. Repository Map
+- `packages/core`: Pure headless game runtime. No UI, IO, AI generation, or deployment logic.
+- `packages/reviewer`: Headless Monte Carlo simulation, graph diagnostics, and balance reports.
+- `packages/pipeline`: Local import/export, content bundle handling, generation request contracts, and reviewer feedback actions.
+- `packages/interface`: Creator workflow orchestration plus the current web dashboard/player surfaces.
+- `scripts`: Local tools including the dev server, content CLI, build-game assembler, and verification gates.
+- `fixtures`: Sample and validation content used by tests and local demos.
+- `test`: Cross-package integration tests.
+
+## 5. Planning Source
+Product roadmap, dashboard restructuring notes, and near-term architecture plans live in `ROADMAP.md`. Keep this file focused on durable project rules and agent constraints.
