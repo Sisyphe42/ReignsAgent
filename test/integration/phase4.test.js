@@ -18,6 +18,13 @@ describe("Phase 4 interface integration", () => {
 
     try {
       await waitForServer(port, server);
+      const dashboardHtml = await text(port, "/");
+      assert.match(dashboardHtml, /src="\/assets\/index-.*\.js"/);
+      const classicHtml = await text(port, "/classic");
+      assert.match(classicHtml, /\/assets\/dashboard\.js/);
+      const playerHtml = await text(port, "/play");
+      assert.match(playerHtml, /ReignsAgent Player/);
+
       const initialEditor = await api(port, "/api/editor");
       assert.equal(initialEditor.cards.length, 9);
       assert.equal(initialEditor.assets.length > 0, true);
@@ -121,6 +128,15 @@ async function api(port, path, options = {}) {
   }
 
   return json;
+}
+
+async function text(port, path) {
+  const response = await fetch(`http://127.0.0.1:${port}${path}`);
+  const body = await response.text();
+  if (!response.ok) {
+    throw new Error(`Request failed: ${response.status}`);
+  }
+  return body;
 }
 
 async function reservePort() {

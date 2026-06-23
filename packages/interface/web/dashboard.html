@@ -12,105 +12,219 @@
       <span class="brand__mark">RA</span>
       <div>
         <h1>ReignsAgent Creator</h1>
-        <p class="brand__tag">Creator workspace</p>
+        <p class="brand__tag">Project workspace</p>
       </div>
     </div>
     <nav class="topbar__nav">
       <a href="/">Dashboard</a>
-      <a href="/play">Play preview</a>
+      <a href="/play">Production preview</a>
     </nav>
   </header>
 
   <div class="workspace">
-    <nav class="rail" aria-label="Workflow steps">
-      <a class="rail__step" href="#step-ingest"><span class="rail__index">1</span><span class="rail__label">Ingest</span><span class="rail__status" id="rail-ingest">—</span></a>
-      <a class="rail__step" href="#step-edit"><span class="rail__index">2</span><span class="rail__label">Edit</span><span class="rail__status" id="rail-edit">—</span></a>
-      <a class="rail__step" href="#step-preview"><span class="rail__index">3</span><span class="rail__label">Preview</span><span class="rail__status" id="rail-preview">—</span></a>
-      <a class="rail__step" href="#step-diagnose"><span class="rail__index">4</span><span class="rail__label">Diagnose</span><span class="rail__status" id="rail-diagnose">—</span></a>
-      <a class="rail__step" href="#step-build"><span class="rail__index">5</span><span class="rail__label">Build</span><span class="rail__status" id="rail-build">—</span></a>
+    <nav class="rail" aria-label="Workspace panels">
+      <button class="rail__step" type="button" data-panel-target="overview" aria-current="page"><span class="rail__index">1</span><span class="rail__label">Overview</span><span class="rail__status" id="rail-overview">—</span></button>
+      <button class="rail__step" type="button" data-panel-target="content"><span class="rail__index">2</span><span class="rail__label">Content</span><span class="rail__status" id="rail-content">—</span></button>
+      <button class="rail__step" type="button" data-panel-target="story"><span class="rail__index">3</span><span class="rail__label">Story</span><span class="rail__status" id="rail-story">—</span></button>
+      <button class="rail__step" type="button" data-panel-target="review"><span class="rail__index">4</span><span class="rail__label">Review</span><span class="rail__status" id="rail-review">—</span></button>
+      <button class="rail__step" type="button" data-panel-target="preview"><span class="rail__index">5</span><span class="rail__label">Preview</span><span class="rail__status" id="rail-preview">—</span></button>
+      <button class="rail__step" type="button" data-panel-target="build"><span class="rail__index">6</span><span class="rail__label">Build</span><span class="rail__status" id="rail-build">—</span></button>
+      <button class="rail__step" type="button" data-panel-target="settings"><span class="rail__index">7</span><span class="rail__label">Settings</span><span class="rail__status" id="rail-settings">—</span></button>
     </nav>
 
-  <main class="layout">
-    <section class="panel panel--ingest" id="step-ingest">
-      <h2>Ingest</h2>
-      <label class="file">
-        <input type="file" id="ingest-file" accept=".json,application/json" />
-        <span>Choose JSON</span>
-      </label>
-      <textarea id="ingest-text" rows="6" placeholder="Paste content bundle JSON"></textarea>
-      <div class="row">
-        <button id="ingest-paste" class="btn btn--primary">Import pasted JSON</button>
-        <button id="load-sample" class="btn">Load sample deck</button>
-      </div>
-      <div id="ingest-status" class="status" role="status" aria-live="polite"></div>
-    </section>
-
-    <section class="panel panel--editor" id="step-edit">
-      <h2>Cards</h2>
-      <div class="row row--between">
-        <input id="meta-title" type="text" placeholder="Deck title" />
-        <button id="meta-save" class="btn">Save title</button>
-      </div>
-      <div class="cards" id="card-list"></div>
-      <details class="add">
-        <summary>Add card</summary>
-        <div class="add__form">
-          <input id="add-id" type="text" placeholder="card id" />
-          <input id="add-text" type="text" placeholder="card text" />
-          <button id="add-create" class="btn btn--primary">Create card</button>
+    <main class="workspace-main">
+      <section class="panel panel--active" id="panel-overview" data-panel="overview">
+        <div class="panel__head">
+          <div>
+            <h2>Project Overview</h2>
+            <p class="muted">Current deck health, readiness, and workflow state.</p>
+          </div>
+          <button class="btn btn--primary" type="button" data-panel-target="content">Open content</button>
         </div>
-      </details>
-      <div id="editor-status" class="status" role="status" aria-live="polite"></div>
-    </section>
-
-    <section class="panel panel--preview" id="step-preview">
-      <h2>Play Preview</h2>
-      <div class="gauges" id="gauges"></div>
-      <div class="card" id="play-card" role="group" aria-label="Current card">
-        <img id="play-art" class="card__art" alt="" hidden />
-        <p class="card__text" id="play-text" aria-live="polite">No session.</p>
-        <div class="card__choices">
-          <button id="swipe-left" class="btn btn--choice" disabled aria-label="Swipe left">◀ Left</button>
-          <button id="swipe-right" class="btn btn--choice" disabled aria-label="Swipe right">Right ▶</button>
+        <div class="overview-grid">
+          <div class="metric">
+            <span class="metric__label">Project</span>
+            <strong id="overview-title">Untitled</strong>
+          </div>
+          <div class="metric">
+            <span class="metric__label">Cards</span>
+            <strong id="overview-cards">0</strong>
+          </div>
+          <div class="metric">
+            <span class="metric__label">Validation</span>
+            <strong id="overview-validation">—</strong>
+          </div>
+          <div class="metric">
+            <span class="metric__label">Player-ready</span>
+            <strong id="overview-player">—</strong>
+          </div>
+          <div class="metric">
+            <span class="metric__label">Last review</span>
+            <strong id="overview-diagnostics">Not run</strong>
+          </div>
+          <div class="metric">
+            <span class="metric__label">Build</span>
+            <strong id="overview-build">Not prepared</strong>
+          </div>
         </div>
-      </div>
-      <button id="play-start" class="btn btn--primary">Start preview</button>
-      <div id="play-status" class="status" role="status" aria-live="polite"></div>
-    </section>
+        <div class="quick-actions">
+          <button class="btn" type="button" data-panel-target="review">Run diagnostics</button>
+          <button class="btn" type="button" data-panel-target="preview">Developer preview</button>
+          <button class="btn" type="button" data-panel-target="build">Prepare build</button>
+        </div>
+      </section>
 
-    <section class="panel panel--diagnostics" id="step-diagnose">
-      <h2>Diagnostics</h2>
-      <div class="row">
-        <label>Cycles <input id="diag-cycles" type="number" value="500" min="1" /></label>
-        <label>Max turns <input id="diag-turns" type="number" value="40" min="1" /></label>
-        <label>Seed <input id="diag-seed" type="number" value="1" /></label>
-        <button id="diag-run" class="btn btn--primary">Run review</button>
-      </div>
-      <div class="health" id="health" hidden>
-        <div class="health__score" id="health-score">--</div>
-        <div class="health__headline" id="health-headline"></div>
-      </div>
-      <ul class="warnings" id="warnings"></ul>
-    </section>
+      <section class="panel" id="panel-content" data-panel="content" hidden>
+        <div class="panel__head">
+          <div>
+            <h2>Content / Cards</h2>
+            <p class="muted">Import content, edit card text, choices, effects, variables, tags, and art bindings.</p>
+          </div>
+        </div>
+        <div class="subpanel">
+          <h3>Ingest</h3>
+          <label class="file">
+            <input type="file" id="ingest-file" accept=".json,application/json" />
+            <span>Choose JSON</span>
+          </label>
+          <textarea id="ingest-text" rows="5" placeholder="Paste content bundle JSON"></textarea>
+          <div class="row">
+            <button id="ingest-paste" class="btn btn--primary">Import pasted JSON</button>
+            <button id="load-sample" class="btn">Load sample deck</button>
+          </div>
+          <div id="ingest-status" class="status" role="status" aria-live="polite"></div>
+        </div>
+        <div class="subpanel">
+          <div class="row row--between">
+            <h3>Cards</h3>
+            <button class="btn" type="button" data-panel-target="story">Open story graph</button>
+          </div>
+          <div class="cards" id="card-list"></div>
+          <details class="add">
+            <summary>Add card</summary>
+            <div class="add__form">
+              <input id="add-id" type="text" placeholder="card id" />
+              <input id="add-text" type="text" placeholder="card text" />
+              <button id="add-create" class="btn btn--primary">Create card</button>
+            </div>
+          </details>
+          <div id="editor-status" class="status" role="status" aria-live="polite"></div>
+        </div>
+      </section>
 
-    <section class="panel panel--ai">
-      <h2>Connector</h2>
-      <div class="row">
-        <input id="ai-provider" type="text" placeholder="provider (e.g. stub)" value="stub" />
-        <input id="ai-theme" type="text" placeholder="theme" value="small kingdom" />
-        <input id="ai-count" type="number" value="8" min="1" />
-        <button id="ai-plan" class="btn btn--primary">Build plan</button>
-      </div>
-      <pre id="ai-output" class="output"></pre>
-    </section>
+      <section class="panel" id="panel-story" data-panel="story" hidden>
+        <div class="panel__head">
+          <div>
+            <h2>Story / Endings</h2>
+            <p class="muted">Global narrative structure, ending coverage, and reachability will live here.</p>
+          </div>
+          <button class="btn" type="button" data-panel-target="content">Back to cards</button>
+        </div>
+        <div class="overview-grid">
+          <div class="metric">
+            <span class="metric__label">Narrative nodes</span>
+            <strong id="story-card-count">0 cards</strong>
+          </div>
+          <div class="metric">
+            <span class="metric__label">Endings</span>
+            <strong id="story-ending-status">Data-authored</strong>
+          </div>
+          <div class="metric">
+            <span class="metric__label">Reachability</span>
+            <strong id="story-reachability">Run review</strong>
+          </div>
+        </div>
+        <div class="empty-state">
+          <h3>Story graph placeholder</h3>
+          <p>Reviewer graph diagnostics already detect unreachable cards and variable gates. The visual graph/editor will attach to this panel in a later pass.</p>
+        </div>
+      </section>
 
-    <section class="panel panel--build" id="step-build">
-      <h2>Build</h2>
-      <button id="build-prepare" class="btn">Preview build</button>
-      <button id="build-export" class="btn btn--primary">Export .game.json</button>
-      <pre id="build-output" class="output"></pre>
-    </section>
-  </main>
+      <section class="panel" id="panel-review" data-panel="review" hidden>
+        <div class="panel__head">
+          <div>
+            <h2>Review Diagnostics</h2>
+            <p class="muted">Creator-facing Monte Carlo balance review with seed replay inputs.</p>
+          </div>
+        </div>
+        <div class="row">
+          <label>Cycles <input id="diag-cycles" type="number" value="500" min="1" /></label>
+          <label>Max turns <input id="diag-turns" type="number" value="40" min="1" /></label>
+          <label>Seed <input id="diag-seed" type="number" value="1" /></label>
+          <button id="diag-run" class="btn btn--primary">Run review</button>
+        </div>
+        <div class="health" id="health" hidden>
+          <div class="health__score" id="health-score">--</div>
+          <div class="health__headline" id="health-headline"></div>
+        </div>
+        <ul class="warnings" id="warnings"></ul>
+      </section>
+
+      <section class="panel" id="panel-preview" data-panel="preview" hidden>
+        <div class="panel__head">
+          <div>
+            <h2>Developer Preview</h2>
+            <p class="muted">Debuggable preview over the same headless runtime used by the player build.</p>
+          </div>
+          <a class="btn" href="/play">Production preview</a>
+        </div>
+        <div class="preview-shell">
+          <div class="gauges" id="gauges"></div>
+          <div class="card" id="play-card" role="group" aria-label="Current card">
+            <img id="play-art" class="card__art" alt="" hidden />
+            <p class="card__text" id="play-text" aria-live="polite">No session.</p>
+            <div class="card__choices">
+              <button id="swipe-left" class="btn btn--choice" disabled aria-label="Swipe left">◀ Left</button>
+              <button id="swipe-right" class="btn btn--choice" disabled aria-label="Swipe right">Right ▶</button>
+            </div>
+          </div>
+          <div class="row row--between">
+            <button id="play-start" class="btn btn--primary">Start preview</button>
+            <span class="status" id="play-debug">Seed/local runtime debug preview</span>
+          </div>
+          <div id="play-status" class="status" role="status" aria-live="polite"></div>
+        </div>
+      </section>
+
+      <section class="panel" id="panel-build" data-panel="build" hidden>
+        <div class="panel__head">
+          <div>
+            <h2>Build / Deploy</h2>
+            <p class="muted">Prepare and export the deployable player bundle.</p>
+          </div>
+        </div>
+        <button id="build-prepare" class="btn">Preview build</button>
+        <button id="build-export" class="btn btn--primary">Export .game.json</button>
+        <pre id="build-output" class="output"></pre>
+      </section>
+
+      <section class="panel" id="panel-settings" data-panel="settings" hidden>
+        <div class="panel__head">
+          <div>
+            <h2>Settings / Pipeline</h2>
+            <p class="muted">Project metadata, presentation hooks, locale defaults, and connector planning.</p>
+          </div>
+        </div>
+        <div class="subpanel">
+          <h3>Project</h3>
+          <div class="row row--between">
+            <input id="meta-title" type="text" placeholder="Deck title" />
+            <button id="meta-save" class="btn">Save title</button>
+          </div>
+          <div id="settings-status" class="status" role="status" aria-live="polite"></div>
+        </div>
+        <div class="subpanel">
+          <h3>Connector Plan</h3>
+          <div class="row">
+            <input id="ai-provider" type="text" placeholder="provider (e.g. stub)" value="stub" />
+            <input id="ai-theme" type="text" placeholder="theme" value="small kingdom" />
+            <input id="ai-count" type="number" value="8" min="1" />
+            <button id="ai-plan" class="btn btn--primary">Build plan</button>
+          </div>
+          <pre id="ai-output" class="output"></pre>
+        </div>
+      </section>
+    </main>
   </div>
 
   <script type="module" src="/assets/dashboard.js"></script>
