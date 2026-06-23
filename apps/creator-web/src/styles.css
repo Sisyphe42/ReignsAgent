@@ -868,9 +868,69 @@ select {
   margin: 14px 0;
 }
 
+.draft-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 14px;
+  padding: 12px;
+  color: var(--ink);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--accent) 12%, transparent), transparent),
+    color-mix(in srgb, var(--surface-2) 82%, #000);
+}
+
+.draft-banner strong,
+.draft-banner span {
+  display: block;
+}
+
+.draft-banner span {
+  margin-top: 3px;
+  color: var(--muted);
+  font-family: var(--font-data);
+  font-size: 0.72rem;
+}
+
+.draft-banner__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.editor-controls {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(160px, 220px) auto;
+  gap: 10px;
+  align-items: end;
+  margin: 14px 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface-2) 70%, #000);
+}
+
+.editor-controls label,
+.readonly-field {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-family: var(--font-data);
+  font-size: 0.68rem;
+}
+
 .field-row input,
 .field-row textarea,
 .field-row select,
+.editor-controls input,
+.editor-controls select,
+.readonly-field input,
+.choice-editor__head input,
+.effect-row input,
 .json-paste,
 .choice-editor textarea {
   width: 100%;
@@ -886,6 +946,10 @@ select {
 .field-row input:focus,
 .field-row textarea:focus,
 .field-row select:focus,
+.editor-controls input:focus,
+.editor-controls select:focus,
+.choice-editor__head input:focus,
+.effect-row input:focus,
 .json-paste:focus,
 .choice-editor textarea:focus {
   border-color: var(--accent-2);
@@ -975,6 +1039,29 @@ select {
   background: var(--accent);
 }
 
+.btn--ghost {
+  color: var(--muted);
+  background: transparent;
+  border-style: dashed;
+  box-shadow: none;
+}
+
+.btn--ghost:hover {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--surface-2) 54%, transparent);
+}
+
+.btn--danger {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--danger) 28%, var(--surface-2));
+  border-color: var(--danger);
+}
+
+.btn--danger:hover {
+  background: color-mix(in srgb, var(--danger) 42%, var(--surface-2));
+  border-color: var(--danger);
+}
+
 :root[data-skin="famicom"] .btn--primary {
   color: #fff8e8 !important;
   background: var(--accent) !important;
@@ -1056,6 +1143,92 @@ select {
   align-items: center;
 }
 
+.card-editor__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.card-editor__meta {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.55fr) minmax(180px, 1fr);
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.readonly-field input {
+  color: var(--muted);
+  background: color-mix(in srgb, var(--bg) 64%, #000);
+}
+
+.card-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 4px 7px;
+  border: 1px solid currentColor;
+  border-radius: calc(var(--radius) - 2px);
+  font-family: var(--font-data);
+  font-size: 0.66rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.card-badge--ready {
+  color: var(--ok);
+}
+
+.card-badge--invalid {
+  color: var(--danger);
+}
+
+.validation-list {
+  display: grid;
+  gap: 6px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.validation-list__item {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) - 1px);
+  background: color-mix(in srgb, var(--surface-2) 64%, #000);
+  font-family: var(--font-data);
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+
+.validation-list__item--error {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 72%, var(--border));
+}
+
+.validation-list__item--warning {
+  color: var(--accent);
+}
+
+.confirm-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-top: 12px;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--danger) 70%, var(--border));
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--danger) 10%, var(--surface-2));
+}
+
+.confirm-row span {
+  margin-right: auto;
+  color: var(--ink);
+  font-weight: 700;
+}
+
 .card-editor__head strong,
 .choice-editor__head strong {
   font-family: var(--font-data);
@@ -1085,6 +1258,9 @@ select {
 }
 
 .icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 34px;
   height: 34px;
   color: var(--danger);
@@ -1142,6 +1318,52 @@ select {
   border: 1px solid var(--border);
   border-radius: calc(var(--radius) - 1px);
   font-variant-numeric: tabular-nums;
+}
+
+.effect-panel {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--bg) 34%, transparent);
+}
+
+.effect-panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.effect-panel__head small,
+.empty-inline {
+  color: var(--muted);
+  font-family: var(--font-data);
+  font-size: 0.68rem;
+}
+
+.effect-rows {
+  display: grid;
+  gap: 7px;
+}
+
+.effect-row {
+  display: grid;
+  grid-template-columns: minmax(96px, 0.72fr) minmax(120px, 1fr) auto auto;
+  gap: 7px;
+  align-items: center;
+}
+
+.effect-row--new {
+  grid-template-columns: minmax(96px, 0.72fr) minmax(120px, 1fr) auto;
+}
+
+.effect-row__key {
+  color: var(--muted);
 }
 
 details {
@@ -1456,6 +1678,22 @@ summary {
   .card-editor__head,
   .choice-editor__head {
     grid-template-columns: 1fr;
+  }
+
+  .card-editor__meta,
+  .editor-controls,
+  .effect-row,
+  .effect-row--new {
+    grid-template-columns: 1fr;
+  }
+
+  .draft-banner {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .draft-banner__actions {
+    justify-content: flex-start;
   }
 
   .faction-grid {

@@ -94,6 +94,56 @@ describe("Phase 4 interface integration", () => {
       const clearedEffects = factionCleared.card.choices.find((c) => c.id === firstChoiceId).effects;
       assert.equal(clearedEffects.factions?.people === undefined, true);
 
+      const tagSet = await api(
+        port,
+        `/api/editor/cards/${firstCardId}/choices/${firstChoiceId}/effects/tag/inspected`,
+        { method: "POST", body: { value: true } }
+      );
+      assert.equal(
+        tagSet.card.choices.find((c) => c.id === firstChoiceId).effects.tags.inspected,
+        true
+      );
+
+      const tagCleared = await api(
+        port,
+        `/api/editor/cards/${firstCardId}/choices/${firstChoiceId}/effects/tag/inspected`,
+        { method: "DELETE" }
+      );
+      assert.equal(
+        tagCleared.card.choices.find((c) => c.id === firstChoiceId).effects.tags?.inspected === undefined,
+        true
+      );
+
+      const variableSet = await api(
+        port,
+        `/api/editor/cards/${firstCardId}/choices/${firstChoiceId}/effects/variable/reputation`,
+        { method: "POST", body: { value: 12 } }
+      );
+      assert.equal(
+        variableSet.card.choices.find((c) => c.id === firstChoiceId).effects.variables.reputation,
+        12
+      );
+
+      const variableFalse = await api(
+        port,
+        `/api/editor/cards/${firstCardId}/choices/${firstChoiceId}/effects/variable/flagged`,
+        { method: "POST", body: { value: false } }
+      );
+      assert.equal(
+        variableFalse.card.choices.find((c) => c.id === firstChoiceId).effects.variables.flagged,
+        false
+      );
+
+      const variableCleared = await api(
+        port,
+        `/api/editor/cards/${firstCardId}/choices/${firstChoiceId}/effects/variable/reputation`,
+        { method: "DELETE" }
+      );
+      assert.equal(
+        variableCleared.card.choices.find((c) => c.id === firstChoiceId).effects.variables?.reputation === undefined,
+        true
+      );
+
       // Snapshot/restore round-trips the working bundle through the server.
       const snapshot = await api(port, "/api/editor/snapshot");
       assert.equal(snapshot.bundle.cards.length, editor.cards.length);

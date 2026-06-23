@@ -358,7 +358,7 @@ function handleChoiceRoute(req, res, match, body) {
     if (value === undefined) {
       throw new Error(`Effect route requires a 'value' field for ${match.kind}`);
     }
-    if (value === null || value === false) {
+    if (value === null || (match.kind !== "variable" && value === false)) {
       delete effects[bucket]?.[match.target];
     } else {
       effects[bucket] = { ...(effects[bucket] ?? {}), [match.target]: value };
