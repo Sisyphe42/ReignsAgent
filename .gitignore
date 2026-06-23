@@ -3,4 +3,6 @@ coverage/
 dist/
 output/
 .playwright-cli/
+test-results/
 *.log
+temp/

@@ -167,6 +167,10 @@ function App() {
               type="button"
               onClick={() => setActivePanel(id)}
             >
+              <span className="phantom-shape-wrapper" aria-hidden="true">
+                <span className="phantom-shape phantom-shape--red phantom-jelly" />
+                <span className="phantom-shape phantom-shape--cyan phantom-jelly" />
+              </span>
               <span className="rail__meta">{String(index + 1).padStart(2, "0")} / {group}</span>
               <span className="rail__label">{label}</span>
               <small>{panelStatus(id, { editor, playerReady, diagnostics, build })}</small>
