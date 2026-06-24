@@ -204,6 +204,7 @@ function App() {
               {SKINS.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
             </select>
           </label>
+          <a className="link-button" href="/classic">Classic UI</a>
           <a className="link-button" href="/play">Player</a>
         </div>
       </header>
@@ -318,6 +319,7 @@ function ContentPanel({ editor, assetsByCard, onImport, onMutate, onStatus }) {
   const [paste, setPaste] = useState("");
   const [query, setQuery] = useState("");
   const [validationFilter, setValidationFilter] = useState("all");
+  const [selectedCardId, setSelectedCardId] = useState(null);
 
   const cardItems = useMemo(() => (editor?.cards ?? []).map((card, index) => ({
     card,
@@ -332,6 +334,19 @@ function ContentPanel({ editor, assetsByCard, onImport, onMutate, onStatus }) {
       return true;
     });
   }, [cardItems, query, validationFilter]);
+
+  useEffect(() => {
+    if (visibleItems.length === 0) {
+      setSelectedCardId(null);
+      return;
+    }
+    if (!selectedCardId || !visibleItems.some(({ card }) => card.id === selectedCardId)) {
+      setSelectedCardId(visibleItems[0].card.id);
+    }
+  }, [selectedCardId, visibleItems]);
+
+  const activeIndex = visibleItems.findIndex(({ card }) => card.id === selectedCardId);
+  const activeItem = activeIndex >= 0 ? visibleItems[activeIndex] : null;
 
   async function loadSample() {
     try {
@@ -361,8 +376,14 @@ function ContentPanel({ editor, assetsByCard, onImport, onMutate, onStatus }) {
     }
   }
 
+  function selectRelative(step) {
+    if (activeIndex < 0) return;
+    const next = visibleItems[activeIndex + step];
+    if (next) setSelectedCardId(next.card.id);
+  }
+
   return (
-    <section className="panel">
+    <section className="panel panel--content">
       <PanelHead title="Content / Cards" note="Card text, left/right choices, faction effects, tags, variables, and art bindings." />
       <div className="tool-strip">
         <label className="file-button">
@@ -399,20 +420,64 @@ function ContentPanel({ editor, assetsByCard, onImport, onMutate, onStatus }) {
         rows={4}
       />
       <button className="btn btn--primary" disabled={!paste.trim()} onClick={() => void importPasted()}>Import pasted JSON</button>
-      <div className="card-list">
-        {visibleItems.map(({ card, validation }) => (
-          <CardEditor
-            key={card.id}
-            card={card}
-            asset={assetsByCard.get(card.id)}
-            validation={validation}
-            onMutate={onMutate}
-            onStatus={onStatus}
-          />
-        ))}
-        {visibleItems.length === 0 && <div className="empty-state">No cards match the current filters.</div>}
+      <div className="content-workspace">
+        <aside className="card-switcher">
+          <div className="card-switcher__head">
+            <strong>{visibleItems.length} cards</strong>
+            <span>{selectedCardId ? `${activeIndex + 1} / ${visibleItems.length}` : "0 / 0"}</span>
+          </div>
+          <div className="card-switcher__list" role="tablist" aria-label="Cards">
+            {visibleItems.map(({ card, validation }) => (
+              <button
+                key={card.id}
+                className={card.id === selectedCardId ? "card-switcher__item card-switcher__item--active" : "card-switcher__item"}
+                type="button"
+                role="tab"
+                aria-selected={card.id === selectedCardId}
+                onClick={() => setSelectedCardId(card.id)}
+              >
+                <div className="card-switcher__meta">
+                  <strong>{card.id}</strong>
+                  <span className={validation.invalid ? "card-badge card-badge--invalid" : "card-badge card-badge--ready"}>
+                    {validation.invalid ? "invalid" : "ready"}
+                  </span>
+                </div>
+                <p>{cardExcerpt(card)}</p>
+                <small>{validation.messages.length > 0 ? `${validation.messages.length} messages` : "No validation messages"}</small>
+              </button>
+            ))}
+            {visibleItems.length === 0 && <div className="empty-inline">No cards match the current filters.</div>}
+          </div>
+          <AddCard onMutate={onMutate} onCreated={setSelectedCardId} />
+        </aside>
+
+        <div className="content-detail">
+          {activeItem ? (
+            <>
+              <div className="content-detail__toolbar">
+                <div>
+                  <strong>{activeItem.card.id}</strong>
+                  <span>{activeIndex + 1} of {visibleItems.length}</span>
+                </div>
+                <div className="content-detail__nav">
+                  <button className="btn btn--ghost" type="button" disabled={activeIndex <= 0} onClick={() => selectRelative(-1)}>Previous</button>
+                  <button className="btn btn--ghost" type="button" disabled={activeIndex === -1 || activeIndex >= visibleItems.length - 1} onClick={() => selectRelative(1)}>Next</button>
+                </div>
+              </div>
+              <CardEditor
+                key={activeItem.card.id}
+                card={activeItem.card}
+                asset={assetsByCard.get(activeItem.card.id)}
+                validation={activeItem.validation}
+                onMutate={onMutate}
+                onStatus={onStatus}
+              />
+            </>
+          ) : (
+            <div className="empty-state">No cards match the current filters.</div>
+          )}
+        </div>
       </div>
-      <AddCard onMutate={onMutate} />
     </section>
   );
 }
@@ -721,11 +786,12 @@ function EffectEntryRow({ entryKey, value, onApply, onRemove }) {
   );
 }
 
-function AddCard({ onMutate }) {
+function AddCard({ onMutate, onCreated }) {
   const [id, setId] = useState("");
   const [text, setText] = useState("");
 
   async function createCard() {
+    const nextId = id;
     const created = await onMutate(
       "Creating card",
       async () => api("/api/editor/cards", {
@@ -746,6 +812,7 @@ function AddCard({ onMutate }) {
     if (created) {
       setId("");
       setText("");
+      onCreated?.(nextId);
     }
   }
 
@@ -1064,6 +1131,12 @@ function formatEffectValue(value) {
   if (typeof value === "number") return String(value);
   if (typeof value === "string") return value;
   return JSON.stringify(value);
+}
+
+function cardExcerpt(card) {
+  const text = (card.text ?? "").trim();
+  if (!text) return "No card text";
+  return text.length > 72 ? `${text.slice(0, 72)}...` : text;
 }
 
 function createAssetMap(assets) {

@@ -8,8 +8,16 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: false,
+    fs: {
+      allow: [".."]
+    },
     proxy: {
       "/api": apiTarget,
+      "/classic": apiTarget,
+      "/play": apiTarget,
+      "/assets/dashboard.css": apiTarget,
+      "/assets/dashboard.js": apiTarget,
+      "/assets/swipe-input.js": apiTarget,
       "/assets/sample": apiTarget
     }
   },
