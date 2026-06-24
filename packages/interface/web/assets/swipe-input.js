@@ -19,6 +19,7 @@
 
 const SWIPE_THRESHOLD = 0.28; // fraction of card width to commit
 const MAX_TILT = 14; // deg of visual tilt at full drag
+const INTERACTIVE_SELECTOR = "button, a, input, select, textarea, label, summary";
 
 export function attachSwipe(options = {}) {
   const element = options.element;
@@ -58,6 +59,9 @@ export function attachSwipe(options = {}) {
     if (!canSwipe() || dragging) {
       return;
     }
+    if (event.target instanceof Element && event.target.closest(INTERACTIVE_SELECTOR)) {
+      return;
+    }
     if (event.pointerType === "mouse" && event.button !== 0) {
       return;
     }
@@ -91,6 +95,9 @@ export function attachSwipe(options = {}) {
   // Touch fallback for browsers without reliable pointer events on touch.
   const onTouchStart = (event) => {
     if (!canSwipe() || dragging || event.touches.length !== 1) {
+      return;
+    }
+    if (event.target instanceof Element && event.target.closest(INTERACTIVE_SELECTOR)) {
       return;
     }
     dragging = true;

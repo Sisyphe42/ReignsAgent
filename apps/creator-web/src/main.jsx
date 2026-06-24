@@ -22,6 +22,56 @@ const SKINS = [
 ];
 
 const PERSIST_KEY = "reigns-agent.creator-web.skin";
+const DRAFT_KEY = "reigns-agent.creator-web.editor-draft";
+const DEFAULT_PANEL = "overview";
+const DEFAULT_SKIN = "workbench";
+
+function isKnownPanel(value) {
+  return PANELS.some((panel) => panel.id === value);
+}
+
+function isKnownSkin(value) {
+  return SKINS.some(([id]) => id === value);
+}
+
+function readUrlState() {
+  if (typeof window === "undefined") {
+    return { panel: DEFAULT_PANEL, skin: null };
+  }
+
+  const url = new URL(window.location.href);
+  const directPanel = url.pathname.startsWith("/workbench/")
+    ? url.pathname.slice("/workbench/".length).split("/")[0]
+    : null;
+  const queryPanel = url.searchParams.get("panel");
+  const panel = [directPanel, queryPanel].find(isKnownPanel) ?? DEFAULT_PANEL;
+  const skin = url.searchParams.get("skin");
+
+  return {
+    panel,
+    skin: isKnownSkin(skin) ? skin : null
+  };
+}
+
+function buildWorkbenchUrl(panel, skin) {
+  const url = new URL(window.location.href);
+  url.pathname = panel === DEFAULT_PANEL ? "/workbench" : `/workbench/${panel}`;
+  if (skin && skin !== DEFAULT_SKIN) {
+    url.searchParams.set("skin", skin);
+  } else {
+    url.searchParams.delete("skin");
+  }
+  url.searchParams.delete("panel");
+  return `${url.pathname}${url.search}${url.hash}`;
+}
+
+function syncWorkbenchUrl(panel, skin, mode = "replace") {
+  if (typeof window === "undefined") return;
+  const nextUrl = buildWorkbenchUrl(panel, skin);
+  const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  if (nextUrl === currentUrl) return;
+  window.history[mode === "push" ? "pushState" : "replaceState"](null, "", nextUrl);
+}
 
 async function api(path, options = {}) {
   const response = await fetch(path, {
@@ -38,14 +88,16 @@ async function api(path, options = {}) {
 }
 
 function App() {
-  const [activePanel, setActivePanel] = useState("overview");
+  const initialUrlState = useMemo(() => readUrlState(), []);
+  const [activePanel, setActivePanel] = useState(initialUrlState.panel);
   const [editor, setEditor] = useState(null);
   const [status, setStatus] = useState("Loading project...");
-  const [skin, setSkin] = useState(() => localStorage.getItem(PERSIST_KEY) || "workbench");
+  const [skin, setSkin] = useState(() => initialUrlState.skin ?? (localStorage.getItem(PERSIST_KEY) || DEFAULT_SKIN));
   const [diagnostics, setDiagnostics] = useState(null);
   const [play, setPlay] = useState({ sessionId: null, state: null });
   const [build, setBuild] = useState(null);
   const [busy, setBusy] = useState("");
+  const [draftInfo, setDraftInfo] = useState(() => readDraftInfo());
 
   const assetsByCard = useMemo(() => createAssetMap(editor?.assets ?? []), [editor]);
   const playerReady = editor?.playerValidation?.valid === true;
@@ -54,7 +106,18 @@ function App() {
   useEffect(() => {
     document.documentElement.dataset.skin = skin;
     localStorage.setItem(PERSIST_KEY, skin);
-  }, [skin]);
+    syncWorkbenchUrl(activePanel, skin, "replace");
+  }, [activePanel, skin]);
+
+  useEffect(() => {
+    function onPopState() {
+      const next = readUrlState();
+      setActivePanel(next.panel);
+      setSkin(next.skin ?? (localStorage.getItem(PERSIST_KEY) || DEFAULT_SKIN));
+    }
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
 
   useEffect(() => {
     void refreshEditor();
@@ -70,27 +133,75 @@ function App() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [activePanel, play.sessionId, play.state]);
 
-  async function refreshEditor() {
+  async function refreshEditor(options = {}) {
     const next = await api("/api/editor");
     setEditor(next);
-    setStatus(`${next.cards.length} cards loaded`);
+    if (options.persistDraft) {
+      await saveDraftSnapshot();
+    }
+    setStatus(options.statusMessage ?? `${next.cards.length} cards loaded`);
+    return next;
   }
 
   async function runAction(label, action) {
     setBusy(label);
     try {
       await action();
+      return true;
     } catch (error) {
       setStatus(error.message);
+      return false;
     } finally {
       setBusy("");
     }
   }
 
+  async function mutateEditor(label, action, successMessage) {
+    return runAction(label, async () => {
+      await action();
+      await refreshEditor({ persistDraft: true, statusMessage: successMessage ?? label });
+    });
+  }
+
+  async function saveDraftSnapshot() {
+    const snapshot = await api("/api/editor/snapshot");
+    const entry = {
+      savedAt: new Date().toISOString(),
+      cardCount: snapshot.bundle?.cards?.length ?? 0,
+      bundle: snapshot.bundle
+    };
+    localStorage.setItem(DRAFT_KEY, JSON.stringify(entry));
+    setDraftInfo({ savedAt: entry.savedAt, cardCount: entry.cardCount });
+  }
+
   async function importBundle(bundle) {
-    await api("/api/editor/import", { method: "POST", body: { bundle } });
-    await refreshEditor();
-    setStatus("Content imported");
+    return mutateEditor(
+      "Importing content",
+      async () => api("/api/editor/import", { method: "POST", body: { bundle } }),
+      "Content imported"
+    );
+  }
+
+  async function restoreDraft() {
+    await runAction("Restoring draft", async () => {
+      const draft = readStoredDraft();
+      if (!draft) {
+        clearStoredDraft();
+        setDraftInfo(null);
+        setStatus("No local draft found");
+        return;
+      }
+      await api("/api/editor/restore", { method: "POST", body: { bundle: draft.bundle } });
+      clearStoredDraft();
+      setDraftInfo(null);
+      await refreshEditor({ statusMessage: "Local draft restored" });
+    });
+  }
+
+  function discardDraft() {
+    clearStoredDraft();
+    setDraftInfo(null);
+    setStatus("Local draft discarded");
   }
 
   async function startPreview() {
@@ -132,6 +243,24 @@ function App() {
     });
   }
 
+  function openPanel(panelId) {
+    if (!isKnownPanel(panelId)) return;
+    setActivePanel(panelId);
+    syncWorkbenchUrl(panelId, skin, "push");
+  }
+
+  function changeSkin(nextSkin) {
+    if (!isKnownSkin(nextSkin)) return;
+    setSkin(nextSkin);
+    syncWorkbenchUrl(activePanel, nextSkin, "replace");
+  }
+
+  const playerHref = useMemo(() => {
+    const params = new URLSearchParams();
+    if (skin !== DEFAULT_SKIN) params.set("skin", skin);
+    return params.size > 0 ? `/play?${params.toString()}` : "/play";
+  }, [skin]);
+
   return (
     <div className="app-shell">
       <header className="topbar">
@@ -150,11 +279,11 @@ function App() {
         <div className="topbar__tools">
           <label className="skin-select">
             Skin
-            <select value={skin} onChange={(event) => setSkin(event.target.value)}>
+            <select value={skin} onChange={(event) => changeSkin(event.target.value)}>
               {SKINS.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
             </select>
           </label>
-          <a className="link-button" href="/play">Player</a>
+          <a className="link-button" href={playerHref}>Player</a>
         </div>
       </header>
 
@@ -165,7 +294,7 @@ function App() {
               key={id}
               className={activePanel === id ? "rail__item rail__item--active" : "rail__item"}
               type="button"
-              onClick={() => setActivePanel(id)}
+              onClick={() => openPanel(id)}
             >
               <span className="phantom-shape-wrapper" aria-hidden="true">
                 <span className="phantom-shape phantom-shape--red phantom-jelly" />
@@ -183,26 +312,33 @@ function App() {
             <span>Local session</span>
             <strong>{busy || status}</strong>
           </div>
+          {draftInfo && (
+            <DraftBanner
+              draftInfo={draftInfo}
+              onRestore={restoreDraft}
+              onDiscard={discardDraft}
+            />
+          )}
           {activePanel === "overview" && (
             <Overview
               editor={editor}
               playerReady={playerReady}
               diagnostics={diagnostics}
               build={build}
-              onOpen={setActivePanel}
+              onOpen={openPanel}
             />
           )}
           {activePanel === "content" && (
             <ContentPanel
               editor={editor}
               assetsByCard={assetsByCard}
-              onRefresh={refreshEditor}
               onImport={importBundle}
+              onMutate={mutateEditor}
               onStatus={setStatus}
             />
           )}
-          {activePanel === "story" && <StoryPanel editor={editor} diagnostics={diagnostics} onOpen={setActivePanel} />}
-          {activePanel === "review" && <ReviewPanel diagnostics={diagnostics} onRun={runDiagnostics} onOpen={setActivePanel} />}
+          {activePanel === "story" && <StoryPanel editor={editor} diagnostics={diagnostics} onOpen={openPanel} />}
+          {activePanel === "review" && <ReviewPanel diagnostics={diagnostics} onRun={runDiagnostics} onOpen={openPanel} />}
           {activePanel === "preview" && (
             <PreviewPanel
               play={play}
@@ -242,27 +378,90 @@ function Overview({ editor, playerReady, diagnostics, build, onOpen }) {
   );
 }
 
-function ContentPanel({ editor, assetsByCard, onRefresh, onImport, onStatus }) {
+function DraftBanner({ draftInfo, onRestore, onDiscard }) {
+  return (
+    <div className="draft-banner" role="status">
+      <div>
+        <strong>Local draft available</strong>
+        <span>{draftInfo.cardCount ?? 0} cards · {formatDraftTime(draftInfo.savedAt)}</span>
+      </div>
+      <div className="draft-banner__actions">
+        <button className="btn btn--primary" type="button" onClick={() => void onRestore()}>Restore</button>
+        <button className="btn btn--ghost" type="button" onClick={onDiscard}>Discard</button>
+      </div>
+    </div>
+  );
+}
+
+function ContentPanel({ editor, assetsByCard, onImport, onMutate, onStatus }) {
   const [paste, setPaste] = useState("");
+  const [query, setQuery] = useState("");
+  const [validationFilter, setValidationFilter] = useState("all");
+  const [selectedCardId, setSelectedCardId] = useState(null);
+
+  const cardItems = useMemo(() => (editor?.cards ?? []).map((card, index) => ({
+    card,
+    validation: cardValidationState(editor, card, index)
+  })), [editor]);
+
+  const visibleItems = useMemo(() => {
+    return cardItems.filter(({ card, validation }) => {
+      if (!matchesCardQuery(card, query)) return false;
+      if (validationFilter === "invalid") return validation.invalid;
+      if (validationFilter === "player-ready") return !validation.invalid;
+      return true;
+    });
+  }, [cardItems, query, validationFilter]);
+
+  useEffect(() => {
+    if (visibleItems.length === 0) {
+      setSelectedCardId(null);
+      return;
+    }
+    if (!selectedCardId || !visibleItems.some(({ card }) => card.id === selectedCardId)) {
+      setSelectedCardId(visibleItems[0].card.id);
+    }
+  }, [selectedCardId, visibleItems]);
+
+  const activeIndex = visibleItems.findIndex(({ card }) => card.id === selectedCardId);
+  const activeItem = activeIndex >= 0 ? visibleItems[activeIndex] : null;
 
   async function loadSample() {
-    const sample = await api("/api/samples/oss-court");
-    await onImport(sample);
+    try {
+      const sample = await api("/api/samples/oss-court");
+      await onImport(sample);
+    } catch (error) {
+      onStatus(error.message);
+    }
   }
 
   async function importPasted() {
-    await onImport(JSON.parse(paste));
-    setPaste("");
+    try {
+      const imported = await onImport(JSON.parse(paste));
+      if (imported) setPaste("");
+    } catch (error) {
+      onStatus(error.message);
+    }
   }
 
   async function importFile(file) {
     if (!file) return;
-    const text = await file.text();
-    await onImport(JSON.parse(text));
+    try {
+      const text = await file.text();
+      await onImport(JSON.parse(text));
+    } catch (error) {
+      onStatus(error.message);
+    }
+  }
+
+  function selectRelative(step) {
+    if (activeIndex < 0) return;
+    const next = visibleItems[activeIndex + step];
+    if (next) setSelectedCardId(next.card.id);
   }
 
   return (
-    <section className="panel">
+    <section className="panel panel--content">
       <PanelHead title="Content / Cards" note="Card text, left/right choices, faction effects, tags, variables, and art bindings." />
       <div className="tool-strip">
         <label className="file-button">
@@ -272,6 +471,25 @@ function ContentPanel({ editor, assetsByCard, onRefresh, onImport, onStatus }) {
         <button className="btn" onClick={() => void loadSample()}>Load sample deck</button>
         <span className="muted">{editor?.cards?.length ?? 0} cards</span>
       </div>
+      <div className="editor-controls" aria-label="Card filters">
+        <label>
+          Search
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="id, text, choice"
+          />
+        </label>
+        <label>
+          State
+          <select value={validationFilter} onChange={(event) => setValidationFilter(event.target.value)}>
+            <option value="all">All cards</option>
+            <option value="player-ready">Player-ready</option>
+            <option value="invalid">Invalid</option>
+          </select>
+        </label>
+        <span className="muted">{visibleItems.length} shown</span>
+      </div>
       <textarea
         className="json-paste"
         value={paste}
@@ -280,41 +498,101 @@ function ContentPanel({ editor, assetsByCard, onRefresh, onImport, onStatus }) {
         rows={4}
       />
       <button className="btn btn--primary" disabled={!paste.trim()} onClick={() => void importPasted()}>Import pasted JSON</button>
-      <div className="card-list">
-        {(editor?.cards ?? []).map((card) => (
-          <CardEditor
-            key={card.id}
-            card={card}
-            asset={assetsByCard.get(card.id)}
-            onRefresh={onRefresh}
-            onStatus={onStatus}
-          />
-        ))}
+      <div className="content-workspace">
+        <aside className="card-switcher">
+          <div className="card-switcher__head">
+            <strong>{visibleItems.length} cards</strong>
+            <span>{selectedCardId ? `${activeIndex + 1} / ${visibleItems.length}` : "0 / 0"}</span>
+          </div>
+          <div className="card-switcher__list" role="tablist" aria-label="Cards">
+            {visibleItems.map(({ card, validation }) => (
+              <button
+                key={card.id}
+                className={card.id === selectedCardId ? "card-switcher__item card-switcher__item--active" : "card-switcher__item"}
+                type="button"
+                role="tab"
+                aria-selected={card.id === selectedCardId}
+                onClick={() => setSelectedCardId(card.id)}
+              >
+                <div className="card-switcher__meta">
+                  <strong>{card.id}</strong>
+                  <span className={validation.invalid ? "card-badge card-badge--invalid" : "card-badge card-badge--ready"}>
+                    {validation.invalid ? "invalid" : "ready"}
+                  </span>
+                </div>
+                <p>{cardExcerpt(card)}</p>
+                <small>{validation.messages.length > 0 ? `${validation.messages.length} messages` : "No validation messages"}</small>
+              </button>
+            ))}
+            {visibleItems.length === 0 && <div className="empty-inline">No cards match the current filters.</div>}
+          </div>
+          <AddCard onMutate={onMutate} onCreated={setSelectedCardId} />
+        </aside>
+
+        <div className="content-detail">
+          {activeItem ? (
+            <>
+              <div className="content-detail__toolbar">
+                <div>
+                  <strong>{activeItem.card.id}</strong>
+                  <span>{activeIndex + 1} of {visibleItems.length}</span>
+                </div>
+                <div className="content-detail__nav">
+                  <button className="btn btn--ghost" type="button" disabled={activeIndex <= 0} onClick={() => selectRelative(-1)}>Previous</button>
+                  <button className="btn btn--ghost" type="button" disabled={activeIndex === -1 || activeIndex >= visibleItems.length - 1} onClick={() => selectRelative(1)}>Next</button>
+                </div>
+              </div>
+              <CardEditor
+                key={activeItem.card.id}
+                card={activeItem.card}
+                asset={assetsByCard.get(activeItem.card.id)}
+                validation={activeItem.validation}
+                onMutate={onMutate}
+                onStatus={onStatus}
+              />
+            </>
+          ) : (
+            <div className="empty-state">
+              <p>No cards match the current filters.</p>
+            </div>
+          )}
+        </div>
       </div>
-      <AddCard onRefresh={onRefresh} onStatus={onStatus} />
     </section>
   );
 }
 
-function CardEditor({ card, asset, onRefresh, onStatus }) {
+function CardEditor({ card, asset, validation, onMutate, onStatus }) {
   const [text, setText] = useState(card.text ?? "");
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
-  useEffect(() => setText(card.text ?? ""), [card.id, card.text]);
+  useEffect(() => {
+    setText(card.text ?? "");
+    setConfirmDelete(false);
+  }, [card.id, card.text]);
 
   async function saveText() {
-    await api(`/api/editor/cards/${encodeURIComponent(card.id)}`, {
-      method: "PUT",
-      body: { changes: { text } }
-    });
-    onStatus(`Saved ${card.id}`);
-    await onRefresh();
+    if (text === (card.text ?? "")) return;
+    await onMutate(
+      `Saving ${card.id}`,
+      async () => api(`/api/editor/cards/${encodeURIComponent(card.id)}`, {
+        method: "PUT",
+        body: { changes: { text } }
+      }),
+      `Saved ${card.id}`
+    );
   }
 
   async function removeCard() {
-    await api(`/api/editor/cards/${encodeURIComponent(card.id)}`, { method: "DELETE" });
-    onStatus(`Deleted ${card.id}`);
-    await onRefresh();
+    await onMutate(
+      `Deleting ${card.id}`,
+      async () => api(`/api/editor/cards/${encodeURIComponent(card.id)}`, { method: "DELETE" }),
+      `Deleted ${card.id}`
+    );
   }
+
+  const invalid = validation.invalid;
+  const messages = validation.messages;
 
   return (
     <article className="card-editor">
@@ -324,51 +602,116 @@ function CardEditor({ card, asset, onRefresh, onStatus }) {
           <strong>{card.id}</strong>
           <p>{(card.choices ?? []).map((choice) => choice.id).join(" / ")}</p>
         </div>
-        <button className="icon-button" title="Delete card" onClick={() => void removeCard()}>×</button>
+        <div className="card-editor__actions">
+          <span className={invalid ? "card-badge card-badge--invalid" : "card-badge card-badge--ready"}>
+            {invalid ? "invalid" : "player-ready"}
+          </span>
+          <button className="icon-button" title="Delete card" type="button" onClick={() => setConfirmDelete(true)}>x</button>
+        </div>
       </div>
+      <div className="card-editor__meta">
+        <label className="readonly-field">
+          Card id
+          <input value={card.id} readOnly />
+        </label>
+        <label className="readonly-field">
+          Asset
+          <input value={asset?.uri ?? "none"} readOnly />
+        </label>
+      </div>
+      {messages.length > 0 && (
+        <ul className="validation-list">
+          {messages.map((message, index) => (
+            <li key={`${message.level}-${index}`} className={`validation-list__item validation-list__item--${message.level}`}>
+              {message.text}
+            </li>
+          ))}
+        </ul>
+      )}
+      {confirmDelete && (
+        <div className="confirm-row">
+          <span>Delete this card?</span>
+          <button className="btn btn--danger" type="button" onClick={() => void removeCard()}>Delete</button>
+          <button className="btn btn--ghost" type="button" onClick={() => setConfirmDelete(false)}>Cancel</button>
+        </div>
+      )}
       <div className="field-row">
-        <input value={text} onChange={(event) => setText(event.target.value)} />
-        <button className="btn" onClick={() => void saveText()}>Save</button>
+        <input value={text} onChange={(event) => setText(event.target.value)} aria-label={`${card.id} text`} />
+        <button className="btn" disabled={text === (card.text ?? "")} onClick={() => void saveText()}>Save text</button>
       </div>
       <div className="choice-grid">
         {(card.choices ?? []).map((choice) => (
-          <ChoiceEditor key={choice.id} cardId={card.id} choice={choice} onRefresh={onRefresh} onStatus={onStatus} />
+          <ChoiceEditor
+            key={choice.id}
+            cardId={card.id}
+            choice={choice}
+            onMutate={onMutate}
+            onStatus={onStatus}
+          />
         ))}
       </div>
     </article>
   );
 }
 
-function ChoiceEditor({ cardId, choice, onRefresh, onStatus }) {
+function ChoiceEditor({ cardId, choice, onMutate, onStatus }) {
   const [label, setLabel] = useState(choice.label ?? "");
   const [advanced, setAdvanced] = useState(JSON.stringify(choice.effects ?? {}, null, 2));
+  const [factions, setFactions] = useState(() => createFactionDraft(choice.effects?.factions));
 
   useEffect(() => {
     setLabel(choice.label ?? "");
     setAdvanced(JSON.stringify(choice.effects ?? {}, null, 2));
+    setFactions(createFactionDraft(choice.effects?.factions));
   }, [choice.id, choice.label, choice.effects]);
 
   async function saveLabel() {
-    await api(choicePath(cardId, choice.id), { method: "PATCH", body: { label } });
-    onStatus(`Saved ${choice.id} label`);
-    await onRefresh();
+    if (label === (choice.label ?? "")) return;
+    await onMutate(
+      `Saving ${choice.id} label`,
+      async () => api(choicePath(cardId, choice.id), { method: "PATCH", body: { label } }),
+      `Saved ${choice.id} label`
+    );
   }
 
-  async function setFaction(faction, value) {
-    const path = `${choicePath(cardId, choice.id)}/effects/faction/${faction}`;
-    if (value === "") {
-      await api(path, { method: "DELETE" });
-    } else {
-      await api(path, { method: "POST", body: { value: Number(value) } });
+  async function saveFaction(faction) {
+    const value = factions[faction] ?? "";
+    const raw = value.trim();
+    const current = choice.effects?.factions?.[faction];
+    if (raw === "" && current === undefined) return;
+    if (raw !== "" && Number(raw) === current) return;
+    if (raw !== "" && !Number.isFinite(Number(raw))) {
+      onStatus(`${faction} must be finite`);
+      setFactions(createFactionDraft(choice.effects?.factions));
+      return;
     }
-    onStatus(`Updated ${choice.id} ${faction}`);
-    await onRefresh();
+    const path = `${choicePath(cardId, choice.id)}/effects/faction/${faction}`;
+    await onMutate(
+      `Updating ${choice.id} ${faction}`,
+      async () => {
+        if (raw === "") {
+          await api(path, { method: "DELETE" });
+        } else {
+          await api(path, { method: "POST", body: { value: Number(raw) } });
+        }
+      },
+      `Updated ${choice.id} ${faction}`
+    );
   }
 
   async function saveEffects() {
-    await api(choicePath(cardId, choice.id), { method: "PATCH", body: { effects: JSON.parse(advanced) } });
-    onStatus(`Saved ${choice.id} effects`);
-    await onRefresh();
+    let effects;
+    try {
+      effects = JSON.parse(advanced);
+    } catch (error) {
+      onStatus(error.message);
+      return;
+    }
+    await onMutate(
+      `Saving ${choice.id} effects`,
+      async () => api(choicePath(cardId, choice.id), { method: "PATCH", body: { effects } }),
+      `Saved ${choice.id} effects`
+    );
   }
 
   return (
@@ -383,43 +726,174 @@ function ChoiceEditor({ cardId, choice, onRefresh, onStatus }) {
             {faction}
             <input
               type="number"
-              defaultValue={choice.effects?.factions?.[faction] ?? ""}
-              onBlur={(event) => void setFaction(faction, event.target.value)}
+              value={factions[faction] ?? ""}
+              onChange={(event) => setFactions((current) => ({ ...current, [faction]: event.target.value }))}
+              onBlur={() => void saveFaction(faction)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") event.currentTarget.blur();
+              }}
             />
           </label>
         ))}
       </div>
+      <EffectRows
+        title="Tags"
+        kind="tag"
+        entries={choice.effects?.tags ?? {}}
+        cardId={cardId}
+        choiceId={choice.id}
+        onMutate={onMutate}
+        onStatus={onStatus}
+      />
+      <EffectRows
+        title="Variables"
+        kind="variable"
+        entries={choice.effects?.variables ?? {}}
+        cardId={cardId}
+        choiceId={choice.id}
+        onMutate={onMutate}
+        onStatus={onStatus}
+      />
       <details>
         <summary>Advanced effects JSON</summary>
         <textarea value={advanced} onChange={(event) => setAdvanced(event.target.value)} rows={5} />
-        <button className="btn" onClick={() => void saveEffects()}>Save effects JSON</button>
+        <button className="btn" type="button" onClick={() => void saveEffects()}>Save effects JSON</button>
       </details>
     </div>
   );
 }
 
-function AddCard({ onRefresh, onStatus }) {
+function EffectRows({ title, kind, entries, cardId, choiceId, onMutate, onStatus }) {
+  const [newKey, setNewKey] = useState("");
+  const [newValue, setNewValue] = useState(kind === "tag" ? "true" : "");
+  const sortedEntries = useMemo(() => Object.entries(entries).sort(([a], [b]) => a.localeCompare(b)), [entries]);
+
+  async function applyEntry(key, rawValue) {
+    const cleanedKey = key.trim();
+    if (!cleanedKey) {
+      onStatus(`${title} key required`);
+      return false;
+    }
+    const value = kind === "tag" ? parseTagValue(rawValue) : parseScalar(rawValue);
+    const path = effectPath(cardId, choiceId, kind, cleanedKey);
+    const updated = await onMutate(
+      `Updating ${choiceId} ${cleanedKey}`,
+      async () => {
+        if (value === null) {
+          await api(path, { method: "DELETE" });
+        } else {
+          await api(path, { method: "POST", body: { value } });
+        }
+      },
+      `Updated ${choiceId} ${cleanedKey}`
+    );
+    return updated;
+  }
+
+  async function removeEntry(key) {
+    await onMutate(
+      `Removing ${choiceId} ${key}`,
+      async () => api(effectPath(cardId, choiceId, kind, key), { method: "DELETE" }),
+      `Removed ${choiceId} ${key}`
+    );
+  }
+
+  async function addEntry() {
+    const updated = await applyEntry(newKey, newValue);
+    if (updated) {
+      setNewKey("");
+      setNewValue(kind === "tag" ? "true" : "");
+    }
+  }
+
+  return (
+    <div className="effect-panel">
+      <div className="effect-panel__head">
+        <span>{title}</span>
+        <small>{sortedEntries.length}</small>
+      </div>
+      <div className="effect-rows">
+        {sortedEntries.map(([key, value]) => (
+          <EffectEntryRow
+            key={key}
+            entryKey={key}
+            value={value}
+            onApply={(nextValue) => applyEntry(key, nextValue)}
+            onRemove={() => removeEntry(key)}
+          />
+        ))}
+        {sortedEntries.length === 0 && <span className="empty-inline">No entries</span>}
+      </div>
+      <div className="effect-row effect-row--new">
+        <input value={newKey} onChange={(event) => setNewKey(event.target.value)} placeholder={`${kind} key`} />
+        <input
+          value={newValue}
+          onChange={(event) => setNewValue(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") void addEntry();
+          }}
+          placeholder="value"
+        />
+        <button className="btn btn--ghost" type="button" disabled={!newKey.trim()} onClick={() => void addEntry()}>Add</button>
+      </div>
+    </div>
+  );
+}
+
+function EffectEntryRow({ entryKey, value, onApply, onRemove }) {
+  const [draft, setDraft] = useState(formatEffectValue(value));
+
+  useEffect(() => {
+    setDraft(formatEffectValue(value));
+  }, [entryKey, value]);
+
+  const original = formatEffectValue(value);
+
+  return (
+    <div className="effect-row">
+      <input className="effect-row__key" value={entryKey} readOnly />
+      <input
+        className="effect-row__value"
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && draft !== original) void onApply(draft);
+        }}
+      />
+      <button className="btn btn--ghost" type="button" disabled={draft === original} onClick={() => void onApply(draft)}>Apply</button>
+      <button className="btn btn--ghost" type="button" onClick={() => void onRemove()}>Remove</button>
+    </div>
+  );
+}
+
+function AddCard({ onMutate, onCreated }) {
   const [id, setId] = useState("");
   const [text, setText] = useState("");
 
   async function createCard() {
-    await api("/api/editor/cards", {
-      method: "POST",
-      body: {
-        card: {
-          id,
-          text,
-          choices: [
-            { id: "left", label: "Left", effects: { factions: {} } },
-            { id: "right", label: "Right", effects: { factions: {} } }
-          ]
+    const nextId = id;
+    const created = await onMutate(
+      "Creating card",
+      async () => api("/api/editor/cards", {
+        method: "POST",
+        body: {
+          card: {
+            id,
+            text,
+            choices: [
+              { id: "left", label: "Left", effects: { factions: {} } },
+              { id: "right", label: "Right", effects: { factions: {} } }
+            ]
+          }
         }
-      }
-    });
-    setId("");
-    setText("");
-    onStatus("Card created");
-    await onRefresh();
+      }),
+      "Card created"
+    );
+    if (created) {
+      setId("");
+      setText("");
+      onCreated?.(nextId);
+    }
   }
 
   return (
@@ -475,7 +949,9 @@ function ReviewPanel({ diagnostics, onRun, onOpen }) {
           <ul className="warning-list">
             {(diagnostics.warnings ?? []).map((warning, index) => (
               <li key={`${warning.code}-${index}`} className={`warning warning--${warning.severity}`}>
-                <button type="button" onClick={() => onOpen("content")}>{warning.code}</button>
+                <button className="btn btn--ghost btn--compact warning__code" type="button" onClick={() => onOpen("content")}>
+                  {warning.code}
+                </button>
                 <span>{warning.message}</span>
               </li>
             ))}
@@ -483,7 +959,9 @@ function ReviewPanel({ diagnostics, onRun, onOpen }) {
           </ul>
         </>
       ) : (
-        <div className="empty-state">No review has been run in this session.</div>
+        <div className="empty-state">
+          <p>No review has been run in this session.</p>
+        </div>
       )}
     </section>
   );
@@ -571,10 +1049,6 @@ function SettingsPanel({ editor, onRefresh, onStatus }) {
           <button className="btn" onClick={() => void saveTitle()}>Save title</button>
         </div>
       </div>
-      <div className="subsection subsection--plain">
-        <h3>Fallback</h3>
-        <a className="fallback-link" href="/classic">Open classic dashboard</a>
-      </div>
       <div className="subsection">
         <h3>Connector Plan</h3>
         <div className="field-row field-row--compact">
@@ -622,6 +1096,127 @@ function panelStatus(id, { editor, playerReady, diagnostics, build }) {
 
 function choicePath(cardId, choiceId) {
   return `/api/editor/cards/${encodeURIComponent(cardId)}/choices/${encodeURIComponent(choiceId)}`;
+}
+
+function effectPath(cardId, choiceId, kind, target) {
+  return `${choicePath(cardId, choiceId)}/effects/${kind}/${encodeURIComponent(target)}`;
+}
+
+function readStoredDraft() {
+  if (typeof localStorage === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY);
+    if (!raw) return null;
+    const entry = JSON.parse(raw);
+    if (!entry?.bundle || !Array.isArray(entry.bundle.cards)) return null;
+    return entry;
+  } catch {
+    return null;
+  }
+}
+
+function readDraftInfo() {
+  const draft = readStoredDraft();
+  if (!draft) return null;
+  return {
+    savedAt: draft.savedAt,
+    cardCount: draft.cardCount ?? draft.bundle.cards.length
+  };
+}
+
+function clearStoredDraft() {
+  if (typeof localStorage !== "undefined") {
+    localStorage.removeItem(DRAFT_KEY);
+  }
+}
+
+function formatDraftTime(savedAt) {
+  if (!savedAt) return "unknown time";
+  const date = new Date(savedAt);
+  if (Number.isNaN(date.getTime())) return "unknown time";
+  return date.toLocaleString();
+}
+
+function cardValidationState(editor, card, index) {
+  const messages = [];
+  const seen = new Set();
+  const append = (items = [], level) => {
+    for (const text of items) {
+      if (!messageBelongsToCard(String(text), card, index)) continue;
+      const key = `${level}:${text}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      messages.push({ level, text });
+    }
+  };
+
+  append(editor?.validation?.errors, "error");
+  append(editor?.playerValidation?.errors, "error");
+  append(editor?.validation?.warnings, "warning");
+  append(editor?.playerValidation?.warnings, "warning");
+
+  return {
+    invalid: messages.some((message) => message.level === "error"),
+    messages
+  };
+}
+
+function messageBelongsToCard(message, card, index) {
+  return (
+    message.includes(`Card at index ${index}`) ||
+    message.includes(`Card '${card.id}'`) ||
+    message.includes(`card '${card.id}'`) ||
+    message.includes(`card id '${card.id}'`)
+  );
+}
+
+function matchesCardQuery(card, query) {
+  const normalized = query.trim().toLowerCase();
+  if (!normalized) return true;
+  const haystack = [
+    card.id,
+    card.text,
+    ...(card.choices ?? []).flatMap((choice) => [choice.id, choice.label])
+  ].join(" ").toLowerCase();
+  return haystack.includes(normalized);
+}
+
+function createFactionDraft(factions = {}) {
+  return Object.fromEntries(FACTIONS.map((faction) => {
+    const delta = factions?.[faction];
+    return [faction, delta === undefined ? "" : String(delta)];
+  }));
+}
+
+function parseTagValue(text) {
+  const trimmed = text.trim();
+  if (trimmed === "" || trimmed === "false") return null;
+  if (trimmed === "true") return true;
+  return trimmed;
+}
+
+function parseScalar(text) {
+  const trimmed = text.trim();
+  if (trimmed === "") return null;
+  if (trimmed === "true") return true;
+  if (trimmed === "false") return false;
+  const number = Number(trimmed);
+  if (Number.isFinite(number)) return number;
+  return trimmed;
+}
+
+function formatEffectValue(value) {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "boolean") return value ? "true" : "false";
+  if (typeof value === "number") return String(value);
+  if (typeof value === "string") return value;
+  return JSON.stringify(value);
+}
+
+function cardExcerpt(card) {
+  const text = (card.text ?? "").trim();
+  if (!text) return "No card text";
+  return text.length > 72 ? `${text.slice(0, 72)}...` : text;
 }
 
 function createAssetMap(assets) {

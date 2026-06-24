@@ -5,10 +5,61 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>ReignsAgent Player</title>
   <style>
+    :root {
+      --bg: #0f1115;
+      --panel: #1f232c;
+      --ink: #e8e6e1;
+      --muted: #8a8f99;
+      --accent: #c9a24b;
+      --accent-2: #6d8fd6;
+      --border: #2a2f3a;
+      --radius: 8px;
+    }
+    :root[data-skin="arcade"] {
+      --bg: #15111c;
+      --panel: #302442;
+      --ink: #fff2c9;
+      --muted: #c6b8d8;
+      --accent: #ffd34f;
+      --accent-2: #6fe6c4;
+      --border: #654f83;
+      --radius: 4px;
+    }
+    :root[data-skin="famicom"] {
+      --bg: #efe4cc;
+      --panel: #fff8e8;
+      --ink: #211f1c;
+      --muted: #6d6256;
+      --accent: #b52222;
+      --accent-2: #275c9a;
+      --border: #24211d;
+      --radius: 0px;
+      color-scheme: light;
+    }
+    :root[data-skin="phantom"] {
+      --bg: #09090a;
+      --panel: #f4f0e8;
+      --ink: #f7f2e9;
+      --muted: #c8c1b5;
+      --accent: #d71920;
+      --accent-2: #f4f0e8;
+      --border: #f7f2e9;
+      --radius: 0px;
+    }
+    :root[data-skin="terminal"] {
+      --bg: #07100c;
+      --panel: #12231a;
+      --ink: #daf8e5;
+      --muted: #91b89d;
+      --accent: #68ff95;
+      --accent-2: #78c6ff;
+      --border: #28543a;
+      --radius: 2px;
+    }
     body {
       margin: 0;
-      background: #0f1115;
-      color: #e8e6e1;
+      background: var(--bg);
+      color: var(--ink);
       font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
       display: flex;
       flex-direction: column;
@@ -18,14 +69,14 @@
     }
     .stage { width: 100%; max-width: 440px; }
     .gauges { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 16px; }
-    .gauge { background: #1f232c; border-radius: 6px; padding: 8px; }
-    .gauge__name { font-size: 11px; color: #8a8f99; text-transform: capitalize; }
-    .gauge__bar { height: 6px; background: #0c0e12; border-radius: 3px; overflow: hidden; margin-top: 4px; }
-    .gauge__fill { height: 100%; background: #6d8fd6; }
+    .gauge { background: var(--panel); border-radius: 6px; padding: 8px; border: 1px solid var(--border); }
+    .gauge__name { font-size: 11px; color: var(--muted); text-transform: capitalize; }
+    .gauge__bar { height: 6px; background: rgba(0, 0, 0, 0.26); border-radius: 3px; overflow: hidden; margin-top: 4px; }
+    .gauge__fill { height: 100%; background: var(--accent-2); }
     .card {
-      background: linear-gradient(160deg, #262b36, #181b22);
-      border: 1px solid #2a2f3a;
-      border-radius: 8px;
+      background: linear-gradient(160deg, color-mix(in srgb, var(--panel) 84%, white 8%), color-mix(in srgb, var(--panel) 92%, black 8%));
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
       padding: 28px;
       min-height: 220px;
       display: flex;
@@ -33,44 +84,52 @@
       justify-content: space-between;
       box-shadow: 0 12px 30px rgba(0,0,0,0.35);
     }
+    :root[data-skin="phantom"] .card {
+      background: linear-gradient(160deg, #f4f0e8, #e7ded0);
+      color: #09090a;
+      border-width: 2px;
+      box-shadow: 8px 8px 0 rgba(215, 25, 32, 0.18);
+    }
     .art {
       width: min(160px, 48%);
       aspect-ratio: 1;
       align-self: center;
       object-fit: contain;
-      background: #0c0e12;
-      border: 1px solid #2a2f3a;
-      border-radius: 8px;
+      background: rgba(0, 0, 0, 0.18);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
       padding: 14px;
       margin-bottom: 18px;
     }
     .text { font-size: 19px; line-height: 1.5; }
     .swipes { display: flex; gap: 12px; margin-top: 24px; }
     .start-wrap { text-align: center; margin-top: 24px; display: flex; gap: 10px; justify-content: center; }
+    .session-meta { display: flex; justify-content: space-between; gap: 12px; margin-top: 10px; color: var(--muted); font-size: 12px; }
     .swipe-hint { font-size: 11px; color: #8a8f99; text-align: center; margin: 12px 0 0; }
-    .summary { background: #1f232c; border: 1px solid #2a2f3a; border-radius: 8px; padding: 14px; margin-top: 16px; }
+    .summary { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; margin-top: 16px; }
     .summary__title { font-size: 14px; font-weight: 600; margin: 0 0 6px; }
-    .summary__line { font-size: 12px; color: #8a8f99; margin: 2px 0; }
+    .summary__line { font-size: 12px; color: var(--muted); margin: 2px 0; }
     .card { transition: transform 0.18s ease-out; touch-action: pan-y; user-select: none; }
     .card.swiping { transition: none; cursor: grabbing; }
     .card[data-swipe-hint="left"] { box-shadow: -6px 12px 30px rgba(217,106,106,0.35); }
     .card[data-swipe-hint="right"] { box-shadow: 6px 12px 30px rgba(106,217,143,0.35); }
     @media (prefers-reduced-motion: reduce) { .card { transition: none; } }
-    button:focus-visible { outline: 2px solid #c9a24b; outline-offset: 2px; }
+    button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     button {
       flex: 1;
-      background: #1f232c;
-      color: #e8e6e1;
-      border: 1px solid #2a2f3a;
-      border-radius: 8px;
+      background: var(--panel);
+      color: var(--ink);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
       padding: 14px;
       font-size: 15px;
       cursor: pointer;
+      transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
     }
-    button:hover:not(:disabled) { border-color: #c9a24b; }
+    button:hover:not(:disabled) { border-color: var(--accent); transform: translateY(-1px); box-shadow: 0 10px 22px rgba(0,0,0,0.16); }
     button:disabled { opacity: 0.4; cursor: not-allowed; }
-    .primary { background: #c9a24b; color: #1a1405; font-weight: 600; border-color: #c9a24b; }
-    .status { margin-top: 16px; font-size: 13px; color: #8a8f99; text-align: center; min-height: 18px; }
+    .primary { background: var(--accent); color: #1a1405; font-weight: 600; border-color: var(--accent); }
+    .status { margin-top: 16px; font-size: 13px; color: var(--muted); text-align: center; min-height: 18px; }
   </style>
 </head>
 <body>
@@ -89,7 +148,11 @@
     <div class="start-wrap">
       <input type="file" id="file" accept=".json,application/json" hidden />
       <button class="primary" id="load">Load build</button>
-      <button id="restart" hidden>Play again</button>
+      <button id="restart" hidden>Restart reign</button>
+    </div>
+    <div class="session-meta">
+      <span id="turn-label">Turn 0</span>
+      <span id="session-label">No build loaded</span>
     </div>
     <div class="status" id="status" role="status" aria-live="polite"></div>
   </div>
@@ -100,11 +163,16 @@
     const el = (id) => document.getElementById(id);
     const setStatus = (msg) => { el("status").textContent = msg; };
     const escapeHtml = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
-    const requestedLocale = new URLSearchParams(window.location.search).get("locale") || navigator.language || "en";
+    const params = new URLSearchParams(window.location.search);
+    const requestedLocale = params.get("locale") || navigator.language || "en";
+    const requestedSkin = params.get("skin");
+    const KNOWN_SKINS = new Set(["workbench", "famicom", "phantom", "arcade", "terminal"]);
+    document.documentElement.dataset.skin = KNOWN_SKINS.has(requestedSkin) ? requestedSkin : "workbench";
 
     let player = null;
     let assetByCard = new Map();
     let lastSnap = null;
+    let awaitingRestartConfirm = false;
 
     // attachSwipe is inlined here (mirroring packages/interface/web/assets/swipe-input.js)
     // so the deployed player.html needs no repo-relative imports.
@@ -205,8 +273,15 @@
 
     el("restart").addEventListener("click", () => {
       if (!player) return;
+      if (!awaitingRestartConfirm) {
+        awaitingRestartConfirm = true;
+        updateActionButtons(lastSnap);
+        setStatus("Click restart again to confirm");
+        return;
+      }
       try {
         const snap = player.start();
+        awaitingRestartConfirm = false;
         render(snap);
         setStatus("Reign restarted");
       } catch (error) {
@@ -228,8 +303,23 @@
       }
     }
 
+    function updateSessionMeta(snap) {
+      const turn = snap?.turn ?? 0;
+      el("turn-label").textContent = `Turn ${turn}`;
+      el("session-label").textContent = player ? "Build loaded" : "No build loaded";
+    }
+
+    function updateActionButtons(snap) {
+      el("restart").hidden = !player;
+      el("restart").textContent = awaitingRestartConfirm ? "Confirm restart" : "Restart reign";
+      el("load").textContent = player && !snap?.gameOver ? "Build loaded" : "Load build";
+      el("load").disabled = Boolean(player) && !snap?.gameOver;
+    }
+
     function render(snap) {
       lastSnap = snap;
+      updateSessionMeta(snap);
+      updateActionButtons(snap);
       const gauges = el("gauges");
       gauges.innerHTML = "";
       const factions = snap?.factions ?? {};
@@ -256,7 +346,6 @@
         el("left").disabled = false;
         el("right").disabled = false;
         el("summary").hidden = true;
-        el("restart").hidden = true;
       } else {
         el("art").removeAttribute("src");
         el("art").hidden = true;
@@ -266,7 +355,6 @@
         el("right").disabled = true;
         if (snap?.gameOver) {
           renderSummary(snap);
-          el("restart").hidden = false;
         }
       }
     }
@@ -299,8 +387,18 @@
 
     function applyPresentation(presentation = {}) {
       const variables = presentation?.css?.variables ?? {};
+      const blockedVariables = new Set([
+        "--bg",
+        "--panel",
+        "--ink",
+        "--muted",
+        "--accent",
+        "--accent-2",
+        "--border",
+        "--radius"
+      ]);
       for (const [name, value] of Object.entries(variables)) {
-        if (name.startsWith("--")) {
+        if (name.startsWith("--") && !blockedVariables.has(name)) {
           document.documentElement.style.setProperty(name, String(value));
         }
       }
@@ -323,6 +421,9 @@
       }
       return map;
     }
+
+    updateSessionMeta(null);
+    updateActionButtons(null);
   </script>
 </body>
 </html>

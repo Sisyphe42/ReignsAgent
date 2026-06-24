@@ -6,15 +6,30 @@
   <title>ReignsAgent Player</title>
   <link rel="stylesheet" href="/assets/dashboard.css" />
   <style>
+    .topbar__controls {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .skin-select {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .skin-select select {
+      min-width: 124px;
+    }
     .stage {
       max-width: 460px;
       margin: 24px auto;
       padding: 0 16px;
     }
     .player-card {
-      background: linear-gradient(160deg, #262b36, #181b22);
+      background: linear-gradient(160deg, var(--panel), color-mix(in srgb, var(--panel) 78%, black 22%));
       border: 1px solid var(--border);
-      border-radius: 8px;
+      border-radius: var(--radius);
       padding: 28px;
       min-height: 220px;
       display: flex;
@@ -22,30 +37,51 @@
       justify-content: space-between;
       box-shadow: 0 12px 30px rgba(0,0,0,0.35);
     }
+    :root[data-skin="famicom"] .player-card {
+      background: linear-gradient(160deg, #fff8e8, #efe4cc);
+      box-shadow: 4px 4px 0 rgba(36, 33, 29, 0.18);
+    }
+    :root[data-skin="phantom"] .player-card {
+      background: linear-gradient(160deg, #f4f0e8, #e7ded0);
+      color: #09090a;
+      border-width: 2px;
+      box-shadow: 8px 8px 0 rgba(215, 25, 32, 0.18);
+    }
+    :root[data-skin="terminal"] .player-card {
+      background: linear-gradient(160deg, #13251b, #0d1712);
+    }
     .player-art {
       width: min(160px, 48%);
       aspect-ratio: 1;
       align-self: center;
       object-fit: contain;
-      background: #0c0e12;
+      background: rgba(0, 0, 0, 0.18);
       border: 1px solid var(--border);
-      border-radius: 8px;
+      border-radius: var(--radius);
       padding: 14px;
       margin-bottom: 18px;
     }
     .player-text { font-size: 19px; line-height: 1.5; }
     .player-swipes { display: flex; gap: 12px; margin-top: 24px; }
     .start-wrap { text-align: center; margin-top: 32px; display: flex; gap: 10px; justify-content: center; }
-    .swipe-hint { font-size: 11px; color: #8a8f99; text-align: center; margin: 12px 0 0; }
+    .session-meta {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      margin: 10px 0 0;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .swipe-hint { font-size: 11px; color: var(--muted); text-align: center; margin: 12px 0 0; }
     .player-card { transition: transform 0.18s ease-out; touch-action: pan-y; user-select: none; }
     .player-card.swiping { transition: none; cursor: grabbing; }
     .player-card[data-swipe-hint="left"] { box-shadow: -6px 12px 30px rgba(217,106,106,0.35); }
     .player-card[data-swipe-hint="right"] { box-shadow: 6px 12px 30px rgba(106,217,143,0.35); }
-    .summary { background: #1f232c; border: 1px solid #2a2f3a; border-radius: 8px; padding: 14px; margin-top: 16px; }
+    .summary { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; margin-top: 16px; }
     .summary__title { font-size: 14px; font-weight: 600; margin: 0 0 6px; }
-    .summary__line { font-size: 12px; color: #8a8f99; margin: 2px 0; }
+    .summary__line { font-size: 12px; color: var(--muted); margin: 2px 0; }
     @media (prefers-reduced-motion: reduce) { .player-card { transition: none; } }
-    button:focus-visible { outline: 2px solid #c9a24b; outline-offset: 2px; }
+    button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   </style>
 </head>
 <body>
@@ -57,9 +93,21 @@
         <p class="brand__tag">Preview</p>
       </div>
     </div>
-    <nav class="topbar__nav">
-      <a href="/">Back to dashboard</a>
-    </nav>
+    <div class="topbar__controls">
+      <label class="skin-select">
+        Skin
+        <select id="skin">
+          <option value="workbench">Workbench</option>
+          <option value="famicom">Famicom</option>
+          <option value="phantom">Phantom</option>
+          <option value="arcade">Arcade</option>
+          <option value="terminal">Terminal</option>
+        </select>
+      </label>
+      <nav class="topbar__nav">
+        <a id="back-link" href="/workbench">Back to workbench</a>
+      </nav>
+    </div>
   </header>
 
   <main class="stage">
@@ -76,7 +124,11 @@
     <div class="summary" id="summary" hidden aria-live="polite"></div>
     <div class="start-wrap">
       <button id="start" class="btn btn--primary">Start reign</button>
-      <button id="restart" class="btn" hidden>Play again</button>
+      <button id="restart" class="btn" hidden>Restart reign</button>
+    </div>
+    <div class="session-meta">
+      <span id="turn-label">Turn 0</span>
+      <span id="session-label">No active reign</span>
     </div>
     <div id="status" class="status" role="status" aria-live="polite"></div>
   </main>
@@ -98,11 +150,46 @@
     const el = (id) => document.getElementById(id);
     const setStatus = (msg, kind = "") => { el("status").textContent = msg; el("status").className = `status ${kind ? `status--${kind}` : ""}`; };
     const escapeHtml = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
-    const requestedLocale = new URLSearchParams(window.location.search).get("locale") || navigator.language || "en";
+    const PERSIST_KEY = "reigns-agent.creator-web.skin";
+    const DEFAULT_SKIN = "workbench";
+    const KNOWN_SKINS = new Set(["workbench", "famicom", "phantom", "arcade", "terminal"]);
+    const params = new URLSearchParams(window.location.search);
+    const requestedLocale = params.get("locale") || navigator.language || "en";
+    const requestedSkin = params.get("skin");
 
     let session = null;
     let assetByCard = new Map();
     let lastResult = null;
+    let awaitingRestartConfirm = false;
+
+    function resolveSkin() {
+      if (KNOWN_SKINS.has(requestedSkin)) return requestedSkin;
+      const stored = localStorage.getItem(PERSIST_KEY);
+      return KNOWN_SKINS.has(stored) ? stored : DEFAULT_SKIN;
+    }
+
+    function applySkin(nextSkin, mode = "replace") {
+      const skin = KNOWN_SKINS.has(nextSkin) ? nextSkin : DEFAULT_SKIN;
+      document.documentElement.dataset.skin = skin;
+      localStorage.setItem(PERSIST_KEY, skin);
+      el("skin").value = skin;
+      const url = new URL(window.location.href);
+      if (skin === DEFAULT_SKIN) {
+        url.searchParams.delete("skin");
+      } else {
+        url.searchParams.set("skin", skin);
+      }
+      window.history[mode === "push" ? "pushState" : "replaceState"](null, "", `${url.pathname}${url.search}${url.hash}`);
+
+      const backUrl = new URL("/workbench", window.location.origin);
+      if (skin !== DEFAULT_SKIN) {
+        backUrl.searchParams.set("skin", skin);
+      }
+      el("back-link").href = `${backUrl.pathname}${backUrl.search}`;
+    }
+
+    applySkin(resolveSkin());
+    el("skin").addEventListener("change", (event) => applySkin(event.target.value));
 
     function canSwipe() {
       return Boolean(session) && !lastResult?.gameOver && lastResult?.currentCard;
@@ -114,8 +201,24 @@
       canSwipe
     });
 
+    function updateSessionMeta(state) {
+      const turn = state?.turn ?? 0;
+      el("turn-label").textContent = `Turn ${turn}`;
+      el("session-label").textContent = session ? `Session ${session}` : "No active reign";
+    }
+
+    function updateActionButtons(state) {
+      const running = Boolean(session) && !state?.gameOver;
+      el("start").textContent = running ? "Reign running" : "Start reign";
+      el("start").disabled = running;
+      el("restart").hidden = !session;
+      el("restart").textContent = awaitingRestartConfirm ? "Confirm restart" : "Restart reign";
+    }
+
     function render(state) {
       lastResult = state;
+      updateSessionMeta(state);
+      updateActionButtons(state);
       const gauges = el("gauges");
       gauges.innerHTML = "";
       for (const [name, gauge] of Object.entries(state.gauges ?? {})) {
@@ -139,7 +242,6 @@
         el("left").disabled = false;
         el("right").disabled = false;
         el("summary").hidden = true;
-        el("restart").hidden = true;
       } else {
         el("art").removeAttribute("src");
         el("art").hidden = true;
@@ -149,7 +251,6 @@
         el("right").disabled = true;
         if (state.gameOver) {
           renderSummary(state);
-          el("restart").hidden = false;
         }
       }
     }
@@ -176,6 +277,7 @@
         const result = await api("/api/play/start", { locale: requestedLocale });
         if (result.error) throw new Error(result.error.message);
         session = result.sessionId;
+        awaitingRestartConfirm = false;
         render(result);
         setStatus("Reign started", "ok");
       } catch (error) {
@@ -184,11 +286,24 @@
     }
 
     el("start").addEventListener("click", startReign);
-    el("restart").addEventListener("click", startReign);
+    el("restart").addEventListener("click", async () => {
+      if (!session) {
+        await startReign();
+        return;
+      }
+      if (!awaitingRestartConfirm) {
+        awaitingRestartConfirm = true;
+        updateActionButtons(lastResult);
+        setStatus("Click restart again to confirm", "err");
+        return;
+      }
+      await startReign();
+    });
 
     async function swipe(direction) {
       if (!canSwipe()) return;
       try {
+        awaitingRestartConfirm = false;
         const result = await api("/api/play/swipe", { sessionId: session, direction });
         render(result);
         if (result.gameOver) setStatus(`Game over: ${result.gameOver.faction}`, "err");
@@ -213,8 +328,21 @@
 
     function applyPresentation(presentation = {}) {
       const variables = presentation?.css?.variables ?? {};
+      const blockedVariables = new Set([
+        "--bg",
+        "--panel",
+        "--panel-2",
+        "--ink",
+        "--muted",
+        "--accent",
+        "--accent-2",
+        "--danger",
+        "--ok",
+        "--border",
+        "--radius"
+      ]);
       for (const [name, value] of Object.entries(variables)) {
-        if (name.startsWith("--")) {
+        if (name.startsWith("--") && !blockedVariables.has(name)) {
           document.documentElement.style.setProperty(name, String(value));
         }
       }
@@ -237,6 +365,9 @@
       }
       return map;
     }
+
+    updateSessionMeta(null);
+    updateActionButtons(null);
   </script>
 </body>
 </html>

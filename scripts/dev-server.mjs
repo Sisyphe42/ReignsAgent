@@ -60,7 +60,10 @@ const server = createServer(async (req, res) => {
   const path = url.pathname;
 
   try {
-    if (req.method === "GET" && (path === "/" || path === "/index.html")) {
+    if (
+      req.method === "GET" &&
+      (path === "/" || path === "/index.html" || path === "/workbench" || path.startsWith("/workbench/"))
+    ) {
       return sendFile(res, creatorWebFile("index.html") ?? join(WEB_ROOT, "dashboard.html"));
     }
 
@@ -358,7 +361,7 @@ function handleChoiceRoute(req, res, match, body) {
     if (value === undefined) {
       throw new Error(`Effect route requires a 'value' field for ${match.kind}`);
     }
-    if (value === null || value === false) {
+    if (value === null || (match.kind !== "variable" && value === false)) {
       delete effects[bucket]?.[match.target];
     } else {
       effects[bucket] = { ...(effects[bucket] ?? {}), [match.target]: value };
@@ -442,7 +445,7 @@ function creatorWebFile(requestPath) {
 }
 
 server.listen(PORT, () => {
-  console.log(`ReignsAgent creator dash:  http://localhost:${PORT}`);
+  console.log(`ReignsAgent creator workbench: http://localhost:${PORT}/workbench`);
   console.log(`ReignsAgent player preview: http://localhost:${PORT}/play`);
   console.log(`Web root: ${WEB_ROOT}`);
 });
