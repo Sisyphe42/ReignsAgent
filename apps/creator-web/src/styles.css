@@ -980,6 +980,7 @@ select {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 0.45rem;
   min-height: 36px;
   padding: 8px 12px;
   color: var(--ink);
@@ -989,15 +990,24 @@ select {
   border-radius: calc(var(--radius) - 1px);
   cursor: pointer;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
-  transition: transform 160ms ease, border-color 160ms ease, background 160ms ease, color 160ms ease;
+  white-space: nowrap;
+  transition:
+    transform 180ms cubic-bezier(.2, .9, .22, 1),
+    border-color 180ms ease,
+    background 180ms ease,
+    color 180ms ease,
+    box-shadow 180ms ease;
 }
 
 .btn:hover,
 .link-button:hover,
 .file-button:hover {
-  transform: translateY(-1px);
+  transform: translateY(-1px) scale(1.01);
   border-color: var(--accent);
   background: color-mix(in srgb, var(--surface-3) 88%, #000);
+  box-shadow:
+    0 10px 22px color-mix(in srgb, var(--shadow) 78%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.045);
 }
 
 :root[data-skin="famicom"] .btn,
@@ -1018,13 +1028,19 @@ select {
 .btn:active,
 .link-button:active,
 .file-button:active {
-  transform: translateY(0) scale(0.99);
+  transform: translateY(0) scale(0.985);
 }
 
 .btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
   transform: none;
+}
+
+.btn--compact {
+  min-height: 30px;
+  padding: 5px 9px;
+  font-size: 0.72rem;
 }
 
 .btn--primary {
@@ -1096,7 +1112,8 @@ select {
     color 140ms ease,
     background 140ms ease,
     box-shadow 140ms ease,
-    transform 180ms cubic-bezier(.16, 1.7, .34, 1);
+    border-color 140ms ease,
+    transform 180ms cubic-bezier(.16, 1.3, .34, 1);
 }
 
 :root[data-skin="phantom"] .btn::before,
@@ -1123,10 +1140,10 @@ select {
   color: #09090a;
   background: #f7f2e9;
   border-color: #09090a;
-  transform: translate(-5px, -5px) rotate(-1.6deg) scale(1.035);
+  transform: translate(-3px, -3px) rotate(-0.7deg) scale(1.018);
   box-shadow:
-    8px 8px 0 #d71920,
-    13px 13px 0 rgba(9, 9, 10, 0.26),
+    6px 6px 0 #d71920,
+    10px 10px 0 rgba(9, 9, 10, 0.22),
     inset 0 0 0 1px rgba(9, 9, 10, 0.92);
 }
 
@@ -1145,7 +1162,9 @@ select {
   color: #f7f2e9;
   background: #d71920;
   border-color: #09090a;
-  box-shadow: 7px 7px 0 #09090a;
+  box-shadow:
+    5px 5px 0 #09090a,
+    inset 0 0 0 1px rgba(247, 242, 233, 0.16);
 }
 
 :root[data-skin="phantom"] .btn--primary:hover {
@@ -1199,6 +1218,11 @@ select {
 .btn--choice {
   flex: 1;
   min-width: 140px;
+}
+
+:root[data-skin="phantom"] .btn--compact {
+  min-height: 34px;
+  padding: 5px 10px;
 }
 
 .file-button {
@@ -1481,12 +1505,19 @@ select {
   border: 1px solid var(--border);
   border-radius: calc(var(--radius) - 1px);
   cursor: pointer;
-  transition: border-color 160ms ease, transform 160ms ease;
+  transition:
+    border-color 180ms ease,
+    background 180ms ease,
+    color 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms cubic-bezier(.2, .9, .22, 1);
 }
 
 .icon-button:hover {
-  transform: translateY(-1px);
+  transform: translateY(-1px) scale(1.02);
   border-color: var(--danger);
+  background: color-mix(in srgb, var(--surface-3) 90%, #000);
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--shadow) 74%, transparent);
 }
 
 :root[data-skin="phantom"] .icon-button {
@@ -1589,7 +1620,7 @@ select {
 
 :root[data-skin="phantom"] .panel--content {
   padding-top: 18px;
-  clip-path: polygon(0 0, 100% 0, 100% 96%, 3% 100%);
+  clip-path: none;
 }
 
 :root[data-skin="phantom"] .panel--content::before {
@@ -1760,13 +1791,43 @@ select {
 }
 
 details {
+  display: grid;
+  gap: 8px;
   color: var(--muted);
 }
 
 summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  width: fit-content;
+  min-height: 32px;
+  padding: 5px 10px;
   cursor: pointer;
   color: var(--ink);
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) - 2px);
+  background: color-mix(in srgb, var(--surface-2) 76%, #000);
   font-weight: 650;
+  transition:
+    transform 180ms cubic-bezier(.2, .9, .22, 1),
+    border-color 180ms ease,
+    background 180ms ease,
+    color 180ms ease,
+    box-shadow 180ms ease;
+}
+
+summary:hover,
+summary:focus-visible {
+  transform: translateY(-1px);
+  color: var(--ink);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--surface-3) 86%, #000);
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--shadow) 68%, transparent);
+}
+
+summary:focus-visible {
+  outline: none;
 }
 
 .add-card,
@@ -1775,6 +1836,11 @@ summary {
   padding: 14px;
   margin-top: 14px;
   box-shadow: none;
+}
+
+.empty-state {
+  position: relative;
+  isolation: isolate;
 }
 
 .subsection--plain {
@@ -1810,6 +1876,36 @@ summary {
   font-weight: 800;
 }
 
+:root[data-skin="phantom"] details {
+  color: #4b443c;
+}
+
+:root[data-skin="phantom"] summary {
+  color: #09090a;
+  border: 2px solid #09090a;
+  background: #ece6da;
+  box-shadow:
+    4px 4px 0 rgba(215, 25, 32, 0.55),
+    inset 0 0 0 1px rgba(247, 242, 233, 0.3);
+  clip-path: polygon(0 8%, 97% 0, 100% 88%, 4% 100%);
+  font-family: var(--font-data);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+:root[data-skin="phantom"] summary:hover,
+:root[data-skin="phantom"] summary:focus-visible {
+  transform: translate(-2px, -2px) rotate(-0.3deg);
+  color: #09090a;
+  border-color: #09090a;
+  background: #f7f2e9;
+  box-shadow:
+    6px 6px 0 #d71920,
+    9px 9px 0 rgba(9, 9, 10, 0.16),
+    inset 0 0 0 1px rgba(9, 9, 10, 0.88);
+}
+
 .empty-state {
   color: var(--muted);
   background:
@@ -1823,7 +1919,17 @@ summary {
 }
 
 .empty-state p {
+  margin: 0;
   max-width: 70ch;
+  line-height: 1.55;
+}
+
+:root[data-skin="phantom"] .empty-state {
+  color: #494238;
+}
+
+:root[data-skin="phantom"] .empty-state p {
+  color: #332d26;
 }
 
 .health {
@@ -1864,12 +1970,13 @@ summary {
   background: color-mix(in srgb, var(--surface-2) 82%, #000);
 }
 
-.warning button {
-  color: var(--accent);
-  background: transparent;
-  border: 0;
-  cursor: pointer;
+.warning__code {
+  align-self: start;
+  justify-self: start;
   font-family: var(--font-data);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
 }
 
 .preview-layout {
@@ -2108,6 +2215,11 @@ summary {
   clip-path: none !important;
 }
 
+:root[data-skin="phantom"] .empty-state {
+  min-height: 132px;
+  padding: 22px 24px 24px 20px;
+}
+
 :root[data-skin="phantom"] :is(.metric, .card-editor, .choice-editor, .empty-state, .subsection:not(.subsection--plain))::before,
 :root[data-skin="phantom"] :is(.metric, .card-editor, .choice-editor, .empty-state, .subsection:not(.subsection--plain))::after {
   position: absolute;
@@ -2142,6 +2254,11 @@ summary {
   z-index: 2;
 }
 
+:root[data-skin="phantom"] .empty-state > * {
+  position: relative;
+  z-index: 3;
+}
+
 :root[data-skin="phantom"] :is(.metric, .card-editor, .choice-editor, .empty-state, .subsection:not(.subsection--plain))::selection {
   color: #f7f2e9;
   background: #d71920;
@@ -2149,27 +2266,32 @@ summary {
 
 :root[data-skin="phantom"] :is(.metric, .card-editor, .choice-editor, .empty-state, .subsection:not(.subsection--plain)):hover::before,
 :root[data-skin="phantom"] :is(.metric, .card-editor, .choice-editor, .empty-state, .subsection:not(.subsection--plain)):focus-within::before {
-  transform: translate(-4px, -5px) rotate(-1.6deg) skewX(1.5deg);
+  transform: translate(-2px, -3px) rotate(-0.8deg) skewX(0.7deg);
   clip-path: polygon(1% 4%, 95% 2%, 100% 20%, 92% 96%, 11% 100%, 0 66%);
   filter:
-    drop-shadow(16px 13px 0 rgba(255, 0, 34, 0.9))
-    drop-shadow(-7px 8px 0 rgba(28, 254, 255, 0.78));
+    drop-shadow(10px 9px 0 rgba(255, 0, 34, 0.82))
+    drop-shadow(-4px 5px 0 rgba(28, 254, 255, 0.56));
   animation: phantom-jelly-shape 420ms linear both;
 }
 
 :root[data-skin="phantom"] :is(.metric, .card-editor, .choice-editor, .empty-state, .subsection:not(.subsection--plain)):hover::after,
 :root[data-skin="phantom"] :is(.metric, .card-editor, .choice-editor, .empty-state, .subsection:not(.subsection--plain)):focus-within::after {
-  transform: translate(-8px, -7px) rotate(1deg);
+  transform: translate(-4px, -4px) rotate(0.42deg);
   clip-path: polygon(0 12%, 94% 0, 99% 19%, 96% 89%, 5% 100%, 3% 76%);
 }
 
 :root[data-skin="phantom"] :is(.metric, .card-editor, .choice-editor, .empty-state, .subsection:not(.subsection--plain)):hover > *,
 :root[data-skin="phantom"] :is(.metric, .card-editor, .choice-editor, .empty-state, .subsection:not(.subsection--plain)):focus-within > * {
-  transform: translate(-7px, -6px) rotate(0.3deg);
+  transform: translate(-2px, -2px);
 }
 
 :root[data-skin="phantom"] :is(.metric, .card-editor, .choice-editor, .empty-state, .subsection:not(.subsection--plain)) > * {
   transition: transform 170ms cubic-bezier(.2, 1.55, .42, .98);
+}
+
+:root[data-skin="phantom"] .empty-state:hover > *,
+:root[data-skin="phantom"] .empty-state:focus-within > * {
+  transform: translate(-1px, -1px);
 }
 
 :root[data-skin="phantom"] .content-detail :is(.card-editor, .choice-editor) {
@@ -2199,11 +2321,11 @@ summary {
 
 :root[data-skin="phantom"] .content-detail :is(.card-editor, .choice-editor):hover,
 :root[data-skin="phantom"] .content-detail :is(.card-editor, .choice-editor):focus-within {
-  transform: translate(-4px, -5px) rotate(-0.35deg);
+  transform: translate(-2px, -2px) rotate(-0.18deg);
   background-position: 0 0, calc(100% - 3px) 3px;
   box-shadow:
-    10px 10px 0 #d71920,
-    16px 16px 0 rgba(9, 9, 10, 0.28) !important;
+    8px 8px 0 #d71920,
+    12px 12px 0 rgba(9, 9, 10, 0.22) !important;
 }
 
 :root[data-skin="phantom"] .content-detail :is(.card-editor, .choice-editor) > *,

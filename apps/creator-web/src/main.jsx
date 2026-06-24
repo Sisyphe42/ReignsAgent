@@ -23,6 +23,55 @@ const SKINS = [
 
 const PERSIST_KEY = "reigns-agent.creator-web.skin";
 const DRAFT_KEY = "reigns-agent.creator-web.editor-draft";
+const DEFAULT_PANEL = "overview";
+const DEFAULT_SKIN = "workbench";
+
+function isKnownPanel(value) {
+  return PANELS.some((panel) => panel.id === value);
+}
+
+function isKnownSkin(value) {
+  return SKINS.some(([id]) => id === value);
+}
+
+function readUrlState() {
+  if (typeof window === "undefined") {
+    return { panel: DEFAULT_PANEL, skin: null };
+  }
+
+  const url = new URL(window.location.href);
+  const directPanel = url.pathname.startsWith("/workbench/")
+    ? url.pathname.slice("/workbench/".length).split("/")[0]
+    : null;
+  const queryPanel = url.searchParams.get("panel");
+  const panel = [directPanel, queryPanel].find(isKnownPanel) ?? DEFAULT_PANEL;
+  const skin = url.searchParams.get("skin");
+
+  return {
+    panel,
+    skin: isKnownSkin(skin) ? skin : null
+  };
+}
+
+function buildWorkbenchUrl(panel, skin) {
+  const url = new URL(window.location.href);
+  url.pathname = panel === DEFAULT_PANEL ? "/workbench" : `/workbench/${panel}`;
+  if (skin && skin !== DEFAULT_SKIN) {
+    url.searchParams.set("skin", skin);
+  } else {
+    url.searchParams.delete("skin");
+  }
+  url.searchParams.delete("panel");
+  return `${url.pathname}${url.search}${url.hash}`;
+}
+
+function syncWorkbenchUrl(panel, skin, mode = "replace") {
+  if (typeof window === "undefined") return;
+  const nextUrl = buildWorkbenchUrl(panel, skin);
+  const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  if (nextUrl === currentUrl) return;
+  window.history[mode === "push" ? "pushState" : "replaceState"](null, "", nextUrl);
+}
 
 async function api(path, options = {}) {
   const response = await fetch(path, {
@@ -39,10 +88,11 @@ async function api(path, options = {}) {
 }
 
 function App() {
-  const [activePanel, setActivePanel] = useState("overview");
+  const initialUrlState = useMemo(() => readUrlState(), []);
+  const [activePanel, setActivePanel] = useState(initialUrlState.panel);
   const [editor, setEditor] = useState(null);
   const [status, setStatus] = useState("Loading project...");
-  const [skin, setSkin] = useState(() => localStorage.getItem(PERSIST_KEY) || "workbench");
+  const [skin, setSkin] = useState(() => initialUrlState.skin ?? (localStorage.getItem(PERSIST_KEY) || DEFAULT_SKIN));
   const [diagnostics, setDiagnostics] = useState(null);
   const [play, setPlay] = useState({ sessionId: null, state: null });
   const [build, setBuild] = useState(null);
@@ -56,7 +106,18 @@ function App() {
   useEffect(() => {
     document.documentElement.dataset.skin = skin;
     localStorage.setItem(PERSIST_KEY, skin);
-  }, [skin]);
+    syncWorkbenchUrl(activePanel, skin, "replace");
+  }, [activePanel, skin]);
+
+  useEffect(() => {
+    function onPopState() {
+      const next = readUrlState();
+      setActivePanel(next.panel);
+      setSkin(next.skin ?? (localStorage.getItem(PERSIST_KEY) || DEFAULT_SKIN));
+    }
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
 
   useEffect(() => {
     void refreshEditor();
@@ -182,6 +243,24 @@ function App() {
     });
   }
 
+  function openPanel(panelId) {
+    if (!isKnownPanel(panelId)) return;
+    setActivePanel(panelId);
+    syncWorkbenchUrl(panelId, skin, "push");
+  }
+
+  function changeSkin(nextSkin) {
+    if (!isKnownSkin(nextSkin)) return;
+    setSkin(nextSkin);
+    syncWorkbenchUrl(activePanel, nextSkin, "replace");
+  }
+
+  const playerHref = useMemo(() => {
+    const params = new URLSearchParams();
+    if (skin !== DEFAULT_SKIN) params.set("skin", skin);
+    return params.size > 0 ? `/play?${params.toString()}` : "/play";
+  }, [skin]);
+
   return (
     <div className="app-shell">
       <header className="topbar">
@@ -200,12 +279,11 @@ function App() {
         <div className="topbar__tools">
           <label className="skin-select">
             Skin
-            <select value={skin} onChange={(event) => setSkin(event.target.value)}>
+            <select value={skin} onChange={(event) => changeSkin(event.target.value)}>
               {SKINS.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
             </select>
           </label>
-          <a className="link-button" href="/classic">Classic UI</a>
-          <a className="link-button" href="/play">Player</a>
+          <a className="link-button" href={playerHref}>Player</a>
         </div>
       </header>
 
@@ -216,7 +294,7 @@ function App() {
               key={id}
               className={activePanel === id ? "rail__item rail__item--active" : "rail__item"}
               type="button"
-              onClick={() => setActivePanel(id)}
+              onClick={() => openPanel(id)}
             >
               <span className="phantom-shape-wrapper" aria-hidden="true">
                 <span className="phantom-shape phantom-shape--red phantom-jelly" />
@@ -247,7 +325,7 @@ function App() {
               playerReady={playerReady}
               diagnostics={diagnostics}
               build={build}
-              onOpen={setActivePanel}
+              onOpen={openPanel}
             />
           )}
           {activePanel === "content" && (
@@ -259,8 +337,8 @@ function App() {
               onStatus={setStatus}
             />
           )}
-          {activePanel === "story" && <StoryPanel editor={editor} diagnostics={diagnostics} onOpen={setActivePanel} />}
-          {activePanel === "review" && <ReviewPanel diagnostics={diagnostics} onRun={runDiagnostics} onOpen={setActivePanel} />}
+          {activePanel === "story" && <StoryPanel editor={editor} diagnostics={diagnostics} onOpen={openPanel} />}
+          {activePanel === "review" && <ReviewPanel diagnostics={diagnostics} onRun={runDiagnostics} onOpen={openPanel} />}
           {activePanel === "preview" && (
             <PreviewPanel
               play={play}
@@ -474,7 +552,9 @@ function ContentPanel({ editor, assetsByCard, onImport, onMutate, onStatus }) {
               />
             </>
           ) : (
-            <div className="empty-state">No cards match the current filters.</div>
+            <div className="empty-state">
+              <p>No cards match the current filters.</p>
+            </div>
           )}
         </div>
       </div>
@@ -869,7 +949,9 @@ function ReviewPanel({ diagnostics, onRun, onOpen }) {
           <ul className="warning-list">
             {(diagnostics.warnings ?? []).map((warning, index) => (
               <li key={`${warning.code}-${index}`} className={`warning warning--${warning.severity}`}>
-                <button type="button" onClick={() => onOpen("content")}>{warning.code}</button>
+                <button className="btn btn--ghost btn--compact warning__code" type="button" onClick={() => onOpen("content")}>
+                  {warning.code}
+                </button>
                 <span>{warning.message}</span>
               </li>
             ))}
@@ -877,7 +959,9 @@ function ReviewPanel({ diagnostics, onRun, onOpen }) {
           </ul>
         </>
       ) : (
-        <div className="empty-state">No review has been run in this session.</div>
+        <div className="empty-state">
+          <p>No review has been run in this session.</p>
+        </div>
       )}
     </section>
   );
@@ -964,10 +1048,6 @@ function SettingsPanel({ editor, onRefresh, onStatus }) {
           <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Deck title" />
           <button className="btn" onClick={() => void saveTitle()}>Save title</button>
         </div>
-      </div>
-      <div className="subsection subsection--plain">
-        <h3>Fallback</h3>
-        <a className="fallback-link" href="/classic">Open classic dashboard</a>
       </div>
       <div className="subsection">
         <h3>Connector Plan</h3>

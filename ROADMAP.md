@@ -7,12 +7,12 @@ The current priority is the dashboard experience. Backend and package boundaries
 
 ## Dashboard-First Refactor
 - Start the dashboard migration with `apps/creator-web`, a Vite/React creator workspace that consumes the existing local API.
-- Keep the native HTML/CSS/JS dashboard available as a classic fallback while the React workspace reaches feature parity.
+- Make the React workbench the primary creator surface (`/workbench`). Keep the native HTML/CSS/JS dashboard available at `/classic` only as a compatibility route while parity and migration cleanup finish.
 - Reframe the dashboard as a project workspace with separate panels for overview, card content, story/endings, review diagnostics, developer preview, build/export, and settings.
 - Preserve existing API endpoints, content bundle schema, localStorage draft restore, and player preview behavior.
 - Treat review diagnostics and seeds as creator-facing tools: visible enough for debugging and reproducible balancing, but not player-facing game UI.
 - Keep developer preview and production player related but distinct. Developer preview may show debug state; production player should focus on final player experience.
-- Keep game-flavored UI styling as a skin/theme layer. Do not bind creator workflows or deployable player behavior directly to a single visual CSS framework.
+- Keep game-flavored UI styling as a global skin/theme layer that can travel across workbench, preview player, and deployable player through shared state and URL parameters. Do not bind creator workflows or deployable player behavior directly to a single visual CSS framework.
 
 ## Later Architecture Options
 - `packages/contracts`: Shared schemas for cards, content bundles, diagnostics reports, connector requests, and build manifests.

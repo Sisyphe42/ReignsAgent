@@ -18,12 +18,15 @@ describe("Phase 4 interface integration", () => {
 
     try {
       await waitForServer(port, server);
-      const dashboardHtml = await text(port, "/");
+      const dashboardHtml = await text(port, "/workbench");
       assert.match(dashboardHtml, /src="\/assets\/index-.*\.js"/);
+      const rootHtml = await text(port, "/");
+      assert.match(rootHtml, /src="\/assets\/index-.*\.js"/);
       const classicHtml = await text(port, "/classic");
       assert.match(classicHtml, /\/assets\/dashboard\.js/);
-      const playerHtml = await text(port, "/play");
+      const playerHtml = await text(port, "/play?skin=phantom");
       assert.match(playerHtml, /ReignsAgent Player/);
+      assert.match(playerHtml, /Back to workbench/);
 
       const initialEditor = await api(port, "/api/editor");
       assert.equal(initialEditor.cards.length, 9);
@@ -47,6 +50,7 @@ describe("Phase 4 interface integration", () => {
       assert.match(started.sessionId, /^s_/);
       assert.equal(started.currentCard.choices.some((choice) => choice.id === "left"), true);
       assert.match(started.currentCard.text, /请愿/);
+      assert.equal(started.turn, 0);
 
       const swiped = await api(port, "/api/play/swipe", {
         method: "POST",

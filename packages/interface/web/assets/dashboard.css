@@ -13,6 +13,67 @@
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
+:root[data-skin="arcade"] {
+  --bg: #15111c;
+  --panel: #211a2e;
+  --panel-2: #302442;
+  --ink: #fff2c9;
+  --muted: #c6b8d8;
+  --accent: #ffd34f;
+  --accent-2: #6fe6c4;
+  --danger: #ff6f9f;
+  --ok: #94ef68;
+  --border: #654f83;
+  --radius: 4px;
+  font-family: "Trebuchet MS", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+}
+
+:root[data-skin="famicom"] {
+  --bg: #efe4cc;
+  --panel: #f8efd9;
+  --panel-2: #fff8e8;
+  --ink: #211f1c;
+  --muted: #6d6256;
+  --accent: #b52222;
+  --accent-2: #275c9a;
+  --danger: #b52222;
+  --ok: #1f8b58;
+  --border: #24211d;
+  --radius: 0px;
+  font-family: "Courier New", "Cascadia Mono", ui-monospace, monospace;
+  color-scheme: light;
+}
+
+:root[data-skin="phantom"] {
+  --bg: #09090a;
+  --panel: #151515;
+  --panel-2: #f4f0e8;
+  --ink: #f7f2e9;
+  --muted: #c8c1b5;
+  --accent: #d71920;
+  --accent-2: #f4f0e8;
+  --danger: #d71920;
+  --ok: #00a66a;
+  --border: #f7f2e9;
+  --radius: 0px;
+  font-family: Impact, Haettenschweiler, "Arial Black", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+}
+
+:root[data-skin="terminal"] {
+  --bg: #07100c;
+  --panel: #0c1712;
+  --panel-2: #12231a;
+  --ink: #daf8e5;
+  --muted: #91b89d;
+  --accent: #68ff95;
+  --accent-2: #78c6ff;
+  --danger: #ff7777;
+  --ok: #68ff95;
+  --border: #28543a;
+  --radius: 2px;
+  font-family: "Cascadia Mono", "SFMono-Regular", Consolas, ui-monospace, monospace;
+}
+
 * { box-sizing: border-box; }
 
 body {
@@ -22,6 +83,13 @@ body {
   line-height: 1.45;
 }
 
+:root[data-skin="phantom"] body {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.025), transparent 18rem),
+    repeating-linear-gradient(0deg, transparent 0 3px, rgba(255, 255, 255, 0.04) 3px 4px),
+    var(--bg);
+}
+
 .topbar {
   display: flex;
   align-items: center;
@@ -29,6 +97,19 @@ body {
   padding: 14px 22px;
   background: linear-gradient(180deg, #1a1d25, #14171d);
   border-bottom: 1px solid var(--border);
+}
+
+:root[data-skin="famicom"] .topbar {
+  background: linear-gradient(180deg, #fff8e8, #efe4cc);
+}
+
+:root[data-skin="phantom"] .topbar {
+  background: #09090a;
+  border-bottom-width: 2px;
+}
+
+:root[data-skin="terminal"] .topbar {
+  background: linear-gradient(180deg, #0f1d16, #0a130f);
 }
 
 .brand { display: flex; gap: 12px; align-items: center; }
@@ -43,6 +124,11 @@ body {
   opacity: 0.85;
 }
 .topbar__nav a:hover { color: var(--accent); }
+
+:root[data-skin="phantom"] .brand__mark {
+  color: var(--accent);
+  text-shadow: 2px 2px 0 #09090a;
+}
 
 .workspace { display: flex; align-items: stretch; min-height: calc(100vh - 67px); }
 .rail {
@@ -207,12 +293,53 @@ textarea { resize: vertical; font-family: ui-monospace, "SFMono-Regular", monosp
   padding: 8px 14px;
   font-size: 13px;
   cursor: pointer;
+  transition:
+    transform 180ms ease,
+    border-color 180ms ease,
+    background-color 180ms ease,
+    box-shadow 180ms ease,
+    color 180ms ease;
 }
-.btn:hover { border-color: var(--accent); }
+.btn:hover {
+  border-color: var(--accent);
+  transform: translateY(-1px);
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.16);
+}
 .btn:disabled { opacity: 0.4; cursor: not-allowed; }
 .btn--primary { background: var(--accent); color: #1a1405; border-color: var(--accent); font-weight: 600; }
 .btn--primary:hover { filter: brightness(1.08); }
 .btn--choice { flex: 1; font-size: 14px; padding: 12px; }
+
+:root[data-skin="famicom"] .btn,
+:root[data-skin="famicom"] .panel,
+:root[data-skin="famicom"] .gauge,
+:root[data-skin="famicom"] .card,
+:root[data-skin="famicom"] .summary {
+  box-shadow: 4px 4px 0 rgba(36, 33, 29, 0.18);
+}
+
+:root[data-skin="phantom"] .btn,
+:root[data-skin="phantom"] .panel,
+:root[data-skin="phantom"] .gauge,
+:root[data-skin="phantom"] .card,
+:root[data-skin="phantom"] .summary {
+  border-width: 2px;
+  box-shadow: 8px 8px 0 rgba(215, 25, 32, 0.18);
+}
+
+:root[data-skin="phantom"] .btn {
+  background: #09090a;
+  color: var(--ink);
+}
+
+:root[data-skin="phantom"] .btn--primary {
+  background: var(--accent);
+  color: #f7f2e9;
+}
+
+:root[data-skin="terminal"] .btn:hover {
+  box-shadow: 0 0 0 1px rgba(104, 255, 149, 0.22), 0 0 18px rgba(104, 255, 149, 0.12);
+}
 
 .status { margin-top: 10px; font-size: 12px; color: var(--muted); min-height: 16px; }
 .status--ok { color: var(--ok); }
@@ -296,6 +423,19 @@ textarea { resize: vertical; font-family: ui-monospace, "SFMono-Regular", monosp
   display: flex;
   flex-direction: column;
   justify-content: space-between;
+}
+
+:root[data-skin="famicom"] .card {
+  background: linear-gradient(160deg, #fff8e8, #efe4cc);
+}
+
+:root[data-skin="phantom"] .card {
+  background: linear-gradient(160deg, #f4f0e8, #e8dfd1);
+  color: #09090a;
+}
+
+:root[data-skin="terminal"] .card {
+  background: linear-gradient(160deg, #13251b, #0d1712);
 }
 .card__art {
   width: min(140px, 45%);

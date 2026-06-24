@@ -15,7 +15,7 @@
     "content:review": "node scripts/content-tool.mjs review",
     "content:convert": "node scripts/content-tool.mjs convert",
     "content:feedback": "node scripts/content-tool.mjs feedback",
-    "dev:dashboard": "npm run dev -w @reigns-agent/creator-web",
+    "dev:dashboard": "npm run dev -w @reigns-agent/creator-web --",
     "dev:interface": "node scripts/dev-server.mjs",
     "test:unit": "node --test \"packages/**/*.test.js\"",
     "test:integration": "node --test \"test/**/*.test.js\"",
