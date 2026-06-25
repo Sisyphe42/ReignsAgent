@@ -9,6 +9,7 @@ import {
   createCardEditor,
   createConnectorConfig,
   createPlaySession,
+  getCardGraph,
   loadEditorFromContent,
   prepareGameBuild,
   projectFactionGauges,
@@ -147,6 +148,10 @@ async function handleApi(req, res, url) {
       playerValidation: store.editor.validateForPlayer(),
       playerReady: store.editor.validateForPlayer().valid
     });
+  }
+
+  if (path === "/api/editor/graph" && req.method === "GET") {
+    return sendJson(res, getCardGraph({ cards: store.editor.toCards() }));
   }
 
   if (path === "/api/diagnostics/run" && req.method === "POST") {

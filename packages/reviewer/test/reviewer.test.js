@@ -84,8 +84,8 @@ describe("ReignsAgent reviewer", () => {
     const graph = analyzeCardGraph(sampleCards());
 
     assert.deepEqual(graph.edges, [
-      { from: "opening", to: "unrest", tags: ["unrest"] },
-      { from: "unrest", to: "crackdown", tags: ["armed"] }
+      { from: "opening", to: "unrest", tags: ["unrest"], choices: [{ id: "tax", label: "tax" }] },
+      { from: "unrest", to: "crackdown", tags: ["armed"], choices: [{ id: "arm", label: "arm" }] }
     ]);
     assert.deepEqual(graph.initiallyEligibleCards, ["opening"]);
     assert.deepEqual(graph.reachableCards, ["opening", "unrest", "crackdown"]);
@@ -112,10 +112,42 @@ describe("ReignsAgent reviewer", () => {
       }
     ]);
 
-    assert.deepEqual(graph.edges, [{ from: "setup", to: "followup", variables: ["decreeSigned"] }]);
+    assert.deepEqual(graph.edges, [
+      { from: "setup", to: "followup", variables: ["decreeSigned"], choices: [{ id: "set", label: "set" }] }
+    ]);
     assert.deepEqual(graph.reachableCards, ["setup", "followup"]);
     assert.deepEqual(graph.unreachableCards, ["wrong-value"]);
     assert.deepEqual(graph.unsatisfiedRequiredVariables, ["decreeSigned"]);
+  });
+
+  it("attributes enabling signals to specific choices and preserves labels", () => {
+    const graph = analyzeCardGraph([
+      {
+        id: "fork",
+        choices: [
+          { id: "left", label: "Raise tax", effects: { tags: { taxed: true } } },
+          { id: "right", label: "Pardon debt", effects: { tags: { taxed: true } } }
+        ]
+      },
+      {
+        id: "consequence",
+        requirements: { allTags: ["taxed"] },
+        choices: [{ id: "pass", label: "Accept", effects: {} }]
+      }
+    ]);
+
+    // Both left and right produce the `taxed` tag, so both choices enable the edge.
+    assert.deepEqual(graph.edges, [
+      {
+        from: "fork",
+        to: "consequence",
+        tags: ["taxed"],
+        choices: [
+          { id: "left", label: "Raise tax" },
+          { id: "right", label: "Pardon debt" }
+        ]
+      }
+    ]);
   });
 
   it("reports unreachable requirements as diagnostics", () => {

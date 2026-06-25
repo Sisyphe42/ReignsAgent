@@ -93,27 +93,42 @@ export function analyzeCardGraph(cards, initialState = {}) {
     id: card.id,
     requirements: card.requirements ?? {}
   }));
-  const producedSignalsByCard = new Map();
+  const producedSignalsByChoice = new Map();
 
   for (const card of cards) {
-    producedSignalsByCard.set(card.id, collectProducedSignals(card));
+    producedSignalsByChoice.set(card.id, collectProducedSignalsByChoice(card));
   }
 
   const edges = [];
-  for (const [sourceId, producedSignals] of producedSignalsByCard.entries()) {
+  for (const [sourceId, choiceSignals] of producedSignalsByChoice.entries()) {
     for (const target of cards) {
       const requiredTags = [
         ...(target.requirements?.allTags ?? []),
         ...(target.requirements?.anyTags ?? [])
       ];
       const requiredVariables = Object.entries(target.requirements?.variables ?? {});
-      const enablingTags = requiredTags.filter((tag) => producedSignals.tags.has(tag));
-      const enablingVariables = requiredVariables
-        .filter(([variable, value]) => signalHasVariable(producedSignals.variables, variable, value))
-        .map(([variable]) => variable);
 
-      if ((enablingTags.length > 0 || enablingVariables.length > 0) && sourceId !== target.id) {
-        const edge = { from: sourceId, to: target.id };
+      const enablingChoices = [];
+      const aggregateEnablingTags = new Set();
+      const aggregateEnablingVariables = new Set();
+
+      for (const [choiceId, signals] of choiceSignals.entries()) {
+        const choiceEnablingTags = requiredTags.filter((tag) => signals.tags.has(tag));
+        const choiceEnablingVariables = requiredVariables
+          .filter(([variable, value]) => signalHasVariable(signals.variables, variable, value))
+          .map(([variable]) => variable);
+
+        if (choiceEnablingTags.length > 0 || choiceEnablingVariables.length > 0) {
+          enablingChoices.push({ id: choiceId, label: signals.label });
+          choiceEnablingTags.forEach((tag) => aggregateEnablingTags.add(tag));
+          choiceEnablingVariables.forEach((variable) => aggregateEnablingVariables.add(variable));
+        }
+      }
+
+      if (enablingChoices.length > 0 && sourceId !== target.id) {
+        const enablingTags = [...aggregateEnablingTags];
+        const enablingVariables = [...aggregateEnablingVariables];
+        const edge = { from: sourceId, to: target.id, choices: enablingChoices };
         if (enablingTags.length > 0) {
           edge.tags = enablingTags;
         }
@@ -127,8 +142,10 @@ export function analyzeCardGraph(cards, initialState = {}) {
 
   const producedTags = new Set(initialTrueTags(initialTags));
   const producedVariables = initialVariableSignals(initialVariables);
-  for (const signals of producedSignalsByCard.values()) {
-    mergeSignals({ tags: producedTags, variables: producedVariables }, signals);
+  for (const choiceSignals of producedSignalsByChoice.values()) {
+    for (const signals of choiceSignals.values()) {
+      mergeSignals({ tags: producedTags, variables: producedVariables }, signals);
+    }
   }
 
   const reachability = analyzeReachability(cards, initialTags, initialVariables);
@@ -474,6 +491,43 @@ function collectProducedSignals(card) {
   }
 
   return { tags, variables };
+}
+
+/**
+ * collectProducedSignalsByChoice traces each choice's effects separately, so the
+ * graph can attribute enabling signals (tags/variables) back to specific choice
+ * branches (left/right). Returns a Map keyed by choice id, with each value
+ * carrying { tags, variables, label } for edge attribution and display.
+ */
+function collectProducedSignalsByChoice(card) {
+  const byChoice = new Map();
+
+  for (const choice of card.choices ?? []) {
+    const tags = new Set();
+    const variables = new Map();
+
+    for (const [tag, value] of Object.entries(choice.effects?.tags ?? {})) {
+      if (value !== false && value !== null && value !== undefined) {
+        tags.add(tag);
+      }
+    }
+
+    for (const [variable, value] of Object.entries(choice.effects?.variables ?? {})) {
+      if (value !== null && value !== undefined) {
+        addVariableSignal(variables, variable, value);
+      }
+    }
+
+    for (const hookEntry of choice.effects?.activateHooks ?? []) {
+      for (const tag of hookEntry.tags ?? []) {
+        tags.add(tag);
+      }
+    }
+
+    byChoice.set(choice.id, { tags, variables, label: choice.label ?? choice.id });
+  }
+
+  return byChoice;
 }
 
 function analyzeReachability(cards, initialTags, initialVariables) {

@@ -8,7 +8,7 @@ import {
   validateCardSet,
   validateContentBundle
 } from "../../pipeline/src/index.js";
-import { runMonteCarloReview } from "../../reviewer/src/index.js";
+import { analyzeCardGraph, runMonteCarloReview } from "../../reviewer/src/index.js";
 
 const PLAYER_SCHEMA_VERSION = 1;
 const BUILD_SCHEMA_VERSION = 1;
@@ -424,6 +424,16 @@ export function runDiagnostics({ cards, cycles = 1000, maxTurns = 50, seed = 1, 
     reviewOptions.thresholds = cloneJsonSafe(thresholds, "Reviewer thresholds");
   }
   return summarizeDiagnostics(runMonteCarloReview(reviewOptions));
+}
+
+/**
+ * getCardGraph runs the static card-graph analysis (no Monte Carlo simulation)
+ * and returns the per-choice directed graph for the story panel: nodes, edges
+ * with the source choice(s) that enable each transition, plus reachability.
+ * It is fast and safe to call on every editor change.
+ */
+export function getCardGraph({ cards, initialState = {} }) {
+  return analyzeCardGraph(cloneCards(cards), initialState);
 }
 
 /**
