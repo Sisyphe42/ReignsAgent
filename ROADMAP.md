@@ -3,11 +3,11 @@
 ## Current Direction
 ReignsAgent is moving from a functional prototype toward a creator-focused workspace for building, reviewing, previewing, and shipping Reigns-like card narratives.
 
-The current priority is the dashboard experience. Backend and package boundaries should remain stable while the creator UI becomes easier to navigate and reason about.
+The current priority is the dashboard experience. Backend and package boundaries should remain stable while the creator UI becomes easier to navigate and reason about. The backend dev server should stay API-only; the creator UI should live on the Vite dashboard.
 
 ## Dashboard-First Refactor
 - Start the dashboard migration with `apps/creator-web`, a Vite/React creator workspace that consumes the existing local API.
-- Make the React workbench the primary creator surface (`/workbench`). Keep the native HTML/CSS/JS dashboard available at `/classic` only as a compatibility route while parity and migration cleanup finish.
+- Make the React workbench the primary creator surface (`/workbench`) in the Vite dashboard. Keep the backend server API-only during development.
 - Reframe the dashboard as a project workspace with separate panels for overview, card content, story/endings, review diagnostics, developer preview, build/export, and settings.
 - Preserve existing API endpoints, content bundle schema, localStorage draft restore, and player preview behavior.
 - Treat review diagnostics and seeds as creator-facing tools: visible enough for debugging and reproducible balancing, but not player-facing game UI.

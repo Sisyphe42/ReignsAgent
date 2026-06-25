@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 import { readFile, writeFile, mkdir } from "node:fs/promises";
-import { existsSync } from "node:fs";
 import { createServer } from "node:http";
-import { extname, join, dirname, relative, resolve } from "node:path";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -22,18 +21,7 @@ import {
 
 const PORT = Number(process.env.PORT ?? 4321);
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
-const WEB_ROOT = fileURLToPath(new URL("../packages/interface/web", import.meta.url));
-const CREATOR_WEB_DIST = join(ROOT, "apps/creator-web/dist");
 const OSS_SAMPLE_PATH = join(ROOT, "fixtures/content/oss-court.cards.json");
-const MIME = {
-  ".html": "text/html; charset=utf-8",
-  ".css": "text/css; charset=utf-8",
-  ".js": "text/javascript; charset=utf-8",
-  ".mjs": "text/javascript; charset=utf-8",
-  ".json": "application/json; charset=utf-8",
-  ".md": "text/markdown; charset=utf-8",
-  ".svg": "image/svg+xml"
-};
 
 /**
  * SessionState keeps an editor and an optional active play session for the local
@@ -60,25 +48,6 @@ const server = createServer(async (req, res) => {
   const path = url.pathname;
 
   try {
-    if (
-      req.method === "GET" &&
-      (path === "/" || path === "/index.html" || path === "/workbench" || path.startsWith("/workbench/"))
-    ) {
-      return sendFile(res, creatorWebFile("index.html") ?? join(WEB_ROOT, "dashboard.html"));
-    }
-
-    if (req.method === "GET" && path === "/classic") {
-      return sendFile(res, join(WEB_ROOT, "dashboard.html"));
-    }
-
-    if (req.method === "GET" && path === "/play") {
-      return sendFile(res, join(WEB_ROOT, "player.html"));
-    }
-
-    if (req.method === "GET" && path.startsWith("/assets/")) {
-      return sendFile(res, creatorWebFile(path.replace(/^\/+/, "")) ?? safeWebPath(path));
-    }
-
     if (path.startsWith("/api/")) {
       return handleApi(req, res, url);
     }
@@ -398,17 +367,6 @@ async function readJsonBody(req) {
   }
 }
 
-async function sendFile(res, filePath) {
-  if (!existsSync(filePath)) {
-    res.writeHead(404, { "content-type": "application/json" });
-    res.end(JSON.stringify({ error: { message: `Asset not found: ${filePath}` } }));
-    return;
-  }
-  const contents = await readFile(filePath);
-  res.writeHead(200, { "content-type": MIME[extname(filePath).toLowerCase()] ?? "application/octet-stream" });
-  res.end(contents);
-}
-
 function sendJson(res, payload) {
   const body = JSON.stringify(payload, null, 2);
   res.writeHead(200, {
@@ -426,26 +384,6 @@ async function readDefaultSample() {
   }
 }
 
-function safeWebPath(requestPath) {
-  const candidate = resolve(WEB_ROOT, requestPath.replace(/^\/+/, ""));
-  const relativePath = relative(WEB_ROOT, candidate);
-  if (relativePath.startsWith("..") || relativePath === "" || resolve(candidate).includes("\0")) {
-    throw new Error(`Asset path escapes web root: ${requestPath}`);
-  }
-  return candidate;
-}
-
-function creatorWebFile(requestPath) {
-  const candidate = resolve(CREATOR_WEB_DIST, requestPath.replace(/^\/+/, ""));
-  const relativePath = relative(CREATOR_WEB_DIST, candidate);
-  if (relativePath.startsWith("..") || relativePath === "" || resolve(candidate).includes("\0")) {
-    return null;
-  }
-  return existsSync(candidate) ? candidate : null;
-}
-
 server.listen(PORT, () => {
-  console.log(`ReignsAgent creator workbench: http://localhost:${PORT}/workbench`);
-  console.log(`ReignsAgent player preview: http://localhost:${PORT}/play`);
-  console.log(`Web root: ${WEB_ROOT}`);
+  console.log(`ReignsAgent backend API: http://localhost:${PORT}/api/editor`);
 });

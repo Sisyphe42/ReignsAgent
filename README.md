@@ -25,7 +25,7 @@ npm run content:feedback -- review-report.json
 
 ## Creator dashboard
 
-`npm run dev:dashboard` starts the Vite/React creator workspace (default `http://127.0.0.1:5173`) and proxies API/assets to `npm run dev:interface`. Start both commands during dashboard development. `npm run dev:interface` starts the local API/static server (default `http://localhost:4321`) and serves the built React workbench at `/workbench` and `/` when `npm run build:dashboard` has produced `apps/creator-web/dist`; player preview remains at `/play`, and the legacy dashboard stays available at `/classic` as a compatibility route.
+`npm run dev:dashboard` starts the Vite/React creator workspace (default `http://127.0.0.1:5173`) and proxies API requests to `npm run dev:interface`. Use `5173` as the only creator UI while editing. `npm run dev:interface` starts the local backend API server (default `http://localhost:4321`) and serves only data routes for the creator app; `/workbench`, `/classic`, `/play`, and local asset serving live on the Vite side during development.
 
 - **Ingest** — import a local `.cards.json` / content bundle or paste JSON; the Open Court sample deck loads with one click.
 - **Edit** — full structured card/choice editor: card text, per-choice labels, faction deltas (faith/people/military/treasury), tag and variable key/value rows, and an advanced JSON escape hatch. Edits preserve input focus and patch through granular routes. A live `player-ready`/`invalid` badge per card reflects server validation.
@@ -33,7 +33,7 @@ npm run content:feedback -- review-report.json
 - **Diagnose** — run the reviewer headlessly; clickable warnings jump to the referenced card row.
 - **Build** — assemble and export a self-contained deployable `.game.json`.
 
-The workbench URL carries panel state (`/workbench/content`) and optional skin state (`?skin=phantom`) without forcing a hard reload, so creator sessions can be refreshed or shared directly. In-progress editor work is still saved to `localStorage` and offered for restore on reload (server-validated through `/api/editor/restore`); player previews and deployable players also accept the same `skin` query so creator and player surfaces stay visually aligned.
+The workbench URL carries panel state (`/workbench/content`) and optional skin state (`?skin=phantom`) without forcing a hard reload, so creator sessions can be refreshed or shared directly. In-progress editor work is still saved to `localStorage` and offered for restore on reload (server-validated through `/api/editor/restore`); player previews also accept the same `skin` query so creator and player surfaces stay visually aligned.
 
 `npm run build:game -- <bundle.json> <out.dir>` stitches a deployable player (`player.html` + `player-runtime.js`) that imports only the headless core — no pipeline, reviewer, or dashboard code ships to players.
 
