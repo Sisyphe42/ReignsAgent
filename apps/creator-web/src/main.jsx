@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 
@@ -98,6 +98,7 @@ function App() {
   const [build, setBuild] = useState(null);
   const [busy, setBusy] = useState("");
   const [draftInfo, setDraftInfo] = useState(() => readDraftInfo());
+  const [focusCardId, setFocusCardId] = useState(null);
 
   const assetsByCard = useMemo(() => createAssetMap(editor?.assets ?? []), [editor]);
   const playerReady = editor?.playerValidation?.valid === true;
@@ -249,6 +250,12 @@ function App() {
     syncWorkbenchUrl(panelId, skin, "push");
   }
 
+  function focusOnCard(cardId) {
+    if (!cardId) return;
+    setFocusCardId(cardId);
+    openPanel("content");
+  }
+
   function changeSkin(nextSkin) {
     if (!isKnownSkin(nextSkin)) return;
     setSkin(nextSkin);
@@ -335,9 +342,17 @@ function App() {
               onImport={importBundle}
               onMutate={mutateEditor}
               onStatus={setStatus}
+              focusCardId={focusCardId}
             />
           )}
-          {activePanel === "story" && <StoryPanel editor={editor} diagnostics={diagnostics} onOpen={openPanel} />}
+          {activePanel === "story" && (
+            <StoryPanel
+              editor={editor}
+              diagnostics={diagnostics}
+              onOpen={openPanel}
+              onFocusCard={focusOnCard}
+            />
+          )}
           {activePanel === "review" && <ReviewPanel diagnostics={diagnostics} onRun={runDiagnostics} onOpen={openPanel} />}
           {activePanel === "preview" && (
             <PreviewPanel
@@ -393,7 +408,7 @@ function DraftBanner({ draftInfo, onRestore, onDiscard }) {
   );
 }
 
-function ContentPanel({ editor, assetsByCard, onImport, onMutate, onStatus }) {
+function ContentPanel({ editor, assetsByCard, onImport, onMutate, onStatus, focusCardId }) {
   const [paste, setPaste] = useState("");
   const [query, setQuery] = useState("");
   const [validationFilter, setValidationFilter] = useState("all");
@@ -414,6 +429,13 @@ function ContentPanel({ editor, assetsByCard, onImport, onMutate, onStatus }) {
   }, [cardItems, query, validationFilter]);
 
   useEffect(() => {
+    if (focusCardId && cardItems.some(({ card }) => card.id === focusCardId)) {
+      setSelectedCardId(focusCardId);
+      // Clear the filters so the focused card is guaranteed visible.
+      setQuery("");
+      setValidationFilter("all");
+      return;
+    }
     if (visibleItems.length === 0) {
       setSelectedCardId(null);
       return;
@@ -421,7 +443,7 @@ function ContentPanel({ editor, assetsByCard, onImport, onMutate, onStatus }) {
     if (!selectedCardId || !visibleItems.some(({ card }) => card.id === selectedCardId)) {
       setSelectedCardId(visibleItems[0].card.id);
     }
-  }, [selectedCardId, visibleItems]);
+  }, [focusCardId, cardItems, visibleItems, selectedCardId]);
 
   const activeIndex = visibleItems.findIndex(({ card }) => card.id === selectedCardId);
   const activeItem = activeIndex >= 0 ? visibleItems[activeIndex] : null;
@@ -908,22 +930,538 @@ function AddCard({ onMutate, onCreated }) {
   );
 }
 
-function StoryPanel({ editor, diagnostics, onOpen }) {
+function StoryPanel({ editor, diagnostics, onOpen, onFocusCard }) {
+  const [graph, setGraph] = useState(null);
+  const [graphError, setGraphError] = useState("");
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      setGraphError("");
+      try {
+        const result = await api("/api/editor/graph");
+        if (!cancelled) setGraph(result);
+      } catch (error) {
+        if (!cancelled) {
+          setGraph(null);
+          setGraphError(error.message);
+        }
+      }
+    }
+    void load();
+    return () => { cancelled = true; };
+  }, [editor, refreshKey]);
+
   return (
-    <section className="panel">
-      <PanelHead title="Story / Endings" note="Global narrative structure, ending coverage, and reachability." />
+    <section className="panel panel--story">
+      <PanelHead title="Story / Graph" note="Card-to-card transitions driven by tags and variables. Click a node to edit it." />
       <div className="metric-grid">
         <Metric label="Narrative nodes" value={`${editor?.cards?.length ?? 0} cards`} />
-        <Metric label="Endings" value="Data-authored" />
-        <Metric label="Reachability" value={diagnostics ? `${diagnostics.warnings?.length ?? 0} warnings` : "Run review"} />
+        <Metric
+          label="Reachable"
+          value={graph ? `${graph.reachableCards.length}/${graph.nodes.length}` : "loading"}
+          tone={graph && graph.unreachableCards.length === 0 ? "good" : ""}
+        />
+        <Metric
+          label="Unreachable"
+          value={graph ? String(graph.unreachableCards.length) : "-"}
+          tone={graph && graph.unreachableCards.length > 0 ? "bad" : ""}
+        />
+        <Metric
+          label="Isolated"
+          value={graph ? String(graph.isolatedCards.length) : "-"}
+          tone={graph && graph.isolatedCards.length > 0 ? "bad" : ""}
+        />
       </div>
-      <div className="empty-state">
-        <h3>Graph view next</h3>
-        <p>Reviewer graph diagnostics already report unreachable cards and gated paths. This panel is reserved for a visual story graph and endings editor.</p>
-        <button className="btn" onClick={() => onOpen("review")}>Open review diagnostics</button>
+      <div className="graph-controls">
+        <button className="btn" type="button" onClick={() => setRefreshKey((value) => value + 1)}>Refresh graph</button>
+        {diagnostics ? (
+          <button className="btn btn--ghost" type="button" onClick={() => onOpen("review")}>
+            Review diagnostics · {diagnostics.healthScore}/100
+          </button>
+        ) : (
+          <span className="muted">Run review for simulation coverage</span>
+        )}
+        <GraphLegend />
       </div>
+      {graphError ? (
+        <div className="empty-state">
+          <p>Could not load story graph: {graphError}</p>
+        </div>
+      ) : graph ? (
+        graph.nodes.length === 0 ? (
+          <div className="empty-state">
+            <p>No cards to graph. Add or import cards first.</p>
+          </div>
+        ) : (
+          <StoryGraph graph={graph} cards={editor?.cards ?? []} onFocusCard={onFocusCard} />
+        )
+      ) : (
+        <div className="empty-state">
+          <p>Building story graph...</p>
+        </div>
+      )}
     </section>
   );
+}
+
+function GraphLegend() {
+  const items = [
+    ["entry", "Entry"],
+    ["reachable", "Reachable"],
+    ["unreachable", "Unreachable"],
+    ["isolated", "Isolated"]
+  ];
+  return (
+    <ul className="graph-legend">
+      {items.map(([tone, label]) => (
+        <li key={tone} className={`graph-legend__item graph-legend__item--${tone}`}>
+          <span className="graph-legend__dot" />{label}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/**
+ * StoryGraph renders the card-transition graph on an HTML5 canvas. Nodes are
+ * laid out with a lightweight force-directed algorithm (no dependencies) and
+ * re-skinned automatically by reading the active CSS variables. Pan by dragging
+ * the background; click a node to open it in the Content panel.
+ */
+function StoryGraph({ graph, cards, onFocusCard }) {
+  const canvasRef = useRef(null);
+  const containerRef = useRef(null);
+  const layoutRef = useRef({ nodes: [], byId: new Map(), pan: { x: 0, y: 0 }, hover: null });
+  const animationRef = useRef(0);
+  const [tooltip, setTooltip] = useState(null);
+
+  // Map card id -> card object for quick metadata lookups (text, excerpt).
+  const cardById = useMemo(() => {
+    const map = new Map();
+    for (const card of cards) map.set(card.id, card);
+    return map;
+  }, [cards]);
+
+  const nodeTone = useMemo(() => {
+    const map = new Map();
+    if (!graph) return map;
+    const isolated = new Set(graph.isolatedCards);
+    const unreachable = new Set(graph.unreachableCards);
+    const entry = new Set(graph.initiallyEligibleCards);
+    for (const node of graph.nodes) {
+      if (isolated.has(node.id)) map.set(node.id, "isolated");
+      else if (unreachable.has(node.id)) map.set(node.id, "unreachable");
+      else if (entry.has(node.id)) map.set(node.id, "entry");
+      else map.set(node.id, "reachable");
+    }
+    return map;
+  }, [graph]);
+
+  const colors = useSkinColors();
+
+  // Initialize / reset node positions when the graph identity changes.
+  useEffect(() => {
+    if (!graph) return;
+    const nodes = graph.nodes.map((node, index) => {
+      const angle = (index / Math.max(graph.nodes.length, 1)) * Math.PI * 2;
+      const radius = 160 + (graph.nodes.length > 8 ? (graph.nodes.length - 8) * 12 : 0);
+      return {
+        id: node.id,
+        x: Math.cos(angle) * radius,
+        y: Math.sin(angle) * radius,
+        vx: 0,
+        vy: 0
+      };
+    });
+    layoutRef.current.nodes = nodes;
+    layoutRef.current.byId = new Map(nodes.map((node) => [node.id, node]));
+    layoutRef.current.pan = { x: 0, y: 0 };
+  }, [graph]);
+
+  // Force simulation + render loop.
+  useEffect(() => {
+    if (!graph) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    let running = true;
+    let temperature = 1;
+
+    function resize() {
+      const container = canvas.parentElement;
+      if (!container) return;
+      const rect = container.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = Math.max(1, Math.round(rect.width * dpr));
+      canvas.height = Math.max(1, Math.round(rect.height * dpr));
+      canvas.style.width = `${rect.width}px`;
+      canvas.style.height = `${rect.height}px`;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+
+    function step() {
+      if (!running) return;
+      const { nodes } = layoutRef.current;
+      const edgeList = graph.edges;
+      const edgeSet = new Set(edgeList.map((edge) => `${edge.from}->${edge.to}`));
+
+      // Repulsion between all node pairs.
+      for (let i = 0; i < nodes.length; i += 1) {
+        const a = nodes[i];
+        for (let j = i + 1; j < nodes.length; j += 1) {
+          const b = nodes[j];
+          const dx = a.x - b.x;
+          const dy = a.y - b.y;
+          let dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < 1) dist = 1;
+          const force = 9000 / (dist * dist);
+          const fx = (dx / dist) * force * temperature;
+          const fy = (dy / dist) * force * temperature;
+          a.vx += fx;
+          a.vy += fy;
+          b.vx -= fx;
+          b.vy -= fy;
+        }
+      }
+
+      // Attraction along edges.
+      for (const edge of edgeList) {
+        const from = layoutRef.current.byId.get(edge.from);
+        const to = layoutRef.current.byId.get(edge.to);
+        if (!from || !to) continue;
+        const dx = to.x - from.x;
+        const dy = to.y - from.y;
+        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+        const force = (dist - 180) * 0.02 * temperature;
+        const fx = (dx / dist) * force;
+        const fy = (dy / dist) * force;
+        from.vx += fx;
+        from.vy += fy;
+        to.vx -= fx;
+        to.vy -= fy;
+      }
+
+      // Integrate with damping.
+      for (const node of nodes) {
+        node.vx *= 0.82;
+        node.vy *= 0.82;
+        node.x += node.vx;
+        node.y += node.vy;
+      }
+
+      temperature = Math.max(temperature * 0.97, 0.02);
+      render();
+      if (temperature > 0.03 || hasMoving(nodes)) {
+        animationRef.current = requestAnimationFrame(step);
+      } else {
+        animationRef.current = requestAnimationFrame(step);
+      }
+    }
+
+    function hasMoving(nodes) {
+      for (const node of nodes) {
+        if (Math.abs(node.vx) > 0.4 || Math.abs(node.vy) > 0.4) return true;
+      }
+      return false;
+    }
+
+    function render() {
+      const rect = canvas.getBoundingClientRect();
+      const width = rect.width;
+      const height = rect.height;
+      ctx.clearRect(0, 0, width, height);
+
+      const cx = width / 2 + layoutRef.current.pan.x;
+      const cy = height / 2 + layoutRef.current.pan.y;
+
+      // Edges first so nodes render on top.
+      for (const edge of graph.edges) {
+        const from = layoutRef.current.byId.get(edge.from);
+        const to = layoutRef.current.byId.get(edge.to);
+        if (!from || !to) continue;
+        const x1 = cx + from.x;
+        const y1 = cy + from.y;
+        const x2 = cx + to.x;
+        const y2 = cy + to.y;
+        const fromTone = nodeTone.get(edge.from);
+        const toTone = nodeTone.get(edge.to);
+        const edgeTone = toTone === "unreachable" ? colors.danger : colors.muted;
+        ctx.strokeStyle = edgeTone;
+        ctx.globalAlpha = 0.5;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+
+        // Arrowhead.
+        const angle = Math.atan2(y2 - y1, x2 - x1);
+        const headLen = 9;
+        const nodeRadius = NODE_RADIUS;
+        const tipX = x2 - Math.cos(angle) * (nodeRadius + 2);
+        const tipY = y2 - Math.sin(angle) * (nodeRadius + 2);
+        ctx.fillStyle = edgeTone;
+        ctx.beginPath();
+        ctx.moveTo(tipX, tipY);
+        ctx.lineTo(
+          tipX - Math.cos(angle - 0.4) * headLen,
+          tipY - Math.sin(angle - 0.4) * headLen
+        );
+        ctx.lineTo(
+          tipX - Math.cos(angle + 0.4) * headLen,
+          tipY - Math.sin(angle + 0.4) * headLen
+        );
+        ctx.closePath();
+        ctx.fill();
+
+        // Choice badges (L/R) at edge midpoint.
+        const midX = (x1 + x2) / 2;
+        const midY = (y1 + y2) / 2;
+        const choiceIds = (edge.choices ?? []).map((choice) => choice.id);
+        if (choiceIds.length > 0) {
+          drawChoiceBadge(ctx, midX, midY, choiceIds, colors);
+        }
+      }
+
+      // Nodes.
+      for (const node of layoutRef.current.nodes) {
+        const x = cx + node.x;
+        const y = cy + node.y;
+        const tone = nodeTone.get(node.id) ?? "reachable";
+        const fill = toneFill(tone, colors);
+        const stroke = toneStroke(tone, colors);
+        const isHover = layoutRef.current.hover === node.id;
+
+        ctx.beginPath();
+        ctx.arc(x, y, NODE_RADIUS, 0, Math.PI * 2);
+        ctx.fillStyle = fill;
+        ctx.fill();
+        ctx.lineWidth = tone === "unreachable" || tone === "isolated" ? 2 : isHover ? 2.5 : 1.5;
+        if (tone === "unreachable" || tone === "isolated") ctx.setLineDash([4, 3]);
+        ctx.strokeStyle = isHover ? colors.accent : stroke;
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Label: card id, truncated.
+        ctx.fillStyle = colors.ink;
+        ctx.font = "600 11px var(--font-data, monospace)";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "top";
+        const label = node.id.length > 14 ? `${node.id.slice(0, 13)}…` : node.id;
+        ctx.fillText(label, x, y + NODE_RADIUS + 4);
+      }
+    }
+
+    resize();
+    step();
+    const onResize = () => resize();
+    window.addEventListener("resize", onResize);
+    return () => {
+      running = false;
+      cancelAnimationFrame(animationRef.current);
+      window.removeEventListener("resize", onResize);
+    };
+  }, [graph, nodeTone, colors]);
+
+  // Pointer interaction: hover + click + pan.
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !graph) return;
+    let dragging = false;
+    let dragStart = null;
+
+    function pointer(event) {
+      const rect = canvas.getBoundingClientRect();
+      return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+    }
+
+    function nodeAt(point) {
+      const cx = canvas.getBoundingClientRect().width / 2 + layoutRef.current.pan.x;
+      const cy = canvas.getBoundingClientRect().height / 2 + layoutRef.current.pan.y;
+      for (const node of layoutRef.current.nodes) {
+        const nx = cx + node.x;
+        const ny = cy + node.y;
+        const dx = point.x - nx;
+        const dy = point.y - ny;
+        if (dx * dx + dy * dy <= (NODE_RADIUS + 4) * (NODE_RADIUS + 4)) return node.id;
+      }
+      return null;
+    }
+
+    function onMove(event) {
+      const point = pointer(event);
+      if (dragging) {
+        layoutRef.current.pan.x += point.x - dragStart.x;
+        layoutRef.current.pan.y += point.y - dragStart.y;
+        dragStart = point;
+        return;
+      }
+      const id = nodeAt(point);
+      if (id !== layoutRef.current.hover) {
+        layoutRef.current.hover = id;
+        canvas.style.cursor = id ? "pointer" : "grab";
+        if (id) {
+          const card = cardById.get(id);
+          const incoming = graph.edges.filter((edge) => edge.to === id);
+          const outgoing = graph.edges.filter((edge) => edge.from === id);
+          setTooltip({
+            id,
+            text: card?.text ?? "",
+            tone: nodeTone.get(id),
+            incoming: incoming.length,
+            outgoing: outgoing.length,
+            x: point.x,
+            y: point.y
+          });
+        } else {
+          setTooltip(null);
+        }
+      } else if (id) {
+        setTooltip((current) => (current ? { ...current, x: point.x, y: point.y } : current));
+      }
+    }
+
+    function onDown(event) {
+      const point = pointer(event);
+      const id = nodeAt(point);
+      if (!id) {
+        dragging = true;
+        dragStart = point;
+        canvas.style.cursor = "grabbing";
+      }
+    }
+
+    function onUp(event) {
+      if (dragging) {
+        dragging = false;
+        canvas.style.cursor = "grab";
+        dragStart = null;
+        return;
+      }
+      const point = pointer(event);
+      const id = nodeAt(point);
+      if (id) {
+        setTooltip(null);
+        onFocusCard?.(id);
+      }
+    }
+
+    function onLeave() {
+      dragging = false;
+      dragStart = null;
+      layoutRef.current.hover = null;
+      canvas.style.cursor = "default";
+      setTooltip(null);
+    }
+
+    canvas.style.cursor = "grab";
+    canvas.addEventListener("mousemove", onMove);
+    canvas.addEventListener("mousedown", onDown);
+    window.addEventListener("mouseup", onUp);
+    canvas.addEventListener("mouseleave", onLeave);
+    return () => {
+      canvas.removeEventListener("mousemove", onMove);
+      canvas.removeEventListener("mousedown", onDown);
+      window.removeEventListener("mouseup", onUp);
+      canvas.removeEventListener("mouseleave", onLeave);
+    };
+  }, [graph, cardById, nodeTone, onFocusCard]);
+
+  return (
+    <div className="graph-container" ref={containerRef}>
+      <canvas ref={canvasRef} className="graph-canvas" />
+      {tooltip && (
+        <div className="graph-tooltip" style={{ left: tooltip.x, top: tooltip.y }}>
+          <strong>{tooltip.id}</strong>
+          {tooltip.text && <p>{tooltip.text}</p>}
+          <small className={`graph-tooltip__tone graph-tooltip__tone--${tooltip.tone}`}>{tooltip.tone}</small>
+          <small>{tooltip.incoming} in · {tooltip.outgoing} out</small>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const NODE_RADIUS = 20;
+
+/**
+ * useSkinColors reads the active dashboard CSS variables once per render so the
+ * canvas graph repaints with the correct palette for whichever skin (workbench,
+ * famicom, phantom, arcade, terminal) is active. The skin value is read from
+ * document.documentElement.dataset.skin, matching how App sets it.
+ */
+function useSkinColors() {
+  const [colors, setColors] = useState(() => readSkinColors());
+  useEffect(() => {
+    setColors(readSkinColors());
+    const observer = new MutationObserver(() => setColors(readSkinColors()));
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-skin"] });
+    return () => observer.disconnect();
+  }, []);
+  return colors;
+}
+
+function readSkinColors() {
+  const root = getComputedStyle(document.documentElement);
+  const read = (name) => root.getPropertyValue(name).trim();
+  return {
+    bg: read("--bg") || "#10110f",
+    ink: read("--ink") || "#f1eee4",
+    muted: read("--muted") || "#a5a091",
+    accent: read("--accent") || "#d8a83a",
+    accent2: read("--accent-2") || "#53b6a5",
+    ok: read("--ok") || "#7ccf8a",
+    danger: read("--danger") || "#e06b5f",
+    surface: read("--surface") || "#171915"
+  };
+}
+
+function toneFill(tone, colors) {
+  switch (tone) {
+    case "entry": return colors.accent;
+    case "reachable": return colors.surface;
+    case "unreachable": return colors.surface;
+    case "isolated": return colors.surface;
+    default: return colors.surface;
+  }
+}
+
+function toneStroke(tone, colors) {
+  switch (tone) {
+    case "entry": return colors.accent;
+    case "reachable": return colors.ok;
+    case "unreachable": return colors.danger;
+    case "isolated": return colors.muted;
+    default: return colors.muted;
+  }
+}
+
+function drawChoiceBadge(ctx, x, y, choiceIds, colors) {
+  const labels = choiceIds.map((choiceId) => {
+    if (choiceId === "left") return "L";
+    if (choiceId === "right") return "R";
+    return choiceId.slice(0, 1).toUpperCase();
+  });
+  const text = labels.join("/");
+  ctx.font = "700 9px monospace";
+  const metrics = ctx.measureText(text);
+  const padding = 4;
+  const w = metrics.width + padding * 2;
+  const h = 14;
+  ctx.fillStyle = colors.bg;
+  ctx.strokeStyle = colors.accent2;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.rect(x - w / 2, y - h / 2, w, h);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = colors.accent2;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, x, y);
 }
 
 function ReviewPanel({ diagnostics, onRun, onOpen }) {
@@ -1086,7 +1624,7 @@ function Metric({ label, value, tone = "" }) {
 function panelStatus(id, { editor, playerReady, diagnostics, build }) {
   if (id === "overview") return editor ? "ready" : "loading";
   if (id === "content") return `${editor?.cards?.length ?? 0}`;
-  if (id === "story") return "planned";
+  if (id === "story") return `${editor?.cards?.length ?? 0}`;
   if (id === "review") return diagnostics ? `${diagnostics.healthScore}` : "new";
   if (id === "preview") return playerReady ? "ready" : "blocked";
   if (id === "build") return build ? "ready" : "new";
