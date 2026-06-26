@@ -437,6 +437,58 @@ export function getCardGraph({ cards, initialState = {} }) {
 }
 
 /**
+ * deriveTagCatalog scans every card's requirements and choice effects to build
+ * a creator-facing directory of the tags in use. For each tag key it records
+ * where the tag is produced (which card/choice sets it) and where it is
+ * required (which card gates on it, and via which match mode). Display labels
+ * come from metadata.tagLabels; missing labels fall back to null so the UI can
+ * show the raw key. This is a read-only derivation and never mutates cards.
+ */
+export function deriveTagCatalog({ cards, metadata = {} }) {
+  const cloned = cloneCards(cards);
+  const labels = metadata?.tagLabels ?? {};
+  const entries = new Map();
+
+  function ensure(key) {
+    if (!entries.has(key)) {
+      entries.set(key, {
+        key,
+        label: typeof labels[key] === "string" && labels[key].length > 0 ? labels[key] : null,
+        producedBy: [],
+        requiredBy: []
+      });
+    }
+    return entries.get(key);
+  }
+
+  for (const card of cloned) {
+    const requirements = card.requirements ?? {};
+    for (const key of requirements.allTags ?? []) {
+      ensure(key).requiredBy.push({ cardId: card.id, mode: "all" });
+    }
+    for (const key of requirements.anyTags ?? []) {
+      ensure(key).requiredBy.push({ cardId: card.id, mode: "any" });
+    }
+    for (const key of requirements.noneTags ?? []) {
+      ensure(key).requiredBy.push({ cardId: card.id, mode: "none" });
+    }
+
+    for (const choice of card.choices ?? []) {
+      const tags = choice.effects?.tags ?? {};
+      for (const [key, value] of Object.entries(tags)) {
+        // A tag is "produced" only when the choice sets it truthy.
+        if (value !== false && value !== null && value !== undefined) {
+          ensure(key).producedBy.push({ cardId: card.id, choiceId: choice.id });
+        }
+      }
+    }
+  }
+
+  const tags = [...entries.values()].sort((a, b) => a.key.localeCompare(b.key));
+  return { schemaVersion: 1, tags };
+}
+
+/**
  * summarizeDiagnostics projects a raw reviewer report into a dashboard-friendly
  * shape. It does not modify or re-simulate the report.
  */

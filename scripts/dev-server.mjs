@@ -9,6 +9,7 @@ import {
   createCardEditor,
   createConnectorConfig,
   createPlaySession,
+  deriveTagCatalog,
   getCardGraph,
   loadEditorFromContent,
   prepareGameBuild,
@@ -152,6 +153,10 @@ async function handleApi(req, res, url) {
 
   if (path === "/api/editor/graph" && req.method === "GET") {
     return sendJson(res, getCardGraph({ cards: store.editor.toCards() }));
+  }
+
+  if (path === "/api/editor/tags" && req.method === "GET") {
+    return sendJson(res, deriveTagCatalog({ cards: store.editor.toCards(), metadata: store.editor.metadata }));
   }
 
   if (path === "/api/diagnostics/run" && req.method === "POST") {

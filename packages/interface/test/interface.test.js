@@ -7,6 +7,7 @@ import {
   createConnectorConfig,
   createI18nCatalog,
   createPlaySession,
+  deriveTagCatalog,
   loadEditorFromContent,
   localizeCard,
   normalizePresentationConfig,
@@ -314,3 +315,63 @@ function sampleCard(id) {
     ]
   };
 }
+
+describe("deriveTagCatalog", () => {
+  it("collects produced and required tags with the right attribution", () => {
+    const cards = [
+      {
+        id: "gate",
+        choices: [
+          { id: "left", effects: { tags: { grainRelief: true } } },
+          { id: "right", effects: { tags: { borderAlert: true } } }
+        ]
+      },
+      {
+        id: "granary",
+        requirements: { allTags: ["grainRelief"] },
+        choices: [{ id: "left", effects: { tags: { granaryOpen: true } } }]
+      },
+      {
+        id: "harbor",
+        requirements: { anyTags: ["granaryOpen", "borderAlert"] },
+        choices: [{ id: "left", effects: {} }]
+      }
+    ];
+
+    const catalog = deriveTagCatalog({ cards });
+
+    const byKey = new Map(catalog.tags.map((entry) => [entry.key, entry]));
+    assert.equal(catalog.tags.length, 3);
+    assert.deepEqual(byKey.get("grainRelief").producedBy, [{ cardId: "gate", choiceId: "left" }]);
+    assert.deepEqual(byKey.get("grainRelief").requiredBy, [{ cardId: "granary", mode: "all" }]);
+    assert.deepEqual(byKey.get("granaryOpen").producedBy, [{ cardId: "granary", choiceId: "left" }]);
+    const harborReq = byKey.get("borderAlert").requiredBy;
+    assert.equal(harborReq.length, 1);
+    assert.equal(harborReq[0].mode, "any");
+  });
+
+  it("does not count a tag as produced when its effect sets it falsy", () => {
+    const cards = [
+      {
+        id: "dismiss",
+        choices: [{ id: "left", effects: { tags: { courtAlert: false } } }]
+      }
+    ];
+    const catalog = deriveTagCatalog({ cards });
+    assert.equal(catalog.tags.length, 0);
+  });
+
+  it("applies human labels from metadata.tagLabels and falls back to null", () => {
+    const cards = [
+      {
+        id: "gate",
+        choices: [{ id: "left", effects: { tags: { grainRelief: true } } }]
+      }
+    ];
+    const labeled = deriveTagCatalog({ cards, metadata: { tagLabels: { grainRelief: "粮仓已开" } } });
+    assert.equal(labeled.tags[0].label, "粮仓已开");
+
+    const unlabeled = deriveTagCatalog({ cards, metadata: {} });
+    assert.equal(unlabeled.tags[0].label, null);
+  });
+});
