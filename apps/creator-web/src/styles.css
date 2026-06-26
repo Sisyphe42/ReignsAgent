@@ -16,6 +16,10 @@
   --button-ink: #17130a;
   --shadow: rgba(4, 6, 3, 0.36);
   --radius: 6px;
+  --scrollbar-track: color-mix(in srgb, var(--bg) 88%, #000);
+  --scrollbar-thumb: color-mix(in srgb, var(--accent) 46%, var(--surface-3));
+  --scrollbar-thumb-hover: color-mix(in srgb, var(--accent-2) 58%, var(--accent));
+  --scrollbar-radius: 8px;
   --font-ui: Aptos, "Segoe UI Variable", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
   --font-data: "Cascadia Mono", "SFMono-Regular", Consolas, ui-monospace, monospace;
   font-family: var(--font-ui);
@@ -42,6 +46,10 @@
   --button-ink: #17111f;
   --shadow: rgba(7, 2, 15, 0.42);
   --radius: 4px;
+  --scrollbar-track: #17111f;
+  --scrollbar-thumb: #8f74b8;
+  --scrollbar-thumb-hover: #ffd34f;
+  --scrollbar-radius: 6px;
   --font-ui: "Trebuchet MS", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
 }
 
@@ -63,6 +71,10 @@
   --button-ink: #fff8e8;
   --shadow: rgba(36, 33, 29, 0.24);
   --radius: 0px;
+  --scrollbar-track: #e8dac2;
+  --scrollbar-thumb: #b52222;
+  --scrollbar-thumb-hover: #275c9a;
+  --scrollbar-radius: 0px;
   --font-ui: "Courier New", "Cascadia Mono", ui-monospace, monospace;
   --font-data: "Courier New", "Cascadia Mono", ui-monospace, monospace;
   color-scheme: light;
@@ -86,6 +98,10 @@
   --button-ink: #f7f2e9;
   --shadow: rgba(215, 25, 32, 0.34);
   --radius: 0px;
+  --scrollbar-track: #09090a;
+  --scrollbar-thumb: #d71920;
+  --scrollbar-thumb-hover: #f4f0e8;
+  --scrollbar-radius: 0px;
   --font-ui: Impact, Haettenschweiler, "Arial Black", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
   --font-data: "Cascadia Mono", "Courier New", ui-monospace, monospace;
 }
@@ -108,6 +124,10 @@
   --button-ink: #06100a;
   --shadow: rgba(0, 7, 3, 0.44);
   --radius: 2px;
+  --scrollbar-track: #07100c;
+  --scrollbar-thumb: #3c7d54;
+  --scrollbar-thumb-hover: #68ff95;
+  --scrollbar-radius: 3px;
   --font-ui: "Cascadia Mono", "SFMono-Regular", Consolas, ui-monospace, monospace;
 }
 
@@ -119,7 +139,36 @@ html {
   min-width: 320px;
   min-height: 100%;
   background: var(--bg);
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+  scrollbar-width: thin;
   scroll-behavior: smooth;
+}
+
+* {
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+}
+
+*::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+*::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+}
+
+*::-webkit-scrollbar-thumb {
+  border: 3px solid var(--scrollbar-track);
+  border-radius: var(--scrollbar-radius);
+  background: var(--scrollbar-thumb);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+
+*::-webkit-scrollbar-corner {
+  background: var(--scrollbar-track);
 }
 
 body {
