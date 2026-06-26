@@ -413,6 +413,7 @@ function ContentPanel({ editor, assetsByCard, onImport, onMutate, onStatus, focu
   const [query, setQuery] = useState("");
   const [validationFilter, setValidationFilter] = useState("all");
   const [selectedCardId, setSelectedCardId] = useState(null);
+  const tagCatalog = useTagCatalog(editor);
 
   const cardItems = useMemo(() => (editor?.cards ?? []).map((card, index) => ({
     card,
@@ -571,6 +572,7 @@ function ContentPanel({ editor, assetsByCard, onImport, onMutate, onStatus, focu
                 validation={activeItem.validation}
                 onMutate={onMutate}
                 onStatus={onStatus}
+                tagCatalog={tagCatalog}
               />
             </>
           ) : (
@@ -584,7 +586,7 @@ function ContentPanel({ editor, assetsByCard, onImport, onMutate, onStatus, focu
   );
 }
 
-function CardEditor({ card, asset, validation, onMutate, onStatus }) {
+function CardEditor({ card, asset, validation, onMutate, onStatus, tagCatalog }) {
   const [text, setText] = useState(card.text ?? "");
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -661,6 +663,7 @@ function CardEditor({ card, asset, validation, onMutate, onStatus }) {
         <input value={text} onChange={(event) => setText(event.target.value)} aria-label={`${card.id} text`} />
         <button className="btn" disabled={text === (card.text ?? "")} onClick={() => void saveText()}>Save text</button>
       </div>
+      <RequirementEditor card={card} tagCatalog={tagCatalog} onMutate={onMutate} onStatus={onStatus} />
       <div className="choice-grid">
         {(card.choices ?? []).map((choice) => (
           <ChoiceEditor
@@ -673,6 +676,131 @@ function CardEditor({ card, asset, validation, onMutate, onStatus }) {
         ))}
       </div>
     </article>
+  );
+}
+
+/**
+ * RequirementEditor edits a card's gating requirements (allTags / anyTags /
+ * noneTags) with semantic labels drawn from the tag catalog. It replaces the
+ * raw JSON editing path: creators pick from known tags by human name, or type a
+ * new key. Changes submit the whole requirements object via PUT /api/editor/cards/:id.
+ */
+function RequirementEditor({ card, tagCatalog, onMutate, onStatus }) {
+  const requirements = card.requirements ?? {};
+
+  async function saveRequirements(next) {
+    await onMutate(
+      `Updating ${card.id} requirements`,
+      async () => api(`/api/editor/cards/${encodeURIComponent(card.id)}`, {
+        method: "PUT",
+        body: { changes: { requirements: next } }
+      }),
+      `Updated ${card.id} requirements`
+    );
+  }
+
+  function updateGroup(mode, nextTags) {
+    const clean = nextTags.map((tag) => tag.trim()).filter(Boolean);
+    const unique = [...new Set(clean)];
+    const merged = { ...requirements };
+    if (unique.length > 0) {
+      merged[mode] = unique;
+    } else {
+      delete merged[mode];
+    }
+    void saveRequirements(merged);
+  }
+
+  const groups = [
+    { mode: "allTags", heading: "Needs all of these tags", hint: "Card only appears when every tag here is set." },
+    { mode: "anyTags", heading: "Needs any of these tags", hint: "Card appears when at least one tag here is set." },
+    { mode: "noneTags", heading: "Blocked by these tags", hint: "Card is hidden while any of these tags is set." }
+  ];
+
+  return (
+    <div className="requirement-editor">
+      <div className="requirement-editor__head">
+        <strong>When does this card appear?</strong>
+        <span>Empty = always eligible</span>
+      </div>
+      {groups.map((group) => (
+        <RequirementGroup
+          key={group.mode}
+          mode={group.mode}
+          heading={group.heading}
+          hint={group.hint}
+          tags={requirements[group.mode] ?? []}
+          tagCatalog={tagCatalog}
+          onChange={(nextTags) => updateGroup(group.mode, nextTags)}
+          onStatus={onStatus}
+        />
+      ))}
+    </div>
+  );
+}
+
+function RequirementGroup({ mode, heading, hint, tags, tagCatalog, onChange, onStatus }) {
+  const [draft, setDraft] = useState("");
+
+  function removeTag(tag) {
+    onChange(tags.filter((existing) => existing !== tag));
+  }
+
+  function addTag() {
+    const value = draft.trim();
+    if (!value) return;
+    if (tags.includes(value)) {
+      setDraft("");
+      return;
+    }
+    onChange([...tags, value]);
+    setDraft("");
+  }
+
+  return (
+    <div className="requirement-group">
+      <div className="requirement-group__head">
+        <span>{heading}</span>
+        <small>{hint}</small>
+      </div>
+      <div className="requirement-chips">
+        {tags.map((tag) => (
+          <span key={tag} className="requirement-chip">
+            <span className="requirement-chip__label">{tagDisplayName(tag, tagCatalog.byKey)}</span>
+            <code className="requirement-chip__key">{tag}</code>
+            <button
+              className="requirement-chip__remove"
+              type="button"
+              aria-label={`Remove ${tag}`}
+              onClick={() => removeTag(tag)}
+            >x</button>
+          </span>
+        ))}
+        {tags.length === 0 && <span className="empty-inline">No {mode} requirement</span>}
+      </div>
+      <div className="requirement-add">
+        <input
+          list="tag-options"
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              addTag();
+            }
+          }}
+          placeholder="Pick or type a tag key"
+        />
+        <datalist id="tag-options">
+          {(tagCatalog.tags ?? []).map((entry) => (
+            <option key={entry.key} value={entry.key}>
+              {entry.label ? `${entry.label} (${entry.key})` : entry.key}
+            </option>
+          ))}
+        </datalist>
+        <button className="btn btn--ghost" type="button" disabled={!draft.trim()} onClick={() => addTag()}>Add</button>
+      </div>
+    </div>
   );
 }
 
@@ -934,6 +1062,8 @@ function StoryPanel({ editor, diagnostics, onOpen, onFocusCard }) {
   const [graph, setGraph] = useState(null);
   const [graphError, setGraphError] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
+  const [renaming, setRenaming] = useState(null);
+  const tagCatalog = useTagCatalog(editor);
 
   useEffect(() => {
     let cancelled = false;
@@ -953,9 +1083,20 @@ function StoryPanel({ editor, diagnostics, onOpen, onFocusCard }) {
     return () => { cancelled = true; };
   }, [editor, refreshKey]);
 
+  async function saveTagLabel(key, label) {
+    const tagLabels = { ...(editor?.metadata?.tagLabels ?? {}) };
+    if (label.trim()) {
+      tagLabels[key] = label.trim();
+    } else {
+      delete tagLabels[key];
+    }
+    await api("/api/editor/metadata", { method: "PATCH", body: { metadata: { tagLabels } } });
+    setRenaming(null);
+  }
+
   return (
     <section className="panel panel--story">
-      <PanelHead title="Story / Graph" note="Card-to-card transitions driven by tags and variables. Click a node to edit it." />
+      <PanelHead title="Story / Graph" note="Card-to-card transitions driven by tags. Click a node to edit it; rename tags for clarity." />
       <div className="metric-grid">
         <Metric label="Narrative nodes" value={`${editor?.cards?.length ?? 0} cards`} />
         <Metric
@@ -969,9 +1110,8 @@ function StoryPanel({ editor, diagnostics, onOpen, onFocusCard }) {
           tone={graph && graph.unreachableCards.length > 0 ? "bad" : ""}
         />
         <Metric
-          label="Isolated"
-          value={graph ? String(graph.isolatedCards.length) : "-"}
-          tone={graph && graph.isolatedCards.length > 0 ? "bad" : ""}
+          label="Tags"
+          value={String(tagCatalog.tags?.length ?? 0)}
         />
       </div>
       <div className="graph-controls">
@@ -995,7 +1135,21 @@ function StoryPanel({ editor, diagnostics, onOpen, onFocusCard }) {
             <p>No cards to graph. Add or import cards first.</p>
           </div>
         ) : (
-          <StoryGraph graph={graph} cards={editor?.cards ?? []} onFocusCard={onFocusCard} />
+          <div className="story-layout">
+            <StoryGraph
+              graph={graph}
+              cards={editor?.cards ?? []}
+              onFocusCard={onFocusCard}
+              tagCatalog={tagCatalog}
+              onConnect={createConnection}
+            />
+            <TagDirectory
+              tags={tagCatalog.tags ?? []}
+              renaming={renaming}
+              onRename={setRenaming}
+              onSaveLabel={saveTagLabel}
+            />
+          </div>
         )
       ) : (
         <div className="empty-state">
@@ -1003,6 +1157,105 @@ function StoryPanel({ editor, diagnostics, onOpen, onFocusCard }) {
         </div>
       )}
     </section>
+  );
+
+  async function createConnection({ fromCardId, choiceId, toCardId, tagKey }) {
+    // Set the tag on the source choice's effects...
+    const sourceCard = editor?.cards?.find((card) => card.id === fromCardId);
+    if (!sourceCard) return;
+    const choice = sourceCard.choices?.find((item) => item.id === choiceId);
+    if (!choice) return;
+    const effects = { ...(choice.effects ?? {}) };
+    effects.tags = { ...(effects.tags ?? {}), [tagKey]: true };
+    await api(`/api/editor/cards/${encodeURIComponent(fromCardId)}/choices/${encodeURIComponent(choiceId)}`, {
+      method: "PATCH",
+      body: { effects }
+    });
+    // ...and add it to the target card's allTags requirement.
+    const targetCard = editor?.cards?.find((card) => card.id === toCardId);
+    if (targetCard) {
+      const requirements = { ...(targetCard.requirements ?? {}) };
+      const existing = requirements.allTags ?? [];
+      if (!existing.includes(tagKey)) {
+        requirements.allTags = [...existing, tagKey];
+        await api(`/api/editor/cards/${encodeURIComponent(toCardId)}`, {
+          method: "PUT",
+          body: { changes: { requirements } }
+        });
+      }
+    }
+    setRefreshKey((value) => value + 1);
+  }
+}
+
+function TagDirectory({ tags, renaming, onRename, onSaveLabel }) {
+  if (tags.length === 0) {
+    return (
+      <aside className="tag-directory">
+        <div className="tag-directory__head">
+          <strong>Story tags</strong>
+        </div>
+        <p className="muted">No tags yet. They appear once cards set or require them.</p>
+      </aside>
+    );
+  }
+  return (
+    <aside className="tag-directory">
+      <div className="tag-directory__head">
+        <strong>Story tags</strong>
+        <small>{tags.length}</small>
+      </div>
+      <ul className="tag-directory__list">
+        {tags.map((entry) => (
+          <li key={entry.key} className="tag-directory__item">
+            {renaming === entry.key ? (
+              <TagRenameRow
+                entry={entry}
+                onSave={(label) => onSaveLabel(entry.key, label)}
+                onCancel={() => onRename(null)}
+              />
+            ) : (
+              <>
+                <div className="tag-directory__meta">
+                  <span className="tag-directory__label">{entry.label || entry.key}</span>
+                  {!entry.label && <code className="tag-directory__key">{entry.key}</code>}
+                </div>
+                <small className="tag-directory__counts">
+                  {entry.producedBy.length} out · {entry.requiredBy.length} in
+                </small>
+                <button
+                  className="btn btn--ghost btn--compact"
+                  type="button"
+                  onClick={() => onRename(entry.key)}
+                >Rename</button>
+              </>
+            )}
+          </li>
+        ))}
+      </ul>
+    </aside>
+  );
+}
+
+function TagRenameRow({ entry, onSave, onCancel }) {
+  const [label, setLabel] = useState(entry.label ?? "");
+  useEffect(() => setLabel(entry.label ?? ""), [entry.key, entry.label]);
+  return (
+    <div className="tag-rename">
+      <code className="tag-directory__key">{entry.key}</code>
+      <input
+        autoFocus
+        value={label}
+        onChange={(event) => setLabel(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") onSave(label);
+          if (event.key === "Escape") onCancel();
+        }}
+        placeholder="Human label (e.g. 粮仓已开)"
+      />
+      <button className="btn btn--compact" type="button" onClick={() => onSave(label)}>Save</button>
+      <button className="btn btn--ghost btn--compact" type="button" onClick={onCancel}>Cancel</button>
+    </div>
   );
 }
 
@@ -1030,12 +1283,19 @@ function GraphLegend() {
  * re-skinned automatically by reading the active CSS variables. Pan by dragging
  * the background; click a node to open it in the Content panel.
  */
-function StoryGraph({ graph, cards, onFocusCard }) {
+function StoryGraph({ graph, cards, onFocusCard, tagCatalog, onConnect }) {
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
-  const layoutRef = useRef({ nodes: [], byId: new Map(), pan: { x: 0, y: 0 }, hover: null });
+  const layoutRef = useRef({
+    nodes: [],
+    byId: new Map(),
+    pan: { x: 0, y: 0 },
+    hover: null,
+    connect: null
+  });
   const animationRef = useRef(0);
   const [tooltip, setTooltip] = useState(null);
+  const [pendingConnect, setPendingConnect] = useState(null);
 
   // Map card id -> card object for quick metadata lookups (text, excerpt).
   const cardById = useMemo(() => {
@@ -1217,12 +1477,17 @@ function StoryGraph({ graph, cards, onFocusCard }) {
         ctx.closePath();
         ctx.fill();
 
-        // Choice badges (L/R) at edge midpoint.
+        // Choice badges (L/R) at edge midpoint, with semantic tag label.
         const midX = (x1 + x2) / 2;
         const midY = (y1 + y2) / 2;
         const choiceIds = (edge.choices ?? []).map((choice) => choice.id);
+        const tagKey = (edge.tags ?? [])[0];
+        const tagLabel = tagKey ? tagDisplayName(tagKey, tagCatalog?.byKey) : null;
         if (choiceIds.length > 0) {
           drawChoiceBadge(ctx, midX, midY, choiceIds, colors);
+        }
+        if (tagLabel) {
+          drawEdgeLabel(ctx, midX, midY + 14, tagLabel, colors);
         }
       }
 
@@ -1234,6 +1499,7 @@ function StoryGraph({ graph, cards, onFocusCard }) {
         const fill = toneFill(tone, colors);
         const stroke = toneStroke(tone, colors);
         const isHover = layoutRef.current.hover === node.id;
+        const isConnectTarget = layoutRef.current.connect && layoutRef.current.hover === node.id && layoutRef.current.connect.from !== node.id;
 
         ctx.beginPath();
         ctx.arc(x, y, NODE_RADIUS, 0, Math.PI * 2);
@@ -1241,9 +1507,16 @@ function StoryGraph({ graph, cards, onFocusCard }) {
         ctx.fill();
         ctx.lineWidth = tone === "unreachable" || tone === "isolated" ? 2 : isHover ? 2.5 : 1.5;
         if (tone === "unreachable" || tone === "isolated") ctx.setLineDash([4, 3]);
-        ctx.strokeStyle = isHover ? colors.accent : stroke;
+        ctx.strokeStyle = isConnectTarget ? colors.accent2 : isHover ? colors.accent : stroke;
         ctx.stroke();
         ctx.setLineDash([]);
+
+        // Choice handles (L/R) appear on hover; dragging from a handle starts a
+        // connection to another node.
+        if (isHover) {
+          drawChoiceHandle(ctx, x - NODE_RADIUS, y, "L", colors);
+          drawChoiceHandle(ctx, x + NODE_RADIUS, y, "R", colors);
+        }
 
         // Label: card id, truncated.
         ctx.fillStyle = colors.ink;
@@ -1252,6 +1525,30 @@ function StoryGraph({ graph, cards, onFocusCard }) {
         ctx.textBaseline = "top";
         const label = node.id.length > 14 ? `${node.id.slice(0, 13)}…` : node.id;
         ctx.fillText(label, x, y + NODE_RADIUS + 4);
+      }
+
+      // Connection drag preview.
+      if (layoutRef.current.connect) {
+        const fromNode = layoutRef.current.byId.get(layoutRef.current.connect.from);
+        const hoverId = layoutRef.current.hover;
+        const toX = hoverId && hoverId !== layoutRef.current.connect.from
+          ? cx + layoutRef.current.byId.get(hoverId).x
+          : layoutRef.current.connect.toX;
+        const toY = hoverId && hoverId !== layoutRef.current.connect.from
+          ? cy + layoutRef.current.byId.get(hoverId).y
+          : layoutRef.current.connect.toY;
+        if (fromNode) {
+          ctx.strokeStyle = colors.accent2;
+          ctx.globalAlpha = 0.7;
+          ctx.lineWidth = 2;
+          ctx.setLineDash([5, 4]);
+          ctx.beginPath();
+          ctx.moveTo(cx + fromNode.x, cy + fromNode.y);
+          ctx.lineTo(toX, toY);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.globalAlpha = 1;
+        }
       }
     }
 
@@ -1264,23 +1561,29 @@ function StoryGraph({ graph, cards, onFocusCard }) {
       cancelAnimationFrame(animationRef.current);
       window.removeEventListener("resize", onResize);
     };
-  }, [graph, nodeTone, colors]);
+  }, [graph, nodeTone, colors, tagCatalog]);
 
-  // Pointer interaction: hover + click + pan.
+  // Pointer interaction: hover + click + pan + drag-to-connect.
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !graph) return;
-    let dragging = false;
-    let dragStart = null;
+    let panning = false;
+    let panStart = null;
 
     function pointer(event) {
       const rect = canvas.getBoundingClientRect();
       return { x: event.clientX - rect.left, y: event.clientY - rect.top };
     }
 
+    function center() {
+      return {
+        cx: canvas.getBoundingClientRect().width / 2 + layoutRef.current.pan.x,
+        cy: canvas.getBoundingClientRect().height / 2 + layoutRef.current.pan.y
+      };
+    }
+
     function nodeAt(point) {
-      const cx = canvas.getBoundingClientRect().width / 2 + layoutRef.current.pan.x;
-      const cy = canvas.getBoundingClientRect().height / 2 + layoutRef.current.pan.y;
+      const { cx, cy } = center();
       for (const node of layoutRef.current.nodes) {
         const nx = cx + node.x;
         const ny = cy + node.y;
@@ -1291,18 +1594,48 @@ function StoryGraph({ graph, cards, onFocusCard }) {
       return null;
     }
 
+    // Returns { nodeId, choiceId } if the point sits on a choice handle, else null.
+    function handleAt(point) {
+      const { cx, cy } = center();
+      const node = layoutRef.current.byId.get(layoutRef.current.hover);
+      if (!node) return null;
+      const nx = cx + node.x;
+      const ny = cy + node.y;
+      const handles = [
+        { choiceId: "left", x: nx - NODE_RADIUS, y: ny },
+        { choiceId: "right", x: nx + NODE_RADIUS, y: ny }
+      ];
+      for (const handle of handles) {
+        const dx = point.x - handle.x;
+        const dy = point.y - handle.y;
+        if (dx * dx + dy * dy <= 8 * 8) return { nodeId: node.id, choiceId: handle.choiceId };
+      }
+      return null;
+    }
+
     function onMove(event) {
       const point = pointer(event);
-      if (dragging) {
-        layoutRef.current.pan.x += point.x - dragStart.x;
-        layoutRef.current.pan.y += point.y - dragStart.y;
-        dragStart = point;
+
+      // Connection drag in progress: follow the cursor.
+      if (layoutRef.current.connect) {
+        layoutRef.current.connect.toX = point.x;
+        layoutRef.current.connect.toY = point.y;
+        const hoverId = nodeAt(point);
+        if (hoverId !== layoutRef.current.hover) layoutRef.current.hover = hoverId;
+        return;
+      }
+
+      if (panning) {
+        layoutRef.current.pan.x += point.x - panStart.x;
+        layoutRef.current.pan.y += point.y - panStart.y;
+        panStart = point;
         return;
       }
       const id = nodeAt(point);
       if (id !== layoutRef.current.hover) {
         layoutRef.current.hover = id;
-        canvas.style.cursor = id ? "pointer" : "grab";
+        const handle = id ? handleAt(point) : null;
+        canvas.style.cursor = handle ? "crosshair" : id ? "pointer" : "grab";
         if (id) {
           const card = cardById.get(id);
           const incoming = graph.edges.filter((edge) => edge.to === id);
@@ -1320,25 +1653,58 @@ function StoryGraph({ graph, cards, onFocusCard }) {
           setTooltip(null);
         }
       } else if (id) {
+        const handle = handleAt(point);
+        canvas.style.cursor = handle ? "crosshair" : "pointer";
         setTooltip((current) => (current ? { ...current, x: point.x, y: point.y } : current));
       }
     }
 
     function onDown(event) {
       const point = pointer(event);
+
+      // Start a connection drag from a choice handle.
+      const handle = handleAt(point);
+      if (handle) {
+        layoutRef.current.connect = {
+          from: handle.nodeId,
+          choiceId: handle.choiceId,
+          toX: point.x,
+          toY: point.y
+        };
+        setTooltip(null);
+        canvas.style.cursor = "crosshair";
+        return;
+      }
+
       const id = nodeAt(point);
       if (!id) {
-        dragging = true;
-        dragStart = point;
+        panning = true;
+        panStart = point;
         canvas.style.cursor = "grabbing";
       }
     }
 
     function onUp(event) {
-      if (dragging) {
-        dragging = false;
+      // Finish a connection drag.
+      if (layoutRef.current.connect) {
+        const targetId = nodeAt(pointer(event));
+        const connect = layoutRef.current.connect;
+        layoutRef.current.connect = null;
         canvas.style.cursor = "grab";
-        dragStart = null;
+        if (targetId && targetId !== connect.from) {
+          setPendingConnect({
+            fromCardId: connect.from,
+            choiceId: connect.choiceId,
+            toCardId: targetId
+          });
+        }
+        return;
+      }
+
+      if (panning) {
+        panning = false;
+        canvas.style.cursor = "grab";
+        panStart = null;
         return;
       }
       const point = pointer(event);
@@ -1350,9 +1716,10 @@ function StoryGraph({ graph, cards, onFocusCard }) {
     }
 
     function onLeave() {
-      dragging = false;
-      dragStart = null;
+      panning = false;
+      panStart = null;
       layoutRef.current.hover = null;
+      layoutRef.current.connect = null;
       canvas.style.cursor = "default";
       setTooltip(null);
     }
@@ -1379,8 +1746,65 @@ function StoryGraph({ graph, cards, onFocusCard }) {
           {tooltip.text && <p>{tooltip.text}</p>}
           <small className={`graph-tooltip__tone graph-tooltip__tone--${tooltip.tone}`}>{tooltip.tone}</small>
           <small>{tooltip.incoming} in · {tooltip.outgoing} out</small>
+          <small className="graph-tooltip__hint">Drag L/R handles to connect · click to edit</small>
         </div>
       )}
+      {pendingConnect && (
+        <ConnectDialog
+          pending={pendingConnect}
+          tagCatalog={tagCatalog}
+          onCancel={() => setPendingConnect(null)}
+          onConfirm={(tagKey) => {
+            const request = pendingConnect;
+            setPendingConnect(null);
+            onConnect?.({ ...request, tagKey });
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * ConnectDialog confirms a drag-to-connect: it asks which tag should wire the
+ * two cards together, defaulting to a suggested camelCase key. The creator can
+ * pick an existing tag or type a new one.
+ */
+function ConnectDialog({ pending, tagCatalog, onCancel, onConfirm }) {
+  const suggested = `${pending.fromCardId.replace(/[^a-z0-9]/gi, "")}_${pending.choiceId}`;
+  const [tagKey, setTagKey] = useState(suggested);
+  useEffect(() => setTagKey(suggested), [suggested]);
+
+  return (
+    <div className="connect-dialog">
+      <strong>Connect cards</strong>
+      <p>
+        <code>{pending.fromCardId}</code> · <em>{pending.choiceId}</em> swipe
+        <span className="connect-dialog__arrow">→</span>
+        unlocks <code>{pending.toCardId}</code>
+      </p>
+      <label className="connect-dialog__label">Tag that links them</label>
+      <input
+        list="connect-tag-options"
+        value={tagKey}
+        autoFocus
+        onChange={(event) => setTagKey(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && tagKey.trim()) onConfirm(tagKey.trim());
+          if (event.key === "Escape") onCancel();
+        }}
+      />
+      <datalist id="connect-tag-options">
+        {(tagCatalog?.tags ?? []).map((entry) => (
+          <option key={entry.key} value={entry.key}>
+            {entry.label ? `${entry.label} (${entry.key})` : entry.key}
+          </option>
+        ))}
+      </datalist>
+      <div className="connect-dialog__actions">
+        <button className="btn" type="button" disabled={!tagKey.trim()} onClick={() => onConfirm(tagKey.trim())}>Connect</button>
+        <button className="btn btn--ghost" type="button" onClick={onCancel}>Cancel</button>
+      </div>
     </div>
   );
 }
@@ -1462,6 +1886,44 @@ function drawChoiceBadge(ctx, x, y, choiceIds, colors) {
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillText(text, x, y);
+}
+
+function drawEdgeLabel(ctx, x, y, text, colors) {
+  ctx.font = "500 10px var(--font-data, monospace)";
+  const metrics = ctx.measureText(text);
+  const padding = 5;
+  const w = metrics.width + padding * 2;
+  const h = 14;
+  ctx.fillStyle = colors.bg;
+  ctx.globalAlpha = 0.85;
+  ctx.beginPath();
+  if (typeof ctx.roundRect === "function") {
+    ctx.roundRect(x - w / 2, y - h / 2, w, h, 3);
+  } else {
+    ctx.rect(x - w / 2, y - h / 2, w, h);
+  }
+  ctx.fill();
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = colors.muted;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, x, y);
+}
+
+function drawChoiceHandle(ctx, x, y, label, colors) {
+  const r = 7;
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fillStyle = colors.surface;
+  ctx.fill();
+  ctx.strokeStyle = colors.accent2;
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.fillStyle = colors.accent2;
+  ctx.font = "700 9px monospace";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(label, x, y);
 }
 
 function ReviewPanel({ diagnostics, onRun, onOpen }) {
@@ -1763,6 +2225,47 @@ function createAssetMap(assets) {
     if (asset?.cardId) map.set(asset.cardId, asset);
   }
   return map;
+}
+
+/**
+ * useTagCatalog fetches the derived tag directory from /api/editor/tags and
+ * refetches whenever the editor revision changes (after any card mutation).
+ * Returns { tags, byKey, loading, error }. `byKey` is a Map for quick lookup
+ * when rendering semantic labels for requirement editors and graph edges.
+ */
+function useTagCatalog(editor) {
+  const [catalog, setCatalog] = useState({ tags: [], byKey: new Map() });
+  const [error, setError] = useState("");
+  const editorRevision = editor?.cards?.length ?? 0;
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const result = await api("/api/editor/tags");
+        if (cancelled) return;
+        const byKey = new Map(result.tags.map((entry) => [entry.key, entry]));
+        setCatalog({ tags: result.tags ?? [], byKey });
+        setError("");
+      } catch (loadError) {
+        if (cancelled) return;
+        setError(loadError.message);
+      }
+    }
+    void load();
+    return () => { cancelled = true; };
+  }, [editorRevision]);
+
+  return { ...catalog, error };
+}
+
+/**
+ * tagDisplayName resolves a tag key to its human label, falling back to the raw
+ * key when no label is set. Used everywhere a raw key would otherwise show.
+ */
+function tagDisplayName(key, byKey) {
+  const entry = byKey?.get(key);
+  return entry?.label || key;
 }
 
 createRoot(document.getElementById("root")).render(<App />);
