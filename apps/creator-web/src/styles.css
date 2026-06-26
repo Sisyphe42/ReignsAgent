@@ -1748,6 +1748,99 @@ select {
   outline: none;
 }
 
+/* Tag picker (custom dropdown, skin-consistent) */
+.tag-picker {
+  position: relative;
+  min-width: 0;
+}
+
+.tag-picker__input {
+  width: 100%;
+  min-width: 0;
+  padding: 7px 10px;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--bg) 82%, #000);
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) - 1px);
+}
+
+.tag-picker__input:focus {
+  border-color: var(--accent-2);
+  outline: none;
+}
+
+.tag-picker__menu {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 3px);
+  left: 0;
+  right: 0;
+  max-height: 220px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  color: var(--ink);
+  border: 1px solid var(--border-strong);
+  border-radius: calc(var(--radius) - 1px);
+  background: color-mix(in srgb, var(--surface) 96%, #000);
+  box-shadow: 0 12px 30px var(--shadow);
+}
+
+.tag-picker__option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  color: var(--ink);
+  text-align: left;
+  border: 0;
+  border-radius: calc(var(--radius) - 2px);
+  background: transparent;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.tag-picker__option--active,
+.tag-picker__option:hover {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.tag-picker__option--create {
+  border-top: 1px dashed var(--border);
+  border-radius: 0 0 calc(var(--radius) - 2px) calc(var(--radius) - 2px);
+  color: var(--accent-2);
+}
+
+.tag-picker__option--create .tag-picker__label {
+  font-weight: 700;
+}
+
+.tag-picker__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tag-picker__key {
+  flex: 0 0 auto;
+  padding: 1px 5px;
+  color: var(--muted);
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--bg) 60%, transparent);
+  font-family: var(--font-data);
+  font-size: 0.66rem;
+}
+
+.tag-picker__empty {
+  padding: 8px;
+  color: var(--muted);
+  font-size: 0.74rem;
+  text-align: center;
+}
+
 :root[data-skin="phantom"] .panel--content {
   padding-top: 18px;
   clip-path: none;
@@ -2249,11 +2342,44 @@ summary:focus-visible {
     color-mix(in srgb, var(--bg) 92%, #000);
 }
 
+.graph-container--fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  height: auto;
+  border-radius: 0;
+}
+
 .graph-canvas {
   display: block;
   width: 100%;
   height: 100%;
   cursor: grab;
+}
+
+.graph-toolbar {
+  position: absolute;
+  inset: 12px;
+  z-index: 6;
+  pointer-events: none;
+}
+
+.graph-toolbar .btn {
+  pointer-events: auto;
+  background: color-mix(in srgb, var(--surface) 92%, #000);
+  box-shadow: 0 8px 20px var(--shadow);
+}
+
+.graph-undo {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+}
+
+.graph-fullscreen-btn {
+  position: absolute;
+  top: 0;
+  right: 0;
 }
 
 .graph-tooltip {

@@ -99,6 +99,36 @@ function App() {
   const [busy, setBusy] = useState("");
   const [draftInfo, setDraftInfo] = useState(() => readDraftInfo());
   const [focusCardId, setFocusCardId] = useState(null);
+  const historyRef = useRef([]);
+  const [historyDepth, setHistoryDepth] = useState(0);
+
+  // Snapshot the editor bundle before a mutation so it can be undone.
+  async function pushHistory() {
+    try {
+      const snapshot = await api("/api/editor/snapshot");
+      const bundle = snapshot.bundle;
+      if (bundle) {
+        historyRef.current.push(bundle);
+        if (historyRef.current.length > 50) historyRef.current.shift();
+        setHistoryDepth(historyRef.current.length);
+      }
+    } catch {
+      // Non-fatal: undo just won't cover this mutation.
+    }
+  }
+
+  async function undo() {
+    const bundle = historyRef.current.pop();
+    setHistoryDepth(historyRef.current.length);
+    if (!bundle) {
+      setStatus("Nothing to undo");
+      return;
+    }
+    await runAction("Undoing", async () => {
+      await api("/api/editor/restore", { method: "POST", body: { bundle } });
+      await refreshEditor({ statusMessage: "Undid last edit" });
+    });
+  }
 
   const assetsByCard = useMemo(() => createAssetMap(editor?.assets ?? []), [editor]);
   const playerReady = editor?.playerValidation?.valid === true;
@@ -122,6 +152,20 @@ function App() {
 
   useEffect(() => {
     void refreshEditor();
+  }, []);
+
+  useEffect(() => {
+    function onKeyDown(event) {
+      const target = event.target;
+      const isEditable = target?.closest?.("input, textarea, select, [contenteditable='true']");
+      if (isEditable) return;
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
+        event.preventDefault();
+        void undo();
+      }
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
   }, []);
 
   useEffect(() => {
@@ -159,6 +203,7 @@ function App() {
 
   async function mutateEditor(label, action, successMessage) {
     return runAction(label, async () => {
+      await pushHistory();
       await action();
       await refreshEditor({ persistDraft: true, statusMessage: successMessage ?? label });
     });
@@ -351,6 +396,9 @@ function App() {
               diagnostics={diagnostics}
               onOpen={openPanel}
               onFocusCard={focusOnCard}
+              onPushHistory={pushHistory}
+              onUndo={undo}
+              historyDepth={historyDepth}
             />
           )}
           {activePanel === "review" && <ReviewPanel diagnostics={diagnostics} onRun={runDiagnostics} onOpen={openPanel} />}
@@ -739,6 +787,117 @@ function RequirementEditor({ card, tagCatalog, onMutate, onStatus }) {
   );
 }
 
+/**
+ * TagPicker is a skin-consistent replacement for <datalist>: a text input with
+ * a filtered dropdown of known tags (showing human label + raw key). Selecting
+ * an option calls onPick with the key; typing a novel key still works via the
+ * input. Closes on escape, blur, or pick.
+ */
+function TagPicker({ value, onChange, onPick, tagCatalog, placeholder, autoFocus }) {
+  const [open, setOpen] = useState(false);
+  const [highlight, setHighlight] = useState(0);
+  const inputRef = useRef(null);
+  const wrapperRef = useRef(null);
+
+  const options = useMemo(() => {
+    const normalized = (value ?? "").trim().toLowerCase();
+    const all = tagCatalog?.tags ?? [];
+    if (!normalized) return all;
+    return all.filter((entry) => (
+      entry.key.toLowerCase().includes(normalized) ||
+      (entry.label ?? "").toLowerCase().includes(normalized)
+    ));
+  }, [value, tagCatalog]);
+
+  useEffect(() => {
+    setHighlight(0);
+  }, [value, open]);
+
+  useEffect(() => {
+    function onDocPointer(event) {
+      if (wrapperRef.current && !wrapperRef.current.contains(event.target)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onDocPointer);
+    return () => document.removeEventListener("mousedown", onDocPointer);
+  }, []);
+
+  function choose(key) {
+    onPick(key);
+    setOpen(false);
+  }
+
+  function onKeyDown(event) {
+    if (!open && (event.key === "ArrowDown" || event.key === "Enter")) {
+      setOpen(true);
+      return;
+    }
+    if (event.key === "Escape") {
+      setOpen(false);
+      return;
+    }
+    if (!open) return;
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setHighlight((current) => Math.min(current + 1, options.length - 1));
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setHighlight((current) => Math.max(current - 1, 0));
+    } else if (event.key === "Enter" && options[highlight]) {
+      event.preventDefault();
+      choose(options[highlight].key);
+    }
+  }
+
+  const showCreate = value && value.trim() && !options.some((entry) => entry.key === value.trim());
+
+  return (
+    <div className="tag-picker" ref={wrapperRef}>
+      <input
+        ref={inputRef}
+        className="tag-picker__input"
+        value={value}
+        autoFocus={autoFocus}
+        placeholder={placeholder}
+        onChange={(event) => { onChange(event.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)}
+        onKeyDown={onKeyDown}
+      />
+      {open && (
+        <ul className="tag-picker__menu" role="listbox">
+          {options.map((entry, index) => (
+            <li key={entry.key} role="option" aria-selected={index === highlight}>
+              <button
+                type="button"
+                className={index === highlight ? "tag-picker__option tag-picker__option--active" : "tag-picker__option"}
+                onMouseEnter={() => setHighlight(index)}
+                onClick={() => choose(entry.key)}
+              >
+                <span className="tag-picker__label">{entry.label || entry.key}</span>
+                <code className="tag-picker__key">{entry.key}</code>
+              </button>
+            </li>
+          ))}
+          {showCreate && (
+            <li role="option">
+              <button
+                type="button"
+                className="tag-picker__option tag-picker__option--create"
+                onClick={() => choose(value.trim())}
+              >
+                <span className="tag-picker__label">Create new tag</span>
+                <code className="tag-picker__key">{value.trim()}</code>
+              </button>
+            </li>
+          )}
+          {options.length === 0 && !showCreate && (
+            <li className="tag-picker__empty">No matching tags. Type to create one.</li>
+          )}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function RequirementGroup({ mode, heading, hint, tags, tagCatalog, onChange, onStatus }) {
   const [draft, setDraft] = useState("");
 
@@ -779,25 +938,13 @@ function RequirementGroup({ mode, heading, hint, tags, tagCatalog, onChange, onS
         {tags.length === 0 && <span className="empty-inline">No {mode} requirement</span>}
       </div>
       <div className="requirement-add">
-        <input
-          list="tag-options"
+        <TagPicker
           value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              event.preventDefault();
-              addTag();
-            }
-          }}
+          onChange={setDraft}
+          onPick={(key) => { onChange([...tags.filter((existing) => existing !== key), key]); setDraft(""); }}
+          tagCatalog={tagCatalog}
           placeholder="Pick or type a tag key"
         />
-        <datalist id="tag-options">
-          {(tagCatalog.tags ?? []).map((entry) => (
-            <option key={entry.key} value={entry.key}>
-              {entry.label ? `${entry.label} (${entry.key})` : entry.key}
-            </option>
-          ))}
-        </datalist>
         <button className="btn btn--ghost" type="button" disabled={!draft.trim()} onClick={() => addTag()}>Add</button>
       </div>
     </div>
@@ -1058,11 +1205,12 @@ function AddCard({ onMutate, onCreated }) {
   );
 }
 
-function StoryPanel({ editor, diagnostics, onOpen, onFocusCard }) {
+function StoryPanel({ editor, diagnostics, onOpen, onFocusCard, onPushHistory, onUndo, historyDepth = 0 }) {
   const [graph, setGraph] = useState(null);
   const [graphError, setGraphError] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
   const [renaming, setRenaming] = useState(null);
+  const [fullscreen, setFullscreen] = useState(false);
   const tagCatalog = useTagCatalog(editor);
 
   useEffect(() => {
@@ -1083,7 +1231,17 @@ function StoryPanel({ editor, diagnostics, onOpen, onFocusCard }) {
     return () => { cancelled = true; };
   }, [editor, refreshKey]);
 
+  useEffect(() => {
+    if (!fullscreen) return undefined;
+    function onKeyDown(event) {
+      if (event.key === "Escape") setFullscreen(false);
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [fullscreen]);
+
   async function saveTagLabel(key, label) {
+    await onPushHistory?.();
     const tagLabels = { ...(editor?.metadata?.tagLabels ?? {}) };
     if (label.trim()) {
       tagLabels[key] = label.trim();
@@ -1142,6 +1300,11 @@ function StoryPanel({ editor, diagnostics, onOpen, onFocusCard }) {
               onFocusCard={onFocusCard}
               tagCatalog={tagCatalog}
               onConnect={createConnection}
+              onDisconnect={deleteConnection}
+              onUndo={onUndo}
+              historyDepth={historyDepth}
+              fullscreen={fullscreen}
+              onToggleFullscreen={() => setFullscreen((value) => !value)}
             />
             <TagDirectory
               tags={tagCatalog.tags ?? []}
@@ -1160,6 +1323,7 @@ function StoryPanel({ editor, diagnostics, onOpen, onFocusCard }) {
   );
 
   async function createConnection({ fromCardId, choiceId, toCardId, tagKey }) {
+    await onPushHistory?.();
     // Set the tag on the source choice's effects...
     const sourceCard = editor?.cards?.find((card) => card.id === fromCardId);
     if (!sourceCard) return;
@@ -1178,6 +1342,50 @@ function StoryPanel({ editor, diagnostics, onOpen, onFocusCard }) {
       const existing = requirements.allTags ?? [];
       if (!existing.includes(tagKey)) {
         requirements.allTags = [...existing, tagKey];
+        await api(`/api/editor/cards/${encodeURIComponent(toCardId)}`, {
+          method: "PUT",
+          body: { changes: { requirements } }
+        });
+      }
+    }
+    setRefreshKey((value) => value + 1);
+  }
+
+  async function deleteConnection(edge) {
+    const { from: fromCardId, to: toCardId, tags = [], choices = [] } = edge;
+    const tagKey = tags[0];
+    if (!tagKey) return;
+    await onPushHistory?.();
+    const choiceIds = choices.map((choice) => choice.id);
+
+    // Remove the tag from each producing choice on the source card.
+    const sourceCard = editor?.cards?.find((card) => card.id === fromCardId);
+    if (sourceCard) {
+      for (const choice of sourceCard.choices ?? []) {
+        if (choiceIds.length > 0 && !choiceIds.includes(choice.id)) continue;
+        const tags = choice.effects?.tags ?? {};
+        if (!(tagKey in tags)) continue;
+        await api(`${choicePath(fromCardId, choice.id)}/effects/tag/${encodeURIComponent(tagKey)}`, {
+          method: "DELETE"
+        });
+      }
+    }
+
+    // Remove the tag from the target card's requirements (all/any/none).
+    const targetCard = editor?.cards?.find((card) => card.id === toCardId);
+    if (targetCard) {
+      const requirements = { ...(targetCard.requirements ?? {}) };
+      let changed = false;
+      for (const mode of ["allTags", "anyTags", "noneTags"]) {
+        const existing = requirements[mode];
+        if (Array.isArray(existing) && existing.includes(tagKey)) {
+          const next = existing.filter((tag) => tag !== tagKey);
+          if (next.length > 0) requirements[mode] = next;
+          else delete requirements[mode];
+          changed = true;
+        }
+      }
+      if (changed) {
         await api(`/api/editor/cards/${encodeURIComponent(toCardId)}`, {
           method: "PUT",
           body: { changes: { requirements } }
@@ -1283,19 +1491,32 @@ function GraphLegend() {
  * re-skinned automatically by reading the active CSS variables. Pan by dragging
  * the background; click a node to open it in the Content panel.
  */
-function StoryGraph({ graph, cards, onFocusCard, tagCatalog, onConnect }) {
+function StoryGraph({
+  graph,
+  cards,
+  onFocusCard,
+  tagCatalog,
+  onConnect,
+  onDisconnect,
+  onUndo,
+  historyDepth = 0,
+  fullscreen = false,
+  onToggleFullscreen
+}) {
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
   const layoutRef = useRef({
     nodes: [],
     byId: new Map(),
     pan: { x: 0, y: 0 },
+    zoom: 1,
     hover: null,
     connect: null
   });
   const animationRef = useRef(0);
   const [tooltip, setTooltip] = useState(null);
   const [pendingConnect, setPendingConnect] = useState(null);
+  const [hoverEdge, setHoverEdge] = useState(null);
 
   // Map card id -> card object for quick metadata lookups (text, excerpt).
   const cardById = useMemo(() => {
@@ -1338,6 +1559,7 @@ function StoryGraph({ graph, cards, onFocusCard, tagCatalog, onConnect }) {
     layoutRef.current.nodes = nodes;
     layoutRef.current.byId = new Map(nodes.map((node) => [node.id, node]));
     layoutRef.current.pan = { x: 0, y: 0 };
+    layoutRef.current.zoom = 1;
   }, [graph]);
 
   // Force simulation + render loop.
@@ -1358,7 +1580,6 @@ function StoryGraph({ graph, cards, onFocusCard, tagCatalog, onConnect }) {
       canvas.height = Math.max(1, Math.round(rect.height * dpr));
       canvas.style.width = `${rect.width}px`;
       canvas.style.height = `${rect.height}px`;
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     }
 
     function step() {
@@ -1431,20 +1652,29 @@ function StoryGraph({ graph, cards, onFocusCard, tagCatalog, onConnect }) {
       const rect = canvas.getBoundingClientRect();
       const width = rect.width;
       const height = rect.height;
+      const dpr = window.devicePixelRatio || 1;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, width, height);
 
+      const zoom = layoutRef.current.zoom;
       const cx = width / 2 + layoutRef.current.pan.x;
       const cy = height / 2 + layoutRef.current.pan.y;
+      const screenPoint = (node) => ({
+        x: cx + node.x * zoom,
+        y: cy + node.y * zoom
+      });
 
       // Edges first so nodes render on top.
       for (const edge of graph.edges) {
         const from = layoutRef.current.byId.get(edge.from);
         const to = layoutRef.current.byId.get(edge.to);
         if (!from || !to) continue;
-        const x1 = cx + from.x;
-        const y1 = cy + from.y;
-        const x2 = cx + to.x;
-        const y2 = cy + to.y;
+        const fromPoint = screenPoint(from);
+        const toPoint = screenPoint(to);
+        const x1 = fromPoint.x;
+        const y1 = fromPoint.y;
+        const x2 = toPoint.x;
+        const y2 = toPoint.y;
         const fromTone = nodeTone.get(edge.from);
         const toTone = nodeTone.get(edge.to);
         const edgeTone = toTone === "unreachable" ? colors.danger : colors.muted;
@@ -1483,18 +1713,32 @@ function StoryGraph({ graph, cards, onFocusCard, tagCatalog, onConnect }) {
         const choiceIds = (edge.choices ?? []).map((choice) => choice.id);
         const tagKey = (edge.tags ?? [])[0];
         const tagLabel = tagKey ? tagDisplayName(tagKey, tagCatalog?.byKey) : null;
+        const isHoverEdge = hoverEdgeRef.current?.key === `${edge.from}->${edge.to}`;
+        if (isHoverEdge) {
+          // Highlight the whole edge when hovered.
+          ctx.strokeStyle = colors.accent2;
+          ctx.globalAlpha = 0.85;
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(x1, y1);
+          ctx.lineTo(x2, y2);
+          ctx.stroke();
+          ctx.globalAlpha = 1;
+        }
         if (choiceIds.length > 0) {
           drawChoiceBadge(ctx, midX, midY, choiceIds, colors);
         }
         if (tagLabel) {
           drawEdgeLabel(ctx, midX, midY + 14, tagLabel, colors);
         }
+        if (isHoverEdge) {
+          drawDisconnectHint(ctx, midX, midY - 18, colors);
+        }
       }
 
       // Nodes.
       for (const node of layoutRef.current.nodes) {
-        const x = cx + node.x;
-        const y = cy + node.y;
+        const { x, y } = screenPoint(node);
         const tone = nodeTone.get(node.id) ?? "reachable";
         const fill = toneFill(tone, colors);
         const stroke = toneStroke(tone, colors);
@@ -1532,18 +1776,19 @@ function StoryGraph({ graph, cards, onFocusCard, tagCatalog, onConnect }) {
         const fromNode = layoutRef.current.byId.get(layoutRef.current.connect.from);
         const hoverId = layoutRef.current.hover;
         const toX = hoverId && hoverId !== layoutRef.current.connect.from
-          ? cx + layoutRef.current.byId.get(hoverId).x
+          ? screenPoint(layoutRef.current.byId.get(hoverId)).x
           : layoutRef.current.connect.toX;
         const toY = hoverId && hoverId !== layoutRef.current.connect.from
-          ? cy + layoutRef.current.byId.get(hoverId).y
+          ? screenPoint(layoutRef.current.byId.get(hoverId)).y
           : layoutRef.current.connect.toY;
         if (fromNode) {
+          const fromPoint = screenPoint(fromNode);
           ctx.strokeStyle = colors.accent2;
           ctx.globalAlpha = 0.7;
           ctx.lineWidth = 2;
           ctx.setLineDash([5, 4]);
           ctx.beginPath();
-          ctx.moveTo(cx + fromNode.x, cy + fromNode.y);
+          ctx.moveTo(fromPoint.x, fromPoint.y);
           ctx.lineTo(toX, toY);
           ctx.stroke();
           ctx.setLineDash([]);
@@ -1563,6 +1808,14 @@ function StoryGraph({ graph, cards, onFocusCard, tagCatalog, onConnect }) {
     };
   }, [graph, nodeTone, colors, tagCatalog]);
 
+  // Keep the hovered edge in a ref so the render loop reads it without re-running.
+  const hoverEdgeRef = useRef(null);
+  useEffect(() => { hoverEdgeRef.current = hoverEdge; }, [hoverEdge]);
+
+  useEffect(() => {
+    window.dispatchEvent(new Event("resize"));
+  }, [fullscreen]);
+
   // Pointer interaction: hover + click + pan + drag-to-connect.
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -1578,15 +1831,16 @@ function StoryGraph({ graph, cards, onFocusCard, tagCatalog, onConnect }) {
     function center() {
       return {
         cx: canvas.getBoundingClientRect().width / 2 + layoutRef.current.pan.x,
-        cy: canvas.getBoundingClientRect().height / 2 + layoutRef.current.pan.y
+        cy: canvas.getBoundingClientRect().height / 2 + layoutRef.current.pan.y,
+        zoom: layoutRef.current.zoom
       };
     }
 
     function nodeAt(point) {
-      const { cx, cy } = center();
+      const { cx, cy, zoom } = center();
       for (const node of layoutRef.current.nodes) {
-        const nx = cx + node.x;
-        const ny = cy + node.y;
+        const nx = cx + node.x * zoom;
+        const ny = cy + node.y * zoom;
         const dx = point.x - nx;
         const dy = point.y - ny;
         if (dx * dx + dy * dy <= (NODE_RADIUS + 4) * (NODE_RADIUS + 4)) return node.id;
@@ -1596,11 +1850,11 @@ function StoryGraph({ graph, cards, onFocusCard, tagCatalog, onConnect }) {
 
     // Returns { nodeId, choiceId } if the point sits on a choice handle, else null.
     function handleAt(point) {
-      const { cx, cy } = center();
+      const { cx, cy, zoom } = center();
       const node = layoutRef.current.byId.get(layoutRef.current.hover);
       if (!node) return null;
-      const nx = cx + node.x;
-      const ny = cy + node.y;
+      const nx = cx + node.x * zoom;
+      const ny = cy + node.y * zoom;
       const handles = [
         { choiceId: "left", x: nx - NODE_RADIUS, y: ny },
         { choiceId: "right", x: nx + NODE_RADIUS, y: ny }
@@ -1609,6 +1863,26 @@ function StoryGraph({ graph, cards, onFocusCard, tagCatalog, onConnect }) {
         const dx = point.x - handle.x;
         const dy = point.y - handle.y;
         if (dx * dx + dy * dy <= 8 * 8) return { nodeId: node.id, choiceId: handle.choiceId };
+      }
+      return null;
+    }
+
+    // Returns the edge whose choice badge / label (at the midpoint) the point is
+    // over. Nodes take priority over edges, so this is only consulted when not
+    // hovering a node. The hit region matches the badge + label drawn at render.
+    function edgeBadgeAt(point) {
+      const { cx, cy, zoom } = center();
+      for (const edge of graph.edges) {
+        const from = layoutRef.current.byId.get(edge.from);
+        const to = layoutRef.current.byId.get(edge.to);
+        if (!from || !to) continue;
+        const midX = cx + ((from.x + to.x) / 2) * zoom;
+        const midY = cy + ((from.y + to.y) / 2) * zoom;
+        // The badge sits at the midpoint; the tag label sits 14px below it.
+        const dx = point.x - midX;
+        const dy = point.y - midY;
+        // Generous hit box covering both badge and label.
+        if (Math.abs(dx) <= 36 && dy >= -10 && dy <= 24) return edge;
       }
       return null;
     }
@@ -1634,6 +1908,7 @@ function StoryGraph({ graph, cards, onFocusCard, tagCatalog, onConnect }) {
       const id = nodeAt(point);
       if (id !== layoutRef.current.hover) {
         layoutRef.current.hover = id;
+        setHoverEdge(null);
         const handle = id ? handleAt(point) : null;
         canvas.style.cursor = handle ? "crosshair" : id ? "pointer" : "grab";
         if (id) {
@@ -1656,7 +1931,29 @@ function StoryGraph({ graph, cards, onFocusCard, tagCatalog, onConnect }) {
         const handle = handleAt(point);
         canvas.style.cursor = handle ? "crosshair" : "pointer";
         setTooltip((current) => (current ? { ...current, x: point.x, y: point.y } : current));
+      } else {
+        // Not over a node: check for an edge badge (disconnect target).
+        const edge = edgeBadgeAt(point);
+        const edgeKey = edge ? `${edge.from}->${edge.to}` : null;
+        setHoverEdge((current) => (current?.key === edgeKey ? current : edge ? { key: edgeKey, edge } : null));
+        canvas.style.cursor = edge ? "pointer" : "grab";
       }
+    }
+
+    function onWheel(event) {
+      event.preventDefault();
+      const point = pointer(event);
+      const rect = canvas.getBoundingClientRect();
+      const cx = rect.width / 2 + layoutRef.current.pan.x;
+      const cy = rect.height / 2 + layoutRef.current.pan.y;
+      const currentZoom = layoutRef.current.zoom;
+      const nextZoom = Math.min(3, Math.max(0.3, currentZoom * (event.deltaY > 0 ? 0.9 : 1.1)));
+      if (nextZoom === currentZoom) return;
+      const graphX = (point.x - cx) / currentZoom;
+      const graphY = (point.y - cy) / currentZoom;
+      layoutRef.current.pan.x = point.x - rect.width / 2 - graphX * nextZoom;
+      layoutRef.current.pan.y = point.y - rect.height / 2 - graphY * nextZoom;
+      layoutRef.current.zoom = nextZoom;
     }
 
     function onDown(event) {
@@ -1678,6 +1975,10 @@ function StoryGraph({ graph, cards, onFocusCard, tagCatalog, onConnect }) {
 
       const id = nodeAt(point);
       if (!id) {
+        // Don't start panning when the press lands on an edge badge — that's a
+        // disconnect click, handled in onUp. Only background presses pan.
+        const edge = edgeBadgeAt(point);
+        if (edge) return;
         panning = true;
         panStart = point;
         canvas.style.cursor = "grabbing";
@@ -1712,6 +2013,13 @@ function StoryGraph({ graph, cards, onFocusCard, tagCatalog, onConnect }) {
       if (id) {
         setTooltip(null);
         onFocusCard?.(id);
+        return;
+      }
+      // Clicking an edge badge disconnects that edge.
+      const edge = edgeBadgeAt(point);
+      if (edge) {
+        setHoverEdge(null);
+        onDisconnect?.(edge);
       }
     }
 
@@ -1720,6 +2028,7 @@ function StoryGraph({ graph, cards, onFocusCard, tagCatalog, onConnect }) {
       panStart = null;
       layoutRef.current.hover = null;
       layoutRef.current.connect = null;
+      setHoverEdge(null);
       canvas.style.cursor = "default";
       setTooltip(null);
     }
@@ -1727,19 +2036,38 @@ function StoryGraph({ graph, cards, onFocusCard, tagCatalog, onConnect }) {
     canvas.style.cursor = "grab";
     canvas.addEventListener("mousemove", onMove);
     canvas.addEventListener("mousedown", onDown);
+    canvas.addEventListener("wheel", onWheel, { passive: false });
     window.addEventListener("mouseup", onUp);
     canvas.addEventListener("mouseleave", onLeave);
     return () => {
       canvas.removeEventListener("mousemove", onMove);
       canvas.removeEventListener("mousedown", onDown);
+      canvas.removeEventListener("wheel", onWheel);
       window.removeEventListener("mouseup", onUp);
       canvas.removeEventListener("mouseleave", onLeave);
     };
-  }, [graph, cardById, nodeTone, onFocusCard]);
+  }, [graph, cardById, nodeTone, onFocusCard, onDisconnect]);
 
   return (
-    <div className="graph-container" ref={containerRef}>
+    <div className={fullscreen ? "graph-container graph-container--fullscreen" : "graph-container"} ref={containerRef}>
       <canvas ref={canvasRef} className="graph-canvas" />
+      <div className="graph-toolbar">
+        <button
+          className="btn btn--ghost graph-undo"
+          type="button"
+          disabled={historyDepth === 0}
+          onClick={() => onUndo?.()}
+        >
+          Undo {historyDepth}
+        </button>
+        <button
+          className="btn btn--ghost graph-fullscreen-btn"
+          type="button"
+          onClick={() => onToggleFullscreen?.()}
+        >
+          {fullscreen ? "Exit fullscreen" : "Fullscreen"}
+        </button>
+      </div>
       {tooltip && (
         <div className="graph-tooltip" style={{ left: tooltip.x, top: tooltip.y }}>
           <strong>{tooltip.id}</strong>
@@ -1784,23 +2112,14 @@ function ConnectDialog({ pending, tagCatalog, onCancel, onConfirm }) {
         unlocks <code>{pending.toCardId}</code>
       </p>
       <label className="connect-dialog__label">Tag that links them</label>
-      <input
-        list="connect-tag-options"
+      <TagPicker
         value={tagKey}
+        onChange={setTagKey}
+        onPick={(key) => setTagKey(key)}
+        tagCatalog={tagCatalog}
+        placeholder="Pick or type a tag key"
         autoFocus
-        onChange={(event) => setTagKey(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" && tagKey.trim()) onConfirm(tagKey.trim());
-          if (event.key === "Escape") onCancel();
-        }}
       />
-      <datalist id="connect-tag-options">
-        {(tagCatalog?.tags ?? []).map((entry) => (
-          <option key={entry.key} value={entry.key}>
-            {entry.label ? `${entry.label} (${entry.key})` : entry.key}
-          </option>
-        ))}
-      </datalist>
       <div className="connect-dialog__actions">
         <button className="btn" type="button" disabled={!tagKey.trim()} onClick={() => onConfirm(tagKey.trim())}>Connect</button>
         <button className="btn btn--ghost" type="button" onClick={onCancel}>Cancel</button>
@@ -1924,6 +2243,25 @@ function drawChoiceHandle(ctx, x, y, label, colors) {
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillText(label, x, y);
+}
+
+function drawDisconnectHint(ctx, x, y, colors) {
+  // Subtle: a small ✕ circle above the badge, only on hover.
+  const r = 8;
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fillStyle = colors.danger;
+  ctx.globalAlpha = 0.92;
+  ctx.fill();
+  ctx.globalAlpha = 1;
+  ctx.strokeStyle = colors.bg;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(x - 3, y - 3);
+  ctx.lineTo(x + 3, y + 3);
+  ctx.moveTo(x + 3, y - 3);
+  ctx.lineTo(x - 3, y + 3);
+  ctx.stroke();
 }
 
 function ReviewPanel({ diagnostics, onRun, onOpen }) {
