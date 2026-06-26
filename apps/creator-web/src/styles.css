@@ -2521,29 +2521,40 @@ summary:focus-visible {
 .graph-edge-delete {
   position: absolute;
   z-index: 7;
-  width: 32px;
-  min-width: 32px;
-  height: 32px;
+  width: 20px;
+  min-width: 20px;
+  height: 20px;
   padding: 0;
-  color: #fff;
-  border-color: color-mix(in srgb, var(--danger) 72%, #fff);
-  border-radius: 50%;
-  background: var(--danger);
-  box-shadow: 0 8px 18px color-mix(in srgb, var(--danger) 34%, transparent);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
   transform: translate(-50%, -50%);
 }
 
 .graph-edge-delete:hover {
-  color: #fff;
-  border-color: #fff;
-  background: color-mix(in srgb, var(--danger) 82%, #000);
-  transform: translate(-50%, -50%) scale(1.08);
+  border: 0;
+  background: transparent;
+  transform: translate(-50%, -50%) scale(1.04);
 }
 
-.graph-edge-delete .graph-icon {
-  width: 20px;
-  height: 20px;
-  stroke-width: 2.1;
+.graph-delete-icon {
+  display: block;
+  width: 16px;
+  height: 16px;
+  overflow: visible;
+}
+
+.graph-delete-icon circle {
+  fill: var(--danger);
+  opacity: 0.92;
+}
+
+.graph-delete-icon path {
+  fill: none;
+  stroke: var(--bg);
+  stroke-width: 1.5;
+  stroke-linecap: round;
 }
 
 .graph-tooltip {

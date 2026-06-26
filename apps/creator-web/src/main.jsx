@@ -2211,11 +2211,11 @@ function MinimizeIcon() {
 
 function DeleteXIcon() {
   return (
-    <GraphIcon>
-      <circle cx="12" cy="12" r="9" />
-      <path d="M8.5 8.5l7 7" />
-      <path d="M15.5 8.5l-7 7" />
-    </GraphIcon>
+    <svg className="graph-delete-icon" viewBox="0 0 16 16" aria-hidden="true">
+      <circle cx="8" cy="8" r="8" />
+      <path d="M5 5l6 6" />
+      <path d="M11 5l-6 6" />
+    </svg>
   );
 }
 
