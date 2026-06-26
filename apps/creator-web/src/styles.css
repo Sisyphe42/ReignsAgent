@@ -171,6 +171,45 @@ html {
   background: var(--scrollbar-track);
 }
 
+:root[data-skin="phantom"] *::-webkit-scrollbar {
+  width: 16px;
+  height: 16px;
+}
+
+:root[data-skin="phantom"] *::-webkit-scrollbar-track {
+  border-inline: 4px solid #09090a;
+  background:
+    repeating-linear-gradient(135deg, #09090a 0 8px, #d71920 8px 11px, #09090a 11px 19px),
+    #09090a;
+}
+
+:root[data-skin="phantom"] *::-webkit-scrollbar-thumb {
+  border: 3px solid #09090a;
+  border-radius: 0;
+  background:
+    linear-gradient(135deg, transparent 0 28%, rgba(247, 242, 233, 0.92) 28% 43%, transparent 43% 100%),
+    repeating-linear-gradient(135deg, rgba(9, 9, 10, 0.26) 0 2px, transparent 2px 7px),
+    #d71920;
+  box-shadow:
+    inset 0 0 0 2px #f4f0e8,
+    inset 0 0 0 5px #d71920;
+}
+
+:root[data-skin="phantom"] *::-webkit-scrollbar-thumb:hover {
+  background:
+    linear-gradient(135deg, transparent 0 20%, #d71920 20% 35%, transparent 35% 100%),
+    repeating-linear-gradient(135deg, rgba(215, 25, 32, 0.28) 0 3px, transparent 3px 8px),
+    #f4f0e8;
+  box-shadow:
+    inset 0 0 0 2px #09090a,
+    inset 0 0 0 5px #f4f0e8;
+}
+
+:root[data-skin="phantom"] *::-webkit-scrollbar-corner {
+  background:
+    linear-gradient(135deg, #09090a 0 47%, #d71920 47% 53%, #f4f0e8 53% 100%);
+}
+
 body {
   margin: 0;
   min-width: 320px;
