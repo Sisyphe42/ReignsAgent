@@ -2676,7 +2676,7 @@ summary:focus-visible {
 /* Story layout: graph + tag directory */
 .story-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 260px;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 330px);
   gap: 14px;
   align-items: stretch;
 }
@@ -2694,6 +2694,118 @@ summary:focus-visible {
   opacity: 0.8;
 }
 
+.story-inspector {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  max-height: 520px;
+  overflow-y: auto;
+}
+
+.story-issues {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--bg) 34%, transparent);
+}
+
+.story-issues__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.story-issues__head small {
+  color: var(--muted);
+  font-family: var(--font-data);
+  font-size: 0.7rem;
+}
+
+.story-issues__list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.story-issues__item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 5px 8px;
+  align-items: start;
+  padding: 9px;
+  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  border-radius: calc(var(--radius) - 1px);
+  background: color-mix(in srgb, var(--surface-2) 42%, transparent);
+}
+
+.story-issues__item--active {
+  border-color: var(--accent-2);
+  background: color-mix(in srgb, var(--accent-2) 10%, transparent);
+}
+
+.story-issues__item--bad {
+  border-left: 3px solid var(--danger);
+}
+
+.story-issues__item--warn {
+  border-left: 3px solid var(--accent);
+}
+
+.story-issues__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.story-issues__meta span {
+  color: var(--ink);
+  font-weight: 700;
+  font-size: 0.78rem;
+}
+
+.story-issues__item code {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--accent-2);
+}
+
+.story-issues__item small,
+.story-issues__item p {
+  grid-column: 1 / -1;
+}
+
+.story-issues__item small {
+  color: var(--muted);
+  font-family: var(--font-data);
+  font-size: 0.68rem;
+}
+
+.story-issues__item p {
+  margin: 0;
+  color: var(--ink);
+  font-size: 0.74rem;
+  line-height: 1.35;
+}
+
+.story-issues__actions {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
 /* Tag directory sidebar */
 .tag-directory {
   display: flex;
@@ -2703,8 +2815,7 @@ summary:focus-visible {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: color-mix(in srgb, var(--bg) 34%, transparent);
-  max-height: 520px;
-  overflow-y: auto;
+  overflow: visible;
 }
 
 .tag-directory__head {
@@ -2890,7 +3001,7 @@ summary:focus-visible {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .tag-directory {
+  .story-inspector {
     max-height: 240px;
   }
 }

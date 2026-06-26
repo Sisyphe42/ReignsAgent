@@ -1211,7 +1211,10 @@ function StoryPanel({ editor, diagnostics, onOpen, onFocusCard, onPushHistory, o
   const [refreshKey, setRefreshKey] = useState(0);
   const [renaming, setRenaming] = useState(null);
   const [fullscreen, setFullscreen] = useState(false);
+  const [graphFocusCardId, setGraphFocusCardId] = useState(null);
   const tagCatalog = useTagCatalog(editor);
+
+  const storyIssues = useMemo(() => deriveStoryIssues({ graph, diagnostics, cards: editor?.cards ?? [] }), [graph, diagnostics, editor?.cards]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1306,13 +1309,22 @@ function StoryPanel({ editor, diagnostics, onOpen, onFocusCard, onPushHistory, o
               fullscreen={fullscreen}
               onToggleFullscreen={() => setFullscreen((value) => !value)}
               diagnostics={diagnostics}
+              focusCardId={graphFocusCardId}
             />
-            <TagDirectory
-              tags={tagCatalog.tags ?? []}
-              renaming={renaming}
-              onRename={setRenaming}
-              onSaveLabel={saveTagLabel}
-            />
+            <aside className="story-inspector">
+              <StoryIssueList
+                issues={storyIssues}
+                focusCardId={graphFocusCardId}
+                onFocusCard={setGraphFocusCardId}
+                onEditCard={onFocusCard}
+              />
+              <TagDirectory
+                tags={tagCatalog.tags ?? []}
+                renaming={renaming}
+                onRename={setRenaming}
+                onSaveLabel={saveTagLabel}
+              />
+            </aside>
           </div>
         )
       ) : (
@@ -1397,19 +1409,100 @@ function StoryPanel({ editor, diagnostics, onOpen, onFocusCard, onPushHistory, o
   }
 }
 
+function StoryIssueList({ issues, focusCardId, onFocusCard, onEditCard }) {
+  return (
+    <section className="story-issues">
+      <div className="story-issues__head">
+        <strong>Story issues</strong>
+        <small>{issues.length}</small>
+      </div>
+      {issues.length === 0 ? (
+        <p className="muted">No graph or review coverage issues in the current run.</p>
+      ) : (
+        <ul className="story-issues__list">
+          {issues.map((issue) => (
+            <li
+              key={issue.key}
+              className={`story-issues__item story-issues__item--${issue.tone} ${focusCardId === issue.cardId ? "story-issues__item--active" : ""}`}
+            >
+              <div className="story-issues__meta">
+                <span>{issue.label}</span>
+                <code>{issue.cardId}</code>
+              </div>
+              <small>{issue.detail}</small>
+              {issue.excerpt && <p>{issue.excerpt}</p>}
+              <div className="story-issues__actions">
+                <button className="btn btn--ghost btn--compact" type="button" onClick={() => onFocusCard?.(issue.cardId)}>Find</button>
+                <button className="btn btn--compact" type="button" onClick={() => onEditCard?.(issue.cardId)}>Edit</button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function deriveStoryIssues({ graph, diagnostics, cards }) {
+  if (!graph) return [];
+  const cardById = new Map(cards.map((card) => [card.id, card]));
+  const issues = [];
+  const seen = new Set();
+
+  function pushIssue(kind, cardId, label, detail, tone) {
+    if (!cardId || seen.has(`${kind}:${cardId}`)) return;
+    seen.add(`${kind}:${cardId}`);
+    issues.push({
+      key: `${kind}:${cardId}`,
+      kind,
+      cardId,
+      label,
+      detail,
+      tone,
+      excerpt: storyCardExcerpt(cardById.get(cardId)?.text)
+    });
+  }
+
+  for (const cardId of graph.unreachableCards ?? []) {
+    pushIssue("unreachable", cardId, "Unreachable", "No static tag path reaches this card.", "bad");
+  }
+  for (const cardId of graph.isolatedCards ?? []) {
+    pushIssue("isolated", cardId, "Isolated", "No incoming or outgoing story graph edges.", "warn");
+  }
+
+  const coverage = diagnostics?.coverage ?? {};
+  for (const cardId of coverage.unvisitedCards ?? []) {
+    pushIssue("unvisited", cardId, "Unvisited", "Monte Carlo review did not draw this card.", "bad");
+  }
+  for (const entry of coverage.lowCycleCards ?? []) {
+    if (!entry?.cardId) continue;
+    pushIssue("low-cycle", entry.cardId, "Low coverage", `Seen in only ${formatRate(entry.rate ?? 0)} of review cycles.`, "warn");
+  }
+
+  return issues.sort((left, right) => {
+    const toneRank = { bad: 0, warn: 1, info: 2 };
+    return (toneRank[left.tone] ?? 9) - (toneRank[right.tone] ?? 9) || left.cardId.localeCompare(right.cardId);
+  });
+}
+
+function storyCardExcerpt(text) {
+  if (!text) return "";
+  return text.length > 76 ? `${text.slice(0, 73)}...` : text;
+}
+
 function TagDirectory({ tags, renaming, onRename, onSaveLabel }) {
   if (tags.length === 0) {
     return (
-      <aside className="tag-directory">
+      <section className="tag-directory">
         <div className="tag-directory__head">
           <strong>Story tags</strong>
         </div>
         <p className="muted">No tags yet. They appear once cards set or require them.</p>
-      </aside>
+      </section>
     );
   }
   return (
-    <aside className="tag-directory">
+    <section className="tag-directory">
       <div className="tag-directory__head">
         <strong>Story tags</strong>
         <small>{tags.length}</small>
@@ -1442,7 +1535,7 @@ function TagDirectory({ tags, renaming, onRename, onSaveLabel }) {
           </li>
         ))}
       </ul>
-    </aside>
+    </section>
   );
 }
 
@@ -1508,7 +1601,8 @@ function StoryGraph({
   historyDepth = 0,
   fullscreen = false,
   onToggleFullscreen,
-  diagnostics
+  diagnostics,
+  focusCardId
 }) {
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
@@ -1614,11 +1708,28 @@ function StoryGraph({
     };
   }
 
+  function centerNode(cardId) {
+    const node = layoutRef.current.byId.get(cardId);
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!node || !rect) return;
+    const nextZoom = Math.max(layoutRef.current.zoom, 0.8);
+    layoutRef.current.zoom = nextZoom;
+    layoutRef.current.pan = {
+      x: -node.x * nextZoom,
+      y: -node.y * nextZoom
+    };
+  }
+
   // Initialize / reset node positions when the graph identity changes.
   useEffect(() => {
     if (!graph) return;
     resetLayout();
   }, [graph]);
+
+  useEffect(() => {
+    if (!focusCardId) return;
+    centerNode(focusCardId);
+  }, [focusCardId, graph, fullscreen]);
 
   // Force simulation + render loop.
   useEffect(() => {
@@ -1798,20 +1909,24 @@ function StoryGraph({
         const fill = toneFill(tone, colors);
         const stroke = toneStroke(tone, colors);
         const isHover = layoutRef.current.hover === node.id;
+        const isFocused = focusCardId === node.id;
         const isConnectTarget = layoutRef.current.connect && layoutRef.current.hover === node.id && layoutRef.current.connect.from !== node.id;
         const heat = heatVisible && heatByCard.hasData ? heatByCard.map.get(node.id) : null;
 
         if (heat) {
           drawNodeHeat(ctx, x, y, heat, colors);
         }
+        if (isFocused) {
+          drawNodeFocus(ctx, x, y, colors);
+        }
 
         ctx.beginPath();
         ctx.arc(x, y, NODE_RADIUS, 0, Math.PI * 2);
         ctx.fillStyle = fill;
         ctx.fill();
-        ctx.lineWidth = tone === "unreachable" || tone === "isolated" ? 2 : isHover ? 2.5 : 1.5;
+        ctx.lineWidth = isFocused ? 3 : tone === "unreachable" || tone === "isolated" ? 2 : isHover ? 2.5 : 1.5;
         if (tone === "unreachable" || tone === "isolated") ctx.setLineDash([4, 3]);
-        ctx.strokeStyle = isConnectTarget ? colors.accent2 : isHover ? colors.accent : stroke;
+        ctx.strokeStyle = isConnectTarget ? colors.accent2 : isFocused ? colors.accent2 : isHover ? colors.accent : stroke;
         ctx.stroke();
         ctx.setLineDash([]);
 
@@ -1866,7 +1981,7 @@ function StoryGraph({
       cancelAnimationFrame(animationRef.current);
       window.removeEventListener("resize", onResize);
     };
-  }, [graph, nodeTone, colors, tagCatalog, heatByCard, heatVisible]);
+  }, [graph, nodeTone, colors, tagCatalog, heatByCard, heatVisible, focusCardId]);
 
   // Keep the hovered edge in a ref so the render loop reads it without re-running.
   const hoverEdgeRef = useRef(null);
@@ -2432,6 +2547,24 @@ function drawNodeHeat(ctx, x, y, heat, colors) {
   ctx.beginPath();
   ctx.arc(x, y, NODE_RADIUS + 5 + intensity * 7, 0, Math.PI * 2);
   ctx.stroke();
+  ctx.restore();
+}
+
+function drawNodeFocus(ctx, x, y, colors) {
+  ctx.save();
+  ctx.globalAlpha = 0.86;
+  ctx.strokeStyle = colors.accent2;
+  ctx.lineWidth = 2;
+  ctx.setLineDash([6, 4]);
+  ctx.beginPath();
+  ctx.arc(x, y, NODE_RADIUS + 15, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.globalAlpha = 0.2;
+  ctx.fillStyle = colors.accent2;
+  ctx.beginPath();
+  ctx.arc(x, y, NODE_RADIUS + 13, 0, Math.PI * 2);
+  ctx.fill();
   ctx.restore();
 }
 
