@@ -2523,22 +2523,27 @@ summary:focus-visible {
   z-index: 7;
   width: 32px;
   min-width: 32px;
-  height: 28px;
+  height: 32px;
   padding: 0;
-  color: var(--danger);
+  color: #fff;
+  border-color: color-mix(in srgb, var(--danger) 72%, #fff);
+  border-radius: 50%;
+  background: var(--danger);
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--danger) 34%, transparent);
   transform: translate(-50%, -50%);
 }
 
 .graph-edge-delete:hover {
-  color: var(--danger);
-  border-color: var(--danger);
-  background: color-mix(in srgb, var(--surface) 82%, var(--danger));
-  transform: translate(-50%, calc(-50% - 1px));
+  color: #fff;
+  border-color: #fff;
+  background: color-mix(in srgb, var(--danger) 82%, #000);
+  transform: translate(-50%, -50%) scale(1.08);
 }
 
 .graph-edge-delete .graph-icon {
-  width: 15px;
-  height: 15px;
+  width: 20px;
+  height: 20px;
+  stroke-width: 2.1;
 }
 
 .graph-tooltip {

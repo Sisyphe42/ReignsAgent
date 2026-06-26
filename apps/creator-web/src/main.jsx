@@ -2107,7 +2107,7 @@ function StoryGraph({
             onDisconnect?.(edge);
           }}
         >
-          <TrashIcon />
+          <DeleteXIcon />
         </button>
       )}
       {tooltip && (
@@ -2209,14 +2209,12 @@ function MinimizeIcon() {
   );
 }
 
-function TrashIcon() {
+function DeleteXIcon() {
   return (
     <GraphIcon>
-      <path d="M4 7h16" />
-      <path d="M9 7V4h6v3" />
-      <path d="M7 7l1 14h8l1-14" />
-      <path d="M10 11v6" />
-      <path d="M14 11v6" />
+      <circle cx="12" cy="12" r="9" />
+      <path d="M8.5 8.5l7 7" />
+      <path d="M15.5 8.5l-7 7" />
     </GraphIcon>
   );
 }
