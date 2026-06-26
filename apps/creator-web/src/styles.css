@@ -2506,6 +2506,21 @@ summary:focus-visible {
   pointer-events: auto;
 }
 
+.graph-view-controls {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  gap: 8px;
+  pointer-events: auto;
+}
+
+.graph-heat-btn.is-active {
+  color: var(--accent-2);
+  border-color: var(--accent-2);
+  background: color-mix(in srgb, var(--surface) 78%, var(--accent-2));
+}
+
 .graph-undo {
   position: absolute;
   left: 0;
@@ -2649,6 +2664,13 @@ summary:focus-visible {
   border-style: dashed;
   border-color: var(--muted);
   background: color-mix(in srgb, var(--muted) 30%, transparent);
+}
+
+.graph-legend__item--heat .graph-legend__dot {
+  border-color: var(--accent-2);
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--accent-2) 20%, transparent),
+    0 0 12px color-mix(in srgb, var(--accent-2) 45%, transparent);
 }
 
 /* Story layout: graph + tag directory */

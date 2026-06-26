@@ -1281,7 +1281,7 @@ function StoryPanel({ editor, diagnostics, onOpen, onFocusCard, onPushHistory, o
         ) : (
           <span className="muted">Run review for simulation coverage</span>
         )}
-        <GraphLegend />
+        <GraphLegend hasHeat={Boolean(diagnostics?.coverage?.cardCycleRates || diagnostics?.coverage?.cardVisitRates)} />
       </div>
       {graphError ? (
         <div className="empty-state">
@@ -1305,6 +1305,7 @@ function StoryPanel({ editor, diagnostics, onOpen, onFocusCard, onPushHistory, o
               historyDepth={historyDepth}
               fullscreen={fullscreen}
               onToggleFullscreen={() => setFullscreen((value) => !value)}
+              diagnostics={diagnostics}
             />
             <TagDirectory
               tags={tagCatalog.tags ?? []}
@@ -1467,7 +1468,7 @@ function TagRenameRow({ entry, onSave, onCancel }) {
   );
 }
 
-function GraphLegend() {
+function GraphLegend({ hasHeat = false }) {
   const items = [
     ["entry", "Entry"],
     ["reachable", "Reachable"],
@@ -1481,6 +1482,11 @@ function GraphLegend() {
           <span className="graph-legend__dot" />{label}
         </li>
       ))}
+      {hasHeat && (
+        <li className="graph-legend__item graph-legend__item--heat">
+          <span className="graph-legend__dot" />Review heat
+        </li>
+      )}
     </ul>
   );
 }
@@ -1501,7 +1507,8 @@ function StoryGraph({
   onUndo,
   historyDepth = 0,
   fullscreen = false,
-  onToggleFullscreen
+  onToggleFullscreen,
+  diagnostics
 }) {
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
@@ -1518,6 +1525,7 @@ function StoryGraph({
   const [pendingConnect, setPendingConnect] = useState(null);
   const [hoverEdge, setHoverEdge] = useState(null);
   const [disconnectButton, setDisconnectButton] = useState(null);
+  const [heatVisible, setHeatVisible] = useState(true);
 
   // Map card id -> card object for quick metadata lookups (text, excerpt).
   const cardById = useMemo(() => {
@@ -1541,26 +1549,75 @@ function StoryGraph({
     return map;
   }, [graph]);
 
+  const heatByCard = useMemo(() => {
+    const coverage = diagnostics?.coverage ?? {};
+    const cycleRates = coverage.cardCycleRates ?? {};
+    const visitRates = coverage.cardVisitRates ?? {};
+    const source = Object.keys(cycleRates).length > 0 ? cycleRates : visitRates;
+    const map = new Map();
+    let maxRate = 0;
+    if (!graph || Object.keys(source).length === 0) {
+      return { map, hasData: false, maxRate };
+    }
+
+    for (const node of graph.nodes) {
+      const value = Number(source[node.id] ?? 0);
+      const rate = Number.isFinite(value) ? Math.max(0, value) : 0;
+      maxRate = Math.max(maxRate, rate);
+      map.set(node.id, { rate, intensity: 0 });
+    }
+
+    const scale = maxRate || 1;
+    for (const [cardId, entry] of map) {
+      map.set(cardId, { ...entry, intensity: Math.min(1, entry.rate / scale) });
+    }
+    return { map, hasData: true, maxRate };
+  }, [diagnostics, graph]);
+
   const colors = useSkinColors();
 
-  // Initialize / reset node positions when the graph identity changes.
-  useEffect(() => {
+  function resetLayout() {
     if (!graph) return;
-    const nodes = graph.nodes.map((node, index) => {
-      const angle = (index / Math.max(graph.nodes.length, 1)) * Math.PI * 2;
-      const radius = 160 + (graph.nodes.length > 8 ? (graph.nodes.length - 8) * 12 : 0);
-      return {
-        id: node.id,
-        x: Math.cos(angle) * radius,
-        y: Math.sin(angle) * radius,
-        vx: 0,
-        vy: 0
-      };
-    });
+    const nodes = createGraphLayoutNodes(graph);
     layoutRef.current.nodes = nodes;
     layoutRef.current.byId = new Map(nodes.map((node) => [node.id, node]));
     layoutRef.current.pan = { x: 0, y: 0 };
     layoutRef.current.zoom = 1;
+    layoutRef.current.hover = null;
+    layoutRef.current.connect = null;
+  }
+
+  function fitToView() {
+    const rect = containerRef.current?.getBoundingClientRect();
+    const nodes = layoutRef.current.nodes;
+    if (!rect || nodes.length === 0) return;
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const node of nodes) {
+      minX = Math.min(minX, node.x);
+      minY = Math.min(minY, node.y);
+      maxX = Math.max(maxX, node.x);
+      maxY = Math.max(maxY, node.y);
+    }
+    const graphWidth = Math.max(1, maxX - minX + NODE_RADIUS * 4);
+    const graphHeight = Math.max(1, maxY - minY + NODE_RADIUS * 4);
+    const padding = fullscreen ? 96 : 56;
+    const availableWidth = Math.max(120, rect.width - padding * 2);
+    const availableHeight = Math.max(120, rect.height - padding * 2);
+    const nextZoom = Math.min(2.5, Math.max(0.35, Math.min(availableWidth / graphWidth, availableHeight / graphHeight)));
+    layoutRef.current.zoom = nextZoom;
+    layoutRef.current.pan = {
+      x: -((minX + maxX) / 2) * nextZoom,
+      y: -((minY + maxY) / 2) * nextZoom
+    };
+  }
+
+  // Initialize / reset node positions when the graph identity changes.
+  useEffect(() => {
+    if (!graph) return;
+    resetLayout();
   }, [graph]);
 
   // Force simulation + render loop.
@@ -1742,6 +1799,11 @@ function StoryGraph({
         const stroke = toneStroke(tone, colors);
         const isHover = layoutRef.current.hover === node.id;
         const isConnectTarget = layoutRef.current.connect && layoutRef.current.hover === node.id && layoutRef.current.connect.from !== node.id;
+        const heat = heatVisible && heatByCard.hasData ? heatByCard.map.get(node.id) : null;
+
+        if (heat) {
+          drawNodeHeat(ctx, x, y, heat, colors);
+        }
 
         ctx.beginPath();
         ctx.arc(x, y, NODE_RADIUS, 0, Math.PI * 2);
@@ -1804,7 +1866,7 @@ function StoryGraph({
       cancelAnimationFrame(animationRef.current);
       window.removeEventListener("resize", onResize);
     };
-  }, [graph, nodeTone, colors, tagCatalog]);
+  }, [graph, nodeTone, colors, tagCatalog, heatByCard, heatVisible]);
 
   // Keep the hovered edge in a ref so the render loop reads it without re-running.
   const hoverEdgeRef = useRef(null);
@@ -1944,6 +2006,7 @@ function StoryGraph({
             tone: nodeTone.get(id),
             incoming: incoming.length,
             outgoing: outgoing.length,
+            heatRate: heatByCard.hasData ? (heatByCard.map.get(id)?.rate ?? 0) : null,
             x: point.x,
             y: point.y
           });
@@ -2062,12 +2125,42 @@ function StoryGraph({
       window.removeEventListener("mouseup", onUp);
       canvas.removeEventListener("mouseleave", onLeave);
     };
-  }, [graph, cardById, nodeTone, onFocusCard, onDisconnect]);
+  }, [graph, cardById, nodeTone, onFocusCard, onDisconnect, heatByCard]);
 
   return (
     <div className={fullscreen ? "graph-container graph-container--fullscreen" : "graph-container"} ref={containerRef}>
       <canvas ref={canvasRef} className="graph-canvas" />
       <div className="graph-toolbar">
+        <div className="graph-view-controls">
+          <button
+            className={`graph-icon-btn graph-heat-btn ${heatVisible && heatByCard.hasData ? "is-active" : ""}`}
+            type="button"
+            disabled={!heatByCard.hasData}
+            title={heatByCard.hasData ? "Toggle review heat" : "Run review to show heat"}
+            aria-label={heatByCard.hasData ? "Toggle review heat" : "Run review to show heat"}
+            onClick={() => setHeatVisible((value) => !value)}
+          >
+            <HeatIcon />
+          </button>
+          <button
+            className="graph-icon-btn graph-fit-btn"
+            type="button"
+            title="Fit to view"
+            aria-label="Fit to view"
+            onClick={fitToView}
+          >
+            <FitIcon />
+          </button>
+          <button
+            className="graph-icon-btn graph-reset-btn"
+            type="button"
+            title="Reset layout"
+            aria-label="Reset layout"
+            onClick={resetLayout}
+          >
+            <ResetLayoutIcon />
+          </button>
+        </div>
         <button
           className="graph-icon-btn graph-undo"
           type="button"
@@ -2116,6 +2209,7 @@ function StoryGraph({
           {tooltip.text && <p>{tooltip.text}</p>}
           <small className={`graph-tooltip__tone graph-tooltip__tone--${tooltip.tone}`}>{tooltip.tone}</small>
           <small>{tooltip.incoming} in · {tooltip.outgoing} out</small>
+          {typeof tooltip.heatRate === "number" && <small>Review cycle rate · {formatRate(tooltip.heatRate)}</small>}
           <small className="graph-tooltip__hint">Drag L/R handles to connect · click to edit</small>
         </div>
       )}
@@ -2209,6 +2303,44 @@ function MinimizeIcon() {
   );
 }
 
+function HeatIcon() {
+  return (
+    <GraphIcon>
+      <path d="M12 3v3" />
+      <path d="M17.5 5.5l-2.1 2.1" />
+      <path d="M21 12h-3" />
+      <path d="M6 12H3" />
+      <path d="M8.6 7.6 6.5 5.5" />
+      <circle cx="12" cy="12" r="3.5" />
+      <path d="M8.5 18c1.6 1 5.4 1 7 0" />
+    </GraphIcon>
+  );
+}
+
+function FitIcon() {
+  return (
+    <GraphIcon>
+      <path d="M8 4H4v4" />
+      <path d="M16 4h4v4" />
+      <path d="M20 16v4h-4" />
+      <path d="M4 16v4h4" />
+      <path d="M9 12h6" />
+      <path d="M12 9v6" />
+    </GraphIcon>
+  );
+}
+
+function ResetLayoutIcon() {
+  return (
+    <GraphIcon>
+      <path d="M4 7h5v5" />
+      <path d="M20 17h-5v-5" />
+      <path d="M8.5 15.5A5 5 0 0 0 17 12" />
+      <path d="M15.5 8.5A5 5 0 0 0 7 12" />
+    </GraphIcon>
+  );
+}
+
 function DeleteXIcon() {
   return (
     <svg className="graph-delete-icon" viewBox="0 0 16 16" aria-hidden="true">
@@ -2220,6 +2352,20 @@ function DeleteXIcon() {
 }
 
 const NODE_RADIUS = 20;
+
+function createGraphLayoutNodes(graph) {
+  return graph.nodes.map((node, index) => {
+    const angle = (index / Math.max(graph.nodes.length, 1)) * Math.PI * 2;
+    const radius = 160 + (graph.nodes.length > 8 ? (graph.nodes.length - 8) * 12 : 0);
+    return {
+      id: node.id,
+      x: Math.cos(angle) * radius,
+      y: Math.sin(angle) * radius,
+      vx: 0,
+      vy: 0
+    };
+  });
+}
 
 /**
  * useSkinColors reads the active dashboard CSS variables once per render so the
@@ -2251,6 +2397,42 @@ function readSkinColors() {
     danger: read("--danger") || "#e06b5f",
     surface: read("--surface") || "#171915"
   };
+}
+
+function formatRate(rate) {
+  return `${Math.round(rate * 100)}%`;
+}
+
+function drawNodeHeat(ctx, x, y, heat, colors) {
+  if (heat.rate <= 0) {
+    ctx.save();
+    ctx.globalAlpha = 0.34;
+    ctx.strokeStyle = colors.danger;
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([3, 4]);
+    ctx.beginPath();
+    ctx.arc(x, y, NODE_RADIUS + 8, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+    return;
+  }
+
+  const intensity = Math.max(0.08, heat.intensity);
+  ctx.save();
+  ctx.globalAlpha = 0.1 + intensity * 0.28;
+  ctx.strokeStyle = colors.accent2;
+  ctx.lineWidth = 5 + intensity * 7;
+  ctx.beginPath();
+  ctx.arc(x, y, NODE_RADIUS + 9 + intensity * 5, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.globalAlpha = 0.32 + intensity * 0.28;
+  ctx.strokeStyle = colors.accent;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.arc(x, y, NODE_RADIUS + 5 + intensity * 7, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
 }
 
 function toneFill(tone, colors) {

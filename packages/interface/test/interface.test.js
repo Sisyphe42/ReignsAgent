@@ -196,6 +196,9 @@ describe("ReignsAgent interface controller", () => {
         factionAverages: { faith: 50, people: 45, military: 50, treasury: 55 }
       },
       coverage: {
+        cardVisitRates: { open: 1, locked: 0 },
+        cardCycleRates: { open: 1, locked: 0 },
+        choiceCycleRates: { left: 0.4, right: 0.6 },
         unvisitedCards: ["locked"],
         lowCycleCards: []
       },
@@ -215,6 +218,9 @@ describe("ReignsAgent interface controller", () => {
 
     assert.equal(projection.healthScore < 100, true);
     assert.match(projection.headline, /blocking issue/);
+    assert.deepEqual(projection.coverage.cardVisitRates, { open: 1, locked: 0 });
+    assert.deepEqual(projection.coverage.cardCycleRates, { open: 1, locked: 0 });
+    assert.deepEqual(projection.coverage.choiceCycleRates, { left: 0.4, right: 0.6 });
     assert.deepEqual(projection.graph.unreachableCards, ["locked"]);
     assert.deepEqual(projection.warnings[0].details.cardIds, ["locked"]);
     assert.equal(projection.factions.find((entry) => entry.faction === "people").gameOverShare, 0.1);

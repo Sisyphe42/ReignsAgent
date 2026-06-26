@@ -511,6 +511,9 @@ export function summarizeDiagnostics(report) {
       averageTurns: round(summary.averageTurns ?? 0),
       gameOverRate: round(summary.gameOverRate ?? 0),
       stalledRate: round(summary.stalledRate ?? 0),
+      cardVisitRates: coverage.cardVisitRates ?? {},
+      cardCycleRates: coverage.cardCycleRates ?? {},
+      choiceCycleRates: coverage.choiceCycleRates ?? {},
       unvisitedCards: coverage.unvisitedCards ?? [],
       lowCycleCards: coverage.lowCycleCards ?? []
     },
