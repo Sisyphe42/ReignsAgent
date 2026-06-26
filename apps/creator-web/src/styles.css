@@ -2364,10 +2364,58 @@ summary:focus-visible {
   pointer-events: none;
 }
 
-.graph-toolbar .btn {
-  pointer-events: auto;
+.graph-icon-btn,
+.graph-edge-delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 38px;
+  height: 38px;
+  padding: 0 10px;
+  color: var(--ink);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
   background: color-mix(in srgb, var(--surface) 92%, #000);
   box-shadow: 0 8px 20px var(--shadow);
+  cursor: pointer;
+  transition: border-color 140ms ease, color 140ms ease, transform 140ms ease, background 140ms ease;
+}
+
+.graph-icon-btn:hover,
+.graph-edge-delete:hover {
+  color: var(--accent-2);
+  border-color: var(--accent-2);
+  background: color-mix(in srgb, var(--surface) 84%, var(--accent-2));
+  transform: translateY(-1px);
+}
+
+.graph-icon-btn:disabled {
+  cursor: not-allowed;
+  color: var(--muted);
+  opacity: 0.52;
+  transform: none;
+}
+
+.graph-icon-btn span {
+  min-width: 1ch;
+  font-family: var(--font-data);
+  font-size: 0.72rem;
+  line-height: 1;
+}
+
+.graph-icon {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.graph-toolbar .graph-icon-btn {
+  pointer-events: auto;
 }
 
 .graph-undo {
@@ -2380,6 +2428,29 @@ summary:focus-visible {
   position: absolute;
   top: 0;
   right: 0;
+}
+
+.graph-edge-delete {
+  position: absolute;
+  z-index: 7;
+  width: 32px;
+  min-width: 32px;
+  height: 28px;
+  padding: 0;
+  color: var(--danger);
+  transform: translate(-50%, -50%);
+}
+
+.graph-edge-delete:hover {
+  color: var(--danger);
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--surface) 82%, var(--danger));
+  transform: translate(-50%, calc(-50% - 1px));
+}
+
+.graph-edge-delete .graph-icon {
+  width: 15px;
+  height: 15px;
 }
 
 .graph-tooltip {

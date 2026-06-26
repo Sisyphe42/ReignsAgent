@@ -1517,6 +1517,7 @@ function StoryGraph({
   const [tooltip, setTooltip] = useState(null);
   const [pendingConnect, setPendingConnect] = useState(null);
   const [hoverEdge, setHoverEdge] = useState(null);
+  const [disconnectButton, setDisconnectButton] = useState(null);
 
   // Map card id -> card object for quick metadata lookups (text, excerpt).
   const cardById = useMemo(() => {
@@ -1731,9 +1732,6 @@ function StoryGraph({
         if (tagLabel) {
           drawEdgeLabel(ctx, midX, midY + 14, tagLabel, colors);
         }
-        if (isHoverEdge) {
-          drawDisconnectHint(ctx, midX, midY - 18, colors);
-        }
       }
 
       // Nodes.
@@ -1813,6 +1811,10 @@ function StoryGraph({
   useEffect(() => { hoverEdgeRef.current = hoverEdge; }, [hoverEdge]);
 
   useEffect(() => {
+    if (!hoverEdge) setDisconnectButton(null);
+  }, [hoverEdge]);
+
+  useEffect(() => {
     window.dispatchEvent(new Event("resize"));
   }, [fullscreen]);
 
@@ -1867,22 +1869,43 @@ function StoryGraph({
       return null;
     }
 
-    // Returns the edge whose choice badge / label (at the midpoint) the point is
-    // over. Nodes take priority over edges, so this is only consulted when not
-    // hovering a node. The hit region matches the badge + label drawn at render.
-    function edgeBadgeAt(point) {
+    function edgeMetrics(edge) {
       const { cx, cy, zoom } = center();
+      const from = layoutRef.current.byId.get(edge.from);
+      const to = layoutRef.current.byId.get(edge.to);
+      if (!from || !to) return null;
+      const fromX = cx + from.x * zoom;
+      const fromY = cy + from.y * zoom;
+      const toX = cx + to.x * zoom;
+      const toY = cy + to.y * zoom;
+      const midX = (fromX + toX) / 2;
+      const midY = (fromY + toY) / 2;
+      const angle = Math.atan2(toY - fromY, toX - fromX);
+      const tipX = toX - Math.cos(angle) * (NODE_RADIUS + 2);
+      const tipY = toY - Math.sin(angle) * (NODE_RADIUS + 2);
+      return { midX, midY, tipX, tipY };
+    }
+
+    // Returns the edge whose choice badge or arrowhead is under the pointer.
+    // It only reveals the explicit delete button; clicks on the graph itself
+    // never delete.
+    function edgeActionAt(point) {
       for (const edge of graph.edges) {
-        const from = layoutRef.current.byId.get(edge.from);
-        const to = layoutRef.current.byId.get(edge.to);
-        if (!from || !to) continue;
-        const midX = cx + ((from.x + to.x) / 2) * zoom;
-        const midY = cy + ((from.y + to.y) / 2) * zoom;
-        // The badge sits at the midpoint; the tag label sits 14px below it.
-        const dx = point.x - midX;
-        const dy = point.y - midY;
-        // Generous hit box covering both badge and label.
-        if (Math.abs(dx) <= 36 && dy >= -10 && dy <= 24) return edge;
+        const metrics = edgeMetrics(edge);
+        if (!metrics) continue;
+        const badgeDx = point.x - metrics.midX;
+        const badgeDy = point.y - metrics.midY;
+        const arrowDx = point.x - metrics.tipX;
+        const arrowDy = point.y - metrics.tipY;
+        const overBadge = Math.abs(badgeDx) <= 34 && Math.abs(badgeDy) <= 14;
+        const overArrow = arrowDx * arrowDx + arrowDy * arrowDy <= 16 * 16;
+        if (overBadge || overArrow) {
+          return {
+            edge,
+            buttonX: overBadge ? metrics.midX : metrics.tipX,
+            buttonY: (overBadge ? metrics.midY : metrics.tipY) - 24
+          };
+        }
       }
       return null;
     }
@@ -1932,11 +1955,11 @@ function StoryGraph({
         canvas.style.cursor = handle ? "crosshair" : "pointer";
         setTooltip((current) => (current ? { ...current, x: point.x, y: point.y } : current));
       } else {
-        // Not over a node: check for an edge badge (disconnect target).
-        const edge = edgeBadgeAt(point);
-        const edgeKey = edge ? `${edge.from}->${edge.to}` : null;
-        setHoverEdge((current) => (current?.key === edgeKey ? current : edge ? { key: edgeKey, edge } : null));
-        canvas.style.cursor = edge ? "pointer" : "grab";
+        const action = edgeActionAt(point);
+        const edgeKey = action ? `${action.edge.from}->${action.edge.to}` : null;
+        setHoverEdge((current) => (current?.key === edgeKey ? current : action ? { key: edgeKey, edge: action.edge } : null));
+        setDisconnectButton(action ? { edge: action.edge, x: action.buttonX, y: action.buttonY } : null);
+        canvas.style.cursor = action ? "default" : "grab";
       }
     }
 
@@ -1975,10 +1998,7 @@ function StoryGraph({
 
       const id = nodeAt(point);
       if (!id) {
-        // Don't start panning when the press lands on an edge badge — that's a
-        // disconnect click, handled in onUp. Only background presses pan.
-        const edge = edgeBadgeAt(point);
-        if (edge) return;
+        if (edgeActionAt(point)) return;
         panning = true;
         panStart = point;
         canvas.style.cursor = "grabbing";
@@ -2015,20 +2035,16 @@ function StoryGraph({
         onFocusCard?.(id);
         return;
       }
-      // Clicking an edge badge disconnects that edge.
-      const edge = edgeBadgeAt(point);
-      if (edge) {
-        setHoverEdge(null);
-        onDisconnect?.(edge);
-      }
     }
 
-    function onLeave() {
+    function onLeave(event) {
       panning = false;
       panStart = null;
       layoutRef.current.hover = null;
       layoutRef.current.connect = null;
+      if (containerRef.current?.contains(event.relatedTarget)) return;
       setHoverEdge(null);
+      setDisconnectButton(null);
       canvas.style.cursor = "default";
       setTooltip(null);
     }
@@ -2053,21 +2069,47 @@ function StoryGraph({
       <canvas ref={canvasRef} className="graph-canvas" />
       <div className="graph-toolbar">
         <button
-          className="btn btn--ghost graph-undo"
+          className="graph-icon-btn graph-undo"
           type="button"
           disabled={historyDepth === 0}
+          title={`Undo (${historyDepth})`}
+          aria-label={`Undo (${historyDepth})`}
           onClick={() => onUndo?.()}
         >
-          Undo {historyDepth}
+          <UndoIcon />
+          <span>{historyDepth}</span>
         </button>
         <button
-          className="btn btn--ghost graph-fullscreen-btn"
+          className="graph-icon-btn graph-fullscreen-btn"
           type="button"
+          title={fullscreen ? "Exit fullscreen" : "Fullscreen"}
+          aria-label={fullscreen ? "Exit fullscreen" : "Fullscreen"}
           onClick={() => onToggleFullscreen?.()}
         >
-          {fullscreen ? "Exit fullscreen" : "Fullscreen"}
+          {fullscreen ? <MinimizeIcon /> : <MaximizeIcon />}
         </button>
       </div>
+      {disconnectButton && (
+        <button
+          className="graph-edge-delete"
+          type="button"
+          title="Delete connection"
+          aria-label="Delete connection"
+          style={{ left: disconnectButton.x, top: disconnectButton.y }}
+          onMouseEnter={() => {
+            const edge = disconnectButton.edge;
+            setHoverEdge({ key: `${edge.from}->${edge.to}`, edge });
+          }}
+          onClick={() => {
+            const edge = disconnectButton.edge;
+            setHoverEdge(null);
+            setDisconnectButton(null);
+            onDisconnect?.(edge);
+          }}
+        >
+          <TrashIcon />
+        </button>
+      )}
       {tooltip && (
         <div className="graph-tooltip" style={{ left: tooltip.x, top: tooltip.y }}>
           <strong>{tooltip.id}</strong>
@@ -2125,6 +2167,57 @@ function ConnectDialog({ pending, tagCatalog, onCancel, onConfirm }) {
         <button className="btn btn--ghost" type="button" onClick={onCancel}>Cancel</button>
       </div>
     </div>
+  );
+}
+
+function GraphIcon({ children }) {
+  return (
+    <svg className="graph-icon" viewBox="0 0 24 24" aria-hidden="true">
+      {children}
+    </svg>
+  );
+}
+
+function UndoIcon() {
+  return (
+    <GraphIcon>
+      <path d="M9 8H4V3" />
+      <path d="M4 8c2-3 5-4.5 8.5-4.5A7.5 7.5 0 1 1 6 14" />
+    </GraphIcon>
+  );
+}
+
+function MaximizeIcon() {
+  return (
+    <GraphIcon>
+      <path d="M8 3H3v5" />
+      <path d="M16 3h5v5" />
+      <path d="M21 16v5h-5" />
+      <path d="M3 16v5h5" />
+    </GraphIcon>
+  );
+}
+
+function MinimizeIcon() {
+  return (
+    <GraphIcon>
+      <path d="M9 4v5H4" />
+      <path d="M15 4v5h5" />
+      <path d="M20 15h-5v5" />
+      <path d="M4 15h5v5" />
+    </GraphIcon>
+  );
+}
+
+function TrashIcon() {
+  return (
+    <GraphIcon>
+      <path d="M4 7h16" />
+      <path d="M9 7V4h6v3" />
+      <path d="M7 7l1 14h8l1-14" />
+      <path d="M10 11v6" />
+      <path d="M14 11v6" />
+    </GraphIcon>
   );
 }
 
@@ -2243,25 +2336,6 @@ function drawChoiceHandle(ctx, x, y, label, colors) {
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillText(label, x, y);
-}
-
-function drawDisconnectHint(ctx, x, y, colors) {
-  // Subtle: a small ✕ circle above the badge, only on hover.
-  const r = 8;
-  ctx.beginPath();
-  ctx.arc(x, y, r, 0, Math.PI * 2);
-  ctx.fillStyle = colors.danger;
-  ctx.globalAlpha = 0.92;
-  ctx.fill();
-  ctx.globalAlpha = 1;
-  ctx.strokeStyle = colors.bg;
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.moveTo(x - 3, y - 3);
-  ctx.lineTo(x + 3, y + 3);
-  ctx.moveTo(x + 3, y - 3);
-  ctx.lineTo(x - 3, y + 3);
-  ctx.stroke();
 }
 
 function ReviewPanel({ diagnostics, onRun, onOpen }) {
