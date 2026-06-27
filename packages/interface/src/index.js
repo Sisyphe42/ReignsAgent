@@ -418,12 +418,12 @@ export function createPlaySession(options = {}) {
 /**
  * runDiagnostics runs the headless reviewer and returns a render-ready projection.
  */
-export function runDiagnostics({ cards, cycles = 1000, maxTurns = 50, seed = 1, thresholds }) {
+export function runDiagnostics({ cards, metadata = {}, cycles = 1000, maxTurns = 50, seed = 1, thresholds }) {
   const reviewOptions = { cards: cloneCards(cards), cycles, maxTurns, seed };
   if (thresholds) {
     reviewOptions.thresholds = cloneJsonSafe(thresholds, "Reviewer thresholds");
   }
-  return summarizeDiagnostics(runMonteCarloReview(reviewOptions));
+  return summarizeDiagnostics(runMonteCarloReview(reviewOptions), { cards, metadata });
 }
 
 /**
@@ -532,13 +532,19 @@ export function deriveStoryGroups({ cards, metadata = {} }) {
  * summarizeDiagnostics projects a raw reviewer report into a dashboard-friendly
  * shape. It does not modify or re-simulate the report.
  */
-export function summarizeDiagnostics(report) {
+export function summarizeDiagnostics(report, context = {}) {
   const summary = report?.summary ?? {};
   const diagnostics = report?.diagnostics ?? {};
   const graph = report?.graph ?? {};
   const coverage = report?.coverage ?? {};
   const warnings = diagnostics.warnings ?? [];
   const cycles = report?.parameters?.cycles ?? 0;
+  const narrative = projectNarrativeDiagnostics({
+    cards: context.cards ?? [],
+    metadata: context.metadata ?? {},
+    coverage,
+    graph
+  });
 
   return {
     schemaVersion: 1,
@@ -563,6 +569,7 @@ export function summarizeDiagnostics(report) {
       unsatisfiedRequiredTags: graph.unsatisfiedRequiredTags ?? [],
       unsatisfiedRequiredVariables: graph.unsatisfiedRequiredVariables ?? []
     },
+    narrative,
     warnings: warnings.map(projectWarning),
     warningCounts: diagnostics.warningCounts ?? { error: 0, warning: 0, info: 0 }
   };
@@ -824,6 +831,140 @@ function projectWarning(warning) {
     message: warning.message,
     details: pickWarningDetails(warning)
   };
+}
+
+function projectNarrativeDiagnostics({ cards, metadata, coverage, graph }) {
+  const groups = deriveStoryGroups({ cards, metadata }).groups;
+  const cardVisitRates = coverage.cardVisitRates ?? {};
+  const cardCycleRates = coverage.cardCycleRates ?? {};
+  const unreachableSet = new Set(graph.unreachableCards ?? []);
+  const lowCycleByCard = new Map((coverage.lowCycleCards ?? []).map((entry) => [entry.cardId, entry.rate ?? 0]));
+
+  const storyGroups = groups.map((group) => projectStoryGroupCoverage({
+    group,
+    cardVisitRates,
+    cardCycleRates,
+    unreachableSet,
+    lowCycleByCard
+  }));
+  const issues = storyGroups.flatMap(projectStoryGroupIssues);
+  const endingGroups = storyGroups.filter((group) => group.type.toLowerCase() === "ending");
+
+  return {
+    schemaVersion: 1,
+    summary: {
+      groupCount: storyGroups.length,
+      coveredGroupCount: storyGroups.filter((group) => group.status === "covered").length,
+      partialGroupCount: storyGroups.filter((group) => group.status === "partial").length,
+      unvisitedGroupCount: storyGroups.filter((group) => group.status === "unvisited" || group.status === "unreachable").length,
+      emptyGroupCount: storyGroups.filter((group) => group.status === "empty").length,
+      endingGroupCount: endingGroups.length,
+      coveredEndingGroupCount: endingGroups.filter((group) => group.status === "covered").length,
+      issueCount: issues.length
+    },
+    storyGroups,
+    issues
+  };
+}
+
+function projectStoryGroupCoverage({ group, cardVisitRates, cardCycleRates, unreachableSet, lowCycleByCard }) {
+  const cardIds = group.cardIds ?? [];
+  const visitedCardIds = cardIds.filter((cardId) => (cardVisitRates[cardId] ?? 0) > 0);
+  const unvisitedCardIds = cardIds.filter((cardId) => (cardVisitRates[cardId] ?? 0) <= 0);
+  const unreachableCardIds = cardIds.filter((cardId) => unreachableSet.has(cardId));
+  const lowCycleCards = cardIds
+    .filter((cardId) => lowCycleByCard.has(cardId))
+    .map((cardId) => ({ cardId, rate: round(lowCycleByCard.get(cardId) ?? 0) }));
+  const coverageRate = cardIds.length > 0 ? visitedCardIds.length / cardIds.length : 0;
+  const averageCycleRate = averageRate(cardIds, cardCycleRates);
+  const status = storyGroupStatus({
+    cardCount: cardIds.length,
+    visitedCount: visitedCardIds.length,
+    unvisitedCount: unvisitedCardIds.length,
+    unreachableCount: unreachableCardIds.length,
+    lowCycleCount: lowCycleCards.length
+  });
+
+  return {
+    id: group.id,
+    label: group.label,
+    type: group.type,
+    description: group.description,
+    tags: group.tags,
+    cardIds,
+    cardCount: cardIds.length,
+    visitedCardIds,
+    unvisitedCardIds,
+    unreachableCardIds,
+    lowCycleCards,
+    coverageRate: round(coverageRate),
+    averageCycleRate,
+    status,
+    tone: storyGroupTone(status)
+  };
+}
+
+function projectStoryGroupIssues(group) {
+  if (group.status === "empty") {
+    return [{
+      code: "empty_story_group",
+      severity: "warning",
+      groupId: group.id,
+      message: `${group.label} has no matching cards.`
+    }];
+  }
+
+  if (group.status === "unreachable") {
+    return [{
+      code: "unreachable_story_group",
+      severity: "error",
+      groupId: group.id,
+      cardIds: group.unreachableCardIds,
+      message: `${group.label} cannot be reached from the current graph.`
+    }];
+  }
+
+  if (group.status === "unvisited") {
+    return [{
+      code: group.type.toLowerCase() === "ending" ? "unvisited_ending_group" : "unvisited_story_group",
+      severity: "error",
+      groupId: group.id,
+      cardIds: group.unvisitedCardIds,
+      message: `${group.label} was never reached in this review run.`
+    }];
+  }
+
+  if (group.status === "partial") {
+    return [{
+      code: group.type.toLowerCase() === "ending" ? "partial_ending_group_coverage" : "partial_story_group_coverage",
+      severity: "warning",
+      groupId: group.id,
+      cardIds: group.unvisitedCardIds,
+      lowCycleCards: group.lowCycleCards,
+      message: `${group.label} has partial or low simulation coverage.`
+    }];
+  }
+
+  return [];
+}
+
+function storyGroupStatus({ cardCount, visitedCount, unvisitedCount, unreachableCount, lowCycleCount }) {
+  if (cardCount === 0) return "empty";
+  if (unreachableCount === cardCount) return "unreachable";
+  if (visitedCount === 0) return "unvisited";
+  if (unvisitedCount > 0 || lowCycleCount > 0) return "partial";
+  return "covered";
+}
+
+function storyGroupTone(status) {
+  if (status === "covered") return "good";
+  if (status === "partial" || status === "empty") return "warn";
+  return "bad";
+}
+
+function averageRate(cardIds, rates) {
+  if (cardIds.length === 0) return 0;
+  return round(cardIds.reduce((total, cardId) => total + (rates[cardId] ?? 0), 0) / cardIds.length);
 }
 
 function pickWarningDetails(warning) {

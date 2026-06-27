@@ -227,6 +227,81 @@ describe("ReignsAgent interface controller", () => {
     assert.equal(projection.factions.find((entry) => entry.faction === "people").gameOverShare, 0.1);
   });
 
+  it("projects story group coverage into narrative diagnostics", () => {
+    const cards = [
+      {
+        id: "gate",
+        text: "Gate.",
+        choices: [{ id: "left", label: "Left", effects: { tags: { grainRelief: true } } }]
+      },
+      {
+        id: "granary",
+        text: "Granary.",
+        requirements: { allTags: ["grainRelief"] },
+        choices: [{ id: "left", label: "Left", effects: {} }]
+      },
+      {
+        id: "ending",
+        text: "Ending.",
+        requirements: { allTags: ["neverProduced"] },
+        choices: [{ id: "left", label: "Left", effects: {} }]
+      }
+    ];
+
+    const projection = summarizeDiagnostics({
+      module: "ReignsAgent-Reviewer",
+      parameters: { cycles: 20 },
+      summary: {
+        averageTurns: 5,
+        gameOverRate: 0,
+        stalledRate: 0,
+        gameOverByFaction: {},
+        factionAverages: {}
+      },
+      coverage: {
+        cardVisitRates: { gate: 1, granary: 0.9, ending: 0 },
+        cardCycleRates: { gate: 1, granary: 0.6, ending: 0 },
+        choiceCycleRates: {},
+        unvisitedCards: ["ending"],
+        lowCycleCards: [{ cardId: "granary", rate: 0.04 }]
+      },
+      graph: {
+        reachableCards: ["gate", "granary"],
+        unreachableCards: ["ending"],
+        unsatisfiedRequiredTags: ["neverProduced"],
+        unsatisfiedRequiredVariables: []
+      },
+      diagnostics: {
+        warnings: [],
+        warningCounts: { error: 0, warning: 0, info: 0 }
+      }
+    }, {
+      cards,
+      metadata: {
+        story: {
+          groups: [
+            { id: "grain", label: "Grain Thread", type: "theme", tags: ["grainRelief"] },
+            { id: "ending", label: "Gate Ending", type: "ending", cardIds: ["ending"] },
+            { id: "empty", label: "Empty Arc", type: "arc", tags: ["ghost"] }
+          ]
+        }
+      }
+    });
+
+    const byId = new Map(projection.narrative.storyGroups.map((group) => [group.id, group]));
+    assert.equal(projection.narrative.summary.groupCount, 3);
+    assert.equal(projection.narrative.summary.issueCount, 3);
+    assert.equal(byId.get("grain").status, "partial");
+    assert.deepEqual(byId.get("grain").lowCycleCards, [{ cardId: "granary", rate: 0.04 }]);
+    assert.equal(byId.get("ending").status, "unreachable");
+    assert.deepEqual(byId.get("ending").unvisitedCardIds, ["ending"]);
+    assert.equal(byId.get("empty").status, "empty");
+    assert.deepEqual(
+      projection.narrative.issues.map((issue) => issue.code),
+      ["partial_story_group_coverage", "unreachable_story_group", "empty_story_group"]
+    );
+  });
+
   it("summarizes reviewer feedback into correction actions for the dashboard", () => {
     const feedback = summarizeFeedback({
       module: "ReignsAgent-Reviewer",

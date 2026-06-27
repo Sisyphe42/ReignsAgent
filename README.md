@@ -30,7 +30,7 @@ npm run content:feedback -- review-report.json
 - **Ingest** — import a local `.cards.json` / content bundle or paste JSON; the Open Court sample deck loads with one click.
 - **Content** — author cards through a structured card desk: card text, left/right labels, author-readable appearance and choice-outcome summaries, default gauge deltas, tag/variable effects, validation messages, and focused repair entry points. Advanced JSON/state editing should remain available without being the default creator path.
 - **Story** — inspect and edit the narrative structure as a graph: card reachability, L/R transition edges, semantic tag labels, drag-to-connect wiring, explicit disconnect controls, reviewer heat, issue navigation, and future chapter/theme/arc grouping.
-- **Review** — run headless narrative QA. Diagnostics should cover coverage, pacing, dead paths, early endings, unvisited endings or story groups, and default gauge pressure instead of treating review as numeric balance only.
+- **Review** — run headless narrative QA. Diagnostics include default gauge pressure, graph/coverage warnings, and `metadata.story.groups` coverage for chapters, themes, arcs, and endings instead of treating review as numeric balance only.
 - **Preview** — Reigns-style swipe over the headless core via keyboard (← → / A D), pointer drag, touch, or buttons. The end-of-run summary shows turns survived and the losing faction; "Play again" restarts.
 - **Build** — assemble and export a self-contained deployable `.game.json`.
 

@@ -2532,6 +2532,137 @@ summary:focus-visible {
   letter-spacing: 0.02em;
 }
 
+.narrative-review {
+  display: grid;
+  gap: 12px;
+  margin: 16px 0;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface-2) 74%, #000);
+}
+
+.narrative-review__head,
+.narrative-review__item-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.narrative-review__head > div,
+.narrative-review__item-head > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.narrative-review__head strong,
+.narrative-review__item-head strong {
+  overflow-wrap: anywhere;
+}
+
+.narrative-review__head span,
+.narrative-review__item-head span,
+.narrative-review__facts {
+  color: var(--muted);
+  font-family: var(--font-data);
+  font-size: 0.68rem;
+}
+
+.narrative-review__metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.narrative-review__metrics div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 9px;
+  border: 1px dashed var(--border);
+  border-radius: calc(var(--radius) - 1px);
+  background: color-mix(in srgb, var(--bg) 28%, transparent);
+}
+
+.narrative-review__metrics span {
+  color: var(--muted);
+  font-family: var(--font-data);
+  font-size: 0.66rem;
+}
+
+.narrative-review__metrics strong {
+  color: var(--ink);
+  font-family: var(--font-data);
+  font-size: 1rem;
+}
+
+.narrative-review__list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.narrative-review__item {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--muted);
+  border-radius: calc(var(--radius) - 1px);
+  background: color-mix(in srgb, var(--bg) 22%, transparent);
+}
+
+.narrative-review__item--good {
+  border-left-color: var(--ok);
+}
+
+.narrative-review__item--warn {
+  border-left-color: var(--accent);
+}
+
+.narrative-review__item--bad {
+  border-left-color: var(--danger);
+}
+
+.narrative-review__item-head code {
+  flex: 0 0 auto;
+  padding: 3px 6px;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) - 2px);
+  background: color-mix(in srgb, var(--surface-3) 55%, transparent);
+  font-family: var(--font-data);
+  font-size: 0.62rem;
+}
+
+.narrative-review__bar {
+  height: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg) 55%, transparent);
+}
+
+.narrative-review__bar span {
+  display: block;
+  height: 100%;
+  min-width: 2px;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent-2), var(--accent));
+}
+
+.narrative-review__facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .preview-layout {
   display: grid;
   grid-template-columns: minmax(180px, 280px) minmax(300px, 460px);
@@ -2590,11 +2721,37 @@ summary:focus-visible {
 :root[data-skin="phantom"] .play-card,
 :root[data-skin="phantom"] .output,
 :root[data-skin="phantom"] .health,
+:root[data-skin="phantom"] .narrative-review,
 :root[data-skin="phantom"] .warning {
   color: #09090a;
   border: 4px solid #09090a;
   background: #f7f2e9;
   box-shadow: 8px 8px 0 #d71920;
+}
+
+:root[data-skin="phantom"] .narrative-review__metrics div,
+:root[data-skin="phantom"] .narrative-review__item {
+  color: #09090a;
+  border-color: rgba(9, 9, 10, 0.42);
+  background: rgba(9, 9, 10, 0.07);
+}
+
+:root[data-skin="phantom"] .narrative-review__head span,
+:root[data-skin="phantom"] .narrative-review__item-head span,
+:root[data-skin="phantom"] .narrative-review__facts,
+:root[data-skin="phantom"] .narrative-review__metrics span,
+:root[data-skin="phantom"] .narrative-review__item-head code {
+  color: #4b443c;
+  font-weight: 800;
+}
+
+:root[data-skin="phantom"] .narrative-review__bar {
+  border-color: #09090a;
+  background: rgba(9, 9, 10, 0.18);
+}
+
+:root[data-skin="phantom"] .narrative-review__bar span {
+  background: linear-gradient(90deg, #1cfeff, #d71920);
 }
 
 :root[data-skin="phantom"] .play-card {
@@ -3491,6 +3648,7 @@ summary:focus-visible {
   .card-editor__meta,
   .editor-controls,
   .content-detail__toolbar,
+  .narrative-review__metrics,
   .effect-row,
   .effect-row--new {
     grid-template-columns: 1fr;

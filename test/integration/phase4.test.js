@@ -55,6 +55,8 @@ describe("Phase 4 interface integration", () => {
       });
       assert.equal(diagnostics.module, "ReignsAgent-Reviewer");
       assert.equal(diagnostics.sampleSize, 6);
+      assert.equal(diagnostics.narrative.summary.groupCount, 4);
+      assert.equal(diagnostics.narrative.storyGroups.some((group) => group.id === "gate-endings"), true);
 
       const buildResult = await api(port, "/api/build/prepare", { method: "POST", body: {} });
       assert.equal(buildResult.build.player.choiceModel, "binary");

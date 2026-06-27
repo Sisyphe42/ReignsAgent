@@ -168,6 +168,7 @@ async function handleApi(req, res, url) {
     const cards = store.editor.toCards();
     const projection = runDiagnostics({
       cards,
+      metadata: store.editor.metadata,
       cycles: Number(body?.cycles ?? 1000),
       maxTurns: Number(body?.maxTurns ?? 50),
       seed: Number(body?.seed ?? 1)

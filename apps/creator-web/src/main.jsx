@@ -2833,6 +2833,7 @@ function ReviewPanel({ diagnostics, onRun, onOpen }) {
             <strong>{diagnostics.healthScore}/100</strong>
             <span>{diagnostics.headline}</span>
           </div>
+          <NarrativeCoverage narrative={diagnostics.narrative} onOpenStory={() => onOpen("story")} />
           <ul className="warning-list">
             {(diagnostics.warnings ?? []).map((warning, index) => (
               <li key={`${warning.code}-${index}`} className={`warning warning--${warning.severity}`}>
@@ -2849,6 +2850,66 @@ function ReviewPanel({ diagnostics, onRun, onOpen }) {
         <div className="empty-state">
           <p>No review has been run in this session.</p>
         </div>
+      )}
+    </section>
+  );
+}
+
+function NarrativeCoverage({ narrative, onOpenStory }) {
+  const groups = narrative?.storyGroups ?? [];
+  const summary = narrative?.summary ?? {};
+
+  return (
+    <section className="narrative-review" aria-label="Narrative coverage">
+      <div className="narrative-review__head">
+        <div>
+          <strong>Narrative coverage</strong>
+          <span>{groups.length > 0 ? `${summary.issueCount ?? 0} story issue${summary.issueCount === 1 ? "" : "s"}` : "No story groups configured"}</span>
+        </div>
+        <button className="btn btn--ghost btn--compact" type="button" onClick={onOpenStory}>Story graph</button>
+      </div>
+
+      {groups.length > 0 ? (
+        <>
+          <div className="narrative-review__metrics" aria-label="Story coverage summary">
+            <div>
+              <span>Groups</span>
+              <strong>{summary.coveredGroupCount ?? 0}/{summary.groupCount ?? 0}</strong>
+            </div>
+            <div>
+              <span>Unvisited</span>
+              <strong>{summary.unvisitedGroupCount ?? 0}</strong>
+            </div>
+            <div>
+              <span>Endings</span>
+              <strong>{summary.coveredEndingGroupCount ?? 0}/{summary.endingGroupCount ?? 0}</strong>
+            </div>
+          </div>
+          <ul className="narrative-review__list">
+            {groups.map((group) => (
+              <li key={group.id} className={`narrative-review__item narrative-review__item--${group.tone}`}>
+                <div className="narrative-review__item-head">
+                  <div>
+                    <strong>{group.label}</strong>
+                    <span>{group.type} · {group.cardCount} card{group.cardCount === 1 ? "" : "s"}</span>
+                  </div>
+                  <code>{group.status}</code>
+                </div>
+                <div className="narrative-review__bar" aria-label={`${group.label} coverage ${formatRate(group.coverageRate)}`}>
+                  <span style={{ width: `${Math.round(group.coverageRate * 100)}%` }} />
+                </div>
+                <div className="narrative-review__facts">
+                  <span>{formatRate(group.coverageRate)} cards reached</span>
+                  <span>{formatRate(group.averageCycleRate)} avg cycle rate</span>
+                  {group.unvisitedCardIds.length > 0 && <span>{group.unvisitedCardIds.length} unvisited</span>}
+                  {group.unreachableCardIds.length > 0 && <span>{group.unreachableCardIds.length} unreachable</span>}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : (
+        <p className="muted">Define chapters, themes, arcs, or endings in metadata.story.groups to review narrative coverage.</p>
       )}
     </section>
   );
