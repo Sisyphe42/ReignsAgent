@@ -3144,10 +3144,18 @@ summary:focus-visible {
 .story-groups__head,
 .story-issues__head {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
+  gap: 8px;
   padding-bottom: 6px;
   border-bottom: 1px solid var(--border);
+}
+
+.story-issues__head > div {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
 }
 
 .story-groups__head small,
@@ -3291,9 +3299,31 @@ summary:focus-visible {
   line-height: 1.35;
 }
 
+.story-issues__repair {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+  border: 1px dashed var(--border);
+  border-radius: calc(var(--radius) - 2px);
+  background: color-mix(in srgb, var(--bg) 28%, transparent);
+}
+
+.story-issues__repair span {
+  color: var(--accent-2);
+  font-family: var(--font-data);
+  font-size: 0.64rem;
+  font-weight: 760;
+}
+
+.story-issues__repair p {
+  color: var(--muted);
+}
+
 .story-issues__actions {
   grid-column: 1 / -1;
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 6px;
 }
@@ -3526,6 +3556,15 @@ summary:focus-visible {
   background: rgba(255, 255, 255, 0.72);
 }
 
+:root[data-skin="phantom"] .story-issues__repair {
+  border-color: rgba(9, 9, 10, 0.36);
+  background: rgba(9, 9, 10, 0.08);
+}
+
+:root[data-skin="phantom"] .story-issues__repair span {
+  color: #075e67;
+}
+
 :root[data-skin="phantom"] .story-groups__item button span,
 :root[data-skin="phantom"] .story-groups__item p,
 :root[data-skin="phantom"] .story-issues__item p,
@@ -3536,6 +3575,7 @@ summary:focus-visible {
 :root[data-skin="phantom"] .story-groups__item small,
 :root[data-skin="phantom"] .story-groups__item code,
 :root[data-skin="phantom"] .story-issues__item small,
+:root[data-skin="phantom"] .story-issues__repair p,
 :root[data-skin="phantom"] .tag-directory__counts,
 :root[data-skin="phantom"] .tag-directory__key {
   color: #4b443c;

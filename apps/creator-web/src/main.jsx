@@ -1288,7 +1288,12 @@ function StoryPanel({ editor, diagnostics, onOpen, onFocusCard, onPushHistory, o
   const tagCatalog = useTagCatalog(editor);
   const storyGroups = useStoryGroups(editor);
 
-  const storyIssues = useMemo(() => deriveStoryIssues({ graph, diagnostics, cards: editor?.cards ?? [] }), [graph, diagnostics, editor?.cards]);
+  const storyIssues = useMemo(() => deriveStoryIssues({
+    graph,
+    diagnostics,
+    cards: editor?.cards ?? [],
+    storyGroups: storyGroups.groups
+  }), [graph, diagnostics, editor?.cards, storyGroups.groups]);
   const selectedStoryGroup = useMemo(() => {
     return storyGroups.groups.find((group) => group.id === selectedGroupId) ?? null;
   }, [storyGroups.groups, selectedGroupId]);
@@ -1415,6 +1420,8 @@ function StoryPanel({ editor, diagnostics, onOpen, onFocusCard, onPushHistory, o
                 focusCardId={graphFocusCardId}
                 onFocusCard={setGraphFocusCardId}
                 onEditCard={onFocusCard}
+                onSelectGroup={setSelectedGroupId}
+                onOpenReview={() => onOpen("review")}
               />
               <TagDirectory
                 tags={tagCatalog.tags ?? []}
@@ -1560,12 +1567,15 @@ function StoryGroupDirectory({ groups, selectedGroupId, onSelect }) {
   );
 }
 
-function StoryIssueList({ issues, focusCardId, onFocusCard, onEditCard }) {
+function StoryIssueList({ issues, focusCardId, onFocusCard, onEditCard, onSelectGroup, onOpenReview }) {
   return (
     <section className="story-issues">
       <div className="story-issues__head">
-        <strong>Story issues</strong>
-        <small>{issues.length}</small>
+        <div>
+          <strong>Story issues</strong>
+          <small>{issues.length}</small>
+        </div>
+        <button className="btn btn--ghost btn--compact" type="button" onClick={onOpenReview}>Review</button>
       </div>
       {issues.length === 0 ? (
         <p className="muted">No graph or review coverage issues in the current run.</p>
@@ -1578,13 +1588,26 @@ function StoryIssueList({ issues, focusCardId, onFocusCard, onEditCard }) {
             >
               <div className="story-issues__meta">
                 <span>{issue.label}</span>
-                <code>{issue.cardId}</code>
+                <code>{issue.cardId ?? issue.groupId}</code>
               </div>
               <small>{issue.detail}</small>
               {issue.excerpt && <p>{issue.excerpt}</p>}
+              {issue.suggestion && (
+                <div className="story-issues__repair">
+                  <span>Recommended fix</span>
+                  <p>{issue.suggestion}</p>
+                </div>
+              )}
               <div className="story-issues__actions">
-                <button className="btn btn--ghost btn--compact" type="button" onClick={() => onFocusCard?.(issue.cardId)}>Find</button>
-                <button className="btn btn--compact" type="button" onClick={() => onEditCard?.(issue.cardId)}>Edit</button>
+                {issue.groupId && (
+                  <button className="btn btn--ghost btn--compact" type="button" onClick={() => onSelectGroup?.(issue.groupId)}>Group</button>
+                )}
+                {issue.cardId && (
+                  <>
+                    <button className="btn btn--ghost btn--compact" type="button" onClick={() => onFocusCard?.(issue.cardId)}>Find</button>
+                    <button className="btn btn--compact" type="button" onClick={() => onEditCard?.(issue.cardId)}>Edit</button>
+                  </>
+                )}
               </div>
             </li>
           ))}
@@ -1594,14 +1617,18 @@ function StoryIssueList({ issues, focusCardId, onFocusCard, onEditCard }) {
   );
 }
 
-function deriveStoryIssues({ graph, diagnostics, cards }) {
+function deriveStoryIssues({ graph, diagnostics, cards, storyGroups = [] }) {
   if (!graph) return [];
   const cardById = new Map(cards.map((card) => [card.id, card]));
+  const groupById = new Map((storyGroups ?? []).map((group) => [group.id, group]));
+  const incomingByCard = countGraphEdges(graph.edges ?? [], "to");
+  const outgoingByCard = countGraphEdges(graph.edges ?? [], "from");
   const issues = [];
   const seen = new Set();
 
   function pushIssue(kind, cardId, label, detail, tone) {
     if (!cardId || seen.has(`${kind}:${cardId}`)) return;
+    const card = cardById.get(cardId);
     seen.add(`${kind}:${cardId}`);
     issues.push({
       key: `${kind}:${cardId}`,
@@ -1610,7 +1637,31 @@ function deriveStoryIssues({ graph, diagnostics, cards }) {
       label,
       detail,
       tone,
-      excerpt: storyCardExcerpt(cardById.get(cardId)?.text)
+      suggestion: repairSuggestionForCardIssue({
+        kind,
+        card,
+        incoming: incomingByCard.get(cardId) ?? 0,
+        outgoing: outgoingByCard.get(cardId) ?? 0
+      }),
+      excerpt: storyCardExcerpt(card?.text)
+    });
+  }
+
+  function pushGroupIssue(issue) {
+    if (!issue?.groupId || seen.has(`group:${issue.code}:${issue.groupId}`)) return;
+    const group = groupById.get(issue.groupId);
+    const targetCardId = firstExistingCardId(issue.cardIds, cardById) ?? firstExistingCardId(group?.cardIds, cardById);
+    seen.add(`group:${issue.code}:${issue.groupId}`);
+    issues.push({
+      key: `group:${issue.code}:${issue.groupId}`,
+      kind: issue.code,
+      groupId: issue.groupId,
+      cardId: targetCardId,
+      label: group?.label ?? issue.groupId,
+      detail: issue.message ?? "Story group coverage needs review.",
+      tone: issue.severity === "error" ? "bad" : "warn",
+      suggestion: repairSuggestionForGroupIssue(issue, group),
+      excerpt: targetCardId ? storyCardExcerpt(cardById.get(targetCardId)?.text) : ""
     });
   }
 
@@ -1629,11 +1680,80 @@ function deriveStoryIssues({ graph, diagnostics, cards }) {
     if (!entry?.cardId) continue;
     pushIssue("low-cycle", entry.cardId, "Low coverage", `Seen in only ${formatRate(entry.rate ?? 0)} of review cycles.`, "warn");
   }
+  for (const issue of diagnostics?.narrative?.issues ?? []) {
+    pushGroupIssue(issue);
+  }
 
   return issues.sort((left, right) => {
     const toneRank = { bad: 0, warn: 1, info: 2 };
-    return (toneRank[left.tone] ?? 9) - (toneRank[right.tone] ?? 9) || left.cardId.localeCompare(right.cardId);
+    const leftTarget = left.cardId ?? left.groupId ?? "";
+    const rightTarget = right.cardId ?? right.groupId ?? "";
+    return (toneRank[left.tone] ?? 9) - (toneRank[right.tone] ?? 9) || leftTarget.localeCompare(rightTarget);
   });
+}
+
+function countGraphEdges(edges, field) {
+  const counts = new Map();
+  for (const edge of edges) {
+    const key = edge?.[field];
+    if (!key) continue;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return counts;
+}
+
+function firstExistingCardId(cardIds = [], cardById) {
+  return cardIds.find((cardId) => cardById.has(cardId)) ?? null;
+}
+
+function repairSuggestionForCardIssue({ kind, card, incoming, outgoing }) {
+  if (kind === "unreachable") {
+    const signal = describePrimaryRequirement(card);
+    return signal
+      ? `Add a reachable left/right choice that sets ${signal}, or relax this card's appearance requirement in Content.`
+      : "Connect a reachable card into this one, or loosen its appearance conditions in Content.";
+  }
+  if (kind === "isolated") {
+    if (incoming === 0 && outgoing === 0) {
+      return "Use drag-to-connect to add an incoming route and an outgoing route, or remove the card if it is only a spare draft.";
+    }
+    if (incoming === 0) return "Add an incoming route from a reachable card so this card can enter the story.";
+    if (outgoing === 0) return "Connect one of this card's left/right choices to a later card so it can continue the story.";
+  }
+  if (kind === "unvisited") {
+    return "Open this card, check its requirements, then add another route or raise its weight; rerun Review after the edit.";
+  }
+  if (kind === "low-cycle") {
+    return "Increase the card's weight, shorten its prerequisites, or add a second route into it; rerun Review to confirm coverage improves.";
+  }
+  return "Focus the card, adjust its requirements or outgoing choice effects, then rerun Review.";
+}
+
+function repairSuggestionForGroupIssue(issue, group) {
+  if (issue.code === "empty_story_group") {
+    return "Add matching cardIds or tags to this story group, or tag the intended cards so the group has something to review.";
+  }
+  if (issue.code?.includes("ending")) {
+    return "Focus the listed ending card, add or strengthen routes into it, then rerun Review to confirm the ending is reachable.";
+  }
+  if (issue.code?.includes("unreachable") || issue.code?.includes("unvisited")) {
+    return "Select the group, inspect its unvisited cards, then connect reachable choices into those cards or loosen their gates.";
+  }
+  if (issue.code?.includes("partial")) {
+    return "Select the group and improve routes to the unvisited or low-cycle cards; rerun Review after the graph changes.";
+  }
+  return group?.cardCount > 0
+    ? "Select this group, inspect its cards, and rerun Review after editing the weak route."
+    : "Attach cards or tags to this group so Review can measure it.";
+}
+
+function describePrimaryRequirement(card) {
+  const requirements = card?.requirements ?? {};
+  if (requirements.allTags?.length) return `tag '${requirements.allTags[0]}'`;
+  if (requirements.anyTags?.length) return `one of: ${requirements.anyTags.slice(0, 3).map((tag) => `'${tag}'`).join(", ")}`;
+  const variable = Object.keys(requirements.variables ?? {})[0];
+  if (variable) return `variable '${variable}'`;
+  return "";
 }
 
 function storyCardExcerpt(text) {
