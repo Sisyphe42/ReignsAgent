@@ -25,6 +25,38 @@
         "allowHtml": false,
         "allowJs": false
       }
+    },
+    "story": {
+      "groups": [
+        {
+          "id": "opening",
+          "label": "Opening Audience",
+          "type": "chapter",
+          "description": "The first audience splits the court into grain or border pressure.",
+          "cardIds": ["gate-audience"]
+        },
+        {
+          "id": "grain-thread",
+          "label": "Grain Thread",
+          "type": "theme",
+          "description": "Civil relief, ledgers, and food politics.",
+          "tags": ["grainRelief", "granaryOpen", "auditLedger", "ledgerOpen", "ledgerSealed"]
+        },
+        {
+          "id": "border-thread",
+          "label": "Border Thread",
+          "type": "theme",
+          "description": "Military pressure, envoys, and watch decisions.",
+          "tags": ["borderAlert", "muster", "envoySent", "watchRewarded", "watchDismissed"]
+        },
+        {
+          "id": "gate-endings",
+          "label": "Dawn Gate Endings",
+          "type": "ending",
+          "description": "The closing gate decision produced by the final card.",
+          "tags": ["gateOpened", "gateClosed"]
+        }
+      ]
     }
   },
   "assets": [

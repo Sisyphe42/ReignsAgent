@@ -36,7 +36,7 @@ npm run content:feedback -- review-report.json
 
 The workbench URL carries panel state (`/workbench/content`) and optional skin state (`?skin=phantom`) without forcing a hard reload, so creator sessions can be refreshed or shared directly. In-progress editor work is still saved to `localStorage` and offered for restore on reload (server-validated through `/api/editor/restore`); player previews also accept the same `skin` query so creator and player surfaces stay visually aligned.
 
-Story progression remains data-driven. Until a reviewed schema change exists, authors should express narrative evolution through existing card `requirements`, choice `effects.tags`, choice `effects.variables`, and optional metadata labels. Future metadata should prefer lightweight organization and presentation hints, such as `metadata.story.groups` for chapters/themes/arcs/endings and `metadata.presentation.gauges` for renaming, describing, hiding, or restyling the default four gauge displays.
+Story progression remains data-driven. Authors should express narrative evolution through existing card `requirements`, choice `effects.tags`, choice `effects.variables`, and optional metadata labels. The Story workspace reads lightweight `metadata.story.groups` entries for chapters/themes/arcs/endings as an authoring organization layer only; these groups filter and explain the graph without changing core scheduling. Future presentation metadata may use `metadata.presentation.gauges` for renaming, describing, hiding, or restyling the default four gauge displays.
 
 `npm run build:game -- <bundle.json> <out.dir>` stitches a deployable player (`player.html` + `player-runtime.js`) that imports only the headless core — no pipeline, reviewer, or dashboard code ships to players.
 

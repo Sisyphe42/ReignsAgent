@@ -7,6 +7,7 @@ import {
   createConnectorConfig,
   createI18nCatalog,
   createPlaySession,
+  deriveStoryGroups,
   deriveTagCatalog,
   loadEditorFromContent,
   localizeCard,
@@ -379,5 +380,54 @@ describe("deriveTagCatalog", () => {
 
     const unlabeled = deriveTagCatalog({ cards, metadata: {} });
     assert.equal(unlabeled.tags[0].label, null);
+  });
+});
+
+describe("deriveStoryGroups", () => {
+  it("projects metadata story groups without changing runtime scheduling", () => {
+    const cards = [
+      {
+        id: "gate",
+        choices: [{ id: "left", effects: { tags: { chapterOpen: true } } }]
+      },
+      {
+        id: "followup",
+        requirements: { allTags: ["chapterOpen"] },
+        choices: [{ id: "left", effects: {} }]
+      },
+      {
+        id: "ending",
+        choices: [{ id: "left", effects: {} }]
+      }
+    ];
+
+    const projection = deriveStoryGroups({
+      cards,
+      metadata: {
+        story: {
+          groups: [
+            { id: "opening", label: "Opening", type: "chapter", tags: ["chapterOpen"] },
+            { id: "finale", label: "Finale", type: "ending", cardIds: ["ending"] }
+          ]
+        }
+      }
+    });
+
+    assert.equal(projection.schemaVersion, 1);
+    assert.deepEqual(projection.groups.map((group) => group.id), ["opening", "finale"]);
+    assert.deepEqual(projection.groups[0].cardIds, ["gate", "followup"]);
+    assert.deepEqual(projection.groups[1].cardIds, ["ending"]);
+    assert.equal(projection.groups[0].type, "chapter");
+    assert.deepEqual(cards[0].choices[0].effects.tags, { chapterOpen: true });
+  });
+
+  it("keeps empty groups visible for authoring review", () => {
+    const projection = deriveStoryGroups({
+      cards: [{ id: "gate", choices: [{ id: "left", effects: {} }] }],
+      metadata: { story: { groups: [{ id: "missing", label: "Missing Arc", tags: ["missingTag"] }] } }
+    });
+
+    assert.equal(projection.groups[0].cardCount, 0);
+    assert.deepEqual(projection.groups[0].cardIds, []);
   });
 });

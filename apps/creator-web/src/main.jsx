@@ -1212,9 +1212,20 @@ function StoryPanel({ editor, diagnostics, onOpen, onFocusCard, onPushHistory, o
   const [renaming, setRenaming] = useState(null);
   const [fullscreen, setFullscreen] = useState(false);
   const [graphFocusCardId, setGraphFocusCardId] = useState(null);
+  const [selectedGroupId, setSelectedGroupId] = useState(null);
   const tagCatalog = useTagCatalog(editor);
+  const storyGroups = useStoryGroups(editor);
 
   const storyIssues = useMemo(() => deriveStoryIssues({ graph, diagnostics, cards: editor?.cards ?? [] }), [graph, diagnostics, editor?.cards]);
+  const selectedStoryGroup = useMemo(() => {
+    return storyGroups.groups.find((group) => group.id === selectedGroupId) ?? null;
+  }, [storyGroups.groups, selectedGroupId]);
+
+  useEffect(() => {
+    if (selectedGroupId && !storyGroups.groups.some((group) => group.id === selectedGroupId)) {
+      setSelectedGroupId(null);
+    }
+  }, [storyGroups.groups, selectedGroupId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1274,6 +1285,10 @@ function StoryPanel({ editor, diagnostics, onOpen, onFocusCard, onPushHistory, o
           label="Tags"
           value={String(tagCatalog.tags?.length ?? 0)}
         />
+        <Metric
+          label="Story groups"
+          value={String(storyGroups.groups?.length ?? 0)}
+        />
       </div>
       <div className="graph-controls">
         <button className="btn" type="button" onClick={() => setRefreshKey((value) => value + 1)}>Refresh graph</button>
@@ -1284,6 +1299,11 @@ function StoryPanel({ editor, diagnostics, onOpen, onFocusCard, onPushHistory, o
         ) : (
           <span className="muted">Run review for simulation coverage</span>
         )}
+        <StoryGroupFilter
+          groups={storyGroups.groups}
+          selectedGroupId={selectedGroupId}
+          onSelect={setSelectedGroupId}
+        />
         <GraphLegend hasHeat={Boolean(diagnostics?.coverage?.cardCycleRates || diagnostics?.coverage?.cardVisitRates)} />
       </div>
       {graphError ? (
@@ -1310,8 +1330,14 @@ function StoryPanel({ editor, diagnostics, onOpen, onFocusCard, onPushHistory, o
               onToggleFullscreen={() => setFullscreen((value) => !value)}
               diagnostics={diagnostics}
               focusCardId={graphFocusCardId}
+              activeGroupCardIds={selectedStoryGroup?.cardIds ?? []}
             />
             <aside className="story-inspector">
+              <StoryGroupDirectory
+                groups={storyGroups.groups}
+                selectedGroupId={selectedGroupId}
+                onSelect={setSelectedGroupId}
+              />
               <StoryIssueList
                 issues={storyIssues}
                 focusCardId={graphFocusCardId}
@@ -1407,6 +1433,59 @@ function StoryPanel({ editor, diagnostics, onOpen, onFocusCard, onPushHistory, o
     }
     setRefreshKey((value) => value + 1);
   }
+}
+
+function StoryGroupFilter({ groups, selectedGroupId, onSelect }) {
+  if (!groups || groups.length === 0) return null;
+  return (
+    <div className="story-group-filter" aria-label="Story group filter">
+      <button
+        className={!selectedGroupId ? "story-group-chip story-group-chip--active" : "story-group-chip"}
+        type="button"
+        onClick={() => onSelect(null)}
+      >
+        All story
+      </button>
+      {groups.map((group) => (
+        <button
+          key={group.id}
+          className={selectedGroupId === group.id ? "story-group-chip story-group-chip--active" : "story-group-chip"}
+          type="button"
+          onClick={() => onSelect(group.id)}
+          title={group.description ?? group.label}
+        >
+          {group.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function StoryGroupDirectory({ groups, selectedGroupId, onSelect }) {
+  return (
+    <section className="story-groups">
+      <div className="story-groups__head">
+        <strong>Story groups</strong>
+        <small>{groups.length}</small>
+      </div>
+      {groups.length === 0 ? (
+        <p className="muted">No chapters, themes, arcs, or endings defined in metadata.story.groups yet.</p>
+      ) : (
+        <ul className="story-groups__list">
+          {groups.map((group) => (
+            <li key={group.id} className={selectedGroupId === group.id ? "story-groups__item story-groups__item--active" : "story-groups__item"}>
+              <button type="button" onClick={() => onSelect(selectedGroupId === group.id ? null : group.id)}>
+                <span>{group.label}</span>
+                <small>{group.type} · {group.cardCount} cards</small>
+              </button>
+              {group.description && <p>{group.description}</p>}
+              {group.tags.length > 0 && <code>{group.tags.join(", ")}</code>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
 }
 
 function StoryIssueList({ issues, focusCardId, onFocusCard, onEditCard }) {
@@ -1602,7 +1681,8 @@ function StoryGraph({
   fullscreen = false,
   onToggleFullscreen,
   diagnostics,
-  focusCardId
+  focusCardId,
+  activeGroupCardIds = []
 }) {
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
@@ -1620,6 +1700,7 @@ function StoryGraph({
   const [hoverEdge, setHoverEdge] = useState(null);
   const [disconnectButton, setDisconnectButton] = useState(null);
   const [heatVisible, setHeatVisible] = useState(true);
+  const activeGroupCardSet = useMemo(() => new Set(activeGroupCardIds), [activeGroupCardIds]);
 
   // Map card id -> card object for quick metadata lookups (text, excerpt).
   const cardById = useMemo(() => {
@@ -1847,8 +1928,10 @@ function StoryGraph({
         const fromTone = nodeTone.get(edge.from);
         const toTone = nodeTone.get(edge.to);
         const edgeTone = toTone === "unreachable" ? colors.danger : colors.muted;
+        const hasGroupFilter = activeGroupCardSet.size > 0;
+        const edgeInGroup = !hasGroupFilter || activeGroupCardSet.has(edge.from) || activeGroupCardSet.has(edge.to);
         ctx.strokeStyle = edgeTone;
-        ctx.globalAlpha = 0.5;
+        ctx.globalAlpha = edgeInGroup ? 0.5 : 0.12;
         ctx.lineWidth = 1.5;
         ctx.beginPath();
         ctx.moveTo(x1, y1);
@@ -1863,6 +1946,7 @@ function StoryGraph({
         const tipX = x2 - Math.cos(angle) * (nodeRadius + 2);
         const tipY = y2 - Math.sin(angle) * (nodeRadius + 2);
         ctx.fillStyle = edgeTone;
+        ctx.globalAlpha = edgeInGroup ? 1 : 0.12;
         ctx.beginPath();
         ctx.moveTo(tipX, tipY);
         ctx.lineTo(
@@ -1875,6 +1959,7 @@ function StoryGraph({
         );
         ctx.closePath();
         ctx.fill();
+        ctx.globalAlpha = 1;
 
         // Choice badges (L/R) at edge midpoint, with semantic tag label.
         const midX = (x1 + x2) / 2;
@@ -1894,10 +1979,10 @@ function StoryGraph({
           ctx.stroke();
           ctx.globalAlpha = 1;
         }
-        if (choiceIds.length > 0) {
+        if (edgeInGroup && choiceIds.length > 0) {
           drawChoiceBadge(ctx, midX, midY, choiceIds, colors);
         }
-        if (tagLabel) {
+        if (edgeInGroup && tagLabel) {
           drawEdgeLabel(ctx, midX, midY + 14, tagLabel, colors);
         }
       }
@@ -1910,13 +1995,17 @@ function StoryGraph({
         const stroke = toneStroke(tone, colors);
         const isHover = layoutRef.current.hover === node.id;
         const isFocused = focusCardId === node.id;
+        const hasGroupFilter = activeGroupCardSet.size > 0;
+        const nodeInGroup = !hasGroupFilter || activeGroupCardSet.has(node.id);
         const isConnectTarget = layoutRef.current.connect && layoutRef.current.hover === node.id && layoutRef.current.connect.from !== node.id;
         const heat = heatVisible && heatByCard.hasData ? heatByCard.map.get(node.id) : null;
 
-        if (heat) {
+        ctx.save();
+        ctx.globalAlpha = nodeInGroup ? 1 : 0.22;
+        if (nodeInGroup && heat) {
           drawNodeHeat(ctx, x, y, heat, colors);
         }
-        if (isFocused) {
+        if (nodeInGroup && isFocused) {
           drawNodeFocus(ctx, x, y, colors);
         }
 
@@ -1944,6 +2033,7 @@ function StoryGraph({
         ctx.textBaseline = "top";
         const label = node.id.length > 14 ? `${node.id.slice(0, 13)}…` : node.id;
         ctx.fillText(label, x, y + NODE_RADIUS + 4);
+        ctx.restore();
       }
 
       // Connection drag preview.
@@ -1981,7 +2071,7 @@ function StoryGraph({
       cancelAnimationFrame(animationRef.current);
       window.removeEventListener("resize", onResize);
     };
-  }, [graph, nodeTone, colors, tagCatalog, heatByCard, heatVisible, focusCardId]);
+  }, [graph, nodeTone, colors, tagCatalog, heatByCard, heatVisible, focusCardId, activeGroupCardSet]);
 
   // Keep the hovered edge in a ref so the render loop reads it without re-running.
   const hoverEdgeRef = useRef(null);
@@ -2982,6 +3072,36 @@ function useTagCatalog(editor) {
   }, [editorRevision]);
 
   return { ...catalog, error };
+}
+
+/**
+ * useStoryGroups reads metadata.story.groups as a creator-facing organization
+ * layer. These groups only filter/highlight the Story UI; they do not change
+ * runtime scheduling or card eligibility.
+ */
+function useStoryGroups(editor) {
+  const [projection, setProjection] = useState({ groups: [] });
+  const [error, setError] = useState("");
+  const editorRevision = `${editor?.cards?.length ?? 0}:${JSON.stringify(editor?.metadata?.story?.groups ?? [])}`;
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const result = await api("/api/editor/story-groups");
+        if (cancelled) return;
+        setProjection({ groups: result.groups ?? [] });
+        setError("");
+      } catch (loadError) {
+        if (cancelled) return;
+        setError(loadError.message);
+      }
+    }
+    void load();
+    return () => { cancelled = true; };
+  }, [editorRevision]);
+
+  return { ...projection, error };
 }
 
 /**

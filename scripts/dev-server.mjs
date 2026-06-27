@@ -9,6 +9,7 @@ import {
   createCardEditor,
   createConnectorConfig,
   createPlaySession,
+  deriveStoryGroups,
   deriveTagCatalog,
   getCardGraph,
   loadEditorFromContent,
@@ -157,6 +158,10 @@ async function handleApi(req, res, url) {
 
   if (path === "/api/editor/tags" && req.method === "GET") {
     return sendJson(res, deriveTagCatalog({ cards: store.editor.toCards(), metadata: store.editor.metadata }));
+  }
+
+  if (path === "/api/editor/story-groups" && req.method === "GET") {
+    return sendJson(res, deriveStoryGroups({ cards: store.editor.toCards(), metadata: store.editor.metadata }));
   }
 
   if (path === "/api/diagnostics/run" && req.method === "POST") {

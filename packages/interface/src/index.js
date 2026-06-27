@@ -489,6 +489,46 @@ export function deriveTagCatalog({ cards, metadata = {} }) {
 }
 
 /**
+ * deriveStoryGroups projects metadata.story.groups into a creator-facing
+ * organization layer. Groups are data labels only: they do not alter runtime
+ * scheduling, card eligibility, or player-facing rules.
+ */
+export function deriveStoryGroups({ cards, metadata = {} }) {
+  const cloned = cloneCards(cards);
+  const groups = Array.isArray(metadata?.story?.groups) ? metadata.story.groups : [];
+  const cardTags = new Map(cloned.map((card) => [card.id, collectCardStoryTags(card)]));
+
+  const projected = groups
+    .filter((group) => group && typeof group === "object")
+    .map((group, index) => {
+      const id = isNonEmptyString(group.id) ? group.id : `group-${index + 1}`;
+      const label = isNonEmptyString(group.label) ? group.label : id;
+      const type = isNonEmptyString(group.type) ? group.type : "theme";
+      const tags = normalizeStringList(group.tags ?? group.tagKeys ?? []);
+      const explicitCardIds = normalizeStringList(group.cardIds ?? group.cards ?? []);
+      const explicit = new Set(explicitCardIds);
+      const tagSet = new Set(tags);
+      const matchedCardIds = cloned
+        .filter((card) => explicit.has(card.id) || [...(cardTags.get(card.id) ?? [])].some((tag) => tagSet.has(tag)))
+        .map((card) => card.id);
+
+      return {
+        id,
+        label,
+        type,
+        description: isNonEmptyString(group.description) ? group.description : null,
+        tags,
+        explicitCardIds,
+        cardIds: matchedCardIds,
+        cardCount: matchedCardIds.length,
+        color: isNonEmptyString(group.color) ? group.color : null
+      };
+    });
+
+  return { schemaVersion: 1, groups: projected };
+}
+
+/**
  * summarizeDiagnostics projects a raw reviewer report into a dashboard-friendly
  * shape. It does not modify or re-simulate the report.
  */
@@ -795,6 +835,26 @@ function pickWarningDetails(warning) {
     }
   }
   return details;
+}
+
+function collectCardStoryTags(card) {
+  const tags = new Set();
+  const requirements = card.requirements ?? {};
+  for (const key of requirements.allTags ?? []) tags.add(key);
+  for (const key of requirements.anyTags ?? []) tags.add(key);
+  for (const key of requirements.noneTags ?? []) tags.add(key);
+
+  for (const choice of card.choices ?? []) {
+    for (const [key, value] of Object.entries(choice.effects?.tags ?? {})) {
+      if (value !== false && value !== null && value !== undefined) tags.add(key);
+    }
+  }
+  return tags;
+}
+
+function normalizeStringList(value) {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.map((entry) => (typeof entry === "string" ? entry.trim() : entry)).filter(isNonEmptyString))];
 }
 
 function createBuildId(bundle) {

@@ -2419,6 +2419,34 @@ summary:focus-visible {
   margin: 14px 0;
 }
 
+.story-group-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-width: 100%;
+}
+
+.story-group-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 4px 9px;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface) 74%, transparent);
+  font-family: var(--font-data);
+  font-size: 0.68rem;
+  cursor: pointer;
+}
+
+.story-group-chip:hover,
+.story-group-chip--active {
+  color: var(--ink);
+  border-color: var(--accent-2);
+  background: color-mix(in srgb, var(--accent-2) 14%, var(--surface));
+}
+
 .graph-container {
   position: relative;
   overflow: hidden;
@@ -2703,6 +2731,7 @@ summary:focus-visible {
   overflow-y: auto;
 }
 
+.story-groups,
 .story-issues {
   display: flex;
   flex-direction: column;
@@ -2713,6 +2742,7 @@ summary:focus-visible {
   background: color-mix(in srgb, var(--bg) 34%, transparent);
 }
 
+.story-groups__head,
 .story-issues__head {
   display: flex;
   align-items: baseline;
@@ -2721,12 +2751,14 @@ summary:focus-visible {
   border-bottom: 1px solid var(--border);
 }
 
+.story-groups__head small,
 .story-issues__head small {
   color: var(--muted);
   font-family: var(--font-data);
   font-size: 0.7rem;
 }
 
+.story-groups__list,
 .story-issues__list {
   display: flex;
   flex-direction: column;
@@ -2734,6 +2766,67 @@ summary:focus-visible {
   padding: 0;
   margin: 0;
   list-style: none;
+}
+
+.story-groups__item {
+  list-style: none;
+  padding: 8px;
+  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  border-radius: calc(var(--radius) - 1px);
+  background: color-mix(in srgb, var(--surface-2) 42%, transparent);
+}
+
+.story-groups__item--active {
+  border-color: var(--accent-2);
+  background: color-mix(in srgb, var(--accent-2) 10%, transparent);
+}
+
+.story-groups__item button {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 0;
+  color: inherit;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.story-groups__item button span {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--ink);
+  font-weight: 700;
+  font-size: 0.78rem;
+}
+
+.story-groups__item small,
+.story-groups__item code,
+.story-groups__item p {
+  color: var(--muted);
+  font-family: var(--font-data);
+  font-size: 0.66rem;
+}
+
+.story-groups__item p {
+  margin: 6px 0 0;
+  color: var(--ink);
+  font-family: var(--font-ui);
+  line-height: 1.35;
+}
+
+.story-groups__item code {
+  display: block;
+  margin-top: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .story-issues__item {
@@ -3017,6 +3110,37 @@ summary:focus-visible {
 :root[data-skin="phantom"] .graph-tooltip strong { color: #d71920; }
 :root[data-skin="phantom"] .graph-tooltip p { color: #2d2924; }
 :root[data-skin="phantom"] .graph-tooltip small { color: #4b443c; }
+
+:root[data-skin="phantom"] .story-groups,
+:root[data-skin="phantom"] .story-issues,
+:root[data-skin="phantom"] .tag-directory {
+  color: #09090a;
+  border-color: #09090a;
+  background: rgba(247, 242, 233, 0.86);
+}
+
+:root[data-skin="phantom"] .story-groups__item,
+:root[data-skin="phantom"] .story-issues__item,
+:root[data-skin="phantom"] .tag-directory__item {
+  color: #09090a;
+  border-color: rgba(9, 9, 10, 0.35);
+  background: rgba(255, 255, 255, 0.72);
+}
+
+:root[data-skin="phantom"] .story-groups__item button span,
+:root[data-skin="phantom"] .story-groups__item p,
+:root[data-skin="phantom"] .story-issues__item p,
+:root[data-skin="phantom"] .tag-directory__label {
+  color: #09090a;
+}
+
+:root[data-skin="phantom"] .story-groups__item small,
+:root[data-skin="phantom"] .story-groups__item code,
+:root[data-skin="phantom"] .story-issues__item small,
+:root[data-skin="phantom"] .tag-directory__counts,
+:root[data-skin="phantom"] .tag-directory__key {
+  color: #4b443c;
+}
 
 @media (max-width: 560px) {
   .graph-container {
