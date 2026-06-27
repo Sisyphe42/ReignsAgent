@@ -24,6 +24,13 @@ async function sendHtml(server, res, fileUrl, urlPath) {
   res.end(transformed);
 }
 
+async function sendRawHtml(res, fileUrl) {
+  const html = await readFile(fileUrl, "utf8");
+  res.statusCode = 200;
+  res.setHeader("content-type", "text/html; charset=utf-8");
+  res.end(html);
+}
+
 async function sendAsset(res, pathname) {
   const filePath = new URL(`../../packages/interface/web${pathname}`, import.meta.url);
   if (!existsSync(filePath)) {
@@ -69,7 +76,7 @@ export default defineConfig({
             return;
           }
           if (pathname === "/play") {
-            await sendHtml(server, res, playerHtml, pathname);
+            await sendRawHtml(res, playerHtml);
             return;
           }
           if (pathname.startsWith("/assets/")) {
@@ -85,6 +92,7 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: false,
+    allowedHosts: true,
     fs: {
       allow: [".."]
     },
