@@ -2,7 +2,7 @@ export const FACTIONS = Object.freeze(["faith", "people", "military", "treasury"
 
 const DEFAULT_FACTION_VALUE = 50;
 const SNAPSHOT_SCHEMA_VERSION = 1;
-const REQUIREMENT_KEYS = new Set(["allTags", "anyTags", "noneTags", "variables"]);
+const REQUIREMENT_KEYS = new Set(["allTags", "anyTags", "noneTags", "variables", "factions"]);
 const EFFECT_KEYS = new Set(["tags", "variables", "factions", "activateHooks", "dismissHooks"]);
 const HOOK_NAMES = new Set(["on_acquire", "on_tick", "on_dismiss"]);
 
@@ -347,6 +347,8 @@ function validateRequirements(cardId, requirements) {
   if (requirements.variables !== undefined) {
     assertPlainRecord(requirements.variables, `Card '${cardId}' variables requirement`);
   }
+
+  validateFactionRequirements(cardId, requirements.factions);
 }
 
 function validateEffects(cardId, choiceId, effects) {
@@ -569,7 +571,8 @@ function requirementsMatch(requirements = {}, state) {
     allMatch(requirements.allTags, state.tags) &&
     anyMatch(requirements.anyTags, state.tags) &&
     noneMatch(requirements.noneTags, state.tags) &&
-    variablesMatch(requirements.variables, state.variables)
+    variablesMatch(requirements.variables, state.variables) &&
+    factionsMatch(requirements.factions, state.factions)
   );
 }
 
@@ -587,6 +590,71 @@ function noneMatch(blocked = [], tags) {
 
 function variablesMatch(required = {}, variables) {
   return Object.entries(required).every(([variable, value]) => variables[variable] === value);
+}
+
+function factionsMatch(required = {}, factions) {
+  return Object.entries(required).every(([faction, rule]) => factionRuleMatches(factions[faction], rule));
+}
+
+function factionRuleMatches(value, rule) {
+  if (Number.isFinite(rule)) {
+    return value === rule;
+  }
+
+  if (rule.equals !== undefined && value !== rule.equals) {
+    return false;
+  }
+  if (rule.min !== undefined && value < rule.min) {
+    return false;
+  }
+  if (rule.max !== undefined && value > rule.max) {
+    return false;
+  }
+  return true;
+}
+
+function validateFactionRequirements(cardId, requirements) {
+  if (requirements === undefined) {
+    return;
+  }
+
+  assertPlainRecord(requirements, `Card '${cardId}' faction requirements`);
+
+  for (const [faction, rule] of Object.entries(requirements)) {
+    assertFaction(faction);
+    validateFactionRequirementRule(`Card '${cardId}' faction requirement '${faction}'`, rule);
+  }
+}
+
+function validateFactionRequirementRule(context, rule) {
+  if (Number.isFinite(rule)) {
+    validateFactionThreshold(context, rule);
+    return;
+  }
+
+  assertPlainRecord(rule, context);
+  const allowedKeys = new Set(["min", "max", "equals"]);
+  const keys = Object.keys(rule);
+  if (keys.length === 0) {
+    throw new CoreError(`${context} must include min, max, or equals`);
+  }
+
+  for (const key of keys) {
+    if (!allowedKeys.has(key)) {
+      throw new CoreError(`${context} has unknown key '${key}'`);
+    }
+    validateFactionThreshold(`${context}.${key}`, rule[key]);
+  }
+
+  if (rule.min !== undefined && rule.max !== undefined && rule.min > rule.max) {
+    throw new CoreError(`${context}.min must be less than or equal to max`);
+  }
+}
+
+function validateFactionThreshold(context, value) {
+  if (!Number.isFinite(value) || value < 0 || value > 100) {
+    throw new CoreError(`${context} must be a finite number between 0 and 100`);
+  }
 }
 
 function evaluateGameOver(factions) {

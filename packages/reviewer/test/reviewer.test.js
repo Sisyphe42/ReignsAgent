@@ -120,6 +120,73 @@ describe("ReignsAgent reviewer", () => {
     assert.deepEqual(graph.unsatisfiedRequiredVariables, ["decreeSigned"]);
   });
 
+  it("analyzes compound choice and faction-gated story branches", () => {
+    const graph = analyzeCardGraph([
+      {
+        id: "opening",
+        choices: [
+          {
+            id: "left",
+            label: "Hear grain",
+            effects: {
+              factions: { people: 6, treasury: -4 },
+              tags: { grainRelief: true },
+              variables: { openingPetition: "grain" }
+            }
+          },
+          {
+            id: "right",
+            label: "Hear border",
+            effects: {
+              factions: { military: 6 },
+              tags: { borderAlert: true },
+              variables: { openingPetition: "border" }
+            }
+          }
+        ]
+      },
+      {
+        id: "grain-branch",
+        requirements: {
+          allTags: ["grainRelief"],
+          variables: { openingPetition: "grain" },
+          factions: { people: { min: 55 }, treasury: { max: 48 } }
+        },
+        choices: [{ id: "left", effects: {} }]
+      },
+      {
+        id: "border-branch",
+        requirements: {
+          allTags: ["borderAlert"],
+          variables: { openingPetition: "border" },
+          factions: { military: { min: 55 } }
+        },
+        choices: [{ id: "left", effects: {} }]
+      }
+    ]);
+
+    assert.deepEqual(graph.edges, [
+      {
+        from: "opening",
+        to: "grain-branch",
+        choices: [{ id: "left", label: "Hear grain" }],
+        tags: ["grainRelief"],
+        variables: ["openingPetition"],
+        factions: ["people", "treasury"]
+      },
+      {
+        from: "opening",
+        to: "border-branch",
+        choices: [{ id: "right", label: "Hear border" }],
+        tags: ["borderAlert"],
+        variables: ["openingPetition"],
+        factions: ["military"]
+      }
+    ]);
+    assert.deepEqual(graph.reachableCards, ["opening", "grain-branch", "border-branch"]);
+    assert.deepEqual(graph.unsatisfiedRequiredFactions, []);
+  });
+
   it("attributes enabling signals to specific choices and preserves labels", () => {
     const graph = analyzeCardGraph([
       {
@@ -196,6 +263,31 @@ describe("ReignsAgent reviewer", () => {
     assert.equal(
       report.diagnostics.warnings.find((warning) => warning.code === "unsatisfied_required_variables").variables[0],
       "missingVariable"
+    );
+  });
+
+  it("reports unsatisfied faction threshold requirements as diagnostics", () => {
+    const report = runMonteCarloReview({
+      cards: [
+        {
+          id: "visible",
+          choices: [{ id: "pass", effects: {} }]
+        },
+        {
+          id: "hidden",
+          requirements: { factions: { people: { min: 80 } } },
+          choices: [{ id: "pass", effects: {} }]
+        }
+      ],
+      cycles: 2,
+      maxTurns: 2,
+      seed: 1
+    });
+
+    assert.deepEqual(report.graph.unsatisfiedRequiredFactions, ["people"]);
+    assert.equal(
+      report.diagnostics.warnings.find((warning) => warning.code === "unsatisfied_required_factions").factions[0],
+      "people"
     );
   });
 

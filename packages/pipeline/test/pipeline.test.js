@@ -137,6 +137,7 @@ describe("ReignsAgent pipeline", () => {
           },
           { code: "unsatisfied_required_tags", message: "missing tags", tags: ["royal"] },
           { code: "unsatisfied_required_variables", message: "missing variables", variables: ["edictSigned"] },
+          { code: "unsatisfied_required_factions", message: "missing faction threshold", factions: ["people"] },
           { code: "stalled_cycles", message: "no cards", cycles: 2 },
           { code: "high_game_over_rate", severity: "warning", message: "too many endings" }
         ]
@@ -151,12 +152,13 @@ describe("ReignsAgent pipeline", () => {
         "raise_card_exposure",
         "add_tag_producers",
         "add_variable_producers",
+        "adjust_faction_requirements",
         "add_fallback_cards",
         "rebalance_faction_pressure"
       ]
     );
-    assert.equal(feedback.summary.actionCount, 7);
-    assert.equal(feedback.summary.errorCount, 5);
+    assert.equal(feedback.summary.actionCount, 8);
+    assert.equal(feedback.summary.errorCount, 6);
     assert.equal(feedback.summary.warningCount, 2);
   });
 
@@ -180,6 +182,32 @@ describe("ReignsAgent pipeline", () => {
     assert.match(validation.errors.join("\n"), /allTags must be an array/);
     assert.match(validation.errors.join("\n"), /unknown faction/);
     assert.match(validation.errors.join("\n"), /unknown key 'typo'/);
+  });
+
+  it("validates default gauge threshold requirements", () => {
+    const valid = validateCardSet([
+      {
+        id: "grain-branch",
+        requirements: {
+          allTags: ["grainRelief"],
+          variables: { openingPetition: "grain" },
+          factions: { people: { min: 55 }, treasury: { max: 48 } }
+        },
+        choices: [{ id: "left", label: "Left", effects: {} }]
+      }
+    ]);
+    const invalid = validateCardSet([
+      {
+        id: "bad-branch",
+        requirements: { factions: { morale: { min: 5 }, people: { floor: 55 } } },
+        choices: [{ id: "left", label: "Left", effects: {} }]
+      }
+    ]);
+
+    assert.equal(valid.valid, true);
+    assert.equal(invalid.valid, false);
+    assert.match(invalid.errors.join("\n"), /unknown faction 'morale'/);
+    assert.match(invalid.errors.join("\n"), /unknown key 'floor'/);
   });
 
   it("builds prompts with reviewer feedback when diagnostics are supplied", () => {

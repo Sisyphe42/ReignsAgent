@@ -319,14 +319,17 @@ describe("ReignsAgent interface controller", () => {
       summary: { gameOverByFaction: { people: 1 } },
       diagnostics: {
         warnings: [
-          { code: "unsatisfied_required_tags", severity: "error", message: "missing", tags: ["crown"] }
+          { code: "unsatisfied_required_tags", severity: "error", message: "missing", tags: ["crown"] },
+          { code: "unsatisfied_required_factions", severity: "error", message: "missing threshold", factions: ["people"] }
         ]
       }
     });
 
-    assert.equal(feedback.summary.actionCount, 1);
+    assert.equal(feedback.summary.actionCount, 2);
     assert.equal(feedback.actions[0].type, "add_tag_producers");
     assert.deepEqual(feedback.actions[0].target, ["crown"]);
+    assert.equal(feedback.actions[1].type, "adjust_faction_requirements");
+    assert.deepEqual(feedback.actions[1].target, ["people"]);
   });
 
   it("builds a connector config and generation plan without storing secrets", () => {

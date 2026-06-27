@@ -1666,7 +1666,7 @@ function deriveStoryIssues({ graph, diagnostics, cards, storyGroups = [] }) {
   }
 
   for (const cardId of graph.unreachableCards ?? []) {
-    pushIssue("unreachable", cardId, "Unreachable", "No static tag path reaches this card.", "bad");
+    pushIssue("unreachable", cardId, "Unreachable", "No static tag, variable, or gauge path reaches this card.", "bad");
   }
   for (const cardId of graph.isolatedCards ?? []) {
     pushIssue("isolated", cardId, "Isolated", "No incoming or outgoing story graph edges.", "warn");
@@ -1753,6 +1753,8 @@ function describePrimaryRequirement(card) {
   if (requirements.anyTags?.length) return `one of: ${requirements.anyTags.slice(0, 3).map((tag) => `'${tag}'`).join(", ")}`;
   const variable = Object.keys(requirements.variables ?? {})[0];
   if (variable) return `variable '${variable}'`;
+  const faction = Object.keys(requirements.factions ?? {})[0];
+  if (faction) return `gauge '${faction}'`;
   return "";
 }
 
@@ -2157,8 +2159,7 @@ function StoryGraph({
         const midX = (x1 + x2) / 2;
         const midY = (y1 + y2) / 2;
         const choiceIds = (edge.choices ?? []).map((choice) => choice.id);
-        const tagKey = (edge.tags ?? [])[0];
-        const tagLabel = tagKey ? tagDisplayName(tagKey, tagCatalog?.byKey) : null;
+        const edgeLabel = edgeSignalLabel(edge, tagCatalog?.byKey);
         const isHoverEdge = hoverEdgeRef.current?.key === `${edge.from}->${edge.to}`;
         if (isHoverEdge) {
           // Highlight the whole edge when hovered.
@@ -2174,8 +2175,8 @@ function StoryGraph({
         if (edgeInGroup && choiceIds.length > 0) {
           drawChoiceBadge(ctx, midX, midY, choiceIds, colors);
         }
-        if (edgeInGroup && tagLabel) {
-          drawEdgeLabel(ctx, midX, midY + 14, tagLabel, colors);
+        if (edgeInGroup && edgeLabel) {
+          drawEdgeLabel(ctx, midX, midY + 14, edgeLabel, colors);
         }
       }
 
@@ -3298,6 +3299,35 @@ function describeRequirements(requirements = {}, tagCatalog) {
     const tags = normalizeTagArray(requirements?.[group.key]).map((tag) => describeTag(tag, tagCatalog));
     return tags.length > 0 ? [{ ...group, tags }] : [];
   });
+  const variableItems = Object.entries(requirements.variables ?? {})
+    .sort(compareEntriesByKey)
+    .map(([key, value]) => ({
+      key,
+      label: `${key} = ${formatSummaryValue(value)}`
+    }));
+  if (variableItems.length > 0) {
+    rows.push({
+      key: "variables",
+      label: "Story variables",
+      tone: "variable",
+      tags: variableItems
+    });
+  }
+
+  const factionItems = Object.entries(requirements.factions ?? {})
+    .sort(compareFactionEntries)
+    .map(([key, rule]) => ({
+      key,
+      label: formatFactionRequirement(key, rule)
+    }));
+  if (factionItems.length > 0) {
+    rows.push({
+      key: "factions",
+      label: "Gauge state",
+      tone: "gate",
+      tags: factionItems
+    });
+  }
 
   if (rows.length === 0) {
     return [{
@@ -3350,6 +3380,18 @@ function describeChoiceEffects(effects = {}, tagCatalog) {
   }
 
   return items.length > 0 ? items : [{ tone: "neutral", label: "No state changes" }];
+}
+
+function formatFactionRequirement(faction, rule) {
+  if (Number.isFinite(rule)) {
+    return `${faction} = ${rule}`;
+  }
+
+  const parts = [];
+  if (Number.isFinite(rule?.min)) parts.push(`>= ${rule.min}`);
+  if (Number.isFinite(rule?.max)) parts.push(`<= ${rule.max}`);
+  if (Number.isFinite(rule?.equals)) parts.push(`= ${rule.equals}`);
+  return parts.length > 0 ? `${faction} ${parts.join(" and ")}` : faction;
 }
 
 function normalizeTagArray(value) {
@@ -3465,6 +3507,21 @@ function useStoryGroups(editor) {
 function tagDisplayName(key, byKey) {
   const entry = byKey?.get(key);
   return entry?.label || key;
+}
+
+function edgeSignalLabel(edge, tagLabelsByKey) {
+  const labels = [];
+  const tag = (edge.tags ?? [])[0];
+  if (tag) labels.push(tagDisplayName(tag, tagLabelsByKey));
+  const variable = (edge.variables ?? [])[0];
+  if (variable) labels.push(`var ${variable}`);
+  const faction = (edge.factions ?? [])[0];
+  if (faction) labels.push(`gauge ${faction}`);
+
+  const total = (edge.tags?.length ?? 0) + (edge.variables?.length ?? 0) + (edge.factions?.length ?? 0);
+  const visible = labels.slice(0, 2);
+  const suffix = total > visible.length ? ` +${total - visible.length}` : "";
+  return visible.join(" + ") + suffix;
 }
 
 createRoot(document.getElementById("root")).render(<App />);

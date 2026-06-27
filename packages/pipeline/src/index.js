@@ -11,7 +11,7 @@ const CSV_COLUMNS = [
   "effectsJson"
 ];
 const PIPELINE_FACTIONS = new Set(["faith", "people", "military", "treasury"]);
-const REQUIREMENT_KEYS = new Set(["allTags", "anyTags", "noneTags", "variables"]);
+const REQUIREMENT_KEYS = new Set(["allTags", "anyTags", "noneTags", "variables", "factions"]);
 const EFFECT_KEYS = new Set(["tags", "variables", "factions", "activateHooks", "dismissHooks"]);
 
 export function createContentBundle({ cards, metadata = {}, assets = [] }) {
@@ -323,6 +323,16 @@ export function createDiagnosticFeedback(report) {
       });
     }
 
+    if (warning.code === "unsatisfied_required_factions") {
+      addAction(actions, seenActions, {
+        type: "adjust_faction_requirements",
+        severity: warning.severity ?? "error",
+        target: warning.factions ?? [],
+        reason: warning.message,
+        sourceWarning: warning.code
+      });
+    }
+
     if (warning.code === "stalled_cycles") {
       addAction(actions, seenActions, {
         type: "add_fallback_cards",
@@ -420,6 +430,7 @@ export function buildCardGenerationPrompt({ theme, count, constraints = {}, diag
     `Generate ${count} minimalist Reigns-style cards for: ${theme}.`,
     "Return only JSON with a top-level cards array.",
     "Each card needs id, text, and two concise choices with faction/tag effects.",
+    "Card requirements may combine tags, exact variables, and default faction thresholds for story branches.",
     "Use only low-level tags and variables for custom state; do not create built-in upper-level progression systems.",
     `Constraints: ${JSON.stringify(constraints)}`
   ];
@@ -615,6 +626,8 @@ function validateRequirements(requirements, context, errors) {
   if (requirements.variables !== undefined && !isPlainRecord(requirements.variables)) {
     errors.push(`${context}.variables must be an object`);
   }
+
+  validateFactionRequirements(requirements.factions, `${context}.factions`, errors);
 }
 
 function validateEffects(effects, context, errors) {
@@ -665,6 +678,62 @@ function validateEffects(effects, context, errors) {
 
   if (effects.dismissHooks !== undefined) {
     validateStringArray(effects.dismissHooks, `${context}.dismissHooks`, errors);
+  }
+}
+
+function validateFactionRequirements(requirements, context, errors) {
+  if (requirements === undefined) {
+    return;
+  }
+
+  if (!isPlainRecord(requirements)) {
+    errors.push(`${context} must be an object`);
+    return;
+  }
+
+  for (const [faction, rule] of Object.entries(requirements)) {
+    if (!PIPELINE_FACTIONS.has(faction)) {
+      errors.push(`${context} has unknown faction '${faction}'`);
+      continue;
+    }
+    validateFactionRequirementRule(rule, `${context}.${faction}`, errors);
+  }
+}
+
+function validateFactionRequirementRule(rule, context, errors) {
+  if (Number.isFinite(rule)) {
+    validateFactionThreshold(rule, context, errors);
+    return;
+  }
+
+  if (!isPlainRecord(rule)) {
+    errors.push(`${context} must be a finite number or an object`);
+    return;
+  }
+
+  const allowedKeys = new Set(["min", "max", "equals"]);
+  const keys = Object.keys(rule);
+  if (keys.length === 0) {
+    errors.push(`${context} must include min, max, or equals`);
+    return;
+  }
+
+  for (const key of keys) {
+    if (!allowedKeys.has(key)) {
+      errors.push(`${context} has unknown key '${key}'`);
+      continue;
+    }
+    validateFactionThreshold(rule[key], `${context}.${key}`, errors);
+  }
+
+  if (Number.isFinite(rule.min) && Number.isFinite(rule.max) && rule.min > rule.max) {
+    errors.push(`${context}.min must be less than or equal to max`);
+  }
+}
+
+function validateFactionThreshold(value, context, errors) {
+  if (!Number.isFinite(value) || value < 0 || value > 100) {
+    errors.push(`${context} must be a finite number between 0 and 100`);
   }
 }
 

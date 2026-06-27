@@ -19,7 +19,7 @@ describe("Phase 4 interface integration", () => {
     try {
       await waitForServer(port, server);
       const initialEditor = await api(port, "/api/editor");
-      assert.equal(initialEditor.cards.length, 9);
+      assert.equal(initialEditor.cards.length, 11);
       assert.equal(initialEditor.assets.length > 0, true);
 
       const bundle = await api(port, "/api/samples/oss-court");
@@ -31,7 +31,7 @@ describe("Phase 4 interface integration", () => {
         body: { bundle }
       });
       assert.equal(imported.imported, true);
-      assert.equal(imported.cardCount, 9);
+      assert.equal(imported.cardCount, 11);
 
       const editor = await api(port, "/api/editor");
       assert.equal(editor.playerValidation.valid, true);
@@ -57,12 +57,12 @@ describe("Phase 4 interface integration", () => {
       });
       assert.equal(diagnostics.module, "ReignsAgent-Reviewer");
       assert.equal(diagnostics.sampleSize, 6);
-      assert.equal(diagnostics.narrative.summary.groupCount, 4);
+      assert.equal(diagnostics.narrative.summary.groupCount, 6);
       assert.equal(diagnostics.narrative.storyGroups.some((group) => group.id === "gate-endings"), true);
 
       const buildResult = await api(port, "/api/build/prepare", { method: "POST", body: {} });
       assert.equal(buildResult.build.player.choiceModel, "binary");
-      assert.equal(buildResult.build.content.cards.length, 9);
+      assert.equal(buildResult.build.content.cards.length, 11);
       assert.equal(buildResult.build.content.assets.length > 0, true);
 
       // Granular choice editing: set a label, then patch a single faction delta.

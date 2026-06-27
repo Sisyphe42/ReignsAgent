@@ -35,6 +35,38 @@ describe("ReignsAgent core runtime", () => {
     assert.deepEqual(getEligibleCards(cards, runtime.state).map((candidate) => candidate.id), ["open"]);
   });
 
+  it("gates cards by combined tags, variables, and faction thresholds", () => {
+    const cards = [
+      card("grain-branch", {
+        allTags: ["grainRelief"],
+        variables: { openingPetition: "grain" },
+        factions: { people: { min: 55 }, treasury: { max: 48 } }
+      }, "accept"),
+      card("border-branch", {
+        allTags: ["borderAlert"],
+        variables: { openingPetition: "border" },
+        factions: { military: { min: 55 } }
+      }, "accept")
+    ];
+    const grainState = createInitialState({
+      tags: { grainRelief: true },
+      variables: { openingPetition: "grain" },
+      factions: { people: 56, treasury: 46 }
+    });
+    const lowSupportState = createInitialState({
+      tags: { grainRelief: true },
+      variables: { openingPetition: "grain" },
+      factions: { people: 54, treasury: 46 }
+    });
+
+    assert.deepEqual(getEligibleCards(cards, grainState).map((candidate) => candidate.id), ["grain-branch"]);
+    assert.deepEqual(getEligibleCards(cards, lowSupportState).map((candidate) => candidate.id), []);
+    assert.throws(
+      () => normalizeCards([card("bad", { factions: { mana: { min: 1 } } }, "accept")]),
+      /Unknown faction/
+    );
+  });
+
   it("loops the scheduler after all currently eligible cards have been dismissed", () => {
     const runtime = createRuntime({
       cards: [card("repeatable", {}, "pass")],

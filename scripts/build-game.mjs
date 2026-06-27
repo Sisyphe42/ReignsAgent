@@ -115,6 +115,7 @@ function stitchPlayerRuntime(template, coreSource) {
 
 async function copyLocalBuildAssets(assets, outputDir) {
   const copied = [];
+  const seenUris = new Set();
 
   for (const asset of assets) {
     const uri = asset?.uri;
@@ -126,6 +127,10 @@ async function copyLocalBuildAssets(assets, outputDir) {
     if (!normalizedUri.startsWith("assets/") || normalizedUri.includes("..")) {
       continue;
     }
+    if (seenUris.has(normalizedUri)) {
+      continue;
+    }
+    seenUris.add(normalizedUri);
 
     const source = resolve(WEB_ROOT, normalizedUri);
     assertWithin(WEB_ROOT, source, `Asset '${uri}'`);

@@ -4,6 +4,7 @@ const REPORT_SCHEMA_VERSION = 1;
 const DEFAULT_CYCLES = 100000;
 const DEFAULT_MAX_TURNS = 100;
 const DEFAULT_SAMPLE_LIMIT = 3;
+const DEFAULT_FACTION_VALUE = 50;
 const DEFAULT_THRESHOLDS = Object.freeze({
   dominantGameOverRate: 0.45,
   highGameOverRate: 0.8,
@@ -52,7 +53,8 @@ export function runMonteCarloReview(options = {}) {
     samples,
     graph: analyzeCardGraph(config.cards, {
       tags: config.initialState.tags ?? {},
-      variables: config.initialState.variables ?? {}
+      variables: config.initialState.variables ?? {},
+      factions: config.initialState.factions ?? {}
     })
   });
 }
@@ -88,7 +90,7 @@ export function runSimulationCycle(options = {}) {
 }
 
 export function analyzeCardGraph(cards, initialState = {}) {
-  const { tags: initialTags, variables: initialVariables } = normalizeInitialSignals(initialState);
+  const { tags: initialTags, variables: initialVariables, factions: initialFactions } = normalizeInitialSignals(initialState);
   const nodes = cards.map((card) => ({
     id: card.id,
     requirements: card.requirements ?? {}
@@ -107,33 +109,43 @@ export function analyzeCardGraph(cards, initialState = {}) {
         ...(target.requirements?.anyTags ?? [])
       ];
       const requiredVariables = Object.entries(target.requirements?.variables ?? {});
+      const requiredFactions = Object.entries(target.requirements?.factions ?? {});
 
       const enablingChoices = [];
       const aggregateEnablingTags = new Set();
       const aggregateEnablingVariables = new Set();
+      const aggregateEnablingFactions = new Set();
 
       for (const [choiceId, signals] of choiceSignals.entries()) {
         const choiceEnablingTags = requiredTags.filter((tag) => signals.tags.has(tag));
         const choiceEnablingVariables = requiredVariables
           .filter(([variable, value]) => signalHasVariable(signals.variables, variable, value))
           .map(([variable]) => variable);
+        const choiceEnablingFactions = requiredFactions
+          .filter(([faction, rule]) => choiceCanEnableFactionRequirement(signals.factionDeltas, faction, rule))
+          .map(([faction]) => faction);
 
-        if (choiceEnablingTags.length > 0 || choiceEnablingVariables.length > 0) {
+        if (choiceEnablingTags.length > 0 || choiceEnablingVariables.length > 0 || choiceEnablingFactions.length > 0) {
           enablingChoices.push({ id: choiceId, label: signals.label });
           choiceEnablingTags.forEach((tag) => aggregateEnablingTags.add(tag));
           choiceEnablingVariables.forEach((variable) => aggregateEnablingVariables.add(variable));
+          choiceEnablingFactions.forEach((faction) => aggregateEnablingFactions.add(faction));
         }
       }
 
       if (enablingChoices.length > 0 && sourceId !== target.id) {
         const enablingTags = [...aggregateEnablingTags];
         const enablingVariables = [...aggregateEnablingVariables];
+        const enablingFactions = [...aggregateEnablingFactions];
         const edge = { from: sourceId, to: target.id, choices: enablingChoices };
         if (enablingTags.length > 0) {
           edge.tags = enablingTags;
         }
         if (enablingVariables.length > 0) {
           edge.variables = enablingVariables;
+        }
+        if (enablingFactions.length > 0) {
+          edge.factions = enablingFactions;
         }
         edges.push(edge);
       }
@@ -142,13 +154,14 @@ export function analyzeCardGraph(cards, initialState = {}) {
 
   const producedTags = new Set(initialTrueTags(initialTags));
   const producedVariables = initialVariableSignals(initialVariables);
+  const producedFactionRanges = initialFactionRanges(initialFactions);
   for (const choiceSignals of producedSignalsByChoice.values()) {
     for (const signals of choiceSignals.values()) {
-      mergeSignals({ tags: producedTags, variables: producedVariables }, signals);
+      mergeSignals({ tags: producedTags, variables: producedVariables, factions: producedFactionRanges }, signals);
     }
   }
 
-  const reachability = analyzeReachability(cards, initialTags, initialVariables);
+  const reachability = analyzeReachability(cards, initialTags, initialVariables, initialFactions);
 
   return {
     nodes,
@@ -160,7 +173,8 @@ export function analyzeCardGraph(cards, initialState = {}) {
     reachableCards: reachability.reachableCards,
     unreachableCards: reachability.unreachableCards,
     unsatisfiedRequiredTags: collectUnsatisfiedRequiredTags(cards, producedTags),
-    unsatisfiedRequiredVariables: collectUnsatisfiedRequiredVariables(cards, producedVariables)
+    unsatisfiedRequiredVariables: collectUnsatisfiedRequiredVariables(cards, producedVariables),
+    unsatisfiedRequiredFactions: collectUnsatisfiedRequiredFactions(cards, producedFactionRanges)
   };
 }
 
@@ -430,6 +444,15 @@ function buildWarnings({ aggregate, cards, graph, summary, coverage, thresholds 
     });
   }
 
+  if ((graph.unsatisfiedRequiredFactions ?? []).length > 0) {
+    warnings.push({
+      code: "unsatisfied_required_factions",
+      severity: "error",
+      message: "Some faction threshold requirements cannot be satisfied by the initial values or choice deltas.",
+      factions: graph.unsatisfiedRequiredFactions
+    });
+  }
+
   if (graph.unreachableCards.length > 0) {
     warnings.push({
       code: "unreachable_cards",
@@ -469,6 +492,7 @@ function countWarningsBySeverity(warnings) {
 function collectProducedSignals(card) {
   const tags = new Set();
   const variables = new Map();
+  const factionDeltas = new Map();
 
   for (const choice of card.choices ?? []) {
     for (const [tag, value] of Object.entries(choice.effects?.tags ?? {})) {
@@ -483,6 +507,12 @@ function collectProducedSignals(card) {
       }
     }
 
+    for (const [faction, delta] of Object.entries(choice.effects?.factions ?? {})) {
+      if (Number.isFinite(delta) && delta !== 0) {
+        addFactionDelta(factionDeltas, faction, delta);
+      }
+    }
+
     for (const hookEntry of choice.effects?.activateHooks ?? []) {
       for (const tag of hookEntry.tags ?? []) {
         tags.add(tag);
@@ -490,14 +520,14 @@ function collectProducedSignals(card) {
     }
   }
 
-  return { tags, variables };
+  return { tags, variables, factionDeltas };
 }
 
 /**
  * collectProducedSignalsByChoice traces each choice's effects separately, so the
  * graph can attribute enabling signals (tags/variables) back to specific choice
  * branches (left/right). Returns a Map keyed by choice id, with each value
- * carrying { tags, variables, label } for edge attribution and display.
+ * carrying { tags, variables, factionDeltas, label } for edge attribution and display.
  */
 function collectProducedSignalsByChoice(card) {
   const byChoice = new Map();
@@ -505,6 +535,7 @@ function collectProducedSignalsByChoice(card) {
   for (const choice of card.choices ?? []) {
     const tags = new Set();
     const variables = new Map();
+    const factionDeltas = new Map();
 
     for (const [tag, value] of Object.entries(choice.effects?.tags ?? {})) {
       if (value !== false && value !== null && value !== undefined) {
@@ -518,22 +549,29 @@ function collectProducedSignalsByChoice(card) {
       }
     }
 
+    for (const [faction, delta] of Object.entries(choice.effects?.factions ?? {})) {
+      if (Number.isFinite(delta) && delta !== 0) {
+        addFactionDelta(factionDeltas, faction, delta);
+      }
+    }
+
     for (const hookEntry of choice.effects?.activateHooks ?? []) {
       for (const tag of hookEntry.tags ?? []) {
         tags.add(tag);
       }
     }
 
-    byChoice.set(choice.id, { tags, variables, label: choice.label ?? choice.id });
+    byChoice.set(choice.id, { tags, variables, factionDeltas, label: choice.label ?? choice.id });
   }
 
   return byChoice;
 }
 
-function analyzeReachability(cards, initialTags, initialVariables) {
+function analyzeReachability(cards, initialTags, initialVariables, initialFactions) {
   const available = {
     tags: new Set(initialTrueTags(initialTags)),
-    variables: initialVariableSignals(initialVariables)
+    variables: initialVariableSignals(initialVariables),
+    factions: initialFactionRanges(initialFactions)
   };
   const initiallyEligibleCards = cards
     .filter((card) => requirementsAreSatisfied(card.requirements ?? {}, available))
@@ -569,12 +607,14 @@ function requirementsAreSatisfied(requirements, available) {
   const anyTags = requirements.anyTags ?? [];
   const noneTags = requirements.noneTags ?? [];
   const variables = requirements.variables ?? {};
+  const factions = requirements.factions ?? {};
 
   return (
     allTags.every((tag) => available.tags.has(tag)) &&
     (anyTags.length === 0 || anyTags.some((tag) => available.tags.has(tag))) &&
     noneTags.every((tag) => !available.tags.has(tag)) &&
-    Object.entries(variables).every(([variable, value]) => signalHasVariable(available.variables, variable, value))
+    Object.entries(variables).every(([variable, value]) => signalHasVariable(available.variables, variable, value)) &&
+    Object.entries(factions).every(([faction, rule]) => factionRangeCanSatisfy(available.factions[faction], rule))
   );
 }
 
@@ -613,17 +653,33 @@ function collectUnsatisfiedRequiredVariables(cards, producedVariables) {
   return [...missing].sort();
 }
 
+function collectUnsatisfiedRequiredFactions(cards, producedFactionRanges) {
+  const missing = new Set();
+
+  for (const card of cards) {
+    for (const [faction, rule] of Object.entries(card.requirements?.factions ?? {})) {
+      if (!factionRangeCanSatisfy(producedFactionRanges[faction], rule)) {
+        missing.add(faction);
+      }
+    }
+  }
+
+  return [...missing].sort();
+}
+
 function normalizeInitialSignals(initialState) {
-  if ("tags" in initialState || "variables" in initialState) {
+  if ("tags" in initialState || "variables" in initialState || "factions" in initialState) {
     return {
       tags: initialState.tags ?? {},
-      variables: initialState.variables ?? {}
+      variables: initialState.variables ?? {},
+      factions: initialState.factions ?? {}
     };
   }
 
   return {
     tags: initialState,
-    variables: {}
+    variables: {},
+    factions: {}
   };
 }
 
@@ -645,6 +701,15 @@ function initialVariableSignals(variables) {
   return signals;
 }
 
+function initialFactionRanges(factions = {}) {
+  return Object.fromEntries(
+    FACTIONS.map((faction) => {
+      const value = Number.isFinite(factions[faction]) ? clampFaction(factions[faction]) : DEFAULT_FACTION_VALUE;
+      return [faction, { min: value, max: value }];
+    })
+  );
+}
+
 function mergeSignals(target, source) {
   for (const tag of source.tags) {
     target.tags.add(tag);
@@ -653,6 +718,12 @@ function mergeSignals(target, source) {
   for (const [variable, values] of source.variables.entries()) {
     for (const value of values) {
       addVariableSignalKey(target.variables, variable, value);
+    }
+  }
+
+  for (const [faction, deltas] of (source.factionDeltas ?? new Map()).entries()) {
+    for (const delta of deltas) {
+      expandFactionRange(target.factions, faction, delta);
     }
   }
 }
@@ -671,6 +742,63 @@ function addVariableSignalKey(signals, variable, valueKey) {
 
 function signalHasVariable(signals, variable, value) {
   return signals.get(variable)?.has(stableValueKey(value)) ?? false;
+}
+
+function addFactionDelta(deltas, faction, value) {
+  if (!deltas.has(faction)) {
+    deltas.set(faction, new Set());
+  }
+
+  deltas.get(faction).add(value);
+}
+
+function expandFactionRange(ranges, faction, delta) {
+  if (!ranges[faction]) {
+    ranges[faction] = { min: DEFAULT_FACTION_VALUE, max: DEFAULT_FACTION_VALUE };
+  }
+
+  const range = ranges[faction];
+  const candidates = [
+    range.min,
+    range.max,
+    clampFaction(range.min + delta),
+    clampFaction(range.max + delta)
+  ];
+  range.min = Math.min(...candidates);
+  range.max = Math.max(...candidates);
+}
+
+function factionRangeCanSatisfy(range = { min: DEFAULT_FACTION_VALUE, max: DEFAULT_FACTION_VALUE }, rule) {
+  const constraint = normalizeFactionRequirementRule(rule);
+  const requiredMin = constraint.equals ?? constraint.min ?? 0;
+  const requiredMax = constraint.equals ?? constraint.max ?? 100;
+  return range.max >= requiredMin && range.min <= requiredMax;
+}
+
+function choiceCanEnableFactionRequirement(factionDeltas, faction, rule) {
+  const deltas = factionDeltas.get(faction);
+  if (!deltas || deltas.size === 0) {
+    return false;
+  }
+
+  const constraint = normalizeFactionRequirementRule(rule);
+  return [...deltas].some((delta) => {
+    if (constraint.equals !== undefined) return true;
+    if (constraint.min !== undefined && delta > 0) return true;
+    if (constraint.max !== undefined && delta < 0) return true;
+    return false;
+  });
+}
+
+function normalizeFactionRequirementRule(rule) {
+  if (Number.isFinite(rule)) {
+    return { equals: rule };
+  }
+  return rule ?? {};
+}
+
+function clampFaction(value) {
+  return Math.max(0, Math.min(100, value));
 }
 
 function stableValueKey(value) {

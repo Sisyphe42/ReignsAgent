@@ -568,7 +568,8 @@ export function summarizeDiagnostics(report, context = {}) {
       reachableCards: graph.reachableCards ?? [],
       unreachableCards: graph.unreachableCards ?? [],
       unsatisfiedRequiredTags: graph.unsatisfiedRequiredTags ?? [],
-      unsatisfiedRequiredVariables: graph.unsatisfiedRequiredVariables ?? []
+      unsatisfiedRequiredVariables: graph.unsatisfiedRequiredVariables ?? [],
+      unsatisfiedRequiredFactions: graph.unsatisfiedRequiredFactions ?? []
     },
     narrative,
     warnings: warnings.map(projectWarning),
@@ -1019,7 +1020,7 @@ function averageRate(cardIds, rates) {
 }
 
 function pickWarningDetails(warning) {
-  const keys = ["cardIds", "cards", "tags", "variables", "faction", "rate", "threshold", "cycles"];
+  const keys = ["cardIds", "cards", "tags", "variables", "factions", "faction", "rate", "threshold", "cycles"];
   const details = {};
   for (const key of keys) {
     if (warning[key] !== undefined) {

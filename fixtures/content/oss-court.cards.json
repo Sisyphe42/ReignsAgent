@@ -52,18 +52,32 @@
           "cardIds": ["gate-audience"]
         },
         {
+          "id": "grain-branch",
+          "label": "Grain Branch",
+          "type": "chapter",
+          "description": "A relief branch that opens only when the grain choice, route variable, and crowd/coin thresholds line up.",
+          "cardIds": ["granary-count", "bread-line"]
+        },
+        {
+          "id": "border-branch",
+          "label": "Border Branch",
+          "type": "chapter",
+          "description": "A border branch that opens only when the border choice, route variable, and watch/coin thresholds line up.",
+          "cardIds": ["border-messenger", "watch-parley"]
+        },
+        {
           "id": "grain-thread",
           "label": "Grain Thread",
           "type": "theme",
           "description": "Civil relief, ledgers, and food politics.",
-          "tags": ["grainRelief", "granaryOpen", "auditLedger", "ledgerOpen", "ledgerSealed"]
+          "tags": ["grainRelief", "granaryOpen", "auditLedger", "breadLine", "rationTokens", "guildRelief", "ledgerOpen", "ledgerSealed"]
         },
         {
           "id": "border-thread",
           "label": "Border Thread",
           "type": "theme",
           "description": "Military pressure, envoys, and watch decisions.",
-          "tags": ["borderAlert", "muster", "envoySent", "watchRewarded", "watchDismissed"]
+          "tags": ["borderAlert", "muster", "envoySent", "watchParley", "patrolCharter", "watchRewarded", "watchDismissed"]
         },
         {
           "id": "gate-endings",
@@ -103,8 +117,26 @@
       "attribution": "Grain icon by Delapouite, available on Game-icons.net"
     },
     {
+      "id": "art-bread-line",
+      "cardId": "bread-line",
+      "uri": "assets/sample/grain.svg",
+      "title": "Grain",
+      "sourceUrl": "https://github.com/game-icons/icons/blob/master/delapouite/grain.svg",
+      "license": "CC BY 3.0",
+      "attribution": "Grain icon by Delapouite, available on Game-icons.net"
+    },
+    {
       "id": "art-border-messenger",
       "cardId": "border-messenger",
+      "uri": "assets/sample/knight-banner.svg",
+      "title": "Knight Banner",
+      "sourceUrl": "https://github.com/game-icons/icons/blob/master/delapouite/knight-banner.svg",
+      "license": "CC BY 3.0",
+      "attribution": "Knight Banner icon by Delapouite, available on Game-icons.net"
+    },
+    {
+      "id": "art-watch-parley",
+      "cardId": "watch-parley",
       "uri": "assets/sample/knight-banner.svg",
       "title": "Knight Banner",
       "sourceUrl": "https://github.com/game-icons/icons/blob/master/delapouite/knight-banner.svg",
@@ -214,7 +246,14 @@
         }
       },
       "weight": 1,
-      "requirements": { "allTags": ["grainRelief"] },
+      "requirements": {
+        "allTags": ["grainRelief"],
+        "variables": { "openingPetition": "grain" },
+        "factions": {
+          "people": { "min": 55 },
+          "treasury": { "max": 48 }
+        }
+      },
       "choices": [
         {
           "id": "left",
@@ -235,6 +274,48 @@
       ]
     },
     {
+      "id": "bread-line",
+      "text": "A bread line forms before noon, asking who should receive the first loaves.",
+      "i18n": {
+        "zh-Hans": {
+          "text": "午前，领面包的队伍排起，询问第一批面包该给谁。",
+          "choices": {
+            "left": { "label": "发放配给牌" },
+            "right": { "label": "交给行会" }
+          }
+        }
+      },
+      "weight": 2,
+      "requirements": {
+        "allTags": ["granaryOpen"],
+        "variables": { "openingPetition": "grain" },
+        "factions": {
+          "people": { "min": 60 },
+          "treasury": { "max": 42 }
+        }
+      },
+      "choices": [
+        {
+          "id": "left",
+          "label": "Issue ration tokens",
+          "effects": {
+            "factions": { "people": 4, "treasury": -4, "faith": 1 },
+            "tags": { "breadLine": true, "rationTokens": true },
+            "variables": { "reliefStyle": "tokens" }
+          }
+        },
+        {
+          "id": "right",
+          "label": "Let the guilds serve",
+          "effects": {
+            "factions": { "treasury": 3, "people": -2, "faith": -1 },
+            "tags": { "breadLine": true, "guildRelief": true },
+            "variables": { "reliefStyle": "guild" }
+          }
+        }
+      ]
+    },
+    {
       "id": "border-messenger",
       "text": "A rider reports smoke beyond the northern stones.",
       "i18n": {
@@ -247,7 +328,14 @@
         }
       },
       "weight": 1,
-      "requirements": { "allTags": ["borderAlert"] },
+      "requirements": {
+        "allTags": ["borderAlert"],
+        "variables": { "openingPetition": "border" },
+        "factions": {
+          "military": { "min": 55 },
+          "treasury": { "max": 48 }
+        }
+      },
       "choices": [
         {
           "id": "left",
@@ -263,6 +351,48 @@
           "effects": {
             "factions": { "faith": 3, "treasury": -4, "military": -2 },
             "tags": { "envoySent": true }
+          }
+        }
+      ]
+    },
+    {
+      "id": "watch-parley",
+      "text": "The envoy returns with a quiet border parley before the watch loses patience.",
+      "i18n": {
+        "zh-Hans": {
+          "text": "使者带回边境密谈的机会，而守望队已快失去耐心。",
+          "choices": {
+            "left": { "label": "接受密谈" },
+            "right": { "label": "写巡逻宪令" }
+          }
+        }
+      },
+      "weight": 2,
+      "requirements": {
+        "allTags": ["envoySent"],
+        "variables": { "openingPetition": "border" },
+        "factions": {
+          "military": { "max": 55 },
+          "treasury": { "max": 45 }
+        }
+      },
+      "choices": [
+        {
+          "id": "left",
+          "label": "Accept the parley",
+          "effects": {
+            "factions": { "faith": 4, "military": -3, "people": 2 },
+            "tags": { "watchParley": true },
+            "variables": { "borderStyle": "parley" }
+          }
+        },
+        {
+          "id": "right",
+          "label": "Write a patrol charter",
+          "effects": {
+            "factions": { "military": 3, "treasury": -3, "people": -1 },
+            "tags": { "patrolCharter": true },
+            "variables": { "borderStyle": "patrol" }
           }
         }
       ]
@@ -313,7 +443,7 @@
         }
       },
       "weight": 1,
-      "requirements": { "anyTags": ["granaryOpen", "envoySent", "charterDelayed"] },
+      "requirements": { "anyTags": ["granaryOpen", "breadLine", "envoySent", "watchParley", "charterDelayed"] },
       "choices": [
         {
           "id": "left",
@@ -346,7 +476,7 @@
         }
       },
       "weight": 1,
-      "requirements": { "anyTags": ["muster", "auditLedger", "harborTrade"] },
+      "requirements": { "anyTags": ["muster", "auditLedger", "harborTrade", "watchParley", "patrolCharter"] },
       "choices": [
         {
           "id": "left",
@@ -379,7 +509,7 @@
         }
       },
       "weight": 1,
-      "requirements": { "anyTags": ["auditLedger", "harborTrade", "riteHeld", "watchRewarded", "watchDismissed"] },
+      "requirements": { "anyTags": ["auditLedger", "harborTrade", "riteHeld", "rationTokens", "watchParley", "patrolCharter", "watchRewarded", "watchDismissed"] },
       "choices": [
         {
           "id": "left",
@@ -445,7 +575,7 @@
         }
       },
       "weight": 1,
-      "requirements": { "anyTags": ["repairsFunded", "reservesHeld", "mediated", "watchDismissed"] },
+      "requirements": { "anyTags": ["repairsFunded", "reservesHeld", "mediated", "rationTokens", "guildRelief", "watchParley", "patrolCharter", "watchDismissed"] },
       "choices": [
         {
           "id": "left",
