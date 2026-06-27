@@ -56,35 +56,56 @@
           "label": "Grain Branch",
           "type": "chapter",
           "description": "A relief branch that opens only when the grain choice, route variable, and crowd/coin thresholds line up.",
-          "cardIds": ["granary-count", "bread-line"]
+          "cardIds": ["granary-count", "bread-line", "token-riot", "guild-feast"]
         },
         {
           "id": "border-branch",
           "label": "Border Branch",
           "type": "chapter",
           "description": "A border branch that opens only when the border choice, route variable, and watch/coin thresholds line up.",
-          "cardIds": ["border-messenger", "watch-parley"]
+          "cardIds": ["border-messenger", "watch-parley", "parley-hostage", "patrol-incident"]
+        },
+        {
+          "id": "afternoon-branch",
+          "label": "Afternoon Branches",
+          "type": "chapter",
+          "description": "Second-wave consequences from relief or border policy.",
+          "cardIds": ["river-market", "rumor-house", "harvest-court", "hostage-court", "unrest-court"]
+        },
+        {
+          "id": "closing-council",
+          "label": "Closing Council",
+          "type": "chapter",
+          "description": "The final council turns earlier branches into an ending path.",
+          "cardIds": ["midnight-council", "dawn-gate", "morning-procession", "locked-city"]
         },
         {
           "id": "grain-thread",
           "label": "Grain Thread",
           "type": "theme",
           "description": "Civil relief, ledgers, and food politics.",
-          "tags": ["grainRelief", "granaryOpen", "auditLedger", "breadLine", "rationTokens", "guildRelief", "ledgerOpen", "ledgerSealed"]
+          "tags": ["grainRelief", "granaryOpen", "auditLedger", "breadLine", "rationTokens", "guildRelief", "nightKitchens", "tokenAudit", "guildCompact", "guildDebt", "harvestOath", "marketTax", "ledgerOpen", "ledgerSealed"]
         },
         {
           "id": "border-thread",
           "label": "Border Thread",
           "type": "theme",
           "description": "Military pressure, envoys, and watch decisions.",
-          "tags": ["borderAlert", "muster", "envoySent", "watchParley", "patrolCharter", "watchRewarded", "watchDismissed"]
+          "tags": ["borderAlert", "muster", "envoySent", "watchParley", "patrolCharter", "peaceOath", "publicTerms", "patrolRestrained", "raidOrdered", "borderOath", "quietPact", "watchRewarded", "watchDismissed"]
+        },
+        {
+          "id": "unrest-thread",
+          "label": "Unrest Thread",
+          "type": "theme",
+          "description": "Rumor, scarcity, curfew, and public confidence.",
+          "tags": ["rumorSpread", "crowdAppeased", "watchCurfew", "councilReady", "endingMercy", "endingAuthority"]
         },
         {
           "id": "gate-endings",
           "label": "Dawn Gate Endings",
           "type": "ending",
           "description": "The closing gate decision produced by the final card.",
-          "tags": ["gateOpened", "gateClosed"]
+          "tags": ["gateOpened", "gateClosed", "endingMercy", "endingAuthority"]
         }
       ]
     }
@@ -563,6 +584,379 @@
       ]
     },
     {
+      "id": "token-riot",
+      "text": "By late afternoon, ration tokens pass from hand to hand faster than bread.",
+      "i18n": {
+        "zh-Hans": {
+          "text": "午后，配给牌在人群中流转得比面包还快。",
+          "choices": {
+            "left": { "label": "开夜间粥棚" },
+            "right": { "label": "核查配给牌" }
+          }
+        }
+      },
+      "weight": 2,
+      "requirements": {
+        "allTags": ["rationTokens"],
+        "variables": { "reliefStyle": "tokens" },
+        "factions": {
+          "gauge1": { "min": 62 },
+          "gauge3": { "max": 43 }
+        }
+      },
+      "choices": [
+        {
+          "id": "left",
+          "label": "Open night kitchens",
+          "effects": {
+            "factions": { "gauge1": 5, "gauge3": -5, "gauge0": 2 },
+            "tags": { "nightKitchens": true },
+            "variables": { "afternoonRelief": "kitchens" }
+          }
+        },
+        {
+          "id": "right",
+          "label": "Audit the tokens",
+          "effects": {
+            "factions": { "gauge3": 4, "gauge1": -3, "gauge2": 2 },
+            "tags": { "tokenAudit": true },
+            "variables": { "afternoonRelief": "audit" }
+          }
+        }
+      ]
+    },
+    {
+      "id": "guild-feast",
+      "text": "The guilds turn relief into a public feast and ask whose name should be on the tables.",
+      "i18n": {
+        "zh-Hans": {
+          "text": "行会把救济办成公开宴席，并询问餐桌上该写谁的名字。",
+          "choices": {
+            "left": { "label": "让行会署名" },
+            "right": { "label": "写宫廷欠据" }
+          }
+        }
+      },
+      "weight": 2,
+      "requirements": {
+        "allTags": ["guildRelief"],
+        "variables": { "reliefStyle": "guild" },
+        "factions": {
+          "gauge1": { "min": 58 },
+          "gauge3": { "min": 40 }
+        }
+      },
+      "choices": [
+        {
+          "id": "left",
+          "label": "Let guild banners lead",
+          "effects": {
+            "factions": { "gauge1": 3, "gauge3": 3, "gauge0": -2 },
+            "tags": { "guildCompact": true },
+            "variables": { "afternoonRelief": "guild-compact" }
+          }
+        },
+        {
+          "id": "right",
+          "label": "Write court debt notes",
+          "effects": {
+            "factions": { "gauge3": -5, "gauge1": 2, "gauge0": 1 },
+            "tags": { "guildDebt": true },
+            "variables": { "afternoonRelief": "debt" }
+          }
+        }
+      ]
+    },
+    {
+      "id": "parley-hostage",
+      "text": "The border parley asks for a temporary hostage exchange before dusk.",
+      "i18n": {
+        "zh-Hans": {
+          "text": "边境密谈要求在黄昏前交换临时人质。",
+          "choices": {
+            "left": { "label": "交换人质" },
+            "right": { "label": "公开条款" }
+          }
+        }
+      },
+      "weight": 2,
+      "requirements": {
+        "allTags": ["watchParley"],
+        "variables": { "borderStyle": "parley" },
+        "factions": {
+          "gauge2": { "max": 52 },
+          "gauge0": { "min": 54 }
+        }
+      },
+      "choices": [
+        {
+          "id": "left",
+          "label": "Exchange honored hostages",
+          "effects": {
+            "factions": { "gauge0": 3, "gauge2": -2, "gauge1": 2 },
+            "tags": { "peaceOath": true },
+            "variables": { "afternoonBorder": "oath" }
+          }
+        },
+        {
+          "id": "right",
+          "label": "Publish the terms",
+          "effects": {
+            "factions": { "gauge1": 4, "gauge2": 2, "gauge0": -2 },
+            "tags": { "publicTerms": true },
+            "variables": { "afternoonBorder": "public" }
+          }
+        }
+      ]
+    },
+    {
+      "id": "patrol-incident",
+      "text": "A patrol charter meets its first test when a frightened scout fires across the ditch.",
+      "i18n": {
+        "zh-Hans": {
+          "text": "巡逻宪令迎来第一次考验：惊慌的斥候向壕沟对岸开火。",
+          "choices": {
+            "left": { "label": "约束巡逻队" },
+            "right": { "label": "突袭营地" }
+          }
+        }
+      },
+      "weight": 2,
+      "requirements": {
+        "allTags": ["patrolCharter"],
+        "variables": { "borderStyle": "patrol" },
+        "factions": {
+          "gauge2": { "min": 55 },
+          "gauge3": { "max": 45 }
+        }
+      },
+      "choices": [
+        {
+          "id": "left",
+          "label": "Restrain the patrols",
+          "effects": {
+            "factions": { "gauge2": -3, "gauge1": 3, "gauge0": 1 },
+            "tags": { "patrolRestrained": true },
+            "variables": { "afternoonBorder": "restrained" }
+          }
+        },
+        {
+          "id": "right",
+          "label": "Order a hard raid",
+          "effects": {
+            "factions": { "gauge2": 6, "gauge3": -5, "gauge1": -4 },
+            "tags": { "raidOrdered": true },
+            "variables": { "afternoonBorder": "raid" }
+          }
+        }
+      ]
+    },
+    {
+      "id": "river-market",
+      "text": "River traders offer to carry the court's chosen story beyond the walls.",
+      "i18n": {
+        "zh-Hans": {
+          "text": "河商愿把宫廷选择的说法带到城墙之外。",
+          "choices": {
+            "left": { "label": "发市场誓约" },
+            "right": { "label": "征临时税" }
+          }
+        }
+      },
+      "weight": 1,
+      "requirements": { "anyTags": ["nightKitchens", "guildCompact", "peaceOath", "patrolRestrained"] },
+      "choices": [
+        {
+          "id": "left",
+          "label": "Swear a harvest compact",
+          "effects": {
+            "factions": { "gauge1": 4, "gauge0": 2, "gauge3": -2 },
+            "tags": { "harvestOath": true }
+          }
+        },
+        {
+          "id": "right",
+          "label": "Collect a market levy",
+          "effects": {
+            "factions": { "gauge3": 6, "gauge1": -2, "gauge0": -1 },
+            "tags": { "marketTax": true }
+          }
+        }
+      ]
+    },
+    {
+      "id": "rumor-house",
+      "text": "A rumor house stitches the afternoon's harsher choices into one ugly song.",
+      "i18n": {
+        "zh-Hans": {
+          "text": "流言屋把午后那些强硬选择缝成一首难听的歌。",
+          "choices": {
+            "left": { "label": "正面回应" },
+            "right": { "label": "让守望队查禁" }
+          }
+        }
+      },
+      "weight": 1,
+      "requirements": { "anyTags": ["tokenAudit", "guildDebt", "publicTerms", "raidOrdered"] },
+      "choices": [
+        {
+          "id": "left",
+          "label": "Answer in the square",
+          "effects": {
+            "factions": { "gauge1": 4, "gauge0": 1, "gauge3": -2 },
+            "tags": { "rumorSpread": true, "crowdAppeased": true }
+          }
+        },
+        {
+          "id": "right",
+          "label": "Let the watch silence it",
+          "effects": {
+            "factions": { "gauge2": 5, "gauge1": -4, "gauge0": -2 },
+            "tags": { "rumorSpread": true, "watchCurfew": true }
+          }
+        }
+      ]
+    },
+    {
+      "id": "harvest-court",
+      "text": "Farm elders arrive with mud on their hems and ask whether relief will last past dawn.",
+      "i18n": {
+        "zh-Hans": {
+          "text": "农庄长者衣摆带泥，询问救济是否能延续到明日之后。",
+          "choices": {
+            "left": { "label": "承诺秋收" },
+            "right": { "label": "只保今夜" }
+          }
+        }
+      },
+      "weight": 1,
+      "requirements": { "anyTags": ["nightKitchens", "guildCompact", "harvestOath", "marketTax"] },
+      "choices": [
+        {
+          "id": "left",
+          "label": "Promise the harvest road",
+          "effects": {
+            "factions": { "gauge1": 5, "gauge3": -4, "gauge0": 2 },
+            "tags": { "harvestOath": true }
+          }
+        },
+        {
+          "id": "right",
+          "label": "Keep it to tonight",
+          "effects": {
+            "factions": { "gauge3": 4, "gauge1": -2 },
+            "tags": { "marketTax": true }
+          }
+        }
+      ]
+    },
+    {
+      "id": "hostage-court",
+      "text": "A border family asks whether the court's oath protects their child or only the treaty.",
+      "i18n": {
+        "zh-Hans": {
+          "text": "边境家庭询问宫廷的誓言保护的是孩子，还是只有条约。",
+          "choices": {
+            "left": { "label": "公开护送" },
+            "right": { "label": "秘密返还" }
+          }
+        }
+      },
+      "weight": 1,
+      "requirements": { "anyTags": ["peaceOath", "patrolRestrained"] },
+      "choices": [
+        {
+          "id": "left",
+          "label": "Escort them openly",
+          "effects": {
+            "factions": { "gauge0": 3, "gauge1": 3, "gauge2": -2 },
+            "tags": { "borderOath": true }
+          }
+        },
+        {
+          "id": "right",
+          "label": "Return them quietly",
+          "effects": {
+            "factions": { "gauge2": 3, "gauge3": -2, "gauge0": 1 },
+            "tags": { "quietPact": true }
+          }
+        }
+      ]
+    },
+    {
+      "id": "unrest-court",
+      "text": "The square remains awake, waiting to learn whether fear or bread rules the night.",
+      "i18n": {
+        "zh-Hans": {
+          "text": "广场仍未入睡，等待知道今夜由恐惧还是面包来统治。",
+          "choices": {
+            "left": { "label": "分发余粮" },
+            "right": { "label": "宣布宵禁" }
+          }
+        }
+      },
+      "weight": 1,
+      "requirements": {
+        "anyTags": ["tokenAudit", "guildDebt", "publicTerms", "raidOrdered", "rumorSpread"],
+        "factions": {
+          "gauge1": { "max": 68 }
+        }
+      },
+      "choices": [
+        {
+          "id": "left",
+          "label": "Spend the last bread",
+          "effects": {
+            "factions": { "gauge1": 6, "gauge3": -5, "gauge0": 1 },
+            "tags": { "crowdAppeased": true }
+          }
+        },
+        {
+          "id": "right",
+          "label": "Announce curfew",
+          "effects": {
+            "factions": { "gauge2": 5, "gauge1": -5, "gauge0": -2 },
+            "tags": { "watchCurfew": true }
+          }
+        }
+      ]
+    },
+    {
+      "id": "midnight-council",
+      "text": "At midnight, the council names what the city will remember about the day.",
+      "i18n": {
+        "zh-Hans": {
+          "text": "午夜，议会为城市将如何记住这一天定名。",
+          "choices": {
+            "left": { "label": "命名为仁慈" },
+            "right": { "label": "命名为秩序" }
+          }
+        }
+      },
+      "weight": 1,
+      "requirements": { "anyTags": ["harvestOath", "marketTax", "borderOath", "quietPact", "crowdAppeased", "watchCurfew"] },
+      "choices": [
+        {
+          "id": "left",
+          "label": "Call it mercy",
+          "effects": {
+            "factions": { "gauge0": 3, "gauge1": 3, "gauge2": -2 },
+            "tags": { "councilReady": true },
+            "variables": { "endingPath": "mercy" }
+          }
+        },
+        {
+          "id": "right",
+          "label": "Call it order",
+          "effects": {
+            "factions": { "gauge2": 4, "gauge3": 2, "gauge1": -2 },
+            "tags": { "councilReady": true },
+            "variables": { "endingPath": "authority" }
+          }
+        }
+      ]
+    },
+    {
       "id": "dawn-gate",
       "text": "By sunset, the gate guard asks what story the city should hear.",
       "i18n": {
@@ -575,7 +969,7 @@
         }
       },
       "weight": 1,
-      "requirements": { "anyTags": ["repairsFunded", "reservesHeld", "mediated", "rationTokens", "guildRelief", "watchParley", "patrolCharter", "watchDismissed"] },
+      "requirements": { "allTags": ["councilReady"], "anyTags": ["repairsFunded", "reservesHeld", "mediated", "harvestOath", "borderOath", "crowdAppeased", "watchCurfew"] },
       "choices": [
         {
           "id": "left",
@@ -591,6 +985,78 @@
           "effects": {
             "factions": { "gauge2": 5, "gauge3": 2, "gauge1": -3 },
             "tags": { "gateClosed": true }
+          }
+        }
+      ]
+    },
+    {
+      "id": "morning-procession",
+      "text": "Morning finds the gate open and the first procession carrying bread instead of banners.",
+      "i18n": {
+        "zh-Hans": {
+          "text": "清晨，城门敞开，第一支队伍举着面包而非旗帜。",
+          "choices": {
+            "left": { "label": "让孩子先行" },
+            "right": { "label": "让长者先行" }
+          }
+        }
+      },
+      "weight": 1,
+      "requirements": {
+        "allTags": ["gateOpened"],
+        "variables": { "endingPath": "mercy" }
+      },
+      "choices": [
+        {
+          "id": "left",
+          "label": "Let children lead",
+          "effects": {
+            "factions": { "gauge1": 3, "gauge0": 2 },
+            "tags": { "endingMercy": true }
+          }
+        },
+        {
+          "id": "right",
+          "label": "Let elders lead",
+          "effects": {
+            "factions": { "gauge0": 3, "gauge3": -2 },
+            "tags": { "endingMercy": true }
+          }
+        }
+      ]
+    },
+    {
+      "id": "locked-city",
+      "text": "Morning finds the gate barred, the watch counting keys as the city counts rumors.",
+      "i18n": {
+        "zh-Hans": {
+          "text": "清晨，城门上闩；守望队数钥匙，城市数流言。",
+          "choices": {
+            "left": { "label": "公开口令" },
+            "right": { "label": "只给队长" }
+          }
+        }
+      },
+      "weight": 1,
+      "requirements": {
+        "allTags": ["gateClosed"],
+        "variables": { "endingPath": "authority" }
+      },
+      "choices": [
+        {
+          "id": "left",
+          "label": "Publish the passwords",
+          "effects": {
+            "factions": { "gauge1": 2, "gauge2": 2, "gauge3": -2 },
+            "tags": { "endingAuthority": true }
+          }
+        },
+        {
+          "id": "right",
+          "label": "Keep them with captains",
+          "effects": {
+            "factions": { "gauge2": 4, "gauge1": -2 },
+            "tags": { "endingAuthority": true }
           }
         }
       ]
