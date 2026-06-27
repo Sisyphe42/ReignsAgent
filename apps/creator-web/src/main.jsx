@@ -707,6 +707,7 @@ function CardEditor({ card, asset, validation, onMutate, onStatus, tagCatalog })
           <button className="btn btn--ghost" type="button" onClick={() => setConfirmDelete(false)}>Cancel</button>
         </div>
       )}
+      <AuthorSummary card={card} validation={validation} tagCatalog={tagCatalog} />
       <div className="field-row">
         <input value={text} onChange={(event) => setText(event.target.value)} aria-label={`${card.id} text`} />
         <button className="btn" disabled={text === (card.text ?? "")} onClick={() => void saveText()}>Save text</button>
@@ -724,6 +725,77 @@ function CardEditor({ card, asset, validation, onMutate, onStatus, tagCatalog })
         ))}
       </div>
     </article>
+  );
+}
+
+function AuthorSummary({ card, validation, tagCatalog }) {
+  const requirementRows = describeRequirements(card.requirements, tagCatalog);
+  const choices = card.choices ?? [];
+  const issueCount = validation?.messages?.length ?? 0;
+
+  return (
+    <section className="author-summary" aria-label={`${card.id} author summary`}>
+      <div className="author-summary__head">
+        <div>
+          <span>Story state</span>
+          <strong>{card.id}</strong>
+        </div>
+        <span className={validation?.invalid ? "author-summary__status author-summary__status--invalid" : "author-summary__status"}>
+          {validation?.invalid ? `${issueCount} issue${issueCount === 1 ? "" : "s"}` : "Ready"}
+        </span>
+      </div>
+
+      <div className="author-summary__grid">
+        <div className="author-summary__section">
+          <span className="author-summary__label">Appears when</span>
+          <div className="author-summary__rows">
+            {requirementRows.map((row) => (
+              <div className="author-summary__row" key={row.key}>
+                <span className="author-summary__row-label">{row.label}</span>
+                <div className="author-summary__chips">
+                  {row.tags.length > 0 ? row.tags.map((tag) => (
+                    <span className={`author-summary__chip author-summary__chip--${row.tone}`} key={tag.key}>
+                      <span>{tag.label}</span>
+                      {tag.label !== tag.key && <code>{tag.key}</code>}
+                    </span>
+                  )) : (
+                    <span className={`author-summary__chip author-summary__chip--${row.tone}`}>
+                      <span>{row.note}</span>
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="author-summary__section">
+          <span className="author-summary__label">Choice outcomes</span>
+          <div className="author-summary__choices">
+            {choices.map((choice) => {
+              const effects = describeChoiceEffects(choice.effects, tagCatalog);
+              return (
+                <div className="author-summary__choice" key={choice.id}>
+                  <div className="author-summary__choice-head">
+                    <strong>{choice.id}</strong>
+                    <span>{choice.label || "Untitled choice"}</span>
+                  </div>
+                  <div className="author-summary__chips">
+                    {effects.map((effect, index) => (
+                      <span className={`author-summary__chip author-summary__chip--${effect.tone}`} key={`${effect.label}-${index}`}>
+                        <span>{effect.label}</span>
+                        {effect.detail && <code>{effect.detail}</code>}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+            {choices.length === 0 && <span className="empty-inline">No choices configured</span>}
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -3032,6 +3104,106 @@ function cardExcerpt(card) {
   const text = (card.text ?? "").trim();
   if (!text) return "No card text";
   return text.length > 72 ? `${text.slice(0, 72)}...` : text;
+}
+
+function describeRequirements(requirements = {}, tagCatalog) {
+  const groups = [
+    { key: "allTags", label: "Needs all", tone: "gate" },
+    { key: "anyTags", label: "Needs one", tone: "gate" },
+    { key: "noneTags", label: "Hidden while", tone: "danger" }
+  ];
+  const rows = groups.flatMap((group) => {
+    const tags = normalizeTagArray(requirements?.[group.key]).map((tag) => describeTag(tag, tagCatalog));
+    return tags.length > 0 ? [{ ...group, tags }] : [];
+  });
+
+  if (rows.length === 0) {
+    return [{
+      key: "always",
+      label: "No gates",
+      tone: "open",
+      note: "Always eligible",
+      tags: []
+    }];
+  }
+
+  return rows;
+}
+
+function describeChoiceEffects(effects = {}, tagCatalog) {
+  const items = [];
+  const factionEntries = Object.entries(effects?.factions ?? {}).sort(compareFactionEntries);
+
+  for (const [faction, rawValue] of factionEntries) {
+    const value = Number(rawValue);
+    if (!Number.isFinite(value)) {
+      items.push({ tone: "neutral", label: faction, detail: formatSummaryValue(rawValue) });
+      continue;
+    }
+    if (value === 0) continue;
+    items.push({
+      tone: value > 0 ? "positive" : "negative",
+      label: faction,
+      detail: formatFactionDelta(value)
+    });
+  }
+
+  for (const [key, value] of Object.entries(effects?.tags ?? {}).sort(compareEntriesByKey)) {
+    const tag = describeTag(key, tagCatalog);
+    const clears = value === false || value === null;
+    const hasValue = value !== true && value !== false && value !== null && value !== undefined;
+    items.push({
+      tone: clears ? "danger" : "tag",
+      label: `${clears ? "Clear" : "Set"} ${tag.label}`,
+      detail: hasValue ? formatSummaryValue(value) : (tag.label !== tag.key ? tag.key : "")
+    });
+  }
+
+  for (const [key, value] of Object.entries(effects?.variables ?? {}).sort(compareEntriesByKey)) {
+    items.push({
+      tone: value === null ? "danger" : "variable",
+      label: `${value === null ? "Clear" : "Set"} ${key}`,
+      detail: value === null ? "" : formatSummaryValue(value)
+    });
+  }
+
+  return items.length > 0 ? items : [{ tone: "neutral", label: "No state changes" }];
+}
+
+function normalizeTagArray(value) {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.map((tag) => String(tag).trim()).filter(Boolean))];
+}
+
+function describeTag(key, tagCatalog) {
+  return {
+    key,
+    label: tagDisplayName(key, tagCatalog?.byKey)
+  };
+}
+
+function compareEntriesByKey([left], [right]) {
+  return left.localeCompare(right);
+}
+
+function compareFactionEntries([left], [right]) {
+  const leftIndex = FACTIONS.indexOf(left);
+  const rightIndex = FACTIONS.indexOf(right);
+  if (leftIndex === -1 && rightIndex === -1) return left.localeCompare(right);
+  if (leftIndex === -1) return 1;
+  if (rightIndex === -1) return -1;
+  return leftIndex - rightIndex;
+}
+
+function formatFactionDelta(value) {
+  return `${value > 0 ? "+" : ""}${value}`;
+}
+
+function formatSummaryValue(value) {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return JSON.stringify(value);
 }
 
 function createAssetMap(assets) {
