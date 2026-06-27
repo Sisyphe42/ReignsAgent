@@ -118,6 +118,10 @@ describe("ReignsAgent interface controller", () => {
 
   it("normalizes presentation customization behind explicit policy flags", () => {
     const presentation = normalizePresentationConfig({
+      gauges: {
+        faith: { label: "Rites", description: "Temple trust" },
+        treasury: { label: "Coin", hidden: true }
+      },
       css: {
         variables: { "--accent": "#d0a44a" },
         text: ".card { outline: 1px solid red; }"
@@ -128,6 +132,8 @@ describe("ReignsAgent interface controller", () => {
 
     assert.equal(presentation.css.variables["--accent"], "#d0a44a");
     assert.equal(presentation.css.text.includes("outline"), true);
+    assert.deepEqual(presentation.gauges.faith, { label: "Rites", description: "Temple trust", visible: true });
+    assert.deepEqual(presentation.gauges.treasury, { label: "Coin", visible: false });
     assert.deepEqual(presentation.active, { cssText: false, html: false, js: false });
 
     const trusted = normalizePresentationConfig({
@@ -135,6 +141,10 @@ describe("ReignsAgent interface controller", () => {
       policy: { allowCssText: true, allowHtml: true, allowJs: true }
     });
     assert.deepEqual(trusted.active, { cssText: true, html: true, js: true });
+    assert.throws(
+      () => normalizePresentationConfig({ gauges: { mana: { label: "Mana" } } }),
+      /must be one of/
+    );
   });
 
   it("ends the session when a faction leaves its bounds", () => {
@@ -366,8 +376,19 @@ describe("ReignsAgent interface controller", () => {
   });
 
   it("projects faction maps into left/right gauge data", () => {
-    const gauges = projectFactionGauges({ people: 25, treasury: 80 });
+    const gauges = projectFactionGauges(
+      { people: 25, treasury: 80 },
+      {
+        gauges: {
+          people: { label: "Crowd", description: "Public pressure" },
+          faith: { hidden: true }
+        }
+      }
+    );
+    assert.equal(gauges.faith, undefined);
     assert.equal(gauges.people.value, 25);
+    assert.equal(gauges.people.label, "Crowd");
+    assert.equal(gauges.people.description, "Public pressure");
     assert.equal(gauges.people.right, 75);
     assert.equal(gauges.treasury.left, 80);
   });

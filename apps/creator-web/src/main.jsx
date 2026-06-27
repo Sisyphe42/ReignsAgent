@@ -3049,7 +3049,8 @@ function PreviewPanel({ play, assetsByCard, playerReady, onStart, onSwipe }) {
         <div className="gauge-stack">
           {Object.entries(state?.gauges ?? {}).map(([name, gauge]) => (
             <div className="gauge" key={name}>
-              <span>{name} · {gauge.value}</span>
+              <span>{gauge.label || name} · {gauge.value}</span>
+              {gauge.description && <small>{gauge.description}</small>}
               <div><b style={{ width: `${gauge.left}%` }} /></div>
             </div>
           ))}

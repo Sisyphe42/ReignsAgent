@@ -2689,6 +2689,14 @@ summary:focus-visible {
   font-size: 0.72rem;
 }
 
+.gauge small {
+  display: block;
+  margin: -1px 0 5px;
+  color: var(--muted);
+  font-size: 0.68rem;
+  line-height: 1.35;
+}
+
 .gauge div {
   height: 10px;
   overflow: hidden;

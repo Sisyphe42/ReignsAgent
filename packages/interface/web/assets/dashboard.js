@@ -690,9 +690,12 @@ function renderGauges(gauges) {
   node.innerHTML = "";
   for (const [name, gauge] of Object.entries(gauges)) {
     const div = document.createElement("div");
+    const label = gauge.label || name;
+    const description = gauge.description ? `<div class="gauge__desc">${escapeHtml(gauge.description)}</div>` : "";
     div.className = "gauge";
     div.innerHTML = `
-      <div class="gauge__name">${escapeHtml(name)} · ${gauge.value}</div>
+      <div class="gauge__name">${escapeHtml(label)} · ${gauge.value}</div>
+      ${description}
       <div class="gauge__bar"><div class="gauge__fill" style="width:${gauge.left}%"></div></div>
     `;
     node.appendChild(div);

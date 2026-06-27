@@ -11,6 +11,22 @@
     },
     "presentation": {
       "schemaVersion": 1,
+      "gauges": {
+        "faith": {
+          "label": "Rites",
+          "description": "Temple trust and public ceremony."
+        },
+        "people": {
+          "label": "Crowd",
+          "description": "How ordinary citizens read the court."
+        },
+        "military": {
+          "label": "Watch"
+        },
+        "treasury": {
+          "label": "Coin"
+        }
+      },
       "css": {
         "variables": {
           "--accent": "#d2a94a",

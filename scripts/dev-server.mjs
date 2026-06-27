@@ -211,7 +211,7 @@ async function handleApi(req, res, url) {
       sessionId,
       turn: session.turn,
       factions: session.factions,
-      gauges: projectFactionGauges(session.factions),
+      gauges: projectFactionGauges(session.factions, store.editor.metadata?.presentation),
       currentCard: card,
       gameOver: session.gameOver
     });
@@ -227,7 +227,7 @@ async function handleApi(req, res, url) {
       sessionId: body.sessionId,
       turn: session.turn,
       factions: result.factions,
-      gauges: projectFactionGauges(result.factions),
+      gauges: projectFactionGauges(result.factions, store.editor.metadata?.presentation),
       currentCard: result.nextCard,
       gameOver: result.gameOver
     });

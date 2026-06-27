@@ -36,7 +36,7 @@ npm run content:feedback -- review-report.json
 
 The workbench URL carries panel state (`/workbench/content`) and optional skin state (`?skin=phantom`) without forcing a hard reload, so creator sessions can be refreshed or shared directly. In-progress editor work is still saved to `localStorage` and offered for restore on reload (server-validated through `/api/editor/restore`); player previews also accept the same `skin` query so creator and player surfaces stay visually aligned.
 
-Story progression remains data-driven. Authors should express narrative evolution through existing card `requirements`, choice `effects.tags`, choice `effects.variables`, and optional metadata labels. The Story workspace reads lightweight `metadata.story.groups` entries for chapters/themes/arcs/endings as an authoring organization layer only; these groups filter and explain the graph without changing core scheduling. Future presentation metadata may use `metadata.presentation.gauges` for renaming, describing, hiding, or restyling the default four gauge displays.
+Story progression remains data-driven. Authors should express narrative evolution through existing card `requirements`, choice `effects.tags`, choice `effects.variables`, and optional metadata labels. The Story workspace reads lightweight `metadata.story.groups` entries for chapters/themes/arcs/endings as an authoring organization layer only; these groups filter and explain the graph without changing core scheduling. Presentation metadata may use `metadata.presentation.gauges` to rename, describe, or hide the default four gauge displays without adding new player stats.
 
 `npm run build:game -- <bundle.json> <out.dir>` stitches a deployable player (`player.html` + `player-runtime.js`) that imports only the headless core — no pipeline, reviewer, or dashboard code ships to players.
 
@@ -126,6 +126,6 @@ console.log(diagnostics.healthScore, session.factions, build.player.choiceModel)
 
 ## Presentation And i18n
 
-Content may define `metadata.presentation.css.variables` for theme-level CSS custom properties. Raw CSS, HTML, and JS slots are normalized and exported for trusted hosts, but built-in players only apply raw CSS when `metadata.presentation.policy.allowCssText` is true and never execute HTML/JS by default.
+Content may define `metadata.presentation.css.variables` for theme-level CSS custom properties. It may also define `metadata.presentation.gauges` entries for the default `faith`, `people`, `military`, and `treasury` gauges with `label`, `description`, and `visible`/`hidden` display settings. Unknown gauge keys are rejected so this remains presentation metadata, not an arbitrary RPG attribute system. Raw CSS, HTML, and JS slots are normalized and exported for trusted hosts, but built-in players only apply raw CSS when `metadata.presentation.policy.allowCssText` is true and never execute HTML/JS by default.
 
 Content may define `metadata.i18n` plus per-card `i18n` entries. `createPlaySession({ locale })` and deployable `createPlayer(build, { locale })` resolve locale fallback and return localized card text and choice labels.

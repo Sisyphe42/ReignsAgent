@@ -40,6 +40,8 @@ describe("Phase 4 interface integration", () => {
       assert.match(started.sessionId, /^s_/);
       assert.equal(started.currentCard.choices.some((choice) => choice.id === "left"), true);
       assert.match(started.currentCard.text, /请愿/);
+      assert.equal(started.gauges.people.label, "Crowd");
+      assert.equal(started.gauges.treasury.label, "Coin");
       assert.equal(started.turn, 0);
 
       const swiped = await api(port, "/api/play/swipe", {

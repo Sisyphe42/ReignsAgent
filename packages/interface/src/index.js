@@ -188,6 +188,7 @@ export function normalizePresentationConfig(config = {}) {
       variables: normalizeCssVariables(css.variables ?? source.cssVariables ?? {}),
       text: cssText
     },
+    gauges: normalizeGaugePresentation(source.gauges ?? {}),
     html: normalizeStringSlots(source.html ?? {}),
     js: normalizeStringSlots(source.js ?? {}),
     policy,
@@ -698,13 +699,24 @@ export function serializeBuild(build) {
  * projectFactionGauges turns a factions map into left/right meter data the
  * dashboard can render without knowing the engine internals.
  */
-export function projectFactionGauges(factions) {
+export function projectFactionGauges(factions, presentation = {}) {
   assertPlainRecord(factions, "Factions");
+  const gaugePresentation = normalizeGaugePresentation(presentation?.presentation?.gauges ?? presentation?.gauges ?? {});
   const gauges = {};
   for (const faction of FACTIONS) {
+    const config = gaugePresentation[faction] ?? {};
+    if (config.visible === false) continue;
     const raw = factions[faction];
     const value = Number.isFinite(raw) ? Math.max(0, Math.min(100, raw)) : 50;
-    gauges[faction] = { value, left: value, right: 100 - value };
+    gauges[faction] = {
+      key: faction,
+      label: config.label ?? null,
+      description: config.description ?? null,
+      visible: true,
+      value,
+      left: value,
+      right: 100 - value
+    };
   }
   return gauges;
 }
@@ -760,6 +772,45 @@ function normalizeCssVariables(variables) {
   }
 
   return result;
+}
+
+function normalizeGaugePresentation(value) {
+  assertPlainRecord(value, "Presentation gauges");
+  const gauges = {};
+
+  for (const [key, raw] of Object.entries(value)) {
+    if (!FACTIONS.includes(key)) {
+      throw new InterfaceError(`Presentation gauge '${key}' must be one of: ${FACTIONS.join(", ")}`);
+    }
+    assertPlainRecord(raw, `Presentation gauge '${key}'`);
+
+    const entry = {};
+    if (raw.label !== undefined) {
+      if (typeof raw.label !== "string") {
+        throw new InterfaceError(`Presentation gauge '${key}' label must be a string`);
+      }
+      const label = raw.label.trim();
+      if (label) entry.label = label;
+    }
+    if (raw.description !== undefined) {
+      if (typeof raw.description !== "string") {
+        throw new InterfaceError(`Presentation gauge '${key}' description must be a string`);
+      }
+      const description = raw.description.trim();
+      if (description) entry.description = description;
+    }
+    if (raw.visible !== undefined && typeof raw.visible !== "boolean") {
+      throw new InterfaceError(`Presentation gauge '${key}' visible must be a boolean`);
+    }
+    if (raw.hidden !== undefined && typeof raw.hidden !== "boolean") {
+      throw new InterfaceError(`Presentation gauge '${key}' hidden must be a boolean`);
+    }
+
+    entry.visible = raw.hidden === true ? false : raw.visible !== false;
+    gauges[key] = entry;
+  }
+
+  return gauges;
 }
 
 function normalizePresentationPolicy(policy) {

@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" href="data:," />
   <title>ReignsAgent Player</title>
   <style>
     :root {
@@ -71,6 +72,7 @@
     .gauges { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 16px; }
     .gauge { background: var(--panel); border-radius: 6px; padding: 8px; border: 1px solid var(--border); }
     .gauge__name { font-size: 11px; color: var(--muted); text-transform: capitalize; }
+    .gauge__desc { margin-top: 2px; font-size: 10px; color: var(--muted); line-height: 1.35; }
     .gauge__bar { height: 6px; background: rgba(0, 0, 0, 0.26); border-radius: 3px; overflow: hidden; margin-top: 4px; }
     .gauge__fill { height: 100%; background: var(--accent-2); }
     .card {
@@ -172,6 +174,7 @@
     let player = null;
     let assetByCard = new Map();
     let lastSnap = null;
+    let presentation = {};
     let awaitingRestartConfirm = false;
 
     // attachSwipe is inlined here (mirroring packages/interface/web/assets/swipe-input.js)
@@ -260,6 +263,7 @@
       try {
         const build = JSON.parse(await file.text());
         assetByCard = createAssetMap(build.content?.assets ?? []);
+        presentation = build.presentation ?? {};
         applyPresentation(build.presentation);
         player = createPlayer(build, { locale: requestedLocale });
         player.on(render);
@@ -323,11 +327,11 @@
       const gauges = el("gauges");
       gauges.innerHTML = "";
       const factions = snap?.factions ?? {};
-      for (const [name, value] of Object.entries(factions)) {
-        const v = Math.max(0, Math.min(100, value));
+      for (const [name, gauge] of Object.entries(projectGauges(factions, presentation))) {
         const div = document.createElement("div");
         div.className = "gauge";
-        div.innerHTML = `<div class="gauge__name">${escapeHtml(name)} · ${v}</div><div class="gauge__bar"><div class="gauge__fill" style="width:${v}%"></div></div>`;
+        const description = gauge.description ? `<div class="gauge__desc">${escapeHtml(gauge.description)}</div>` : "";
+        div.innerHTML = `<div class="gauge__name">${escapeHtml(gauge.label || name)} · ${gauge.value}</div>${description}<div class="gauge__bar"><div class="gauge__fill" style="width:${gauge.left}%"></div></div>`;
         gauges.appendChild(div);
       }
       el("swipe-hint").hidden = !snap?.currentCard || snap?.gameOver;
@@ -383,6 +387,24 @@
     function resetChoiceButtonLabels() {
       el("left").textContent = "◀ Left";
       el("right").textContent = "Right ▶";
+    }
+
+    function projectGauges(factions, presentationConfig = {}) {
+      const config = presentationConfig?.gauges ?? {};
+      const result = {};
+      for (const name of ["faith", "people", "military", "treasury"]) {
+        const gaugeConfig = config[name] ?? {};
+        if (gaugeConfig.visible === false || gaugeConfig.hidden === true) continue;
+        const value = Math.max(0, Math.min(100, Number.isFinite(factions[name]) ? factions[name] : 50));
+        result[name] = {
+          label: typeof gaugeConfig.label === "string" && gaugeConfig.label.trim() ? gaugeConfig.label.trim() : null,
+          description: typeof gaugeConfig.description === "string" && gaugeConfig.description.trim() ? gaugeConfig.description.trim() : null,
+          value,
+          left: value,
+          right: 100 - value
+        };
+      }
+      return result;
     }
 
     function applyPresentation(presentation = {}) {
