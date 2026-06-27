@@ -1,4 +1,10 @@
-export const FACTIONS = Object.freeze(["faith", "people", "military", "treasury"]);
+export const FACTIONS = Object.freeze(["gauge0", "gauge1", "gauge2", "gauge3"]);
+export const LEGACY_FACTION_KEYS = Object.freeze({
+  faith: "gauge0",
+  people: "gauge1",
+  military: "gauge2",
+  treasury: "gauge3"
+});
 
 const DEFAULT_FACTION_VALUE = 50;
 const SNAPSHOT_SCHEMA_VERSION = 1;
@@ -249,8 +255,7 @@ export function normalizeCards(cards) {
       throw new CoreError(`Card '${card.id}' weight must be a positive finite number`);
     }
 
-    const requirements = card.requirements === undefined ? {} : card.requirements;
-    validateRequirements(card.id, requirements);
+    const requirements = normalizeRequirements(card.id, card.requirements === undefined ? {} : card.requirements);
     const seenChoiceIds = new Set();
 
     return {
@@ -266,8 +271,7 @@ export function normalizeCards(cards) {
           throw new CoreError(`Card '${card.id}' has duplicate choice id '${choice.id}'`);
         }
         seenChoiceIds.add(choice.id);
-        const effects = choice.effects === undefined ? {} : choice.effects;
-        validateEffects(card.id, choice.id, effects);
+        const effects = normalizeEffects(card.id, choice.id, choice.effects === undefined ? {} : choice.effects);
 
         return {
           ...choice,
@@ -288,20 +292,24 @@ export function validateCards(cards) {
 }
 
 function normalizeFactions(factions = {}) {
+  assertPlainRecord(factions, "Initial factions");
+  const source = normalizeFactionValueMap(factions, "Initial factions");
   const normalized = {};
 
   for (const faction of FACTIONS) {
-    normalized[faction] = clampFaction(factions[faction] ?? DEFAULT_FACTION_VALUE);
+    normalized[faction] = clampFaction(source[faction] ?? DEFAULT_FACTION_VALUE);
   }
 
   return normalized;
 }
 
 function normalizeFactionScales(scales = {}) {
+  assertPlainRecord(scales, "Faction scales");
+  const source = normalizeFactionValueMap(scales, "Faction scales");
   const normalized = {};
 
   for (const faction of FACTIONS) {
-    normalized[faction] = Number.isFinite(scales[faction]) ? scales[faction] : 1;
+    normalized[faction] = Number.isFinite(source[faction]) ? source[faction] : 1;
   }
 
   return normalized;
@@ -331,7 +339,7 @@ function normalizeHookEntry(hookEntry, context) {
   return normalized;
 }
 
-function validateRequirements(cardId, requirements) {
+function normalizeRequirements(cardId, requirements) {
   assertPlainRecord(requirements, `Card '${cardId}' requirements`);
 
   for (const key of Object.keys(requirements)) {
@@ -348,10 +356,14 @@ function validateRequirements(cardId, requirements) {
     assertPlainRecord(requirements.variables, `Card '${cardId}' variables requirement`);
   }
 
-  validateFactionRequirements(cardId, requirements.factions);
+  const normalized = { ...requirements };
+  if (requirements.factions !== undefined) {
+    normalized.factions = normalizeFactionRequirements(cardId, requirements.factions);
+  }
+  return normalized;
 }
 
-function validateEffects(cardId, choiceId, effects) {
+function normalizeEffects(cardId, choiceId, effects) {
   assertPlainRecord(effects, `Choice '${choiceId}' on card '${cardId}' effects`);
 
   for (const key of Object.keys(effects)) {
@@ -370,8 +382,8 @@ function validateEffects(cardId, choiceId, effects) {
 
   if (effects.factions !== undefined) {
     assertPlainRecord(effects.factions, `Choice '${choiceId}' on card '${cardId}' faction effects`);
-    for (const [faction, delta] of Object.entries(effects.factions)) {
-      assertFaction(faction);
+    const normalizedFactions = normalizeFactionValueMap(effects.factions, `Choice '${choiceId}' on card '${cardId}' faction effects`);
+    for (const [faction, delta] of Object.entries(normalizedFactions)) {
       if (!Number.isFinite(delta)) {
         throw new CoreError(`Choice '${choiceId}' on card '${cardId}' faction delta '${faction}' must be finite`);
       }
@@ -390,6 +402,12 @@ function validateEffects(cardId, choiceId, effects) {
   if (effects.dismissHooks !== undefined) {
     assertStringArray(effects.dismissHooks, `Choice '${choiceId}' on card '${cardId}' dismissHooks`);
   }
+
+  const normalized = { ...effects };
+  if (effects.factions !== undefined) {
+    normalized.factions = normalizeFactionValueMap(effects.factions, `Choice '${choiceId}' on card '${cardId}' faction effects`);
+  }
+  return normalized;
 }
 
 function validateHookEntry(hookEntry, context) {
@@ -445,9 +463,9 @@ function applyChoice(choice, state, recordEvent) {
 
   if (effects.factions) {
     for (const [faction, delta] of Object.entries(effects.factions)) {
-      assertFaction(faction);
-      const scale = state.factionScales[faction] ?? 1;
-      state.factions[faction] = clampFaction(state.factions[faction] + delta * scale);
+      const key = normalizeFactionKey(faction);
+      const scale = state.factionScales[key] ?? 1;
+      state.factions[key] = clampFaction(state.factions[key] + delta * scale);
     }
   }
 
@@ -534,8 +552,8 @@ function createHookContext(state, hookEntry, event) {
       state.cardWeights[cardId] = (state.cardWeights[cardId] ?? 0) + amount;
     },
     scaleFaction(faction, factor) {
-      assertFaction(faction);
-      state.factionScales[faction] = (state.factionScales[faction] ?? 1) * factor;
+      const key = normalizeFactionKey(faction);
+      state.factionScales[key] = (state.factionScales[key] ?? 1) * factor;
     }
   };
 }
@@ -593,7 +611,10 @@ function variablesMatch(required = {}, variables) {
 }
 
 function factionsMatch(required = {}, factions) {
-  return Object.entries(required).every(([faction, rule]) => factionRuleMatches(factions[faction], rule));
+  return Object.entries(required).every(([faction, rule]) => {
+    const key = normalizeFactionKey(faction);
+    return factionRuleMatches(factions[key], rule);
+  });
 }
 
 function factionRuleMatches(value, rule) {
@@ -613,17 +634,26 @@ function factionRuleMatches(value, rule) {
   return true;
 }
 
-function validateFactionRequirements(cardId, requirements) {
+function normalizeFactionRequirements(cardId, requirements) {
   if (requirements === undefined) {
-    return;
+    return {};
   }
 
   assertPlainRecord(requirements, `Card '${cardId}' faction requirements`);
+  const normalized = {};
+  const sources = {};
 
   for (const [faction, rule] of Object.entries(requirements)) {
-    assertFaction(faction);
-    validateFactionRequirementRule(`Card '${cardId}' faction requirement '${faction}'`, rule);
+    const key = normalizeFactionKey(faction);
+    if (sources[key] !== undefined) {
+      throw new CoreError(`Card '${cardId}' faction requirements define both '${sources[key]}' and '${faction}' for '${key}'`);
+    }
+    sources[key] = faction;
+    validateFactionRequirementRule(`Card '${cardId}' faction requirement '${key}'`, rule);
+    normalized[key] = rule;
   }
+
+  return normalized;
 }
 
 function validateFactionRequirementRule(context, rule) {
@@ -744,10 +774,32 @@ function assertPlayable(state) {
   }
 }
 
-function assertFaction(faction) {
+export function normalizeFactionKey(faction) {
   if (!FACTIONS.includes(faction)) {
+    const legacyKey = LEGACY_FACTION_KEYS[faction];
+    if (legacyKey) {
+      return legacyKey;
+    }
     throw new CoreError(`Unknown faction '${faction}'`);
   }
+  return faction;
+}
+
+function normalizeFactionValueMap(values, context) {
+  assertPlainRecord(values, context);
+  const normalized = {};
+  const sources = {};
+
+  for (const [faction, value] of Object.entries(values)) {
+    const key = normalizeFactionKey(faction);
+    if (sources[key] !== undefined) {
+      throw new CoreError(`${context} defines both '${sources[key]}' and '${faction}' for '${key}'`);
+    }
+    sources[key] = faction;
+    normalized[key] = value;
+  }
+
+  return normalized;
 }
 
 function assertPlainRecord(value, context) {

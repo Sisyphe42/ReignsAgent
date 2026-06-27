@@ -25,8 +25,8 @@ Story and Content work should now optimize for non-technical content authors: th
 
 ## Data Direction
 - Do not migrate the content schema during the docs-first phase.
-- Prefer lightweight metadata before engine contracts: `metadata.story.groups` describes chapters, themes, arcs, and ending groups; `metadata.presentation.gauges` can rename, describe, or hide the default four gauge displays without creating new built-in stats.
-- Cards should continue to express progression through `requirements`, choice `effects.tags`, and choice `effects.variables`. Current requirements may combine tag gates, exact variable gates, and default-gauge threshold gates through `requirements.factions`; this remains story eligibility data, not a new player stat model.
+- Prefer lightweight metadata before engine contracts: `metadata.story.groups` describes chapters, themes, arcs, and ending groups; `metadata.presentation.gauges` can rename, describe, or hide the default four neutral gauge slots (`gauge0` through `gauge3`) without creating new built-in stats.
+- Cards should continue to express progression through `requirements`, choice `effects.tags`, and choice `effects.variables`. Current requirements may combine tag gates, exact variable gates, and default-gauge threshold gates through `requirements.factions`; this remains story eligibility data, not a new player stat model. Legacy `faith`/`people`/`military`/`treasury` keys are import aliases only.
 
 ## Later Architecture Options
 - `packages/contracts`: Shared schemas for cards, content bundles, diagnostics reports, connector requests, and build manifests.

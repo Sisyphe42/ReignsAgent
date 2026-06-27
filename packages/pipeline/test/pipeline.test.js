@@ -124,7 +124,7 @@ describe("ReignsAgent pipeline", () => {
     const feedback = createDiagnosticFeedback({
       module: "ReignsAgent-Reviewer",
       parameters: { cycles: 10 },
-      summary: { gameOverByFaction: { people: 6, faith: 0 } },
+      summary: { gameOverByFaction: { gauge1: 6, gauge0: 0 } },
       diagnostics: {
         warnings: [
           { code: "never_visited_cards", message: "unreached", cardIds: ["hidden"] },
@@ -137,7 +137,7 @@ describe("ReignsAgent pipeline", () => {
           },
           { code: "unsatisfied_required_tags", message: "missing tags", tags: ["royal"] },
           { code: "unsatisfied_required_variables", message: "missing variables", variables: ["edictSigned"] },
-          { code: "unsatisfied_required_factions", message: "missing faction threshold", factions: ["people"] },
+          { code: "unsatisfied_required_factions", message: "missing faction threshold", factions: ["gauge1"] },
           { code: "stalled_cycles", message: "no cards", cycles: 2 },
           { code: "high_game_over_rate", severity: "warning", message: "too many endings" }
         ]
@@ -166,7 +166,7 @@ describe("ReignsAgent pipeline", () => {
     const validation = validateCardSet([
       {
         id: "duplicate",
-        choices: [{ id: "left", effects: { factions: { faith: 1 } } }]
+        choices: [{ id: "left", effects: { factions: { gauge0: 1 } } }]
       },
       {
         id: "duplicate",
@@ -184,6 +184,20 @@ describe("ReignsAgent pipeline", () => {
     assert.match(validation.errors.join("\n"), /unknown key 'typo'/);
   });
 
+  it("normalizes legacy faction keys when parsing content", () => {
+    const cards = parseCardsJson(JSON.stringify({
+      cards: [{
+        id: "legacy",
+        text: "Legacy key import.",
+        requirements: { factions: { people: { min: 55 } } },
+        choices: [{ id: "left", label: "Left", effects: { factions: { faith: 1, treasury: -1 } } }]
+      }]
+    }));
+
+    assert.deepEqual(cards[0].requirements.factions, { gauge1: { min: 55 } });
+    assert.deepEqual(cards[0].choices[0].effects.factions, { gauge0: 1, gauge3: -1 });
+  });
+
   it("validates default gauge threshold requirements", () => {
     const valid = validateCardSet([
       {
@@ -191,7 +205,7 @@ describe("ReignsAgent pipeline", () => {
         requirements: {
           allTags: ["grainRelief"],
           variables: { openingPetition: "grain" },
-          factions: { people: { min: 55 }, treasury: { max: 48 } }
+          factions: { gauge1: { min: 55 }, gauge3: { max: 48 } }
         },
         choices: [{ id: "left", label: "Left", effects: {} }]
       }
@@ -199,7 +213,7 @@ describe("ReignsAgent pipeline", () => {
     const invalid = validateCardSet([
       {
         id: "bad-branch",
-        requirements: { factions: { morale: { min: 5 }, people: { floor: 55 } } },
+        requirements: { factions: { morale: { min: 5 }, gauge1: { floor: 55 } } },
         choices: [{ id: "left", label: "Left", effects: {} }]
       }
     ]);
@@ -216,7 +230,7 @@ describe("ReignsAgent pipeline", () => {
       count: 3,
       diagnostics: {
         parameters: { cycles: 2 },
-        summary: { gameOverByFaction: { treasury: 2 } },
+        summary: { gameOverByFaction: { gauge3: 2 } },
         diagnostics: { warnings: [] }
       }
     });
@@ -257,7 +271,7 @@ function sampleCards() {
           id: "approve",
           label: "Approve",
           effects: {
-            factions: { people: -10, treasury: 10 },
+            factions: { gauge1: -10, gauge3: 10 },
             tags: { taxed: true }
           }
         }

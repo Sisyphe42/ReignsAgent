@@ -392,7 +392,7 @@
     function projectGauges(factions, presentationConfig = {}) {
       const config = presentationConfig?.gauges ?? {};
       const result = {};
-      for (const name of ["faith", "people", "military", "treasury"]) {
+      for (const name of ["gauge0", "gauge1", "gauge2", "gauge3"]) {
         const gaugeConfig = config[name] ?? {};
         if (gaugeConfig.visible === false || gaugeConfig.hidden === true) continue;
         const value = Math.max(0, Math.min(100, Number.isFinite(factions[name]) ? factions[name] : 50));

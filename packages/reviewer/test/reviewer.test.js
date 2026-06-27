@@ -27,9 +27,9 @@ describe("ReignsAgent reviewer", () => {
     assert.equal(report.summary.maxTurns, 3);
     assert.deepEqual(report.summary.turnPercentiles, { p10: 3, p50: 3, p90: 3 });
     assert.equal(report.summary.gameOverRate, 1);
-    assert.equal(report.summary.terminalReasonRates["game_over:people"], 1);
-    assert.equal(report.summary.gameOverByFaction.people, 10);
-    assert.equal(report.summary.terminalReasons["game_over:people"], 10);
+    assert.equal(report.summary.terminalReasonRates["game_over:gauge1"], 1);
+    assert.equal(report.summary.gameOverByFaction.gauge1, 10);
+    assert.equal(report.summary.terminalReasons["game_over:gauge1"], 10);
     assert.equal(report.coverage.cardVisitRates.opening, 1);
     assert.equal(report.coverage.cardCycleRates.opening, 1);
     assert.equal(report.coverage.cardVisitRates.unrest, 1);
@@ -53,7 +53,7 @@ describe("ReignsAgent reviewer", () => {
     assert.equal(result.schemaVersion, 1);
     assert.equal(result.seed, 5);
     assert.equal(result.turns, 3);
-    assert.equal(result.terminalReason, "game_over:people");
+    assert.equal(result.terminalReason, "game_over:gauge1");
     assert.deepEqual(result.cardVisits, { opening: 1, unrest: 1, crackdown: 1 });
     assert.deepEqual(result.choiceVisits, {
       "opening:tax": 1,
@@ -129,7 +129,7 @@ describe("ReignsAgent reviewer", () => {
             id: "left",
             label: "Hear grain",
             effects: {
-              factions: { people: 6, treasury: -4 },
+              factions: { gauge1: 6, gauge3: -4 },
               tags: { grainRelief: true },
               variables: { openingPetition: "grain" }
             }
@@ -138,7 +138,7 @@ describe("ReignsAgent reviewer", () => {
             id: "right",
             label: "Hear border",
             effects: {
-              factions: { military: 6 },
+              factions: { gauge2: 6 },
               tags: { borderAlert: true },
               variables: { openingPetition: "border" }
             }
@@ -150,7 +150,7 @@ describe("ReignsAgent reviewer", () => {
         requirements: {
           allTags: ["grainRelief"],
           variables: { openingPetition: "grain" },
-          factions: { people: { min: 55 }, treasury: { max: 48 } }
+          factions: { gauge1: { min: 55 }, gauge3: { max: 48 } }
         },
         choices: [{ id: "left", effects: {} }]
       },
@@ -159,7 +159,7 @@ describe("ReignsAgent reviewer", () => {
         requirements: {
           allTags: ["borderAlert"],
           variables: { openingPetition: "border" },
-          factions: { military: { min: 55 } }
+          factions: { gauge2: { min: 55 } }
         },
         choices: [{ id: "left", effects: {} }]
       }
@@ -172,7 +172,7 @@ describe("ReignsAgent reviewer", () => {
         choices: [{ id: "left", label: "Hear grain" }],
         tags: ["grainRelief"],
         variables: ["openingPetition"],
-        factions: ["people", "treasury"]
+        factions: ["gauge1", "gauge3"]
       },
       {
         from: "opening",
@@ -180,7 +180,7 @@ describe("ReignsAgent reviewer", () => {
         choices: [{ id: "right", label: "Hear border" }],
         tags: ["borderAlert"],
         variables: ["openingPetition"],
-        factions: ["military"]
+        factions: ["gauge2"]
       }
     ]);
     assert.deepEqual(graph.reachableCards, ["opening", "grain-branch", "border-branch"]);
@@ -275,7 +275,7 @@ describe("ReignsAgent reviewer", () => {
         },
         {
           id: "hidden",
-          requirements: { factions: { people: { min: 80 } } },
+          requirements: { factions: { gauge1: { min: 80 } } },
           choices: [{ id: "pass", effects: {} }]
         }
       ],
@@ -284,10 +284,10 @@ describe("ReignsAgent reviewer", () => {
       seed: 1
     });
 
-    assert.deepEqual(report.graph.unsatisfiedRequiredFactions, ["people"]);
+    assert.deepEqual(report.graph.unsatisfiedRequiredFactions, ["gauge1"]);
     assert.equal(
       report.diagnostics.warnings.find((warning) => warning.code === "unsatisfied_required_factions").factions[0],
-      "people"
+      "gauge1"
     );
   });
 
@@ -332,7 +332,7 @@ function sampleCards() {
         {
           id: "tax",
           effects: {
-            factions: { people: -20, treasury: 10 },
+            factions: { gauge1: -20, gauge3: 10 },
             tags: { unrest: true }
           }
         }
@@ -345,7 +345,7 @@ function sampleCards() {
         {
           id: "arm",
           effects: {
-            factions: { people: -20, military: 10 },
+            factions: { gauge1: -20, gauge2: 10 },
             tags: { armed: true }
           }
         }
@@ -358,7 +358,7 @@ function sampleCards() {
         {
           id: "order",
           effects: {
-            factions: { people: -20, military: 10 }
+            factions: { gauge1: -20, gauge2: 10 }
           }
         }
       ]

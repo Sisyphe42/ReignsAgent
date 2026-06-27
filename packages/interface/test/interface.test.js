@@ -27,7 +27,7 @@ describe("ReignsAgent interface controller", () => {
     const invalid = validatePlayerCards([
       {
         id: "lop-sided",
-        choices: [{ id: "left", effects: { factions: { people: -1 } } }]
+        choices: [{ id: "left", effects: { factions: { gauge1: -1 } } }]
       }
     ]);
 
@@ -39,7 +39,7 @@ describe("ReignsAgent interface controller", () => {
     const editor = createCardEditor({ cards: [sampleCard("gate")] });
 
     editor.addCard(sampleCard("door"));
-    editor.setChoiceEffects("door", "left", { factions: { people: -3 } });
+    editor.setChoiceEffects("door", "left", { factions: { gauge1: -3 } });
     editor.updateCard("gate", { weight: 2 });
     editor.removeCard("door");
 
@@ -64,8 +64,8 @@ describe("ReignsAgent interface controller", () => {
         text: "Decide.",
         weight: 1,
         choices: [
-          { id: "left", label: "Left", effects: { factions: { people: -10 } } },
-          { id: "right", label: "Right", effects: { factions: { treasury: 10 } } }
+          { id: "left", label: "Left", effects: { factions: { gauge1: -10 } } },
+          { id: "right", label: "Right", effects: { factions: { gauge3: 10 } } }
         ]
       }
     ];
@@ -75,7 +75,7 @@ describe("ReignsAgent interface controller", () => {
 
     assert.equal(first.id, "always");
     const swipe = session.swipe("right");
-    assert.equal(swipe.factions.treasury, 60);
+    assert.equal(swipe.factions.gauge3, 60);
     assert.equal(swipe.gameOver, null);
 
     const snapshot = session.state();
@@ -102,8 +102,8 @@ describe("ReignsAgent interface controller", () => {
           }
         },
         choices: [
-          { id: "left", label: "Open", effects: { factions: { people: 2 } } },
-          { id: "right", label: "Close", effects: { factions: { military: 2 } } }
+          { id: "left", label: "Open", effects: { factions: { gauge1: 2 } } },
+          { id: "right", label: "Close", effects: { factions: { gauge2: 2 } } }
         ]
       }
     ];
@@ -119,8 +119,8 @@ describe("ReignsAgent interface controller", () => {
   it("normalizes presentation customization behind explicit policy flags", () => {
     const presentation = normalizePresentationConfig({
       gauges: {
-        faith: { label: "Rites", description: "Temple trust" },
-        treasury: { label: "Coin", hidden: true }
+        gauge0: { label: "Rites", description: "Temple trust" },
+        gauge3: { label: "Coin", hidden: true }
       },
       css: {
         variables: { "--accent": "#d0a44a" },
@@ -132,9 +132,16 @@ describe("ReignsAgent interface controller", () => {
 
     assert.equal(presentation.css.variables["--accent"], "#d0a44a");
     assert.equal(presentation.css.text.includes("outline"), true);
-    assert.deepEqual(presentation.gauges.faith, { label: "Rites", description: "Temple trust", visible: true });
-    assert.deepEqual(presentation.gauges.treasury, { label: "Coin", visible: false });
+    assert.deepEqual(presentation.gauges.gauge0, { label: "Rites", description: "Temple trust", visible: true });
+    assert.deepEqual(presentation.gauges.gauge3, { label: "Coin", visible: false });
     assert.deepEqual(presentation.active, { cssText: false, html: false, js: false });
+
+    const legacyPresentation = normalizePresentationConfig({
+      gauges: {
+        people: { label: "Crowd" }
+      }
+    });
+    assert.deepEqual(legacyPresentation.gauges.gauge1, { label: "Crowd", visible: true });
 
     const trusted = normalizePresentationConfig({
       css: { variables: {}, text: ".stage { padding: 1px; }" },
@@ -154,8 +161,8 @@ describe("ReignsAgent interface controller", () => {
         text: "Pick.",
         weight: 1,
         choices: [
-          { id: "left", label: "Left", effects: { factions: { people: -100 } } },
-          { id: "right", label: "Right", effects: { factions: { people: -100 } } }
+          { id: "left", label: "Left", effects: { factions: { gauge1: -100 } } },
+          { id: "right", label: "Right", effects: { factions: { gauge1: -100 } } }
         ]
       }
     ];
@@ -164,7 +171,7 @@ describe("ReignsAgent interface controller", () => {
     session.start();
     const swipe = session.swipe("left");
 
-    assert.deepEqual(swipe.gameOver, { reason: "faction_bounds", faction: "people", value: 0 });
+    assert.deepEqual(swipe.gameOver, { reason: "faction_bounds", faction: "gauge1", value: 0 });
   });
 
   it("rejects unknown swipe directions", () => {
@@ -180,8 +187,8 @@ describe("ReignsAgent interface controller", () => {
         text: "Open.",
         weight: 1,
         choices: [
-          { id: "left", label: "Left", effects: { factions: { people: -5 } } },
-          { id: "right", label: "Right", effects: { factions: { treasury: 5 } } }
+          { id: "left", label: "Left", effects: { factions: { gauge1: -5 } } },
+          { id: "right", label: "Right", effects: { factions: { gauge3: 5 } } }
         ]
       },
       {
@@ -203,8 +210,8 @@ describe("ReignsAgent interface controller", () => {
         averageTurns: 4,
         gameOverRate: 0.1,
         stalledRate: 0,
-        gameOverByFaction: { faith: 0, people: 1, military: 0, treasury: 0 },
-        factionAverages: { faith: 50, people: 45, military: 50, treasury: 55 }
+        gameOverByFaction: { gauge0: 0, gauge1: 1, gauge2: 0, gauge3: 0 },
+        factionAverages: { gauge0: 50, gauge1: 45, gauge2: 50, gauge3: 55 }
       },
       coverage: {
         cardVisitRates: { open: 1, locked: 0 },
@@ -234,7 +241,7 @@ describe("ReignsAgent interface controller", () => {
     assert.deepEqual(projection.coverage.choiceCycleRates, { left: 0.4, right: 0.6 });
     assert.deepEqual(projection.graph.unreachableCards, ["locked"]);
     assert.deepEqual(projection.warnings[0].details.cardIds, ["locked"]);
-    assert.equal(projection.factions.find((entry) => entry.faction === "people").gameOverShare, 0.1);
+    assert.equal(projection.factions.find((entry) => entry.faction === "gauge1").gameOverShare, 0.1);
   });
 
   it("projects story group coverage into narrative diagnostics", () => {
@@ -316,11 +323,11 @@ describe("ReignsAgent interface controller", () => {
     const feedback = summarizeFeedback({
       module: "ReignsAgent-Reviewer",
       parameters: { cycles: 4 },
-      summary: { gameOverByFaction: { people: 1 } },
+      summary: { gameOverByFaction: { gauge1: 1 } },
       diagnostics: {
         warnings: [
           { code: "unsatisfied_required_tags", severity: "error", message: "missing", tags: ["crown"] },
-          { code: "unsatisfied_required_factions", severity: "error", message: "missing threshold", factions: ["people"] }
+          { code: "unsatisfied_required_factions", severity: "error", message: "missing threshold", factions: ["gauge1"] }
         ]
       }
     });
@@ -329,7 +336,7 @@ describe("ReignsAgent interface controller", () => {
     assert.equal(feedback.actions[0].type, "add_tag_producers");
     assert.deepEqual(feedback.actions[0].target, ["crown"]);
     assert.equal(feedback.actions[1].type, "adjust_faction_requirements");
-    assert.deepEqual(feedback.actions[1].target, ["people"]);
+    assert.deepEqual(feedback.actions[1].target, ["gauge1"]);
   });
 
   it("builds a connector config and generation plan without storing secrets", () => {
@@ -362,7 +369,7 @@ describe("ReignsAgent interface controller", () => {
     const build = prepareGameBuild({ editor, buildId: "twin-1" });
     assert.equal(build.buildId, "twin-1");
     assert.equal(build.player.choiceModel, "binary");
-    assert.deepEqual(build.player.factions, ["faith", "people", "military", "treasury"]);
+    assert.deepEqual(build.player.factions, ["gauge0", "gauge1", "gauge2", "gauge3"]);
     assert.equal(build.player.i18n.defaultLocale, "en");
     assert.equal(build.presentation.active.js, false);
     assert.equal(build.content.cards.length, 2);
@@ -380,20 +387,20 @@ describe("ReignsAgent interface controller", () => {
 
   it("projects faction maps into left/right gauge data", () => {
     const gauges = projectFactionGauges(
-      { people: 25, treasury: 80 },
+      { gauge1: 25, gauge3: 80 },
       {
         gauges: {
-          people: { label: "Crowd", description: "Public pressure" },
-          faith: { hidden: true }
+          gauge1: { label: "Crowd", description: "Public pressure" },
+          gauge0: { hidden: true }
         }
       }
     );
-    assert.equal(gauges.faith, undefined);
-    assert.equal(gauges.people.value, 25);
-    assert.equal(gauges.people.label, "Crowd");
-    assert.equal(gauges.people.description, "Public pressure");
-    assert.equal(gauges.people.right, 75);
-    assert.equal(gauges.treasury.left, 80);
+    assert.equal(gauges.gauge0, undefined);
+    assert.equal(gauges.gauge1.value, 25);
+    assert.equal(gauges.gauge1.label, "Crowd");
+    assert.equal(gauges.gauge1.description, "Public pressure");
+    assert.equal(gauges.gauge1.right, 75);
+    assert.equal(gauges.gauge3.left, 80);
   });
 
   it("runs diagnostics end-to-end through the reviewer", () => {
@@ -416,8 +423,8 @@ function sampleCard(id) {
     text: `Card ${id}.`,
     weight: 1,
     choices: [
-      { id: "left", label: "Left", effects: { factions: { people: -3 } } },
-      { id: "right", label: "Right", effects: { factions: { treasury: 3 } } }
+      { id: "left", label: "Left", effects: { factions: { gauge1: -3 } } },
+      { id: "right", label: "Right", effects: { factions: { gauge3: 3 } } }
     ]
   };
 }

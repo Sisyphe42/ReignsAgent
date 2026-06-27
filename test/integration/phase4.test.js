@@ -40,8 +40,8 @@ describe("Phase 4 interface integration", () => {
       assert.match(started.sessionId, /^s_/);
       assert.equal(started.currentCard.choices.some((choice) => choice.id === "left"), true);
       assert.match(started.currentCard.text, /请愿/);
-      assert.equal(started.gauges.people.label, "Crowd");
-      assert.equal(started.gauges.treasury.label, "Coin");
+      assert.equal(started.gauges.gauge1.label, "Crowd");
+      assert.equal(started.gauges.gauge3.label, "Coin");
       assert.equal(started.turn, 0);
 
       const swiped = await api(port, "/api/play/swipe", {
@@ -76,21 +76,21 @@ describe("Phase 4 interface integration", () => {
 
       const factionSet = await api(
         port,
-        `/api/editor/cards/${firstCardId}/choices/${firstChoiceId}/effects/faction/people`,
+        `/api/editor/cards/${firstCardId}/choices/${firstChoiceId}/effects/faction/gauge1`,
         { method: "POST", body: { value: -7 } }
       );
       assert.equal(
-        factionSet.card.choices.find((c) => c.id === firstChoiceId).effects.factions.people,
+        factionSet.card.choices.find((c) => c.id === firstChoiceId).effects.factions.gauge1,
         -7
       );
 
       const factionCleared = await api(
         port,
-        `/api/editor/cards/${firstCardId}/choices/${firstChoiceId}/effects/faction/people`,
+        `/api/editor/cards/${firstCardId}/choices/${firstChoiceId}/effects/faction/gauge1`,
         { method: "DELETE" }
       );
       const clearedEffects = factionCleared.card.choices.find((c) => c.id === firstChoiceId).effects;
-      assert.equal(clearedEffects.factions?.people === undefined, true);
+      assert.equal(clearedEffects.factions?.gauge1 === undefined, true);
 
       const tagSet = await api(
         port,

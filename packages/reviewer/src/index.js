@@ -1,4 +1,4 @@
-import { FACTIONS, createRuntime } from "../../core/src/index.js";
+import { FACTIONS, createRuntime, normalizeCards, normalizeFactionKey } from "../../core/src/index.js";
 
 const REPORT_SCHEMA_VERSION = 1;
 const DEFAULT_CYCLES = 100000;
@@ -90,20 +90,21 @@ export function runSimulationCycle(options = {}) {
 }
 
 export function analyzeCardGraph(cards, initialState = {}) {
+  const normalizedCards = normalizeCards(cards);
   const { tags: initialTags, variables: initialVariables, factions: initialFactions } = normalizeInitialSignals(initialState);
-  const nodes = cards.map((card) => ({
+  const nodes = normalizedCards.map((card) => ({
     id: card.id,
     requirements: card.requirements ?? {}
   }));
   const producedSignalsByChoice = new Map();
 
-  for (const card of cards) {
+  for (const card of normalizedCards) {
     producedSignalsByChoice.set(card.id, collectProducedSignalsByChoice(card));
   }
 
   const edges = [];
   for (const [sourceId, choiceSignals] of producedSignalsByChoice.entries()) {
-    for (const target of cards) {
+    for (const target of normalizedCards) {
       const requiredTags = [
         ...(target.requirements?.allTags ?? []),
         ...(target.requirements?.anyTags ?? [])
@@ -161,7 +162,7 @@ export function analyzeCardGraph(cards, initialState = {}) {
     }
   }
 
-  const reachability = analyzeReachability(cards, initialTags, initialVariables, initialFactions);
+  const reachability = analyzeReachability(normalizedCards, initialTags, initialVariables, initialFactions);
 
   return {
     nodes,
@@ -172,15 +173,15 @@ export function analyzeCardGraph(cards, initialState = {}) {
     initiallyEligibleCards: reachability.initiallyEligibleCards,
     reachableCards: reachability.reachableCards,
     unreachableCards: reachability.unreachableCards,
-    unsatisfiedRequiredTags: collectUnsatisfiedRequiredTags(cards, producedTags),
-    unsatisfiedRequiredVariables: collectUnsatisfiedRequiredVariables(cards, producedVariables),
-    unsatisfiedRequiredFactions: collectUnsatisfiedRequiredFactions(cards, producedFactionRanges)
+    unsatisfiedRequiredTags: collectUnsatisfiedRequiredTags(normalizedCards, producedTags),
+    unsatisfiedRequiredVariables: collectUnsatisfiedRequiredVariables(normalizedCards, producedVariables),
+    unsatisfiedRequiredFactions: collectUnsatisfiedRequiredFactions(normalizedCards, producedFactionRanges)
   };
 }
 
 function normalizeReviewOptions(options) {
   return {
-    cards: options.cards ?? [],
+    cards: normalizeCards(options.cards ?? []),
     cycles: normalizePositiveInteger(options.cycles ?? DEFAULT_CYCLES, "cycles"),
     maxTurns: normalizePositiveInteger(options.maxTurns ?? DEFAULT_MAX_TURNS, "maxTurns"),
     seed: normalizeSeed(options.seed ?? 1),
@@ -702,9 +703,13 @@ function initialVariableSignals(variables) {
 }
 
 function initialFactionRanges(factions = {}) {
+  const normalized = {};
+  for (const [faction, value] of Object.entries(factions)) {
+    normalized[normalizeFactionKey(faction)] = value;
+  }
   return Object.fromEntries(
     FACTIONS.map((faction) => {
-      const value = Number.isFinite(factions[faction]) ? clampFaction(factions[faction]) : DEFAULT_FACTION_VALUE;
+      const value = Number.isFinite(normalized[faction]) ? clampFaction(normalized[faction]) : DEFAULT_FACTION_VALUE;
       return [faction, { min: value, max: value }];
     })
   );

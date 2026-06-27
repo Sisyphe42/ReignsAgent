@@ -12,7 +12,7 @@ const PANELS = [
   { id: "settings", label: "Settings", group: "Release" }
 ];
 
-const FACTIONS = ["faith", "people", "military", "treasury"];
+const FACTIONS = ["gauge0", "gauge1", "gauge2", "gauge3"];
 const SKINS = [
   ["workbench", "Workbench"],
   ["famicom", "Famicom"],

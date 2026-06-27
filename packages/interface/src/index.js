@@ -1,4 +1,4 @@
-import { FACTIONS, createRuntime, restoreState, serializeState } from "../../core/src/index.js";
+import { FACTIONS, createRuntime, normalizeCards, normalizeFactionKey, restoreState, serializeState } from "../../core/src/index.js";
 import {
   buildCardGenerationRequest,
   createContentBundle,
@@ -280,10 +280,13 @@ export function createCardEditor(options = {}) {
 
     setChoiceEffects(cardId, choiceId, effects) {
       assertPlainRecord(effects, "Choice effects");
+      const cardIndex = cards.findIndex((candidate) => candidate.id === cardId);
       const card = requireCard(cards, cardId);
       const choice = requireChoice(card, choiceId);
       choice.effects = cloneJsonSafe(effects, `Card '${cardId}' choice '${choiceId}' effects`);
-      return cloneJsonSafe(card, `Card '${cardId}'`);
+      const normalizedCard = cloneCards([card])[0];
+      cards[cardIndex] = normalizedCard;
+      return cloneJsonSafe(normalizedCard, `Card '${cardId}'`);
     },
 
     setMetadata(nextMetadata) {
@@ -728,7 +731,7 @@ function cloneCards(cards) {
   if (!Array.isArray(cards)) {
     throw new InterfaceError("Cards must be an array");
   }
-  return cloneJsonSafe(cards, "Cards");
+  return normalizeCards(cloneJsonSafe(cards, "Cards"));
 }
 
 function requireCard(cards, cardId) {
@@ -778,11 +781,19 @@ function normalizeCssVariables(variables) {
 function normalizeGaugePresentation(value) {
   assertPlainRecord(value, "Presentation gauges");
   const gauges = {};
+  const sources = {};
 
   for (const [key, raw] of Object.entries(value)) {
-    if (!FACTIONS.includes(key)) {
+    let gaugeKey;
+    try {
+      gaugeKey = normalizeFactionKey(key);
+    } catch {
       throw new InterfaceError(`Presentation gauge '${key}' must be one of: ${FACTIONS.join(", ")}`);
     }
+    if (sources[gaugeKey] !== undefined) {
+      throw new InterfaceError(`Presentation gauges define both '${sources[gaugeKey]}' and '${key}' for '${gaugeKey}'`);
+    }
+    sources[gaugeKey] = key;
     assertPlainRecord(raw, `Presentation gauge '${key}'`);
 
     const entry = {};
@@ -808,7 +819,7 @@ function normalizeGaugePresentation(value) {
     }
 
     entry.visible = raw.hidden === true ? false : raw.visible !== false;
-    gauges[key] = entry;
+    gauges[gaugeKey] = entry;
   }
 
   return gauges;

@@ -22,7 +22,7 @@ const setStatus = (node, message, kind = "") => {
 };
 
 const SAMPLE_URL = "/api/samples/oss-court";
-const FACTION_LIST = ["faith", "people", "military", "treasury"];
+const FACTION_LIST = ["gauge0", "gauge1", "gauge2", "gauge3"];
 const PERSIST_KEY = "reigns-agent.editor.v1";
 let assetByCard = new Map();
 let appliedPresentationVariables = new Set();
@@ -587,8 +587,8 @@ el("add-create").addEventListener("click", async () => {
         card: {
           id, text, weight: 1,
           choices: [
-            { id: "left", label: "Left", effects: { factions: { people: -3 } } },
-            { id: "right", label: "Right", effects: { factions: { treasury: 3 } } }
+            { id: "left", label: "Left", effects: { factions: { gauge1: -3 } } },
+            { id: "right", label: "Right", effects: { factions: { gauge3: 3 } } }
           ]
         }
       }

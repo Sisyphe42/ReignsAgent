@@ -10,7 +10,13 @@ const CSV_COLUMNS = [
   "choiceLabel",
   "effectsJson"
 ];
-const PIPELINE_FACTIONS = new Set(["faith", "people", "military", "treasury"]);
+const PIPELINE_FACTIONS = new Set(["gauge0", "gauge1", "gauge2", "gauge3"]);
+const LEGACY_FACTION_KEYS = Object.freeze({
+  faith: "gauge0",
+  people: "gauge1",
+  military: "gauge2",
+  treasury: "gauge3"
+});
 const REQUIREMENT_KEYS = new Set(["allTags", "anyTags", "noneTags", "variables", "factions"]);
 const EFFECT_KEYS = new Set(["tags", "variables", "factions", "activateHooks", "dismissHooks"]);
 
@@ -429,8 +435,8 @@ export function buildCardGenerationPrompt({ theme, count, constraints = {}, diag
   const lines = [
     `Generate ${count} minimalist Reigns-style cards for: ${theme}.`,
     "Return only JSON with a top-level cards array.",
-    "Each card needs id, text, and two concise choices with faction/tag effects.",
-    "Card requirements may combine tags, exact variables, and default faction thresholds for story branches.",
+    "Each card needs id, text, and two concise choices with gauge/tag effects.",
+    "Card requirements may combine tags, exact variables, and default gauge thresholds for story branches.",
     "Use only low-level tags and variables for custom state; do not create built-in upper-level progression systems.",
     `Constraints: ${JSON.stringify(constraints)}`
   ];
@@ -471,7 +477,15 @@ function normalizeMetadata(metadata) {
     throw new PipelineError("Content bundle metadata must be an object");
   }
 
-  return { ...metadata };
+  const normalized = { ...metadata };
+  const presentation = metadata.presentation;
+  if (isPlainRecord(presentation) && isPlainRecord(presentation.gauges)) {
+    normalized.presentation = {
+      ...presentation,
+      gauges: normalizeFactionValueMap(presentation.gauges, "metadata.presentation.gauges")
+    };
+  }
+  return normalized;
 }
 
 function normalizeAssets(assets) {
@@ -530,7 +544,7 @@ function normalizeCard(card) {
   return {
     ...card,
     weight: card.weight ?? 1,
-    requirements: card.requirements === undefined ? {} : card.requirements,
+    requirements: normalizeRequirementKeys(card.requirements === undefined ? {} : card.requirements),
     choices: card.choices.map((choice) => {
       if (!choice?.id) {
         throw new PipelineError(`Card '${card.id}' has a choice without an id`);
@@ -538,10 +552,26 @@ function normalizeCard(card) {
 
       return {
         ...choice,
-        effects: choice.effects === undefined ? {} : choice.effects
+        effects: normalizeEffectKeys(choice.effects === undefined ? {} : choice.effects)
       };
     })
   };
+}
+
+function normalizeRequirementKeys(requirements) {
+  const normalized = { ...requirements };
+  if (requirements.factions !== undefined) {
+    normalized.factions = normalizeFactionValueMap(requirements.factions, "requirements.factions");
+  }
+  return normalized;
+}
+
+function normalizeEffectKeys(effects) {
+  const normalized = { ...effects };
+  if (effects.factions !== undefined) {
+    normalized.factions = normalizeFactionValueMap(effects.factions, "effects.factions");
+  }
+  return normalized;
 }
 
 function normalizeCards(cards) {
@@ -655,12 +685,13 @@ function validateEffects(effects, context, errors) {
       errors.push(`${context}.factions must be an object`);
     } else {
       for (const [faction, delta] of Object.entries(effects.factions)) {
-        if (!PIPELINE_FACTIONS.has(faction)) {
+        const key = normalizeFactionKey(faction);
+        if (!key) {
           errors.push(`${context}.factions has unknown faction '${faction}'`);
         }
 
         if (!Number.isFinite(delta)) {
-          errors.push(`${context}.factions.${faction} must be finite`);
+          errors.push(`${context}.factions.${key ?? faction} must be finite`);
         }
       }
     }
@@ -692,11 +723,12 @@ function validateFactionRequirements(requirements, context, errors) {
   }
 
   for (const [faction, rule] of Object.entries(requirements)) {
-    if (!PIPELINE_FACTIONS.has(faction)) {
+    const key = normalizeFactionKey(faction);
+    if (!key) {
       errors.push(`${context} has unknown faction '${faction}'`);
       continue;
     }
-    validateFactionRequirementRule(rule, `${context}.${faction}`, errors);
+    validateFactionRequirementRule(rule, `${context}.${key}`, errors);
   }
 }
 
@@ -889,6 +921,34 @@ function createRequestId(purpose, text) {
   }
 
   return `${purpose}:${(hash >>> 0).toString(16).padStart(8, "0")}`;
+}
+
+function normalizeFactionKey(faction) {
+  if (PIPELINE_FACTIONS.has(faction)) {
+    return faction;
+  }
+  return LEGACY_FACTION_KEYS[faction] ?? null;
+}
+
+function normalizeFactionValueMap(values, context) {
+  if (!isPlainRecord(values)) {
+    throw new PipelineError(`${context} must be an object`);
+  }
+
+  const normalized = {};
+  const sources = {};
+  for (const [faction, value] of Object.entries(values)) {
+    const key = normalizeFactionKey(faction);
+    if (!key) {
+      throw new PipelineError(`${context} has unknown faction '${faction}'`);
+    }
+    if (sources[key] !== undefined) {
+      throw new PipelineError(`${context} defines both '${sources[key]}' and '${faction}' for '${key}'`);
+    }
+    sources[key] = faction;
+    normalized[key] = value;
+  }
+  return normalized;
 }
 
 function cardGenerationSchema() {

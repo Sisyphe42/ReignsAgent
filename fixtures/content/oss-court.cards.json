@@ -12,18 +12,18 @@
     "presentation": {
       "schemaVersion": 1,
       "gauges": {
-        "faith": {
+        "gauge0": {
           "label": "Rites",
           "description": "Temple trust and public ceremony."
         },
-        "people": {
+        "gauge1": {
           "label": "Crowd",
           "description": "How ordinary citizens read the court."
         },
-        "military": {
+        "gauge2": {
           "label": "Watch"
         },
-        "treasury": {
+        "gauge3": {
           "label": "Coin"
         }
       },
@@ -217,7 +217,7 @@
           "id": "left",
           "label": "Hear the grain plea",
           "effects": {
-            "factions": { "people": 6, "treasury": -4 },
+            "factions": { "gauge1": 6, "gauge3": -4 },
             "tags": { "grainRelief": true },
             "variables": { "openingPetition": "grain" }
           }
@@ -226,7 +226,7 @@
           "id": "right",
           "label": "Hear the border plea",
           "effects": {
-            "factions": { "military": 6, "treasury": -3 },
+            "factions": { "gauge2": 6, "gauge3": -3 },
             "tags": { "borderAlert": true },
             "variables": { "openingPetition": "border" }
           }
@@ -250,8 +250,8 @@
         "allTags": ["grainRelief"],
         "variables": { "openingPetition": "grain" },
         "factions": {
-          "people": { "min": 55 },
-          "treasury": { "max": 48 }
+          "gauge1": { "min": 55 },
+          "gauge3": { "max": 48 }
         }
       },
       "choices": [
@@ -259,7 +259,7 @@
           "id": "left",
           "label": "Open the stores",
           "effects": {
-            "factions": { "people": 8, "treasury": -7, "faith": 2 },
+            "factions": { "gauge1": 8, "gauge3": -7, "gauge0": 2 },
             "tags": { "granaryOpen": true }
           }
         },
@@ -267,7 +267,7 @@
           "id": "right",
           "label": "Audit the ledgers",
           "effects": {
-            "factions": { "treasury": 5, "people": -4 },
+            "factions": { "gauge3": 5, "gauge1": -4 },
             "tags": { "auditLedger": true }
           }
         }
@@ -290,8 +290,8 @@
         "allTags": ["granaryOpen"],
         "variables": { "openingPetition": "grain" },
         "factions": {
-          "people": { "min": 60 },
-          "treasury": { "max": 42 }
+          "gauge1": { "min": 60 },
+          "gauge3": { "max": 42 }
         }
       },
       "choices": [
@@ -299,7 +299,7 @@
           "id": "left",
           "label": "Issue ration tokens",
           "effects": {
-            "factions": { "people": 4, "treasury": -4, "faith": 1 },
+            "factions": { "gauge1": 4, "gauge3": -4, "gauge0": 1 },
             "tags": { "breadLine": true, "rationTokens": true },
             "variables": { "reliefStyle": "tokens" }
           }
@@ -308,7 +308,7 @@
           "id": "right",
           "label": "Let the guilds serve",
           "effects": {
-            "factions": { "treasury": 3, "people": -2, "faith": -1 },
+            "factions": { "gauge3": 3, "gauge1": -2, "gauge0": -1 },
             "tags": { "breadLine": true, "guildRelief": true },
             "variables": { "reliefStyle": "guild" }
           }
@@ -332,8 +332,8 @@
         "allTags": ["borderAlert"],
         "variables": { "openingPetition": "border" },
         "factions": {
-          "military": { "min": 55 },
-          "treasury": { "max": 48 }
+          "gauge2": { "min": 55 },
+          "gauge3": { "max": 48 }
         }
       },
       "choices": [
@@ -341,7 +341,7 @@
           "id": "left",
           "label": "Raise the banner",
           "effects": {
-            "factions": { "military": 8, "people": -4, "treasury": -3 },
+            "factions": { "gauge2": 8, "gauge1": -4, "gauge3": -3 },
             "tags": { "muster": true }
           }
         },
@@ -349,7 +349,7 @@
           "id": "right",
           "label": "Send an envoy",
           "effects": {
-            "factions": { "faith": 3, "treasury": -4, "military": -2 },
+            "factions": { "gauge0": 3, "gauge3": -4, "gauge2": -2 },
             "tags": { "envoySent": true }
           }
         }
@@ -372,8 +372,8 @@
         "allTags": ["envoySent"],
         "variables": { "openingPetition": "border" },
         "factions": {
-          "military": { "max": 55 },
-          "treasury": { "max": 45 }
+          "gauge2": { "max": 55 },
+          "gauge3": { "max": 45 }
         }
       },
       "choices": [
@@ -381,7 +381,7 @@
           "id": "left",
           "label": "Accept the parley",
           "effects": {
-            "factions": { "faith": 4, "military": -3, "people": 2 },
+            "factions": { "gauge0": 4, "gauge2": -3, "gauge1": 2 },
             "tags": { "watchParley": true },
             "variables": { "borderStyle": "parley" }
           }
@@ -390,7 +390,7 @@
           "id": "right",
           "label": "Write a patrol charter",
           "effects": {
-            "factions": { "military": 3, "treasury": -3, "people": -1 },
+            "factions": { "gauge2": 3, "gauge3": -3, "gauge1": -1 },
             "tags": { "patrolCharter": true },
             "variables": { "borderStyle": "patrol" }
           }
@@ -416,7 +416,7 @@
           "id": "left",
           "label": "Sign the charter",
           "effects": {
-            "factions": { "treasury": 8, "people": -2 },
+            "factions": { "gauge3": 8, "gauge1": -2 },
             "tags": { "harborTrade": true }
           }
         },
@@ -424,7 +424,7 @@
           "id": "right",
           "label": "Delay the charter",
           "effects": {
-            "factions": { "people": 3, "treasury": -4 },
+            "factions": { "gauge1": 3, "gauge3": -4 },
             "tags": { "charterDelayed": true }
           }
         }
@@ -449,7 +449,7 @@
           "id": "left",
           "label": "Hold the rite",
           "effects": {
-            "factions": { "faith": 7, "treasury": -3, "people": 2 },
+            "factions": { "gauge0": 7, "gauge3": -3, "gauge1": 2 },
             "tags": { "riteHeld": true }
           }
         },
@@ -457,7 +457,7 @@
           "id": "right",
           "label": "Keep it private",
           "effects": {
-            "factions": { "people": 3, "faith": -5 },
+            "factions": { "gauge1": 3, "gauge0": -5 },
             "tags": { "mediated": true }
           }
         }
@@ -482,7 +482,7 @@
           "id": "left",
           "label": "Reward the watch",
           "effects": {
-            "factions": { "military": 6, "treasury": -4 },
+            "factions": { "gauge2": 6, "gauge3": -4 },
             "tags": { "watchRewarded": true }
           }
         },
@@ -490,7 +490,7 @@
           "id": "right",
           "label": "Send them home",
           "effects": {
-            "factions": { "people": 4, "military": -5 },
+            "factions": { "gauge1": 4, "gauge2": -5 },
             "tags": { "watchDismissed": true }
           }
         }
@@ -515,7 +515,7 @@
           "id": "left",
           "label": "Publish the accounts",
           "effects": {
-            "factions": { "people": 4, "treasury": -3, "faith": 1 },
+            "factions": { "gauge1": 4, "gauge3": -3, "gauge0": 1 },
             "tags": { "ledgerOpen": true }
           }
         },
@@ -523,7 +523,7 @@
           "id": "right",
           "label": "Seal the accounts",
           "effects": {
-            "factions": { "treasury": 6, "people": -4 },
+            "factions": { "gauge3": 6, "gauge1": -4 },
             "tags": { "ledgerSealed": true }
           }
         }
@@ -548,7 +548,7 @@
           "id": "left",
           "label": "Spend on repairs",
           "effects": {
-            "factions": { "people": 5, "treasury": -5, "military": 1 },
+            "factions": { "gauge1": 5, "gauge3": -5, "gauge2": 1 },
             "tags": { "repairsFunded": true }
           }
         },
@@ -556,7 +556,7 @@
           "id": "right",
           "label": "Hold reserves",
           "effects": {
-            "factions": { "treasury": 5, "people": -3, "faith": -1 },
+            "factions": { "gauge3": 5, "gauge1": -3, "gauge0": -1 },
             "tags": { "reservesHeld": true }
           }
         }
@@ -581,7 +581,7 @@
           "id": "left",
           "label": "Open the gate",
           "effects": {
-            "factions": { "people": 5, "faith": 2, "military": -2 },
+            "factions": { "gauge1": 5, "gauge0": 2, "gauge2": -2 },
             "tags": { "gateOpened": true }
           }
         },
@@ -589,7 +589,7 @@
           "id": "right",
           "label": "Close the gate",
           "effects": {
-            "factions": { "military": 5, "treasury": 2, "people": -3 },
+            "factions": { "gauge2": 5, "gauge3": 2, "gauge1": -3 },
             "tags": { "gateClosed": true }
           }
         }
