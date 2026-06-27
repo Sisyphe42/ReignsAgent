@@ -1823,13 +1823,23 @@ select {
 }
 
 .faction-grid label {
+  min-width: 0;
   color: var(--muted);
   font-family: var(--font-data);
   font-size: 0.69rem;
 }
 
+.faction-grid__name {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .faction-grid input {
   width: 100%;
+  min-width: 0;
   margin-top: 4px;
   padding: 7px;
   color: var(--ink);
@@ -1872,17 +1882,32 @@ select {
 
 .effect-row {
   display: grid;
-  grid-template-columns: minmax(96px, 0.72fr) minmax(120px, 1fr) auto auto;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1fr) minmax(64px, auto) minmax(68px, auto);
   gap: 7px;
   align-items: center;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .effect-row--new {
-  grid-template-columns: minmax(96px, 0.72fr) minmax(120px, 1fr) auto;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1fr) minmax(64px, auto);
 }
 
 .effect-row__key {
+  min-width: 0;
+  overflow: hidden;
   color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.effect-row input {
+  min-width: 0;
+}
+
+.effect-row .btn {
+  min-width: 0;
+  padding-inline: 9px;
 }
 
 /* Requirement editor (semantic gating) */
@@ -2060,6 +2085,7 @@ select {
   justify-content: space-between;
   gap: 8px;
   width: 100%;
+  min-width: 0;
   padding: 6px 8px;
   color: var(--ink);
   text-align: left;
@@ -2086,6 +2112,7 @@ select {
 }
 
 .tag-picker__label {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2093,12 +2120,16 @@ select {
 
 .tag-picker__key {
   flex: 0 0 auto;
+  max-width: 46%;
+  overflow: hidden;
   padding: 1px 5px;
   color: var(--muted);
   border-radius: 3px;
   background: color-mix(in srgb, var(--bg) 60%, transparent);
   font-family: var(--font-data);
   font-size: 0.66rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .tag-picker__empty {

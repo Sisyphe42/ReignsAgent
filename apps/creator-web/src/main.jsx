@@ -462,6 +462,7 @@ function ContentPanel({ editor, assetsByCard, onImport, onMutate, onStatus, focu
   const [validationFilter, setValidationFilter] = useState("all");
   const [selectedCardId, setSelectedCardId] = useState(null);
   const tagCatalog = useTagCatalog(editor);
+  const gaugeLabels = useMemo(() => createGaugeLabels(editor?.metadata?.presentation), [editor?.metadata?.presentation]);
 
   const cardItems = useMemo(() => (editor?.cards ?? []).map((card, index) => ({
     card,
@@ -621,6 +622,7 @@ function ContentPanel({ editor, assetsByCard, onImport, onMutate, onStatus, focu
                 onMutate={onMutate}
                 onStatus={onStatus}
                 tagCatalog={tagCatalog}
+                gaugeLabels={gaugeLabels}
               />
             </>
           ) : (
@@ -634,7 +636,7 @@ function ContentPanel({ editor, assetsByCard, onImport, onMutate, onStatus, focu
   );
 }
 
-function CardEditor({ card, asset, validation, onMutate, onStatus, tagCatalog }) {
+function CardEditor({ card, asset, validation, onMutate, onStatus, tagCatalog, gaugeLabels }) {
   const [text, setText] = useState(card.text ?? "");
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -707,7 +709,7 @@ function CardEditor({ card, asset, validation, onMutate, onStatus, tagCatalog })
           <button className="btn btn--ghost" type="button" onClick={() => setConfirmDelete(false)}>Cancel</button>
         </div>
       )}
-      <AuthorSummary card={card} validation={validation} tagCatalog={tagCatalog} />
+      <AuthorSummary card={card} validation={validation} tagCatalog={tagCatalog} gaugeLabels={gaugeLabels} />
       <div className="field-row">
         <input value={text} onChange={(event) => setText(event.target.value)} aria-label={`${card.id} text`} />
         <button className="btn" disabled={text === (card.text ?? "")} onClick={() => void saveText()}>Save text</button>
@@ -721,6 +723,7 @@ function CardEditor({ card, asset, validation, onMutate, onStatus, tagCatalog })
             choice={choice}
             onMutate={onMutate}
             onStatus={onStatus}
+            gaugeLabels={gaugeLabels}
           />
         ))}
       </div>
@@ -728,8 +731,8 @@ function CardEditor({ card, asset, validation, onMutate, onStatus, tagCatalog })
   );
 }
 
-function AuthorSummary({ card, validation, tagCatalog }) {
-  const requirementRows = describeRequirements(card.requirements, tagCatalog);
+function AuthorSummary({ card, validation, tagCatalog, gaugeLabels }) {
+  const requirementRows = describeRequirements(card.requirements, tagCatalog, gaugeLabels);
   const choices = card.choices ?? [];
   const issueCount = validation?.messages?.length ?? 0;
 
@@ -773,7 +776,7 @@ function AuthorSummary({ card, validation, tagCatalog }) {
           <span className="author-summary__label">Choice outcomes</span>
           <div className="author-summary__choices">
             {choices.map((choice) => {
-              const effects = describeChoiceEffects(choice.effects, tagCatalog);
+              const effects = describeChoiceEffects(choice.effects, tagCatalog, gaugeLabels);
               return (
                 <div className="author-summary__choice" key={choice.id}>
                   <div className="author-summary__choice-head">
@@ -1023,7 +1026,7 @@ function RequirementGroup({ mode, heading, hint, tags, tagCatalog, onChange, onS
   );
 }
 
-function ChoiceEditor({ cardId, choice, onMutate, onStatus }) {
+function ChoiceEditor({ cardId, choice, onMutate, onStatus, gaugeLabels }) {
   const [label, setLabel] = useState(choice.label ?? "");
   const [advanced, setAdvanced] = useState(JSON.stringify(choice.effects ?? {}, null, 2));
   const [factions, setFactions] = useState(() => createFactionDraft(choice.effects?.factions));
@@ -1047,16 +1050,17 @@ function ChoiceEditor({ cardId, choice, onMutate, onStatus }) {
     const value = factions[faction] ?? "";
     const raw = value.trim();
     const current = choice.effects?.factions?.[faction];
+    const label = gaugeDisplayName(faction, gaugeLabels);
     if (raw === "" && current === undefined) return;
     if (raw !== "" && Number(raw) === current) return;
     if (raw !== "" && !Number.isFinite(Number(raw))) {
-      onStatus(`${faction} must be finite`);
+      onStatus(`${label} must be finite`);
       setFactions(createFactionDraft(choice.effects?.factions));
       return;
     }
     const path = `${choicePath(cardId, choice.id)}/effects/faction/${faction}`;
     await onMutate(
-      `Updating ${choice.id} ${faction}`,
+      `Updating ${choice.id} ${label}`,
       async () => {
         if (raw === "") {
           await api(path, { method: "DELETE" });
@@ -1064,7 +1068,7 @@ function ChoiceEditor({ cardId, choice, onMutate, onStatus }) {
           await api(path, { method: "POST", body: { value: Number(raw) } });
         }
       },
-      `Updated ${choice.id} ${faction}`
+      `Updated ${choice.id} ${label}`
     );
   }
 
@@ -1092,7 +1096,7 @@ function ChoiceEditor({ cardId, choice, onMutate, onStatus }) {
       <div className="faction-grid">
         {FACTIONS.map((faction) => (
           <label key={faction}>
-            {faction}
+            <span className="faction-grid__name" title={faction}>{gaugeDisplayName(faction, gaugeLabels)}</span>
             <input
               type="number"
               value={factions[faction] ?? ""}
@@ -1287,6 +1291,7 @@ function StoryPanel({ editor, diagnostics, onOpen, onFocusCard, onPushHistory, o
   const [selectedGroupId, setSelectedGroupId] = useState(null);
   const tagCatalog = useTagCatalog(editor);
   const storyGroups = useStoryGroups(editor);
+  const gaugeLabels = useMemo(() => createGaugeLabels(editor?.metadata?.presentation), [editor?.metadata?.presentation]);
 
   const storyIssues = useMemo(() => deriveStoryIssues({
     graph,
@@ -1399,6 +1404,7 @@ function StoryPanel({ editor, diagnostics, onOpen, onFocusCard, onPushHistory, o
               cards={editor?.cards ?? []}
               onFocusCard={onFocusCard}
               tagCatalog={tagCatalog}
+              gaugeLabels={gaugeLabels}
               onConnect={createConnection}
               onDisconnect={deleteConnection}
               onUndo={onUndo}
@@ -1868,6 +1874,7 @@ function StoryGraph({
   cards,
   onFocusCard,
   tagCatalog,
+  gaugeLabels,
   onConnect,
   onDisconnect,
   onUndo,
@@ -2159,7 +2166,7 @@ function StoryGraph({
         const midX = (x1 + x2) / 2;
         const midY = (y1 + y2) / 2;
         const choiceIds = (edge.choices ?? []).map((choice) => choice.id);
-        const edgeLabel = edgeSignalLabel(edge, tagCatalog?.byKey);
+        const edgeLabel = edgeSignalLabel(edge, tagCatalog?.byKey, gaugeLabels);
         const isHoverEdge = hoverEdgeRef.current?.key === `${edge.from}->${edge.to}`;
         if (isHoverEdge) {
           // Highlight the whole edge when hovered.
@@ -3258,6 +3265,18 @@ function createFactionDraft(factions = {}) {
   }));
 }
 
+function createGaugeLabels(presentation = {}) {
+  const gauges = presentation?.gauges ?? {};
+  return Object.fromEntries(FACTIONS.map((faction) => {
+    const label = gauges?.[faction]?.label;
+    return [faction, typeof label === "string" && label.trim() ? label.trim() : faction];
+  }));
+}
+
+function gaugeDisplayName(faction, gaugeLabels) {
+  return gaugeLabels?.[faction] || faction;
+}
+
 function parseTagValue(text) {
   const trimmed = text.trim();
   if (trimmed === "" || trimmed === "false") return null;
@@ -3289,7 +3308,7 @@ function cardExcerpt(card) {
   return text.length > 72 ? `${text.slice(0, 72)}...` : text;
 }
 
-function describeRequirements(requirements = {}, tagCatalog) {
+function describeRequirements(requirements = {}, tagCatalog, gaugeLabels) {
   const groups = [
     { key: "allTags", label: "Needs all", tone: "gate" },
     { key: "anyTags", label: "Needs one", tone: "gate" },
@@ -3318,7 +3337,7 @@ function describeRequirements(requirements = {}, tagCatalog) {
     .sort(compareFactionEntries)
     .map(([key, rule]) => ({
       key,
-      label: formatFactionRequirement(key, rule)
+      label: formatFactionRequirement(key, rule, gaugeLabels)
     }));
   if (factionItems.length > 0) {
     rows.push({
@@ -3342,20 +3361,20 @@ function describeRequirements(requirements = {}, tagCatalog) {
   return rows;
 }
 
-function describeChoiceEffects(effects = {}, tagCatalog) {
+function describeChoiceEffects(effects = {}, tagCatalog, gaugeLabels) {
   const items = [];
   const factionEntries = Object.entries(effects?.factions ?? {}).sort(compareFactionEntries);
 
   for (const [faction, rawValue] of factionEntries) {
     const value = Number(rawValue);
     if (!Number.isFinite(value)) {
-      items.push({ tone: "neutral", label: faction, detail: formatSummaryValue(rawValue) });
+      items.push({ tone: "neutral", label: gaugeDisplayName(faction, gaugeLabels), detail: formatSummaryValue(rawValue) });
       continue;
     }
     if (value === 0) continue;
     items.push({
       tone: value > 0 ? "positive" : "negative",
-      label: faction,
+      label: gaugeDisplayName(faction, gaugeLabels),
       detail: formatFactionDelta(value)
     });
   }
@@ -3382,16 +3401,17 @@ function describeChoiceEffects(effects = {}, tagCatalog) {
   return items.length > 0 ? items : [{ tone: "neutral", label: "No state changes" }];
 }
 
-function formatFactionRequirement(faction, rule) {
+function formatFactionRequirement(faction, rule, gaugeLabels) {
+  const label = gaugeDisplayName(faction, gaugeLabels);
   if (Number.isFinite(rule)) {
-    return `${faction} = ${rule}`;
+    return `${label} = ${rule}`;
   }
 
   const parts = [];
   if (Number.isFinite(rule?.min)) parts.push(`>= ${rule.min}`);
   if (Number.isFinite(rule?.max)) parts.push(`<= ${rule.max}`);
   if (Number.isFinite(rule?.equals)) parts.push(`= ${rule.equals}`);
-  return parts.length > 0 ? `${faction} ${parts.join(" and ")}` : faction;
+  return parts.length > 0 ? `${label} ${parts.join(" and ")}` : label;
 }
 
 function normalizeTagArray(value) {
@@ -3509,14 +3529,14 @@ function tagDisplayName(key, byKey) {
   return entry?.label || key;
 }
 
-function edgeSignalLabel(edge, tagLabelsByKey) {
+function edgeSignalLabel(edge, tagLabelsByKey, gaugeLabels) {
   const labels = [];
   const tag = (edge.tags ?? [])[0];
   if (tag) labels.push(tagDisplayName(tag, tagLabelsByKey));
   const variable = (edge.variables ?? [])[0];
   if (variable) labels.push(`var ${variable}`);
   const faction = (edge.factions ?? [])[0];
-  if (faction) labels.push(`gauge ${faction}`);
+  if (faction) labels.push(gaugeDisplayName(faction, gaugeLabels));
 
   const total = (edge.tags?.length ?? 0) + (edge.variables?.length ?? 0) + (edge.factions?.length ?? 0);
   const visible = labels.slice(0, 2);
