@@ -99,10 +99,12 @@ function stitchPlayerRuntime(template, coreSource) {
 
   const coreWithoutExport = coreSource
     .replace(/export\s+const\s+FACTIONS\s*=/, "const FACTIONS =")
+    .replace(/export\s+const\s+LEGACY_FACTION_KEYS\s*=/, "const LEGACY_FACTION_KEYS =")
     .replace(/export\s+class\s+CoreError/g, "class CoreError")
     .replace(/export\s+function\s+createInitialState/g, "function createInitialState")
     .replace(/export\s+function\s+createRuntime/g, "function createRuntime")
     .replace(/export\s+function\s+getEligibleCards/g, "function getEligibleCards")
+    .replace(/export\s+function\s+normalizeFactionKey/g, "function normalizeFactionKey")
     .replace(/export\s+function\s+normalizeCards/g, "function normalizeCards")
     .replace(/export\s+function\s+restoreState/g, "function restoreState")
     .replace(/export\s+function\s+serializeState/g, "function serializeState")
@@ -115,6 +117,7 @@ function stitchPlayerRuntime(template, coreSource) {
 
 async function copyLocalBuildAssets(assets, outputDir) {
   const copied = [];
+  const seenUris = new Set();
 
   for (const asset of assets) {
     const uri = asset?.uri;
@@ -126,6 +129,10 @@ async function copyLocalBuildAssets(assets, outputDir) {
     if (!normalizedUri.startsWith("assets/") || normalizedUri.includes("..")) {
       continue;
     }
+    if (seenUris.has(normalizedUri)) {
+      continue;
+    }
+    seenUris.add(normalizedUri);
 
     const source = resolve(WEB_ROOT, normalizedUri);
     assertWithin(WEB_ROOT, source, `Asset '${uri}'`);

@@ -7,6 +7,8 @@ import {
   createConnectorConfig,
   createI18nCatalog,
   createPlaySession,
+  deriveStoryGroups,
+  deriveTagCatalog,
   loadEditorFromContent,
   localizeCard,
   normalizePresentationConfig,
@@ -25,7 +27,7 @@ describe("ReignsAgent interface controller", () => {
     const invalid = validatePlayerCards([
       {
         id: "lop-sided",
-        choices: [{ id: "left", effects: { factions: { people: -1 } } }]
+        choices: [{ id: "left", effects: { factions: { gauge1: -1 } } }]
       }
     ]);
 
@@ -37,7 +39,7 @@ describe("ReignsAgent interface controller", () => {
     const editor = createCardEditor({ cards: [sampleCard("gate")] });
 
     editor.addCard(sampleCard("door"));
-    editor.setChoiceEffects("door", "left", { factions: { people: -3 } });
+    editor.setChoiceEffects("door", "left", { factions: { gauge1: -3 } });
     editor.updateCard("gate", { weight: 2 });
     editor.removeCard("door");
 
@@ -62,8 +64,8 @@ describe("ReignsAgent interface controller", () => {
         text: "Decide.",
         weight: 1,
         choices: [
-          { id: "left", label: "Left", effects: { factions: { people: -10 } } },
-          { id: "right", label: "Right", effects: { factions: { treasury: 10 } } }
+          { id: "left", label: "Left", effects: { factions: { gauge1: -10 } } },
+          { id: "right", label: "Right", effects: { factions: { gauge3: 10 } } }
         ]
       }
     ];
@@ -73,7 +75,7 @@ describe("ReignsAgent interface controller", () => {
 
     assert.equal(first.id, "always");
     const swipe = session.swipe("right");
-    assert.equal(swipe.factions.treasury, 60);
+    assert.equal(swipe.factions.gauge3, 60);
     assert.equal(swipe.gameOver, null);
 
     const snapshot = session.state();
@@ -100,8 +102,8 @@ describe("ReignsAgent interface controller", () => {
           }
         },
         choices: [
-          { id: "left", label: "Open", effects: { factions: { people: 2 } } },
-          { id: "right", label: "Close", effects: { factions: { military: 2 } } }
+          { id: "left", label: "Open", effects: { factions: { gauge1: 2 } } },
+          { id: "right", label: "Close", effects: { factions: { gauge2: 2 } } }
         ]
       }
     ];
@@ -116,6 +118,10 @@ describe("ReignsAgent interface controller", () => {
 
   it("normalizes presentation customization behind explicit policy flags", () => {
     const presentation = normalizePresentationConfig({
+      gauges: {
+        gauge0: { label: "Rites", description: "Temple trust" },
+        gauge3: { label: "Coin", hidden: true }
+      },
       css: {
         variables: { "--accent": "#d0a44a" },
         text: ".card { outline: 1px solid red; }"
@@ -126,13 +132,26 @@ describe("ReignsAgent interface controller", () => {
 
     assert.equal(presentation.css.variables["--accent"], "#d0a44a");
     assert.equal(presentation.css.text.includes("outline"), true);
+    assert.deepEqual(presentation.gauges.gauge0, { label: "Rites", description: "Temple trust", visible: true });
+    assert.deepEqual(presentation.gauges.gauge3, { label: "Coin", visible: false });
     assert.deepEqual(presentation.active, { cssText: false, html: false, js: false });
+
+    const legacyPresentation = normalizePresentationConfig({
+      gauges: {
+        people: { label: "Crowd" }
+      }
+    });
+    assert.deepEqual(legacyPresentation.gauges.gauge1, { label: "Crowd", visible: true });
 
     const trusted = normalizePresentationConfig({
       css: { variables: {}, text: ".stage { padding: 1px; }" },
       policy: { allowCssText: true, allowHtml: true, allowJs: true }
     });
     assert.deepEqual(trusted.active, { cssText: true, html: true, js: true });
+    assert.throws(
+      () => normalizePresentationConfig({ gauges: { mana: { label: "Mana" } } }),
+      /must be one of/
+    );
   });
 
   it("ends the session when a faction leaves its bounds", () => {
@@ -142,8 +161,8 @@ describe("ReignsAgent interface controller", () => {
         text: "Pick.",
         weight: 1,
         choices: [
-          { id: "left", label: "Left", effects: { factions: { people: -100 } } },
-          { id: "right", label: "Right", effects: { factions: { people: -100 } } }
+          { id: "left", label: "Left", effects: { factions: { gauge1: -100 } } },
+          { id: "right", label: "Right", effects: { factions: { gauge1: -100 } } }
         ]
       }
     ];
@@ -152,7 +171,7 @@ describe("ReignsAgent interface controller", () => {
     session.start();
     const swipe = session.swipe("left");
 
-    assert.deepEqual(swipe.gameOver, { reason: "faction_bounds", faction: "people", value: 0 });
+    assert.deepEqual(swipe.gameOver, { reason: "faction_bounds", faction: "gauge1", value: 0 });
   });
 
   it("rejects unknown swipe directions", () => {
@@ -168,8 +187,8 @@ describe("ReignsAgent interface controller", () => {
         text: "Open.",
         weight: 1,
         choices: [
-          { id: "left", label: "Left", effects: { factions: { people: -5 } } },
-          { id: "right", label: "Right", effects: { factions: { treasury: 5 } } }
+          { id: "left", label: "Left", effects: { factions: { gauge1: -5 } } },
+          { id: "right", label: "Right", effects: { factions: { gauge3: 5 } } }
         ]
       },
       {
@@ -191,10 +210,13 @@ describe("ReignsAgent interface controller", () => {
         averageTurns: 4,
         gameOverRate: 0.1,
         stalledRate: 0,
-        gameOverByFaction: { faith: 0, people: 1, military: 0, treasury: 0 },
-        factionAverages: { faith: 50, people: 45, military: 50, treasury: 55 }
+        gameOverByFaction: { gauge0: 0, gauge1: 1, gauge2: 0, gauge3: 0 },
+        factionAverages: { gauge0: 50, gauge1: 45, gauge2: 50, gauge3: 55 }
       },
       coverage: {
+        cardVisitRates: { open: 1, locked: 0 },
+        cardCycleRates: { open: 1, locked: 0 },
+        choiceCycleRates: { left: 0.4, right: 0.6 },
         unvisitedCards: ["locked"],
         lowCycleCards: []
       },
@@ -214,26 +236,107 @@ describe("ReignsAgent interface controller", () => {
 
     assert.equal(projection.healthScore < 100, true);
     assert.match(projection.headline, /blocking issue/);
+    assert.deepEqual(projection.coverage.cardVisitRates, { open: 1, locked: 0 });
+    assert.deepEqual(projection.coverage.cardCycleRates, { open: 1, locked: 0 });
+    assert.deepEqual(projection.coverage.choiceCycleRates, { left: 0.4, right: 0.6 });
     assert.deepEqual(projection.graph.unreachableCards, ["locked"]);
     assert.deepEqual(projection.warnings[0].details.cardIds, ["locked"]);
-    assert.equal(projection.factions.find((entry) => entry.faction === "people").gameOverShare, 0.1);
+    assert.equal(projection.factions.find((entry) => entry.faction === "gauge1").gameOverShare, 0.1);
+  });
+
+  it("projects story group coverage into narrative diagnostics", () => {
+    const cards = [
+      {
+        id: "gate",
+        text: "Gate.",
+        choices: [{ id: "left", label: "Left", effects: { tags: { grainRelief: true } } }]
+      },
+      {
+        id: "granary",
+        text: "Granary.",
+        requirements: { allTags: ["grainRelief"] },
+        choices: [{ id: "left", label: "Left", effects: {} }]
+      },
+      {
+        id: "ending",
+        text: "Ending.",
+        requirements: { allTags: ["neverProduced"] },
+        choices: [{ id: "left", label: "Left", effects: {} }]
+      }
+    ];
+
+    const projection = summarizeDiagnostics({
+      module: "ReignsAgent-Reviewer",
+      parameters: { cycles: 20 },
+      summary: {
+        averageTurns: 5,
+        gameOverRate: 0,
+        stalledRate: 0,
+        gameOverByFaction: {},
+        factionAverages: {}
+      },
+      coverage: {
+        cardVisitRates: { gate: 1, granary: 0.9, ending: 0 },
+        cardCycleRates: { gate: 1, granary: 0.6, ending: 0 },
+        choiceCycleRates: {},
+        unvisitedCards: ["ending"],
+        lowCycleCards: [{ cardId: "granary", rate: 0.04 }]
+      },
+      graph: {
+        reachableCards: ["gate", "granary"],
+        unreachableCards: ["ending"],
+        unsatisfiedRequiredTags: ["neverProduced"],
+        unsatisfiedRequiredVariables: []
+      },
+      diagnostics: {
+        warnings: [],
+        warningCounts: { error: 0, warning: 0, info: 0 }
+      }
+    }, {
+      cards,
+      metadata: {
+        story: {
+          groups: [
+            { id: "grain", label: "Grain Thread", type: "theme", tags: ["grainRelief"] },
+            { id: "ending", label: "Gate Ending", type: "ending", cardIds: ["ending"] },
+            { id: "empty", label: "Empty Arc", type: "arc", tags: ["ghost"] }
+          ]
+        }
+      }
+    });
+
+    const byId = new Map(projection.narrative.storyGroups.map((group) => [group.id, group]));
+    assert.equal(projection.narrative.summary.groupCount, 3);
+    assert.equal(projection.narrative.summary.issueCount, 3);
+    assert.equal(byId.get("grain").status, "partial");
+    assert.deepEqual(byId.get("grain").lowCycleCards, [{ cardId: "granary", rate: 0.04 }]);
+    assert.equal(byId.get("ending").status, "unreachable");
+    assert.deepEqual(byId.get("ending").unvisitedCardIds, ["ending"]);
+    assert.equal(byId.get("empty").status, "empty");
+    assert.deepEqual(
+      projection.narrative.issues.map((issue) => issue.code),
+      ["partial_story_group_coverage", "unreachable_story_group", "empty_story_group"]
+    );
   });
 
   it("summarizes reviewer feedback into correction actions for the dashboard", () => {
     const feedback = summarizeFeedback({
       module: "ReignsAgent-Reviewer",
       parameters: { cycles: 4 },
-      summary: { gameOverByFaction: { people: 1 } },
+      summary: { gameOverByFaction: { gauge1: 1 } },
       diagnostics: {
         warnings: [
-          { code: "unsatisfied_required_tags", severity: "error", message: "missing", tags: ["crown"] }
+          { code: "unsatisfied_required_tags", severity: "error", message: "missing", tags: ["crown"] },
+          { code: "unsatisfied_required_factions", severity: "error", message: "missing threshold", factions: ["gauge1"] }
         ]
       }
     });
 
-    assert.equal(feedback.summary.actionCount, 1);
+    assert.equal(feedback.summary.actionCount, 2);
     assert.equal(feedback.actions[0].type, "add_tag_producers");
     assert.deepEqual(feedback.actions[0].target, ["crown"]);
+    assert.equal(feedback.actions[1].type, "adjust_faction_requirements");
+    assert.deepEqual(feedback.actions[1].target, ["gauge1"]);
   });
 
   it("builds a connector config and generation plan without storing secrets", () => {
@@ -266,7 +369,7 @@ describe("ReignsAgent interface controller", () => {
     const build = prepareGameBuild({ editor, buildId: "twin-1" });
     assert.equal(build.buildId, "twin-1");
     assert.equal(build.player.choiceModel, "binary");
-    assert.deepEqual(build.player.factions, ["faith", "people", "military", "treasury"]);
+    assert.deepEqual(build.player.factions, ["gauge0", "gauge1", "gauge2", "gauge3"]);
     assert.equal(build.player.i18n.defaultLocale, "en");
     assert.equal(build.presentation.active.js, false);
     assert.equal(build.content.cards.length, 2);
@@ -283,10 +386,21 @@ describe("ReignsAgent interface controller", () => {
   });
 
   it("projects faction maps into left/right gauge data", () => {
-    const gauges = projectFactionGauges({ people: 25, treasury: 80 });
-    assert.equal(gauges.people.value, 25);
-    assert.equal(gauges.people.right, 75);
-    assert.equal(gauges.treasury.left, 80);
+    const gauges = projectFactionGauges(
+      { gauge1: 25, gauge3: 80 },
+      {
+        gauges: {
+          gauge1: { label: "Crowd", description: "Public pressure" },
+          gauge0: { hidden: true }
+        }
+      }
+    );
+    assert.equal(gauges.gauge0, undefined);
+    assert.equal(gauges.gauge1.value, 25);
+    assert.equal(gauges.gauge1.label, "Crowd");
+    assert.equal(gauges.gauge1.description, "Public pressure");
+    assert.equal(gauges.gauge1.right, 75);
+    assert.equal(gauges.gauge3.left, 80);
   });
 
   it("runs diagnostics end-to-end through the reviewer", () => {
@@ -309,8 +423,117 @@ function sampleCard(id) {
     text: `Card ${id}.`,
     weight: 1,
     choices: [
-      { id: "left", label: "Left", effects: { factions: { people: -3 } } },
-      { id: "right", label: "Right", effects: { factions: { treasury: 3 } } }
+      { id: "left", label: "Left", effects: { factions: { gauge1: -3 } } },
+      { id: "right", label: "Right", effects: { factions: { gauge3: 3 } } }
     ]
   };
 }
+
+describe("deriveTagCatalog", () => {
+  it("collects produced and required tags with the right attribution", () => {
+    const cards = [
+      {
+        id: "gate",
+        choices: [
+          { id: "left", effects: { tags: { grainRelief: true } } },
+          { id: "right", effects: { tags: { borderAlert: true } } }
+        ]
+      },
+      {
+        id: "granary",
+        requirements: { allTags: ["grainRelief"] },
+        choices: [{ id: "left", effects: { tags: { granaryOpen: true } } }]
+      },
+      {
+        id: "harbor",
+        requirements: { anyTags: ["granaryOpen", "borderAlert"] },
+        choices: [{ id: "left", effects: {} }]
+      }
+    ];
+
+    const catalog = deriveTagCatalog({ cards });
+
+    const byKey = new Map(catalog.tags.map((entry) => [entry.key, entry]));
+    assert.equal(catalog.tags.length, 3);
+    assert.deepEqual(byKey.get("grainRelief").producedBy, [{ cardId: "gate", choiceId: "left" }]);
+    assert.deepEqual(byKey.get("grainRelief").requiredBy, [{ cardId: "granary", mode: "all" }]);
+    assert.deepEqual(byKey.get("granaryOpen").producedBy, [{ cardId: "granary", choiceId: "left" }]);
+    const harborReq = byKey.get("borderAlert").requiredBy;
+    assert.equal(harborReq.length, 1);
+    assert.equal(harborReq[0].mode, "any");
+  });
+
+  it("does not count a tag as produced when its effect sets it falsy", () => {
+    const cards = [
+      {
+        id: "dismiss",
+        choices: [{ id: "left", effects: { tags: { courtAlert: false } } }]
+      }
+    ];
+    const catalog = deriveTagCatalog({ cards });
+    assert.equal(catalog.tags.length, 0);
+  });
+
+  it("applies human labels from metadata.tagLabels and falls back to null", () => {
+    const cards = [
+      {
+        id: "gate",
+        choices: [{ id: "left", effects: { tags: { grainRelief: true } } }]
+      }
+    ];
+    const labeled = deriveTagCatalog({ cards, metadata: { tagLabels: { grainRelief: "粮仓已开" } } });
+    assert.equal(labeled.tags[0].label, "粮仓已开");
+
+    const unlabeled = deriveTagCatalog({ cards, metadata: {} });
+    assert.equal(unlabeled.tags[0].label, null);
+  });
+});
+
+describe("deriveStoryGroups", () => {
+  it("projects metadata story groups without changing runtime scheduling", () => {
+    const cards = [
+      {
+        id: "gate",
+        choices: [{ id: "left", effects: { tags: { chapterOpen: true } } }]
+      },
+      {
+        id: "followup",
+        requirements: { allTags: ["chapterOpen"] },
+        choices: [{ id: "left", effects: {} }]
+      },
+      {
+        id: "ending",
+        choices: [{ id: "left", effects: {} }]
+      }
+    ];
+
+    const projection = deriveStoryGroups({
+      cards,
+      metadata: {
+        story: {
+          groups: [
+            { id: "opening", label: "Opening", type: "chapter", tags: ["chapterOpen"] },
+            { id: "finale", label: "Finale", type: "ending", cardIds: ["ending"] }
+          ]
+        }
+      }
+    });
+
+    assert.equal(projection.schemaVersion, 1);
+    assert.deepEqual(projection.groups.map((group) => group.id), ["opening", "finale"]);
+    assert.deepEqual(projection.groups[0].cardIds, ["gate", "followup"]);
+    assert.deepEqual(projection.groups[1].cardIds, ["ending"]);
+    assert.equal(projection.groups[0].type, "chapter");
+    assert.deepEqual(cards[0].choices[0].effects.tags, { chapterOpen: true });
+  });
+
+  it("keeps empty groups visible for authoring review", () => {
+    const projection = deriveStoryGroups({
+      cards: [{ id: "gate", choices: [{ id: "left", effects: {} }] }],
+      metadata: { story: { groups: [{ id: "missing", label: "Missing Arc", tags: ["missingTag"] }] } }
+    });
+
+    assert.equal(projection.groups[0].cardCount, 0);
+    assert.deepEqual(projection.groups[0].cardIds, []);
+  });
+});

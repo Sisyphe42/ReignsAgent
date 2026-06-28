@@ -17,7 +17,7 @@ describe("Phase 1-3 integration", () => {
               id: "sign",
               label: "Sign",
               effects: {
-                factions: { people: -10, treasury: 10 },
+                factions: { gauge1: -10, gauge3: 10 },
                 variables: { signedEdict: true },
                 tags: { edictSigned: true }
               }
@@ -32,7 +32,7 @@ describe("Phase 1-3 integration", () => {
             {
               id: "listen",
               label: "Listen",
-              effects: { factions: { people: 5, treasury: -5 } }
+              effects: { factions: { gauge1: 5, gauge3: -5 } }
             }
           ]
         }

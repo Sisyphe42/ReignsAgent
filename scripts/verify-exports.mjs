@@ -7,9 +7,11 @@ const modules = [
     exports: [
       "CoreError",
       "FACTIONS",
+      "LEGACY_FACTION_KEYS",
       "createInitialState",
       "createRuntime",
       "getEligibleCards",
+      "normalizeFactionKey",
       "normalizeCards",
       "restoreState",
       "serializeState",

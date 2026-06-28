@@ -9,6 +9,9 @@ import {
   createCardEditor,
   createConnectorConfig,
   createPlaySession,
+  deriveStoryGroups,
+  deriveTagCatalog,
+  getCardGraph,
   loadEditorFromContent,
   prepareGameBuild,
   projectFactionGauges,
@@ -149,10 +152,23 @@ async function handleApi(req, res, url) {
     });
   }
 
+  if (path === "/api/editor/graph" && req.method === "GET") {
+    return sendJson(res, getCardGraph({ cards: store.editor.toCards() }));
+  }
+
+  if (path === "/api/editor/tags" && req.method === "GET") {
+    return sendJson(res, deriveTagCatalog({ cards: store.editor.toCards(), metadata: store.editor.metadata }));
+  }
+
+  if (path === "/api/editor/story-groups" && req.method === "GET") {
+    return sendJson(res, deriveStoryGroups({ cards: store.editor.toCards(), metadata: store.editor.metadata }));
+  }
+
   if (path === "/api/diagnostics/run" && req.method === "POST") {
     const cards = store.editor.toCards();
     const projection = runDiagnostics({
       cards,
+      metadata: store.editor.metadata,
       cycles: Number(body?.cycles ?? 1000),
       maxTurns: Number(body?.maxTurns ?? 50),
       seed: Number(body?.seed ?? 1)
@@ -195,7 +211,7 @@ async function handleApi(req, res, url) {
       sessionId,
       turn: session.turn,
       factions: session.factions,
-      gauges: projectFactionGauges(session.factions),
+      gauges: projectFactionGauges(session.factions, store.editor.metadata?.presentation),
       currentCard: card,
       gameOver: session.gameOver
     });
@@ -211,7 +227,7 @@ async function handleApi(req, res, url) {
       sessionId: body.sessionId,
       turn: session.turn,
       factions: result.factions,
-      gauges: projectFactionGauges(result.factions),
+      gauges: projectFactionGauges(result.factions, store.editor.metadata?.presentation),
       currentCard: result.nextCard,
       gameOver: result.gameOver
     });
