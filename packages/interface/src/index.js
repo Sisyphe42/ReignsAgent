@@ -1,4 +1,4 @@
-import { FACTIONS, createRuntime, restoreState, serializeState } from "../../core/src/index.js";
+import { FACTIONS, createRuntime, normalizeCards, normalizeFactionKey, restoreState, serializeState } from "../../core/src/index.js";
 import {
   buildCardGenerationRequest,
   createContentBundle,
@@ -8,7 +8,7 @@ import {
   validateCardSet,
   validateContentBundle
 } from "../../pipeline/src/index.js";
-import { runMonteCarloReview } from "../../reviewer/src/index.js";
+import { analyzeCardGraph, runMonteCarloReview } from "../../reviewer/src/index.js";
 
 const PLAYER_SCHEMA_VERSION = 1;
 const BUILD_SCHEMA_VERSION = 1;
@@ -188,6 +188,7 @@ export function normalizePresentationConfig(config = {}) {
       variables: normalizeCssVariables(css.variables ?? source.cssVariables ?? {}),
       text: cssText
     },
+    gauges: normalizeGaugePresentation(source.gauges ?? {}),
     html: normalizeStringSlots(source.html ?? {}),
     js: normalizeStringSlots(source.js ?? {}),
     policy,
@@ -279,10 +280,13 @@ export function createCardEditor(options = {}) {
 
     setChoiceEffects(cardId, choiceId, effects) {
       assertPlainRecord(effects, "Choice effects");
+      const cardIndex = cards.findIndex((candidate) => candidate.id === cardId);
       const card = requireCard(cards, cardId);
       const choice = requireChoice(card, choiceId);
       choice.effects = cloneJsonSafe(effects, `Card '${cardId}' choice '${choiceId}' effects`);
-      return cloneJsonSafe(card, `Card '${cardId}'`);
+      const normalizedCard = cloneCards([card])[0];
+      cards[cardIndex] = normalizedCard;
+      return cloneJsonSafe(normalizedCard, `Card '${cardId}'`);
     },
 
     setMetadata(nextMetadata) {
@@ -418,25 +422,133 @@ export function createPlaySession(options = {}) {
 /**
  * runDiagnostics runs the headless reviewer and returns a render-ready projection.
  */
-export function runDiagnostics({ cards, cycles = 1000, maxTurns = 50, seed = 1, thresholds }) {
+export function runDiagnostics({ cards, metadata = {}, cycles = 1000, maxTurns = 50, seed = 1, thresholds }) {
   const reviewOptions = { cards: cloneCards(cards), cycles, maxTurns, seed };
   if (thresholds) {
     reviewOptions.thresholds = cloneJsonSafe(thresholds, "Reviewer thresholds");
   }
-  return summarizeDiagnostics(runMonteCarloReview(reviewOptions));
+  return summarizeDiagnostics(runMonteCarloReview(reviewOptions), { cards, metadata });
+}
+
+/**
+ * getCardGraph runs the static card-graph analysis (no Monte Carlo simulation)
+ * and returns the per-choice directed graph for the story panel: nodes, edges
+ * with the source choice(s) that enable each transition, plus reachability.
+ * It is fast and safe to call on every editor change.
+ */
+export function getCardGraph({ cards, initialState = {} }) {
+  return analyzeCardGraph(cloneCards(cards), initialState);
+}
+
+/**
+ * deriveTagCatalog scans every card's requirements and choice effects to build
+ * a creator-facing directory of the tags in use. For each tag key it records
+ * where the tag is produced (which card/choice sets it) and where it is
+ * required (which card gates on it, and via which match mode). Display labels
+ * come from metadata.tagLabels; missing labels fall back to null so the UI can
+ * show the raw key. This is a read-only derivation and never mutates cards.
+ */
+export function deriveTagCatalog({ cards, metadata = {} }) {
+  const cloned = cloneCards(cards);
+  const labels = metadata?.tagLabels ?? {};
+  const entries = new Map();
+
+  function ensure(key) {
+    if (!entries.has(key)) {
+      entries.set(key, {
+        key,
+        label: typeof labels[key] === "string" && labels[key].length > 0 ? labels[key] : null,
+        producedBy: [],
+        requiredBy: []
+      });
+    }
+    return entries.get(key);
+  }
+
+  for (const card of cloned) {
+    const requirements = card.requirements ?? {};
+    for (const key of requirements.allTags ?? []) {
+      ensure(key).requiredBy.push({ cardId: card.id, mode: "all" });
+    }
+    for (const key of requirements.anyTags ?? []) {
+      ensure(key).requiredBy.push({ cardId: card.id, mode: "any" });
+    }
+    for (const key of requirements.noneTags ?? []) {
+      ensure(key).requiredBy.push({ cardId: card.id, mode: "none" });
+    }
+
+    for (const choice of card.choices ?? []) {
+      const tags = choice.effects?.tags ?? {};
+      for (const [key, value] of Object.entries(tags)) {
+        // A tag is "produced" only when the choice sets it truthy.
+        if (value !== false && value !== null && value !== undefined) {
+          ensure(key).producedBy.push({ cardId: card.id, choiceId: choice.id });
+        }
+      }
+    }
+  }
+
+  const tags = [...entries.values()].sort((a, b) => a.key.localeCompare(b.key));
+  return { schemaVersion: 1, tags };
+}
+
+/**
+ * deriveStoryGroups projects metadata.story.groups into a creator-facing
+ * organization layer. Groups are data labels only: they do not alter runtime
+ * scheduling, card eligibility, or player-facing rules.
+ */
+export function deriveStoryGroups({ cards, metadata = {} }) {
+  const cloned = cloneCards(cards);
+  const groups = Array.isArray(metadata?.story?.groups) ? metadata.story.groups : [];
+  const cardTags = new Map(cloned.map((card) => [card.id, collectCardStoryTags(card)]));
+
+  const projected = groups
+    .filter((group) => group && typeof group === "object")
+    .map((group, index) => {
+      const id = isNonEmptyString(group.id) ? group.id : `group-${index + 1}`;
+      const label = isNonEmptyString(group.label) ? group.label : id;
+      const type = isNonEmptyString(group.type) ? group.type : "theme";
+      const tags = normalizeStringList(group.tags ?? group.tagKeys ?? []);
+      const explicitCardIds = normalizeStringList(group.cardIds ?? group.cards ?? []);
+      const explicit = new Set(explicitCardIds);
+      const tagSet = new Set(tags);
+      const matchedCardIds = cloned
+        .filter((card) => explicit.has(card.id) || [...(cardTags.get(card.id) ?? [])].some((tag) => tagSet.has(tag)))
+        .map((card) => card.id);
+
+      return {
+        id,
+        label,
+        type,
+        description: isNonEmptyString(group.description) ? group.description : null,
+        tags,
+        explicitCardIds,
+        cardIds: matchedCardIds,
+        cardCount: matchedCardIds.length,
+        color: isNonEmptyString(group.color) ? group.color : null
+      };
+    });
+
+  return { schemaVersion: 1, groups: projected };
 }
 
 /**
  * summarizeDiagnostics projects a raw reviewer report into a dashboard-friendly
  * shape. It does not modify or re-simulate the report.
  */
-export function summarizeDiagnostics(report) {
+export function summarizeDiagnostics(report, context = {}) {
   const summary = report?.summary ?? {};
   const diagnostics = report?.diagnostics ?? {};
   const graph = report?.graph ?? {};
   const coverage = report?.coverage ?? {};
   const warnings = diagnostics.warnings ?? [];
   const cycles = report?.parameters?.cycles ?? 0;
+  const narrative = projectNarrativeDiagnostics({
+    cards: context.cards ?? [],
+    metadata: context.metadata ?? {},
+    coverage,
+    graph
+  });
 
   return {
     schemaVersion: 1,
@@ -449,6 +561,9 @@ export function summarizeDiagnostics(report) {
       averageTurns: round(summary.averageTurns ?? 0),
       gameOverRate: round(summary.gameOverRate ?? 0),
       stalledRate: round(summary.stalledRate ?? 0),
+      cardVisitRates: coverage.cardVisitRates ?? {},
+      cardCycleRates: coverage.cardCycleRates ?? {},
+      choiceCycleRates: coverage.choiceCycleRates ?? {},
       unvisitedCards: coverage.unvisitedCards ?? [],
       lowCycleCards: coverage.lowCycleCards ?? []
     },
@@ -456,8 +571,10 @@ export function summarizeDiagnostics(report) {
       reachableCards: graph.reachableCards ?? [],
       unreachableCards: graph.unreachableCards ?? [],
       unsatisfiedRequiredTags: graph.unsatisfiedRequiredTags ?? [],
-      unsatisfiedRequiredVariables: graph.unsatisfiedRequiredVariables ?? []
+      unsatisfiedRequiredVariables: graph.unsatisfiedRequiredVariables ?? [],
+      unsatisfiedRequiredFactions: graph.unsatisfiedRequiredFactions ?? []
     },
+    narrative,
     warnings: warnings.map(projectWarning),
     warningCounts: diagnostics.warningCounts ?? { error: 0, warning: 0, info: 0 }
   };
@@ -586,13 +703,24 @@ export function serializeBuild(build) {
  * projectFactionGauges turns a factions map into left/right meter data the
  * dashboard can render without knowing the engine internals.
  */
-export function projectFactionGauges(factions) {
+export function projectFactionGauges(factions, presentation = {}) {
   assertPlainRecord(factions, "Factions");
+  const gaugePresentation = normalizeGaugePresentation(presentation?.presentation?.gauges ?? presentation?.gauges ?? {});
   const gauges = {};
   for (const faction of FACTIONS) {
+    const config = gaugePresentation[faction] ?? {};
+    if (config.visible === false) continue;
     const raw = factions[faction];
     const value = Number.isFinite(raw) ? Math.max(0, Math.min(100, raw)) : 50;
-    gauges[faction] = { value, left: value, right: 100 - value };
+    gauges[faction] = {
+      key: faction,
+      label: config.label ?? null,
+      description: config.description ?? null,
+      visible: true,
+      value,
+      left: value,
+      right: 100 - value
+    };
   }
   return gauges;
 }
@@ -603,7 +731,7 @@ function cloneCards(cards) {
   if (!Array.isArray(cards)) {
     throw new InterfaceError("Cards must be an array");
   }
-  return cloneJsonSafe(cards, "Cards");
+  return normalizeCards(cloneJsonSafe(cards, "Cards"));
 }
 
 function requireCard(cards, cardId) {
@@ -648,6 +776,53 @@ function normalizeCssVariables(variables) {
   }
 
   return result;
+}
+
+function normalizeGaugePresentation(value) {
+  assertPlainRecord(value, "Presentation gauges");
+  const gauges = {};
+  const sources = {};
+
+  for (const [key, raw] of Object.entries(value)) {
+    let gaugeKey;
+    try {
+      gaugeKey = normalizeFactionKey(key);
+    } catch {
+      throw new InterfaceError(`Presentation gauge '${key}' must be one of: ${FACTIONS.join(", ")}`);
+    }
+    if (sources[gaugeKey] !== undefined) {
+      throw new InterfaceError(`Presentation gauges define both '${sources[gaugeKey]}' and '${key}' for '${gaugeKey}'`);
+    }
+    sources[gaugeKey] = key;
+    assertPlainRecord(raw, `Presentation gauge '${key}'`);
+
+    const entry = {};
+    if (raw.label !== undefined) {
+      if (typeof raw.label !== "string") {
+        throw new InterfaceError(`Presentation gauge '${key}' label must be a string`);
+      }
+      const label = raw.label.trim();
+      if (label) entry.label = label;
+    }
+    if (raw.description !== undefined) {
+      if (typeof raw.description !== "string") {
+        throw new InterfaceError(`Presentation gauge '${key}' description must be a string`);
+      }
+      const description = raw.description.trim();
+      if (description) entry.description = description;
+    }
+    if (raw.visible !== undefined && typeof raw.visible !== "boolean") {
+      throw new InterfaceError(`Presentation gauge '${key}' visible must be a boolean`);
+    }
+    if (raw.hidden !== undefined && typeof raw.hidden !== "boolean") {
+      throw new InterfaceError(`Presentation gauge '${key}' hidden must be a boolean`);
+    }
+
+    entry.visible = raw.hidden === true ? false : raw.visible !== false;
+    gauges[gaugeKey] = entry;
+  }
+
+  return gauges;
 }
 
 function normalizePresentationPolicy(policy) {
@@ -721,8 +896,142 @@ function projectWarning(warning) {
   };
 }
 
+function projectNarrativeDiagnostics({ cards, metadata, coverage, graph }) {
+  const groups = deriveStoryGroups({ cards, metadata }).groups;
+  const cardVisitRates = coverage.cardVisitRates ?? {};
+  const cardCycleRates = coverage.cardCycleRates ?? {};
+  const unreachableSet = new Set(graph.unreachableCards ?? []);
+  const lowCycleByCard = new Map((coverage.lowCycleCards ?? []).map((entry) => [entry.cardId, entry.rate ?? 0]));
+
+  const storyGroups = groups.map((group) => projectStoryGroupCoverage({
+    group,
+    cardVisitRates,
+    cardCycleRates,
+    unreachableSet,
+    lowCycleByCard
+  }));
+  const issues = storyGroups.flatMap(projectStoryGroupIssues);
+  const endingGroups = storyGroups.filter((group) => group.type.toLowerCase() === "ending");
+
+  return {
+    schemaVersion: 1,
+    summary: {
+      groupCount: storyGroups.length,
+      coveredGroupCount: storyGroups.filter((group) => group.status === "covered").length,
+      partialGroupCount: storyGroups.filter((group) => group.status === "partial").length,
+      unvisitedGroupCount: storyGroups.filter((group) => group.status === "unvisited" || group.status === "unreachable").length,
+      emptyGroupCount: storyGroups.filter((group) => group.status === "empty").length,
+      endingGroupCount: endingGroups.length,
+      coveredEndingGroupCount: endingGroups.filter((group) => group.status === "covered").length,
+      issueCount: issues.length
+    },
+    storyGroups,
+    issues
+  };
+}
+
+function projectStoryGroupCoverage({ group, cardVisitRates, cardCycleRates, unreachableSet, lowCycleByCard }) {
+  const cardIds = group.cardIds ?? [];
+  const visitedCardIds = cardIds.filter((cardId) => (cardVisitRates[cardId] ?? 0) > 0);
+  const unvisitedCardIds = cardIds.filter((cardId) => (cardVisitRates[cardId] ?? 0) <= 0);
+  const unreachableCardIds = cardIds.filter((cardId) => unreachableSet.has(cardId));
+  const lowCycleCards = cardIds
+    .filter((cardId) => lowCycleByCard.has(cardId))
+    .map((cardId) => ({ cardId, rate: round(lowCycleByCard.get(cardId) ?? 0) }));
+  const coverageRate = cardIds.length > 0 ? visitedCardIds.length / cardIds.length : 0;
+  const averageCycleRate = averageRate(cardIds, cardCycleRates);
+  const status = storyGroupStatus({
+    cardCount: cardIds.length,
+    visitedCount: visitedCardIds.length,
+    unvisitedCount: unvisitedCardIds.length,
+    unreachableCount: unreachableCardIds.length,
+    lowCycleCount: lowCycleCards.length
+  });
+
+  return {
+    id: group.id,
+    label: group.label,
+    type: group.type,
+    description: group.description,
+    tags: group.tags,
+    cardIds,
+    cardCount: cardIds.length,
+    visitedCardIds,
+    unvisitedCardIds,
+    unreachableCardIds,
+    lowCycleCards,
+    coverageRate: round(coverageRate),
+    averageCycleRate,
+    status,
+    tone: storyGroupTone(status)
+  };
+}
+
+function projectStoryGroupIssues(group) {
+  if (group.status === "empty") {
+    return [{
+      code: "empty_story_group",
+      severity: "warning",
+      groupId: group.id,
+      message: `${group.label} has no matching cards.`
+    }];
+  }
+
+  if (group.status === "unreachable") {
+    return [{
+      code: "unreachable_story_group",
+      severity: "error",
+      groupId: group.id,
+      cardIds: group.unreachableCardIds,
+      message: `${group.label} cannot be reached from the current graph.`
+    }];
+  }
+
+  if (group.status === "unvisited") {
+    return [{
+      code: group.type.toLowerCase() === "ending" ? "unvisited_ending_group" : "unvisited_story_group",
+      severity: "error",
+      groupId: group.id,
+      cardIds: group.unvisitedCardIds,
+      message: `${group.label} was never reached in this review run.`
+    }];
+  }
+
+  if (group.status === "partial") {
+    return [{
+      code: group.type.toLowerCase() === "ending" ? "partial_ending_group_coverage" : "partial_story_group_coverage",
+      severity: "warning",
+      groupId: group.id,
+      cardIds: group.unvisitedCardIds,
+      lowCycleCards: group.lowCycleCards,
+      message: `${group.label} has partial or low simulation coverage.`
+    }];
+  }
+
+  return [];
+}
+
+function storyGroupStatus({ cardCount, visitedCount, unvisitedCount, unreachableCount, lowCycleCount }) {
+  if (cardCount === 0) return "empty";
+  if (unreachableCount === cardCount) return "unreachable";
+  if (visitedCount === 0) return "unvisited";
+  if (unvisitedCount > 0 || lowCycleCount > 0) return "partial";
+  return "covered";
+}
+
+function storyGroupTone(status) {
+  if (status === "covered") return "good";
+  if (status === "partial" || status === "empty") return "warn";
+  return "bad";
+}
+
+function averageRate(cardIds, rates) {
+  if (cardIds.length === 0) return 0;
+  return round(cardIds.reduce((total, cardId) => total + (rates[cardId] ?? 0), 0) / cardIds.length);
+}
+
 function pickWarningDetails(warning) {
-  const keys = ["cardIds", "cards", "tags", "variables", "faction", "rate", "threshold", "cycles"];
+  const keys = ["cardIds", "cards", "tags", "variables", "factions", "faction", "rate", "threshold", "cycles"];
   const details = {};
   for (const key of keys) {
     if (warning[key] !== undefined) {
@@ -730,6 +1039,26 @@ function pickWarningDetails(warning) {
     }
   }
   return details;
+}
+
+function collectCardStoryTags(card) {
+  const tags = new Set();
+  const requirements = card.requirements ?? {};
+  for (const key of requirements.allTags ?? []) tags.add(key);
+  for (const key of requirements.anyTags ?? []) tags.add(key);
+  for (const key of requirements.noneTags ?? []) tags.add(key);
+
+  for (const choice of card.choices ?? []) {
+    for (const [key, value] of Object.entries(choice.effects?.tags ?? {})) {
+      if (value !== false && value !== null && value !== undefined) tags.add(key);
+    }
+  }
+  return tags;
+}
+
+function normalizeStringList(value) {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.map((entry) => (typeof entry === "string" ? entry.trim() : entry)).filter(isNonEmptyString))];
 }
 
 function createBuildId(bundle) {

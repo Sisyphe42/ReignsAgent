@@ -410,6 +410,7 @@ textarea { resize: vertical; font-family: ui-monospace, "SFMono-Regular", monosp
 .gauges { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 12px; }
 .gauge { background: var(--panel-2); border-radius: 6px; padding: 8px; }
 .gauge__name { font-size: 11px; color: var(--muted); text-transform: capitalize; }
+.gauge__desc { margin-top: 2px; font-size: 10px; color: var(--muted); line-height: 1.35; }
 .gauge__bar { height: 6px; background: #0c0e12; border-radius: 3px; overflow: hidden; margin-top: 4px; }
 .gauge__fill { height: 100%; background: var(--accent-2); }
 

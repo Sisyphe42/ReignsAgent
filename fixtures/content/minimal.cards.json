@@ -10,8 +10,8 @@
           "label": "Sign",
           "effects": {
             "factions": {
-              "people": -8,
-              "treasury": 6
+              "gauge1": -8,
+              "gauge3": 6
             },
             "variables": {
               "edictSigned": true
@@ -26,8 +26,8 @@
           "label": "Delay",
           "effects": {
             "factions": {
-              "faith": 4,
-              "military": -4
+              "gauge0": 4,
+              "gauge2": -4
             },
             "variables": {
               "edictDelayed": true
@@ -54,8 +54,8 @@
           "label": "Soften",
           "effects": {
             "factions": {
-              "people": 5,
-              "treasury": -5
+              "gauge1": 5,
+              "gauge3": -5
             },
             "tags": {
               "courtAlert": false,
@@ -68,8 +68,8 @@
           "label": "Hold",
           "effects": {
             "factions": {
-              "military": 5,
-              "faith": -5
+              "gauge2": 5,
+              "gauge0": -5
             }
           }
         }
@@ -90,8 +90,8 @@
           "label": "Record",
           "effects": {
             "factions": {
-              "faith": 2,
-              "people": 2
+              "gauge0": 2,
+              "gauge1": 2
             }
           }
         },
@@ -100,8 +100,8 @@
           "label": "Forget",
           "effects": {
             "factions": {
-              "treasury": 2,
-              "military": 2
+              "gauge3": 2,
+              "gauge2": 2
             }
           }
         }

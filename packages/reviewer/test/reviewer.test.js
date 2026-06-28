@@ -27,9 +27,9 @@ describe("ReignsAgent reviewer", () => {
     assert.equal(report.summary.maxTurns, 3);
     assert.deepEqual(report.summary.turnPercentiles, { p10: 3, p50: 3, p90: 3 });
     assert.equal(report.summary.gameOverRate, 1);
-    assert.equal(report.summary.terminalReasonRates["game_over:people"], 1);
-    assert.equal(report.summary.gameOverByFaction.people, 10);
-    assert.equal(report.summary.terminalReasons["game_over:people"], 10);
+    assert.equal(report.summary.terminalReasonRates["game_over:gauge1"], 1);
+    assert.equal(report.summary.gameOverByFaction.gauge1, 10);
+    assert.equal(report.summary.terminalReasons["game_over:gauge1"], 10);
     assert.equal(report.coverage.cardVisitRates.opening, 1);
     assert.equal(report.coverage.cardCycleRates.opening, 1);
     assert.equal(report.coverage.cardVisitRates.unrest, 1);
@@ -53,7 +53,7 @@ describe("ReignsAgent reviewer", () => {
     assert.equal(result.schemaVersion, 1);
     assert.equal(result.seed, 5);
     assert.equal(result.turns, 3);
-    assert.equal(result.terminalReason, "game_over:people");
+    assert.equal(result.terminalReason, "game_over:gauge1");
     assert.deepEqual(result.cardVisits, { opening: 1, unrest: 1, crackdown: 1 });
     assert.deepEqual(result.choiceVisits, {
       "opening:tax": 1,
@@ -84,8 +84,8 @@ describe("ReignsAgent reviewer", () => {
     const graph = analyzeCardGraph(sampleCards());
 
     assert.deepEqual(graph.edges, [
-      { from: "opening", to: "unrest", tags: ["unrest"] },
-      { from: "unrest", to: "crackdown", tags: ["armed"] }
+      { from: "opening", to: "unrest", tags: ["unrest"], choices: [{ id: "tax", label: "tax" }] },
+      { from: "unrest", to: "crackdown", tags: ["armed"], choices: [{ id: "arm", label: "arm" }] }
     ]);
     assert.deepEqual(graph.initiallyEligibleCards, ["opening"]);
     assert.deepEqual(graph.reachableCards, ["opening", "unrest", "crackdown"]);
@@ -112,10 +112,109 @@ describe("ReignsAgent reviewer", () => {
       }
     ]);
 
-    assert.deepEqual(graph.edges, [{ from: "setup", to: "followup", variables: ["decreeSigned"] }]);
+    assert.deepEqual(graph.edges, [
+      { from: "setup", to: "followup", variables: ["decreeSigned"], choices: [{ id: "set", label: "set" }] }
+    ]);
     assert.deepEqual(graph.reachableCards, ["setup", "followup"]);
     assert.deepEqual(graph.unreachableCards, ["wrong-value"]);
     assert.deepEqual(graph.unsatisfiedRequiredVariables, ["decreeSigned"]);
+  });
+
+  it("analyzes compound choice and faction-gated story branches", () => {
+    const graph = analyzeCardGraph([
+      {
+        id: "opening",
+        choices: [
+          {
+            id: "left",
+            label: "Hear grain",
+            effects: {
+              factions: { gauge1: 6, gauge3: -4 },
+              tags: { grainRelief: true },
+              variables: { openingPetition: "grain" }
+            }
+          },
+          {
+            id: "right",
+            label: "Hear border",
+            effects: {
+              factions: { gauge2: 6 },
+              tags: { borderAlert: true },
+              variables: { openingPetition: "border" }
+            }
+          }
+        ]
+      },
+      {
+        id: "grain-branch",
+        requirements: {
+          allTags: ["grainRelief"],
+          variables: { openingPetition: "grain" },
+          factions: { gauge1: { min: 55 }, gauge3: { max: 48 } }
+        },
+        choices: [{ id: "left", effects: {} }]
+      },
+      {
+        id: "border-branch",
+        requirements: {
+          allTags: ["borderAlert"],
+          variables: { openingPetition: "border" },
+          factions: { gauge2: { min: 55 } }
+        },
+        choices: [{ id: "left", effects: {} }]
+      }
+    ]);
+
+    assert.deepEqual(graph.edges, [
+      {
+        from: "opening",
+        to: "grain-branch",
+        choices: [{ id: "left", label: "Hear grain" }],
+        tags: ["grainRelief"],
+        variables: ["openingPetition"],
+        factions: ["gauge1", "gauge3"]
+      },
+      {
+        from: "opening",
+        to: "border-branch",
+        choices: [{ id: "right", label: "Hear border" }],
+        tags: ["borderAlert"],
+        variables: ["openingPetition"],
+        factions: ["gauge2"]
+      }
+    ]);
+    assert.deepEqual(graph.reachableCards, ["opening", "grain-branch", "border-branch"]);
+    assert.deepEqual(graph.unsatisfiedRequiredFactions, []);
+  });
+
+  it("attributes enabling signals to specific choices and preserves labels", () => {
+    const graph = analyzeCardGraph([
+      {
+        id: "fork",
+        choices: [
+          { id: "left", label: "Raise tax", effects: { tags: { taxed: true } } },
+          { id: "right", label: "Pardon debt", effects: { tags: { taxed: true } } }
+        ]
+      },
+      {
+        id: "consequence",
+        requirements: { allTags: ["taxed"] },
+        choices: [{ id: "pass", label: "Accept", effects: {} }]
+      }
+    ]);
+
+    // Both left and right produce the `taxed` tag, so both choices enable the edge.
+    assert.deepEqual(graph.edges, [
+      {
+        from: "fork",
+        to: "consequence",
+        tags: ["taxed"],
+        choices: [
+          { id: "left", label: "Raise tax" },
+          { id: "right", label: "Pardon debt" }
+        ]
+      }
+    ]);
   });
 
   it("reports unreachable requirements as diagnostics", () => {
@@ -167,6 +266,31 @@ describe("ReignsAgent reviewer", () => {
     );
   });
 
+  it("reports unsatisfied faction threshold requirements as diagnostics", () => {
+    const report = runMonteCarloReview({
+      cards: [
+        {
+          id: "visible",
+          choices: [{ id: "pass", effects: {} }]
+        },
+        {
+          id: "hidden",
+          requirements: { factions: { gauge1: { min: 80 } } },
+          choices: [{ id: "pass", effects: {} }]
+        }
+      ],
+      cycles: 2,
+      maxTurns: 2,
+      seed: 1
+    });
+
+    assert.deepEqual(report.graph.unsatisfiedRequiredFactions, ["gauge1"]);
+    assert.equal(
+      report.diagnostics.warnings.find((warning) => warning.code === "unsatisfied_required_factions").factions[0],
+      "gauge1"
+    );
+  });
+
   it("applies configurable thresholds for coverage and ending warnings", () => {
     const report = runMonteCarloReview({
       cards: sampleCards(),
@@ -208,7 +332,7 @@ function sampleCards() {
         {
           id: "tax",
           effects: {
-            factions: { people: -20, treasury: 10 },
+            factions: { gauge1: -20, gauge3: 10 },
             tags: { unrest: true }
           }
         }
@@ -221,7 +345,7 @@ function sampleCards() {
         {
           id: "arm",
           effects: {
-            factions: { people: -20, military: 10 },
+            factions: { gauge1: -20, gauge2: 10 },
             tags: { armed: true }
           }
         }
@@ -234,7 +358,7 @@ function sampleCards() {
         {
           id: "order",
           effects: {
-            factions: { people: -20, military: 10 }
+            factions: { gauge1: -20, gauge2: 10 }
           }
         }
       ]
