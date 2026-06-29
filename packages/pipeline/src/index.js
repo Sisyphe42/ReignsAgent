@@ -19,6 +19,9 @@ const LEGACY_FACTION_KEYS = Object.freeze({
 });
 const REQUIREMENT_KEYS = new Set(["allTags", "anyTags", "noneTags", "variables", "factions"]);
 const EFFECT_KEYS = new Set(["tags", "variables", "factions", "activateHooks", "dismissHooks"]);
+const AI_EDIT_SCHEMA_VERSION = 1;
+const AI_EDIT_MODES = new Set(["generate_cards", "repair_diagnostics", "generate_asset", "analyze_asset"]);
+const AI_EDIT_PATCH_OPS = new Set(["addCard", "updateCard", "setChoiceLabel", "setChoiceEffects", "setMetadata", "upsertAsset"]);
 
 export function createContentBundle({ cards, metadata = {}, assets = [] }) {
   const normalizedCards = normalizeCards(cards);
@@ -274,16 +277,17 @@ export async function generateAssetDrafts({ connector, cards, style = "minimal m
 }
 
 export function createDiagnosticFeedback(report) {
-  const warnings = report?.diagnostics?.warnings ?? [];
+  const warnings = report?.diagnostics?.warnings ?? report?.warnings ?? [];
   const actions = [];
   const seenActions = new Set();
 
   for (const warning of warnings) {
+    const warningDetails = warning.details ?? {};
     if (warning.code === "never_visited_cards") {
       addAction(actions, seenActions, {
         type: "relax_requirements",
         severity: warning.severity ?? "error",
-        target: warning.cardIds ?? [],
+        target: warning.cardIds ?? warningDetails.cardIds ?? [],
         reason: warning.message,
         sourceWarning: warning.code
       });
@@ -293,7 +297,7 @@ export function createDiagnosticFeedback(report) {
       addAction(actions, seenActions, {
         type: "repair_reachability",
         severity: warning.severity ?? "error",
-        target: warning.cardIds ?? [],
+        target: warning.cardIds ?? warningDetails.cardIds ?? [],
         reason: warning.message,
         sourceWarning: warning.code
       });
@@ -303,7 +307,7 @@ export function createDiagnosticFeedback(report) {
       addAction(actions, seenActions, {
         type: "raise_card_exposure",
         severity: warning.severity ?? "warning",
-        target: (warning.cards ?? []).map((card) => card.cardId),
+        target: (warning.cards ?? warningDetails.cards ?? []).map((card) => card.cardId),
         reason: warning.message,
         sourceWarning: warning.code
       });
@@ -313,7 +317,7 @@ export function createDiagnosticFeedback(report) {
       addAction(actions, seenActions, {
         type: "add_tag_producers",
         severity: warning.severity ?? "error",
-        target: warning.tags ?? [],
+        target: warning.tags ?? warningDetails.tags ?? [],
         reason: warning.message,
         sourceWarning: warning.code
       });
@@ -323,7 +327,7 @@ export function createDiagnosticFeedback(report) {
       addAction(actions, seenActions, {
         type: "add_variable_producers",
         severity: warning.severity ?? "error",
-        target: warning.variables ?? [],
+        target: warning.variables ?? warningDetails.variables ?? [],
         reason: warning.message,
         sourceWarning: warning.code
       });
@@ -333,7 +337,7 @@ export function createDiagnosticFeedback(report) {
       addAction(actions, seenActions, {
         type: "adjust_faction_requirements",
         severity: warning.severity ?? "error",
-        target: warning.factions ?? [],
+        target: warning.factions ?? warningDetails.factions ?? [],
         reason: warning.message,
         sourceWarning: warning.code
       });
@@ -353,7 +357,7 @@ export function createDiagnosticFeedback(report) {
       addAction(actions, seenActions, {
         type: "rebalance_faction_pressure",
         severity: warning.severity ?? "warning",
-        target: warning.faction ?? "all",
+        target: warning.faction ?? warningDetails.faction ?? "all",
         reason: warning.message,
         sourceWarning: warning.code
       });
@@ -420,6 +424,190 @@ export function buildAssetGenerationRequest({ card, style = "minimal monochrome 
     metadata: {
       style
     }
+  };
+}
+
+export function buildAiContext({
+  bundle,
+  instruction = "",
+  targetCardIds = [],
+  diagnostics = null,
+  constraints = {},
+  assets = null,
+  assetId = null,
+  mode = "generate_cards"
+}) {
+  const normalizedBundle = createContentBundle(bundle);
+  const selectedIds = normalizeStringArray(targetCardIds);
+  const selectedSet = new Set(selectedIds);
+  const selectedCards = normalizedBundle.cards.filter((card) => selectedSet.has(card.id));
+  const linkedAssets = normalizedBundle.assets.filter((asset) =>
+    selectedSet.has(asset.cardId) || (assetId && asset.id === assetId)
+  );
+  const suppliedAssets = Array.isArray(assets) ? assets.map((asset) => cloneJsonValue(asset, "AI context asset")) : [];
+
+  return {
+    schemaVersion: AI_EDIT_SCHEMA_VERSION,
+    project: {
+      product: "ReignsAgent Creator",
+      usage: "Assist creators with card drafting, review repair, and future visual request workflows while preserving the authored content model.",
+      gameplayRule: "The visible player loop is card text plus exactly two choices: left and right.",
+      boundaryRule: "Use tags, variables, metadata, and creator-owned labels for story state. Do not invent built-in management loops or extra player-facing systems.",
+      schemaExpectations: {
+        card: ["id", "text", "weight", "requirements", "choices"],
+        choiceIds: ["left", "right"],
+        requirementKeys: [...REQUIREMENT_KEYS],
+        effectKeys: [...EFFECT_KEYS],
+        patchOps: [...AI_EDIT_PATCH_OPS]
+      },
+      responseExpectations: "Return JSON-ready proposals with explicit patch operations only. Do not call providers or reference external files."
+    },
+    mode,
+    instruction: String(instruction ?? "").trim(),
+    selection: {
+      targetCardIds: selectedIds,
+      cards: selectedCards.map(compactCardForAi),
+      assetId: isNonEmptyString(assetId) ? assetId : null,
+      linkedAssets: linkedAssets.map(compactAssetForAi),
+      suppliedAssets: suppliedAssets.map(compactAssetForAi)
+    },
+    bundle: {
+      fingerprint: createBundleFingerprint(normalizedBundle),
+      metadata: {
+        title: normalizedBundle.metadata.title ?? null,
+        version: normalizedBundle.metadata.version ?? null,
+        tagLabels: isPlainRecord(normalizedBundle.metadata.tagLabels) ? normalizedBundle.metadata.tagLabels : {},
+        gauges: projectGaugeLabels(normalizedBundle.metadata)
+      },
+      cardCount: normalizedBundle.cards.length,
+      assetCount: normalizedBundle.assets.length,
+      cards: normalizedBundle.cards.slice(0, 12).map(compactCardForAi)
+    },
+    diagnostics: diagnostics ? compactDiagnosticsForAi(diagnostics) : null,
+    constraints: cloneJsonValue(constraints ?? {}, "AI context constraints")
+  };
+}
+
+export function buildCardEditRequest({ bundle, instruction = "", targetCardIds = [], diagnostics = null, constraints = {} }) {
+  const context = buildAiContext({ bundle, instruction, targetCardIds, diagnostics, constraints, mode: "card_edit" });
+  const prompt = [
+    "Create ReignsAgent card-edit proposals from the supplied context.",
+    `Creator instruction: ${context.instruction || "Use the current deck context."}`,
+    "Respect the binary left/right choice model and return explicit patch operations."
+  ].join("\n");
+
+  return {
+    requestId: createRequestId("card_edit", stableStringify(context)),
+    purpose: "card_edit",
+    prompt,
+    responseFormat: "json",
+    schema: aiEditProposalSchema(),
+    context,
+    metadata: {
+      targetCardIds: context.selection.targetCardIds,
+      hasDiagnostics: Boolean(diagnostics)
+    }
+  };
+}
+
+export function buildMediaEditRequest({
+  bundle,
+  mode,
+  instruction = "",
+  targetCardId = null,
+  assetId = null,
+  style = "",
+  diagnostics = null,
+  constraints = {}
+}) {
+  if (mode !== "generate_asset" && mode !== "analyze_asset") {
+    throw new PipelineError("media AI edit mode must be generate_asset or analyze_asset");
+  }
+
+  const targetCardIds = isNonEmptyString(targetCardId) ? [targetCardId] : [];
+  const purpose = mode === "generate_asset" ? "card_asset_generation" : "card_asset_analysis";
+  const context = buildAiContext({
+    bundle,
+    instruction,
+    targetCardIds,
+    diagnostics,
+    constraints: { ...constraints, style },
+    assetId,
+    mode
+  });
+  const targetCard = context.selection.cards[0];
+  const prompt = [
+    mode === "generate_asset" ? "Prepare a visual generation request for a card asset." : "Prepare a visual analysis request for a card asset.",
+    `Card: ${targetCard?.id ?? "none selected"}`,
+    `Style: ${style || "creator default"}`,
+    `Creator instruction: ${context.instruction || "Use the selected context."}`
+  ].join("\n");
+
+  return {
+    requestId: createRequestId(purpose, stableStringify(context)),
+    purpose,
+    mode,
+    prompt,
+    responseFormat: "json",
+    schema: mode === "generate_asset" ? mediaGenerationPreviewSchema() : mediaAnalysisPreviewSchema(),
+    context,
+    metadata: {
+      targetCardId: targetCard?.id ?? null,
+      assetId: context.selection.assetId,
+      style
+    }
+  };
+}
+
+export function createAiEditSuggestions({
+  bundle,
+  mode = "generate_cards",
+  config = {},
+  instruction = "",
+  targetCardId = null,
+  assetId = null,
+  diagnostics = null
+}) {
+  if (!AI_EDIT_MODES.has(mode)) {
+    throw new PipelineError(`Unknown AI edit mode '${mode}'`);
+  }
+
+  const normalizedBundle = createContentBundle(bundle);
+  const descriptor = cloneJsonValue(config ?? {}, "AI edit config");
+  const targetCardIds = isNonEmptyString(targetCardId) ? [targetCardId] : [];
+  const style = isNonEmptyString(descriptor.style) ? descriptor.style : "editorial card art";
+  const request = mode === "generate_asset" || mode === "analyze_asset"
+    ? buildMediaEditRequest({ bundle: normalizedBundle, mode, instruction, targetCardId, assetId, style, diagnostics })
+    : buildCardEditRequest({ bundle: normalizedBundle, instruction, targetCardIds, diagnostics, constraints: descriptor.constraints ?? {} });
+  const feedback = diagnostics ? createDiagnosticFeedback(diagnostics) : null;
+  const proposals = createOfflineProposals({ bundle: normalizedBundle, mode, config: descriptor, instruction, targetCardId, assetId, request, feedback });
+
+  return {
+    schemaVersion: AI_EDIT_SCHEMA_VERSION,
+    baseFingerprint: request.context.bundle.fingerprint,
+    mode,
+    config: descriptor,
+    request,
+    ...(feedback ? { feedback } : {}),
+    proposals
+  };
+}
+
+export function applyAiEditPatches({ bundle, patches }) {
+  if (!Array.isArray(patches)) {
+    throw new PipelineError("AI edit patches must be an array");
+  }
+
+  const working = cloneJsonValue(createContentBundle(bundle), "AI edit bundle");
+
+  for (const patch of patches) {
+    applyAiEditPatch(working, patch);
+  }
+
+  const nextBundle = createContentBundle(working);
+  return {
+    bundle: nextBundle,
+    validation: validateContentBundle(nextBundle)
   };
 }
 
@@ -911,6 +1099,443 @@ function addAction(actions, seenActions, action) {
   actions.push(action);
 }
 
+function createOfflineProposals({ bundle, mode, config, instruction, targetCardId, assetId, request, feedback }) {
+  if (mode === "generate_cards") {
+    return createDraftCardProposals(bundle, config, instruction);
+  }
+  if (mode === "repair_diagnostics") {
+    return createRepairProposals(bundle, targetCardId, feedback);
+  }
+  if (mode === "generate_asset") {
+    return createAssetGenerationProposal(bundle, config, instruction, targetCardId, request);
+  }
+  if (mode === "analyze_asset") {
+    return createAssetAnalysisProposal(bundle, instruction, targetCardId, assetId, request);
+  }
+  return [];
+}
+
+function createDraftCardProposals(bundle, config, instruction) {
+  const count = Math.max(1, Math.min(12, Number.isInteger(config.cardCount) ? config.cardCount : 2));
+  const theme = String(config.theme ?? bundle.metadata.title ?? "untitled court").trim() || "untitled court";
+  const prompt = String(instruction ?? "").trim();
+  const proposals = [];
+
+  for (let index = 0; index < count; index += 1) {
+    const id = uniqueCardId(bundle.cards, slugify(`ai-${theme}-${index + 1}`));
+    const card = {
+      id,
+      text: `A new petition tests ${theme}${prompt ? `: ${prompt}` : "."}`,
+      weight: 1,
+      requirements: {},
+      choices: [
+        {
+          id: "left",
+          label: "Hear them",
+          effects: { factions: { gauge1: 2, gauge3: -1 } }
+        },
+        {
+          id: "right",
+          label: "Delay",
+          effects: { factions: { gauge1: -1, gauge3: 1 } }
+        }
+      ]
+    };
+    proposals.push({
+      id: `proposal-${id}`,
+      title: `Draft card ${index + 1}`,
+      summary: `Adds a deterministic offline draft for ${theme}.`,
+      source: { mode: "generate_cards", provider: config.provider ?? "offline-stub" },
+      target: { cardIds: [id] },
+      patches: [{ op: "addCard", card }],
+      preview: { card }
+    });
+  }
+
+  return proposals;
+}
+
+function createRepairProposals(bundle, targetCardId, feedback) {
+  const proposals = [];
+  const actions = feedback?.actions ?? [];
+  const selectedCard = isNonEmptyString(targetCardId) ? bundle.cards.find((card) => card.id === targetCardId) : null;
+  const defaultProducer = selectedCard ?? bundle.cards[0] ?? null;
+
+  for (const [index, action] of actions.entries()) {
+    if (action.type === "raise_card_exposure") {
+      for (const cardId of normalizeStringArray(action.target)) {
+        const card = bundle.cards.find((candidate) => candidate.id === cardId);
+        if (!card) continue;
+        proposals.push(repairProposal(index, action, {
+          title: `Raise ${cardId} exposure`,
+          target: { cardIds: [cardId] },
+          patches: [{ op: "updateCard", cardId, changes: { weight: Math.max(1.5, roundNumber((card.weight ?? 1) + 0.75)) } }],
+          preview: { before: { weight: card.weight ?? 1 }, after: { weight: Math.max(1.5, roundNumber((card.weight ?? 1) + 0.75)) } }
+        }));
+      }
+    }
+
+    if (action.type === "repair_reachability" || action.type === "relax_requirements") {
+      for (const cardId of normalizeStringArray(action.target)) {
+        const card = bundle.cards.find((candidate) => candidate.id === cardId);
+        if (!card || Object.keys(card.requirements ?? {}).length === 0) continue;
+        proposals.push(repairProposal(index, action, {
+          title: `Relax ${cardId} gate`,
+          target: { cardIds: [cardId] },
+          patches: [{ op: "updateCard", cardId, changes: { requirements: {} } }],
+          preview: { before: { requirements: card.requirements }, after: { requirements: {} } }
+        }));
+      }
+    }
+
+    if (action.type === "add_tag_producers" && defaultProducer) {
+      const tags = normalizeStringArray(action.target);
+      if (tags.length > 0) {
+        const choice = defaultProducer.choices.find((candidate) => candidate.id === "left") ?? defaultProducer.choices[0];
+        const nextEffects = {
+          ...(choice.effects ?? {}),
+          tags: {
+            ...(choice.effects?.tags ?? {}),
+            ...Object.fromEntries(tags.map((tag) => [tag, true]))
+          }
+        };
+        proposals.push(repairProposal(index, action, {
+          title: "Add missing tag producer",
+          target: { cardIds: [defaultProducer.id], tags },
+          patches: [{ op: "setChoiceEffects", cardId: defaultProducer.id, choiceId: choice.id, effects: nextEffects }],
+          preview: { choiceId: choice.id, tags }
+        }));
+      }
+    }
+
+    if (action.type === "add_fallback_cards") {
+      const card = {
+        id: uniqueCardId(bundle.cards, "ai-fallback"),
+        text: "A quiet messenger brings a plain matter back before the court.",
+        weight: 1,
+        requirements: {},
+        choices: [
+          { id: "left", label: "Answer", effects: { factions: { gauge1: 1 } } },
+          { id: "right", label: "Table it", effects: { factions: { gauge3: 1 } } }
+        ]
+      };
+      proposals.push(repairProposal(index, action, {
+        title: "Add fallback card",
+        target: { cardIds: [card.id] },
+        patches: [{ op: "addCard", card }],
+        preview: { card }
+      }));
+    }
+
+    if (action.type === "rebalance_faction_pressure") {
+      const faction = normalizeFactionKey(String(action.target)) ?? "gauge1";
+      const patches = [];
+      const affected = [];
+      for (const card of bundle.cards) {
+        for (const choice of card.choices) {
+          const current = choice.effects?.factions?.[faction];
+          if (Number.isFinite(current) && Math.abs(current) >= 2) {
+            patches.push({
+              op: "setChoiceEffects",
+              cardId: card.id,
+              choiceId: choice.id,
+              effects: {
+                ...(choice.effects ?? {}),
+                factions: {
+                  ...(choice.effects?.factions ?? {}),
+                  [faction]: Math.trunc(current / 2)
+                }
+              }
+            });
+            affected.push(card.id);
+          }
+          if (patches.length >= 4) break;
+        }
+        if (patches.length >= 4) break;
+      }
+      if (patches.length > 0) {
+        proposals.push(repairProposal(index, action, {
+          title: `Reduce ${faction} pressure`,
+          target: { cardIds: [...new Set(affected)], faction },
+          patches,
+          preview: { patchCount: patches.length, faction }
+        }));
+      }
+    }
+  }
+
+  return proposals;
+}
+
+function repairProposal(index, action, entry) {
+  return {
+    id: `repair-${index + 1}-${slugify(entry.title)}`,
+    title: entry.title,
+    summary: action.reason ?? "Reviewer diagnostic repair proposal.",
+    source: { mode: "repair_diagnostics", warning: action.sourceWarning, action: action.type, severity: action.severity },
+    target: entry.target,
+    patches: entry.patches,
+    preview: entry.preview
+  };
+}
+
+function createAssetGenerationProposal(bundle, config, instruction, targetCardId, request) {
+  const card = bundle.cards.find((candidate) => candidate.id === targetCardId) ?? null;
+  const style = request.metadata.style || config.style || "editorial card art";
+  const patches = card
+    ? [{
+        op: "upsertAsset",
+        asset: {
+          id: uniqueAssetId(bundle.assets, `${card.id}-ai-asset`),
+          cardId: card.id,
+          uri: `pending://${card.id}`,
+          title: `AI asset request for ${card.id}`,
+          source: "offline-ai-edit",
+          metadata: {
+            mode: "generate_asset",
+            style,
+            instruction: String(instruction ?? "").trim()
+          }
+        }
+      }]
+    : [];
+
+  return [{
+    id: "media-generate-preview",
+    title: "Visual request preview",
+    summary: card ? `Prepares a placeholder asset request for ${card.id}.` : "Previews a future visual generation request.",
+    source: { mode: "generate_asset", provider: config.provider ?? "offline-stub" },
+    target: { cardIds: card ? [card.id] : [], assetIds: patches[0] ? [patches[0].asset.id] : [] },
+    patches,
+    preview: { requestId: request.requestId, prompt: request.prompt, style }
+  }];
+}
+
+function createAssetAnalysisProposal(bundle, instruction, targetCardId, assetId, request) {
+  const card = bundle.cards.find((candidate) => candidate.id === targetCardId) ?? null;
+  return [{
+    id: "media-analysis-preview",
+    title: "Visual analysis preview",
+    summary: "Previews a future image analysis request without changing content.",
+    source: { mode: "analyze_asset", provider: "offline-stub" },
+    target: { cardIds: card ? [card.id] : [], assetIds: assetId ? [assetId] : [] },
+    patches: [],
+    preview: {
+      requestId: request.requestId,
+      prompt: request.prompt,
+      expected: ["subject summary", "card fit notes", "accessibility alt text", "suggested metadata"],
+      instruction: String(instruction ?? "").trim()
+    }
+  }];
+}
+
+function applyAiEditPatch(bundle, patch) {
+  if (!isPlainRecord(patch) || !AI_EDIT_PATCH_OPS.has(patch.op)) {
+    throw new PipelineError(`Unsupported AI edit patch op '${patch?.op}'`);
+  }
+
+  if (patch.op === "addCard") {
+    const card = normalizeCard(patch.card);
+    if (bundle.cards.some((candidate) => candidate.id === card.id)) {
+      throw new PipelineError(`Card '${card.id}' already exists`);
+    }
+    bundle.cards.push(card);
+    return;
+  }
+
+  if (patch.op === "updateCard") {
+    const index = bundle.cards.findIndex((card) => card.id === patch.cardId);
+    if (index === -1) {
+      throw new PipelineError(`Card '${patch.cardId}' was not found`);
+    }
+    if (!isPlainRecord(patch.changes)) {
+      throw new PipelineError("updateCard patch requires changes");
+    }
+    bundle.cards[index] = normalizeCard({ ...bundle.cards[index], ...cloneJsonValue(patch.changes, "updateCard changes") });
+    return;
+  }
+
+  if (patch.op === "setChoiceLabel") {
+    const choice = requirePatchChoice(bundle, patch.cardId, patch.choiceId);
+    if (typeof patch.label !== "string") {
+      throw new PipelineError("setChoiceLabel patch requires a string label");
+    }
+    choice.label = patch.label;
+    return;
+  }
+
+  if (patch.op === "setChoiceEffects") {
+    const card = requirePatchCard(bundle, patch.cardId);
+    const choice = requirePatchChoice(bundle, patch.cardId, patch.choiceId);
+    choice.effects = normalizeEffectKeys(patch.effects ?? {});
+    const index = bundle.cards.findIndex((candidate) => candidate.id === card.id);
+    bundle.cards[index] = normalizeCard(card);
+    return;
+  }
+
+  if (patch.op === "setMetadata") {
+    if (!isPlainRecord(patch.metadata)) {
+      throw new PipelineError("setMetadata patch requires metadata");
+    }
+    bundle.metadata = normalizeMetadata({ ...bundle.metadata, ...cloneJsonValue(patch.metadata, "patch metadata") });
+    return;
+  }
+
+  if (patch.op === "upsertAsset") {
+    const asset = cloneJsonValue(patch.asset, "upsertAsset asset");
+    normalizeAssets([asset]);
+    const index = bundle.assets.findIndex((candidate) => candidate.id === asset.id);
+    if (index === -1) {
+      bundle.assets.push(asset);
+    } else {
+      bundle.assets[index] = { ...bundle.assets[index], ...asset };
+    }
+  }
+}
+
+function requirePatchCard(bundle, cardId) {
+  const card = bundle.cards.find((candidate) => candidate.id === cardId);
+  if (!card) {
+    throw new PipelineError(`Card '${cardId}' was not found`);
+  }
+  return card;
+}
+
+function requirePatchChoice(bundle, cardId, choiceId) {
+  const card = requirePatchCard(bundle, cardId);
+  const choice = card.choices.find((candidate) => candidate.id === choiceId);
+  if (!choice) {
+    throw new PipelineError(`Choice '${choiceId}' was not found on card '${cardId}'`);
+  }
+  return choice;
+}
+
+function createBundleFingerprint(bundle) {
+  return createRequestId("bundle", stableStringify(createContentBundle(bundle)));
+}
+
+function stableStringify(value) {
+  if (value === null || typeof value !== "object") {
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map(stableStringify).join(",")}]`;
+  }
+  return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`).join(",")}}`;
+}
+
+function compactCardForAi(card) {
+  return {
+    id: card.id,
+    text: card.text ?? "",
+    weight: card.weight ?? 1,
+    requirements: card.requirements ?? {},
+    choices: (card.choices ?? []).map((choice) => ({
+      id: choice.id,
+      label: choice.label ?? "",
+      effects: choice.effects ?? {}
+    }))
+  };
+}
+
+function compactAssetForAi(asset) {
+  if (!isPlainRecord(asset)) {
+    return asset;
+  }
+  return {
+    id: asset.id ?? null,
+    cardId: asset.cardId ?? null,
+    uri: asset.uri ?? null,
+    title: asset.title ?? null,
+    source: asset.source ?? asset.sourceUrl ?? null,
+    metadata: asset.metadata ?? {}
+  };
+}
+
+function compactDiagnosticsForAi(diagnostics) {
+  return {
+    schemaVersion: diagnostics.schemaVersion ?? 1,
+    module: diagnostics.module ?? "ReignsAgent-Reviewer",
+    healthScore: diagnostics.healthScore ?? null,
+    headline: diagnostics.headline ?? null,
+    coverage: diagnostics.coverage ? {
+      stalledRate: diagnostics.coverage.stalledRate ?? null,
+      lowCycleCards: diagnostics.coverage.lowCycleCards ?? [],
+      unvisitedCards: diagnostics.coverage.unvisitedCards ?? []
+    } : null,
+    graph: diagnostics.graph ? {
+      unreachableCards: diagnostics.graph.unreachableCards ?? [],
+      unsatisfiedRequiredTags: diagnostics.graph.unsatisfiedRequiredTags ?? [],
+      unsatisfiedRequiredVariables: diagnostics.graph.unsatisfiedRequiredVariables ?? [],
+      unsatisfiedRequiredFactions: diagnostics.graph.unsatisfiedRequiredFactions ?? []
+    } : null,
+    warnings: diagnostics.diagnostics?.warnings ?? diagnostics.warnings ?? []
+  };
+}
+
+function projectGaugeLabels(metadata) {
+  const gauges = metadata?.presentation?.gauges;
+  if (!isPlainRecord(gauges)) {
+    return {};
+  }
+  const labels = {};
+  for (const [key, value] of Object.entries(gauges)) {
+    if (isPlainRecord(value) && typeof value.label === "string") {
+      labels[key] = value.label;
+    }
+  }
+  return labels;
+}
+
+function uniqueCardId(cards, base) {
+  const existing = new Set(cards.map((card) => card.id));
+  let candidate = base || "ai-card";
+  let suffix = 2;
+  while (existing.has(candidate)) {
+    candidate = `${base}-${suffix}`;
+    suffix += 1;
+  }
+  return candidate;
+}
+
+function uniqueAssetId(assets, base) {
+  const existing = new Set(assets.map((asset) => asset.id));
+  let candidate = base || "ai-asset";
+  let suffix = 2;
+  while (existing.has(candidate)) {
+    candidate = `${base}-${suffix}`;
+    suffix += 1;
+  }
+  return candidate;
+}
+
+function slugify(value) {
+  return String(value ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48) || "ai-card";
+}
+
+function normalizeStringArray(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return [...new Set(value.map((entry) => (typeof entry === "string" ? entry.trim() : entry)).filter(isNonEmptyString))];
+}
+
+function cloneJsonValue(value, context) {
+  try {
+    return JSON.parse(JSON.stringify(value ?? null));
+  } catch (error) {
+    throw new PipelineError(`${context} must be JSON-safe: ${error.message}`);
+  }
+}
+
+function roundNumber(value) {
+  return Math.round(value * 100) / 100;
+}
+
 function createRequestId(purpose, text) {
   let hash = 2166136261;
   const input = `${purpose}:${text}`;
@@ -963,6 +1588,43 @@ function cardGenerationSchema() {
           required: ["id", "text", "choices"]
         }
       }
+    }
+  };
+}
+
+function aiEditProposalSchema() {
+  return {
+    type: "object",
+    required: ["proposals"],
+    properties: {
+      proposals: {
+        type: "array",
+        items: {
+          type: "object",
+          required: ["id", "title", "patches"]
+        }
+      }
+    }
+  };
+}
+
+function mediaGenerationPreviewSchema() {
+  return {
+    type: "object",
+    required: ["prompt", "asset"],
+    properties: {
+      prompt: { type: "string" },
+      asset: { type: "object" }
+    }
+  };
+}
+
+function mediaAnalysisPreviewSchema() {
+  return {
+    type: "object",
+    required: ["analysis"],
+    properties: {
+      analysis: { type: "object" }
     }
   };
 }

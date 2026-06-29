@@ -7,6 +7,7 @@ const PANELS = [
   { id: "content", label: "Content", group: "Authoring" },
   { id: "story", label: "Story", group: "Authoring" },
   { id: "review", label: "Review", group: "Quality" },
+  { id: "ai-edit", label: "AI Edit", group: "Quality" },
   { id: "preview", label: "Preview", group: "Quality" },
   { id: "build", label: "Build", group: "Release" },
   { id: "settings", label: "Settings", group: "Release" }
@@ -191,8 +192,8 @@ function App() {
   async function runAction(label, action) {
     setBusy(label);
     try {
-      await action();
-      return true;
+      const result = await action();
+      return result ?? true;
     } catch (error) {
       setStatus(error.message);
       return false;
@@ -276,6 +277,22 @@ function App() {
       setDiagnostics(result);
       setStatus(`Diagnostics complete: ${result.healthScore}/100`);
     });
+  }
+
+  async function buildAiEditPlan(form) {
+    return runAction("Building AI edit plan", async () => {
+      const result = await api("/api/ai/edit/plan", { method: "POST", body: form });
+      setStatus(`AI Edit plan ready: ${result.proposals?.length ?? 0} proposals`);
+      return result;
+    });
+  }
+
+  async function applyAiEditPlan(plan, proposalIds) {
+    return mutateEditor(
+      "Applying AI edit",
+      async () => api("/api/ai/edit/apply", { method: "POST", body: { plan, proposalIds } }),
+      "AI edit applied"
+    );
   }
 
   async function prepareBuild(exportBuild = false) {
@@ -402,6 +419,15 @@ function App() {
             />
           )}
           {activePanel === "review" && <ReviewPanel diagnostics={diagnostics} onRun={runDiagnostics} onOpen={openPanel} />}
+          {activePanel === "ai-edit" && (
+            <AiEditPanel
+              editor={editor}
+              diagnostics={diagnostics}
+              onBuildPlan={buildAiEditPlan}
+              onApplyPlan={applyAiEditPlan}
+              onOpen={openPanel}
+            />
+          )}
           {activePanel === "preview" && (
             <PreviewPanel
               play={play}
@@ -3093,6 +3119,169 @@ function BuildPanel({ build, onPrepare }) {
   );
 }
 
+function AiEditPanel({ editor, diagnostics, onBuildPlan, onApplyPlan, onOpen }) {
+  const [mode, setMode] = useState("generate_cards");
+  const [provider, setProvider] = useState("stub");
+  const [theme, setTheme] = useState(editor?.metadata?.title ?? "small court");
+  const [style, setStyle] = useState("ink wash card art");
+  const [cardCount, setCardCount] = useState(2);
+  const [targetCardId, setTargetCardId] = useState("");
+  const [assetId, setAssetId] = useState("");
+  const [instruction, setInstruction] = useState("");
+  const [plan, setPlan] = useState(null);
+  const [selected, setSelected] = useState([]);
+  const [applyResult, setApplyResult] = useState("");
+  const cards = editor?.cards ?? [];
+  const assets = editor?.assets ?? [];
+  const requiresDiagnostics = mode === "repair_diagnostics";
+  const canBuild = !requiresDiagnostics || Boolean(diagnostics);
+  const selectedSet = useMemo(() => new Set(selected), [selected]);
+
+  useEffect(() => {
+    if (!targetCardId && cards[0]?.id) {
+      setTargetCardId(cards[0].id);
+    }
+  }, [cards, targetCardId]);
+
+  useEffect(() => {
+    setPlan(null);
+    setSelected([]);
+    setApplyResult("");
+  }, [mode]);
+
+  async function buildPlan() {
+    if (!canBuild) return;
+    const result = await onBuildPlan({
+      mode,
+      config: { provider, theme, cardCount, style },
+      instruction,
+      targetCardId: targetCardId || null,
+      assetId: assetId || null,
+      diagnostics: requiresDiagnostics ? diagnostics : null
+    });
+    if (result && result !== true) {
+      setPlan(result);
+      setSelected((result.proposals ?? []).filter((proposal) => (proposal.patches ?? []).length > 0).map((proposal) => proposal.id));
+      setApplyResult("");
+    }
+  }
+
+  async function applySelected() {
+    if (!plan || selected.length === 0) return;
+    const result = await onApplyPlan(plan, selected);
+    if (result) {
+      setApplyResult(`Applied ${selected.length} proposal${selected.length === 1 ? "" : "s"}.`);
+      setPlan(null);
+      setSelected([]);
+    }
+  }
+
+  function toggleProposal(proposalId) {
+    setSelected((current) =>
+      current.includes(proposalId)
+        ? current.filter((id) => id !== proposalId)
+        : [...current, proposalId]
+    );
+  }
+
+  return (
+    <section className="panel">
+      <PanelHead title="AI Edit" note="Offline drafting, review repair, and future visual request planning." />
+      <div className="ai-edit-layout">
+        <div className="subsection ai-edit-controls">
+          <h3>Request</h3>
+          <div className="field-row field-row--compact">
+            <select value={mode} onChange={(event) => setMode(event.target.value)}>
+              <option value="generate_cards">Draft cards</option>
+              <option value="repair_diagnostics">Repair review</option>
+              <option value="generate_asset">Generate visual request</option>
+              <option value="analyze_asset">Analyze visual request</option>
+            </select>
+            <input value={provider} onChange={(event) => setProvider(event.target.value)} placeholder="provider" />
+            <input value={theme} onChange={(event) => setTheme(event.target.value)} placeholder="theme" />
+            <input type="number" min="1" max="12" value={cardCount} onChange={(event) => setCardCount(Number(event.target.value))} />
+          </div>
+          <div className="field-row field-row--compact">
+            <select value={targetCardId} onChange={(event) => setTargetCardId(event.target.value)}>
+              <option value="">No target card</option>
+              {cards.map((card) => <option key={card.id} value={card.id}>{card.id}</option>)}
+            </select>
+            <select value={assetId} onChange={(event) => setAssetId(event.target.value)}>
+              <option value="">No target asset</option>
+              {assets.map((asset) => <option key={asset.id} value={asset.id}>{asset.id}</option>)}
+            </select>
+            <input value={style} onChange={(event) => setStyle(event.target.value)} placeholder="visual style" />
+          </div>
+          <textarea
+            value={instruction}
+            onChange={(event) => setInstruction(event.target.value)}
+            placeholder="Describe what the AI should draft, repair, generate, or inspect."
+            rows={5}
+          />
+          <div className="action-row">
+            <button className="btn btn--primary" disabled={!canBuild} onClick={() => void buildPlan()}>Build plan</button>
+            <button className="btn" onClick={() => onOpen("content")}>Content</button>
+            <button className="btn" onClick={() => onOpen("review")}>Review</button>
+          </div>
+          {requiresDiagnostics && !diagnostics && (
+            <p className="muted">Repair proposals use the latest Review result. Run Review first, then return here.</p>
+          )}
+        </div>
+
+        <div className="subsection">
+          <h3>Context</h3>
+          <div className="ai-context-grid">
+            <Metric label="Cards" value={String(cards.length)} />
+            <Metric label="Assets" value={String(assets.length)} />
+            <Metric label="Review" value={diagnostics ? `${diagnostics.healthScore}/100` : "Not run"} tone={diagnostics ? "" : "bad"} />
+            <Metric label="Target" value={targetCardId || "None"} />
+          </div>
+          <pre className="output output--compact">
+            {plan ? JSON.stringify(plan.request.context, null, 2) : "Build a plan to preview the AI context."}
+          </pre>
+        </div>
+      </div>
+
+      <div className="subsection">
+        <h3>Proposals</h3>
+        {plan ? (
+          <>
+            <div className="action-row">
+              <button className="btn" onClick={() => setSelected((plan.proposals ?? []).map((proposal) => proposal.id))}>Select all</button>
+              <button className="btn" onClick={() => setSelected([])}>Clear</button>
+              <button className="btn btn--primary" disabled={selected.length === 0} onClick={() => void applySelected()}>Apply selected</button>
+              <span className="muted">{selected.length}/{plan.proposals?.length ?? 0} selected</span>
+            </div>
+            <div className="ai-proposal-list">
+              {(plan.proposals ?? []).map((proposal) => (
+                <article className="ai-proposal" key={proposal.id}>
+                  <label className="ai-proposal__head">
+                    <input
+                      type="checkbox"
+                      checked={selectedSet.has(proposal.id)}
+                      onChange={() => toggleProposal(proposal.id)}
+                      disabled={(proposal.patches ?? []).length === 0}
+                    />
+                    <span>
+                      <strong>{proposal.title}</strong>
+                      <small>{proposal.source?.mode ?? plan.mode} · {(proposal.target?.cardIds ?? []).join(", ") || "context"}</small>
+                    </span>
+                  </label>
+                  <p>{proposal.summary}</p>
+                  <pre className="output output--compact">{JSON.stringify(proposal.patches, null, 2)}</pre>
+                </article>
+              ))}
+            </div>
+          </>
+        ) : (
+          <p className="muted">No AI Edit plan yet.</p>
+        )}
+        {applyResult && <p className="muted">{applyResult}</p>}
+      </div>
+    </section>
+  );
+}
+
 function SettingsPanel({ editor, onRefresh, onStatus }) {
   const [title, setTitle] = useState(editor?.metadata?.title ?? "");
   const [plan, setPlan] = useState("");
@@ -3165,6 +3354,7 @@ function panelStatus(id, { editor, playerReady, diagnostics, build }) {
   if (id === "content") return `${editor?.cards?.length ?? 0}`;
   if (id === "story") return `${editor?.cards?.length ?? 0}`;
   if (id === "review") return diagnostics ? `${diagnostics.healthScore}` : "new";
+  if (id === "ai-edit") return diagnostics ? "ready" : "draft";
   if (id === "preview") return playerReady ? "ready" : "blocked";
   if (id === "build") return build ? "ready" : "new";
   if (id === "settings") return editor?.metadata?.title ? "set" : "new";

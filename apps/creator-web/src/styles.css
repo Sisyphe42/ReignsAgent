@@ -2844,6 +2844,74 @@ summary:focus-visible {
   line-height: 1.5;
 }
 
+.output--compact {
+  max-height: 260px;
+  font-size: 0.72rem;
+}
+
+.ai-edit-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.85fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.ai-edit-controls textarea {
+  width: 100%;
+  min-height: 118px;
+  resize: vertical;
+}
+
+.ai-context-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.ai-proposal-list {
+  display: grid;
+  gap: 12px;
+}
+
+.ai-proposal {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface-2) 76%, transparent);
+}
+
+.ai-proposal__head {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.ai-proposal__head input {
+  margin-top: 5px;
+}
+
+.ai-proposal__head span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.ai-proposal__head small,
+.ai-proposal p {
+  color: var(--muted);
+}
+
+.ai-proposal p {
+  margin: 10px 0;
+}
+
+@media (max-width: 960px) {
+  .ai-edit-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* Story graph panel */
 .panel--story {
   overflow: visible;
