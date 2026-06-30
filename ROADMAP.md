@@ -23,6 +23,15 @@ Story and Content work should now optimize for non-technical content authors: th
 - Reframe Story from a graph visualizer into a story structure workspace: graph navigation, chapter/theme grouping, reachability, reviewer coverage, ending paths, breakpoints, and issue navigation should all point back to concrete editing actions.
 - Reframe Review from a balance-only panel into narrative QA. Keep gauge pressure, game-over rate, and coverage, but add pacing, dead paths, early endings, unreachable story groups, unvisited endings, and chapter/theme coverage as review concerns.
 
+## AI Assist Direction
+- Replace the current "offline AI Edit" framing with AI Assist: a context-aware creator assistance layer over Overview, Content, Story, and Review. It should not become a chat-first product or a separate editing mode that hides the normal workflow.
+- Settings should support user-supplied endpoints with minimal fields: base URL, API key, API protocol (`completions`, `responses`, or `messages`), model id, and capability toggles for vision, structured JSON, tool/function calling, reasoning/thinking, and streaming. Image or vision endpoints may be configured separately only when the call shape requires it.
+- Avoid profile-management burden in the default UX. Provider presets, model-list fetch, multiple saved profiles, MCP, skills, and raw tool integrations are optional developer-mode enhancements after the basic endpoint and action flow works.
+- Overview should handle empty/sample initialization with a brief composer and safe actions for blank project, sample, import, or generated draft. Full regenerate and clear belong in project settings or a project menu with destructive styling and confirmation.
+- AI entry points should be contextual: selected cards, graph nodes/edges, review issue cards, and overview project state open the same action popover/drawer with context summary, recommended actions, optional prompt, draft preview, and apply controls.
+- Review should become the strongest AI-assisted diagnostics surface: coverage matrices, ending reachability, gauge pressure, issue cards, and repair proposals should be visible before AI generates fixes.
+- AI work needs explicit interaction states. Simple edits should show inline loading; longer edits should show progress stages such as context, request, model response, parse, validate, and ready. User-facing errors should offer retry; raw call details belong in Dev Mode logs.
+
 ## Data Direction
 - Do not migrate the content schema during the docs-first phase.
 - Prefer lightweight metadata before engine contracts: `metadata.story.groups` describes chapters, themes, arcs, and ending groups; `metadata.presentation.gauges` can rename, describe, or hide the default four neutral gauge slots (`gauge0` through `gauge3`) without creating new built-in stats.
@@ -38,4 +47,6 @@ Story and Content work should now optimize for non-technical content authors: th
 - No full engine migration to Unity, Godot, or another game editor.
 - No Fastify or database introduction.
 - No content schema migration.
+- No default multi-provider/profile management system before the lightweight AI Assist endpoint UX is proven.
+- No MCP/skills/tool-agent surface in the normal creator UX.
 - No built-in RPG management systems such as inventory, equipment, pets, shops, rarity, crafting, character builds, skill trees, or loot progression.
