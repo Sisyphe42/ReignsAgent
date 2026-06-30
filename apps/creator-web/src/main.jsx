@@ -175,6 +175,7 @@ function App() {
   const [skin, setSkin] = useState(() => initialUrlState.skin ?? (localStorage.getItem(PERSIST_KEY) || DEFAULT_SKIN));
   const [aiAssistEnabled, setAiAssistEnabled] = useState(false);
   const [aiSettings, setAiSettings] = useState(() => readAiSettings());
+  const [aiDraftRequest, setAiDraftRequest] = useState(null);
   const [diagnostics, setDiagnostics] = useState(null);
   const [play, setPlay] = useState({ sessionId: null, state: null });
   const [build, setBuild] = useState(null);
@@ -398,6 +399,15 @@ function App() {
     syncWorkbenchUrl(panelId, skin, "push");
   }
 
+  function openAiAssistDraft(request) {
+    setAiAssistEnabled(true);
+    setAiDraftRequest({
+      id: `${Date.now()}:${Math.random().toString(36).slice(2)}`,
+      ...request
+    });
+    openPanel("ai-edit");
+  }
+
   function focusOnCard(cardId) {
     if (!cardId) return;
     setFocusCardId(cardId);
@@ -505,6 +515,8 @@ function App() {
               onMutate={mutateEditor}
               onStatus={setStatus}
               focusCardId={focusCardId}
+              aiAssistEnabled={aiAssistEnabled}
+              onAiAction={openAiAssistDraft}
             />
           )}
           {activePanel === "story" && (
@@ -516,9 +528,19 @@ function App() {
               onPushHistory={pushHistory}
               onUndo={undo}
               historyDepth={historyDepth}
+              aiAssistEnabled={aiAssistEnabled}
+              onAiAction={openAiAssistDraft}
             />
           )}
-          {activePanel === "review" && <ReviewPanel diagnostics={diagnostics} onRun={runDiagnostics} onOpen={openPanel} />}
+          {activePanel === "review" && (
+            <ReviewPanel
+              diagnostics={diagnostics}
+              aiAssistEnabled={aiAssistEnabled}
+              onRun={runDiagnostics}
+              onOpen={openPanel}
+              onAiAction={openAiAssistDraft}
+            />
+          )}
           {activePanel === "ai-edit" && (
             <AiAssistPanel
               editor={editor}
@@ -526,6 +548,7 @@ function App() {
               aiSettings={aiSettings}
               aiAssistEnabled={aiAssistEnabled}
               aiConfigured={aiConfigured}
+              draftRequest={aiDraftRequest}
               onBuildPlan={buildAiEditPlan}
               onApplyPlan={applyAiEditPlan}
               onOpen={openPanel}
@@ -624,7 +647,7 @@ function DraftBanner({ draftInfo, onRestore, onDiscard }) {
   );
 }
 
-function ContentPanel({ editor, assetsByCard, onImport, onMutate, onStatus, focusCardId }) {
+function ContentPanel({ editor, assetsByCard, onImport, onMutate, onStatus, focusCardId, aiAssistEnabled, onAiAction }) {
   const [paste, setPaste] = useState("");
   const [query, setQuery] = useState("");
   const [validationFilter, setValidationFilter] = useState("all");
@@ -782,6 +805,44 @@ function ContentPanel({ editor, assetsByCard, onImport, onMutate, onStatus, focu
                   <button className="btn btn--ghost" type="button" disabled={activeIndex === -1 || activeIndex >= visibleItems.length - 1} onClick={() => selectRelative(1)}>Next</button>
                 </div>
               </div>
+              {aiAssistEnabled && (
+                <AiActionStrip
+                  title={`AI Assist: ${activeItem.card.id}`}
+                  note="Draft changes with this card as context. Proposals open in AI Assist before anything is applied."
+                  actions={[
+                    {
+                      label: "Rewrite",
+                      detail: "Tighten card text and choice wording",
+                      onClick: () => onAiAction({
+                        mode: "generate_cards",
+                        targetCardId: activeItem.card.id,
+                        cardCount: 1,
+                        instruction: `Rewrite or improve card '${activeItem.card.id}' for clarity, tone, and binary left/right readability. Preserve story state unless the proposal explicitly explains a safer change.`
+                      })
+                    },
+                    {
+                      label: "Follow-up",
+                      detail: "Draft a card that follows this beat",
+                      onClick: () => onAiAction({
+                        mode: "generate_cards",
+                        targetCardId: activeItem.card.id,
+                        cardCount: 1,
+                        instruction: `Draft one follow-up card for '${activeItem.card.id}'. Include a clear reason for how it should connect through tags, variables, or gauge thresholds.`
+                      })
+                    },
+                    {
+                      label: "Branch",
+                      detail: "Draft an alternate consequence",
+                      onClick: () => onAiAction({
+                        mode: "generate_cards",
+                        targetCardId: activeItem.card.id,
+                        cardCount: 2,
+                        instruction: `Draft an alternate branch from '${activeItem.card.id}' with two possible downstream cards. Keep player interaction binary and avoid RPG management systems.`
+                      })
+                    }
+                  ]}
+                />
+              )}
               <CardEditor
                 key={activeItem.card.id}
                 card={activeItem.card}
@@ -1449,7 +1510,7 @@ function AddCard({ onMutate, onCreated }) {
   );
 }
 
-function StoryPanel({ editor, diagnostics, onOpen, onFocusCard, onPushHistory, onUndo, historyDepth = 0 }) {
+function StoryPanel({ editor, diagnostics, onOpen, onFocusCard, onPushHistory, onUndo, historyDepth = 0, aiAssistEnabled, onAiAction }) {
   const [graph, setGraph] = useState(null);
   const [graphError, setGraphError] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
@@ -1470,6 +1531,7 @@ function StoryPanel({ editor, diagnostics, onOpen, onFocusCard, onPushHistory, o
   const selectedStoryGroup = useMemo(() => {
     return storyGroups.groups.find((group) => group.id === selectedGroupId) ?? null;
   }, [storyGroups.groups, selectedGroupId]);
+  const storyAiTarget = graphFocusCardId ?? selectedStoryGroup?.cardIds?.[0] ?? graph?.entryCards?.[0] ?? editor?.cards?.[0]?.id ?? null;
 
   useEffect(() => {
     if (selectedGroupId && !storyGroups.groups.some((group) => group.id === selectedGroupId)) {
@@ -1556,6 +1618,62 @@ function StoryPanel({ editor, diagnostics, onOpen, onFocusCard, onPushHistory, o
         />
         <GraphLegend hasHeat={Boolean(diagnostics?.coverage?.cardCycleRates || diagnostics?.coverage?.cardVisitRates)} />
       </div>
+      {aiAssistEnabled && (
+        <AiActionStrip
+          title="AI Assist: story structure"
+          note={storyAiTarget ? `Using ${storyAiTarget} as the story context.` : "Using the full project as story context."}
+          actions={[
+            {
+              label: "Bridge",
+              detail: "Draft a connective card",
+              onClick: () => onAiAction({
+                mode: "generate_cards",
+                targetCardId: storyAiTarget,
+                cardCount: 1,
+                instruction: storyAiTarget
+                  ? `Draft a bridge card that can connect from '${storyAiTarget}' to another reachable story beat. Include suggested tags or requirements for wiring.`
+                  : "Draft a bridge card for the current story graph and include suggested tags or requirements for wiring."
+              })
+            },
+            {
+              label: "Alt branch",
+              detail: "Add a second path",
+              onClick: () => onAiAction({
+                mode: "generate_cards",
+                targetCardId: storyAiTarget,
+                cardCount: 2,
+                instruction: storyAiTarget
+                  ? `Draft an alternate branch from '${storyAiTarget}' with two downstream cards and clear trigger conditions.`
+                  : "Draft an alternate branch for the current story with clear trigger conditions."
+              })
+            },
+            {
+              label: "Ending",
+              detail: "Draft an ending path",
+              onClick: () => onAiAction({
+                mode: "generate_cards",
+                targetCardId: storyAiTarget,
+                cardCount: 1,
+                instruction: storyAiTarget
+                  ? `Draft one ending-path card that can follow '${storyAiTarget}'. Keep it data-driven through tags, variables, or gauge thresholds.`
+                  : "Draft one ending-path card for the current project. Keep it data-driven through tags, variables, or gauge thresholds."
+              })
+            },
+            {
+              label: "Gate",
+              detail: "Make reachability stricter",
+              onClick: () => onAiAction({
+                mode: "generate_cards",
+                targetCardId: storyAiTarget,
+                cardCount: 1,
+                instruction: storyAiTarget
+                  ? `Suggest a stricter but understandable branch gate around '${storyAiTarget}' using existing tags, variables, or gauge thresholds.`
+                  : "Suggest a stricter but understandable branch gate using existing tags, variables, or gauge thresholds."
+              })
+            }
+          ]}
+        />
+      )}
       {graphError ? (
         <div className="empty-state">
           <p>Could not load story graph: {graphError}</p>
@@ -3109,7 +3227,7 @@ function drawChoiceHandle(ctx, x, y, label, colors) {
   ctx.fillText(label, x, y);
 }
 
-function ReviewPanel({ diagnostics, onRun, onOpen }) {
+function ReviewPanel({ diagnostics, aiAssistEnabled, onRun, onOpen, onAiAction }) {
   const [cycles, setCycles] = useState(500);
   const [maxTurns, setMaxTurns] = useState(40);
   const [seed, setSeed] = useState(1);
@@ -3123,6 +3241,44 @@ function ReviewPanel({ diagnostics, onRun, onOpen }) {
         <label>Seed <input type="number" value={seed} onChange={(event) => setSeed(Number(event.target.value))} /></label>
         <button className="btn btn--primary" onClick={() => void onRun({ cycles, maxTurns, seed })}>Run review</button>
       </div>
+      {aiAssistEnabled && (
+        <AiActionStrip
+          title="AI Assist: review diagnostics"
+          note={diagnostics ? `Latest review score: ${diagnostics.healthScore}/100.` : "Run Review before requesting repair proposals."}
+          actions={[
+            {
+              label: "Repair",
+              detail: "Draft fixes from latest diagnostics",
+              disabled: !diagnostics,
+              onClick: () => onAiAction({
+                mode: "repair_diagnostics",
+                cardCount: 1,
+                instruction: "Use the latest Review diagnostics to propose repair patches for coverage, pacing, early endings, unreachable cards, or gauge pressure."
+              })
+            },
+            {
+              label: "Explain",
+              detail: "Summarize risks as draft guidance",
+              disabled: !diagnostics,
+              onClick: () => onAiAction({
+                mode: "generate_cards",
+                cardCount: 1,
+                instruction: `Explain the latest Review result (${diagnostics?.healthScore ?? "not run"}/100) as actionable author guidance. Focus on what to fix next before generating cards.`
+              })
+            },
+            {
+              label: "Coverage",
+              detail: "Draft missing branch coverage",
+              disabled: !diagnostics,
+              onClick: () => onAiAction({
+                mode: "generate_cards",
+                cardCount: 2,
+                instruction: "Draft cards that improve narrative coverage for the weakest story groups or endings in the latest Review diagnostics."
+              })
+            }
+          ]}
+        />
+      )}
       {diagnostics ? (
         <>
           <div className="health">
@@ -3261,7 +3417,7 @@ function BuildPanel({ build, onPrepare }) {
   );
 }
 
-function AiAssistPanel({ editor, diagnostics, aiSettings, aiAssistEnabled, aiConfigured, onBuildPlan, onApplyPlan, onOpen }) {
+function AiAssistPanel({ editor, diagnostics, aiSettings, aiAssistEnabled, aiConfigured, draftRequest, onBuildPlan, onApplyPlan, onOpen }) {
   const [mode, setMode] = useState("generate_cards");
   const [theme, setTheme] = useState(editor?.metadata?.title ?? "small court");
   const [style, setStyle] = useState("ink wash card art");
@@ -3291,6 +3447,20 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, aiAssistEnabled, aiCon
     setSelected([]);
     setApplyResult("");
   }, [mode]);
+
+  useEffect(() => {
+    if (!draftRequest) return;
+    setMode(draftRequest.mode ?? "generate_cards");
+    setInstruction(draftRequest.instruction ?? "");
+    setTargetCardId(draftRequest.targetCardId ?? "");
+    setAssetId(draftRequest.assetId ?? "");
+    if (draftRequest.cardCount) setCardCount(draftRequest.cardCount);
+    if (draftRequest.theme) setTheme(draftRequest.theme);
+    setPlan(null);
+    setSelected([]);
+    setApplyResult("");
+    setProgressStep(-1);
+  }, [draftRequest?.id]);
 
   async function buildPlan() {
     if (!canBuild || isBuilding) return;
@@ -3554,6 +3724,31 @@ function SettingsPanel({ editor, aiSettings, onAiSettingsChange, onRefresh, onSt
         <pre className="output">{plan || "No connector plan generated."}</pre>
       </div>
     </section>
+  );
+}
+
+function AiActionStrip({ title, note, actions }) {
+  return (
+    <div className="ai-action-strip">
+      <div className="ai-action-strip__copy">
+        <strong>{title}</strong>
+        <span>{note}</span>
+      </div>
+      <div className="ai-action-strip__actions">
+        {actions.map((action) => (
+          <button
+            key={action.label}
+            className="btn btn--ghost btn--compact"
+            type="button"
+            disabled={action.disabled}
+            title={action.detail}
+            onClick={action.onClick}
+          >
+            {action.label}
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 

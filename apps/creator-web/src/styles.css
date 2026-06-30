@@ -1043,6 +1043,44 @@ select {
   border-color: color-mix(in srgb, var(--warning) 44%, var(--border));
 }
 
+.ai-action-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 12px 0;
+  padding: 11px;
+  border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--border));
+  border-radius: var(--radius);
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--accent) 10%, transparent), transparent 70%),
+    color-mix(in srgb, var(--surface-2) 74%, transparent);
+}
+
+.ai-action-strip__copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.ai-action-strip__copy strong {
+  color: var(--ink);
+  font-size: 0.86rem;
+}
+
+.ai-action-strip__copy span {
+  color: var(--muted);
+  font-size: 0.74rem;
+  line-height: 1.35;
+}
+
+.ai-action-strip__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
 .ai-settings-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

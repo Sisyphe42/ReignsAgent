@@ -1,11 +1,11 @@
-# AI Edit Contracts
+# AI Assist Contracts
 
-## Scenario: Offline AI Edit Module
+## Scenario: AI Assist Local Draft Flow
 
 ### 1. Scope / Trigger
 
-- Trigger: AI Edit spans Pipeline request/proposal contracts, Interface editor orchestration, local API routes, and Creator UI state.
-- Scope: offline proposal generation, review repair proposals, visual request previews, patch preview, and atomic apply.
+- Trigger: AI Assist spans Pipeline request/proposal contracts, Interface editor orchestration, local API routes, and Creator UI state.
+- Scope: local proposal generation, review repair proposals, visual request previews, patch preview, contextual creator entry points, and atomic apply.
 - Boundary: no external provider calls, no secret storage, no binary image persistence, and no Core or Reviewer mutation.
 
 ### 2. Signatures
@@ -19,6 +19,9 @@
 - Interface:
   - `buildAiEditPlan({ editor, config, mode, instruction, targetCardId, assetId, diagnostics })`
   - `applyAiEditPlan({ editor, plan, proposalIds })`
+- Creator UI:
+  - `openAiAssistDraft({ mode, instruction, targetCardId?, assetId?, cardCount?, theme? })`
+  - `AiAssistPanel({ draftRequest })`
 - Local API:
   - `POST /api/ai/edit/plan`
   - `POST /api/ai/edit/apply`
@@ -43,6 +46,7 @@
   - `setMetadata { metadata }`
   - `upsertAsset { asset }`
 - Visual modes are request previews. They may create JSON asset placeholders but must not generate, upload, download, or inspect binary files in this pass.
+- Contextual actions in Content, Story, and Review are routing helpers only. They may enable AI Assist, open the AI Assist panel, and prefill mode/instruction/target fields, but must not call providers or mutate cards directly.
 
 ### 4. Validation & Error Matrix
 
@@ -50,6 +54,7 @@
 - Unsupported patch operation -> `PipelineError`; active editor must remain unchanged.
 - Patch references a missing card or choice -> `PipelineError`; active editor must remain unchanged.
 - `repair_diagnostics` without latest Review result in local API -> JSON error with `code: "diagnostics_required"`.
+- Review contextual repair action without latest diagnostics -> disabled UI action; if bypassed, local API still returns `diagnostics_required`.
 - `plan.baseFingerprint` differs from active editor fingerprint -> `InterfaceError`; active editor must remain unchanged.
 - Patch result fails content bundle validation -> error before the server replaces `store.editor`.
 
@@ -58,6 +63,7 @@
 - Good: Creator runs Review, builds `repair_diagnostics`, previews patches, selects one proposal, and apply replaces the editor through the normal mutation path.
 - Base: Creator builds `generate_cards`; deterministic stub cards have unique ids and exactly left/right choices.
 - Base: Creator builds `generate_asset` or `analyze_asset`; UI shows request context and proposal preview without provider execution.
+- Base: Creator triggers a Content, Story, or Review contextual action; the AI Assist panel opens with a scoped prompt and waits for explicit plan generation.
 - Bad: Creator applies an old plan after editing content; apply is rejected as stale and no content is replaced.
 - Bad: Proposal contains an unsupported patch operation; validation rejects the proposal and no partial edit is stored.
 
