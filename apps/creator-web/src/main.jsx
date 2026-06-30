@@ -588,10 +588,12 @@ function App() {
           )}
           {activePanel === "review" && (
             <ReviewPanel
+              editor={editor}
               diagnostics={diagnostics}
               aiAssistEnabled={aiAssistEnabled}
               onRun={runDiagnostics}
               onOpen={openPanel}
+              onFocusCard={focusOnCard}
               onAiAction={openAiAssistPreflight}
               activeAiAction={aiPreflight}
             />
@@ -3404,10 +3406,28 @@ function drawChoiceHandle(ctx, x, y, label, colors) {
   ctx.fillText(label, x, y);
 }
 
-function ReviewPanel({ diagnostics, aiAssistEnabled, onRun, onOpen, onAiAction, activeAiAction }) {
+function ReviewPanel({ editor, diagnostics, aiAssistEnabled, onRun, onOpen, onFocusCard, onAiAction, activeAiAction }) {
   const [cycles, setCycles] = useState(500);
   const [maxTurns, setMaxTurns] = useState(40);
   const [seed, setSeed] = useState(1);
+  const [view, setView] = useState("overview");
+  const cards = editor?.cards ?? [];
+  const cardMap = useMemo(() => new Map(cards.map((card) => [card.id, card])), [cards]);
+  const gaugeLabels = useMemo(() => createGaugeLabels(editor?.metadata?.presentation), [editor?.metadata?.presentation]);
+  const coverageRows = useMemo(() => buildReviewCoverageRows(cards, diagnostics), [cards, diagnostics]);
+  const issueCards = useMemo(() => buildReviewIssues(diagnostics), [diagnostics]);
+
+  function aiRepairForIssue(issue) {
+    onAiAction({
+      source: "Review",
+      actionId: `issue-${issue.code}`,
+      actionLabel: `Repair ${issue.code}`,
+      mode: "repair_diagnostics",
+      cardCount: 1,
+      contextSummary: `${issue.severity} · ${issue.code}`,
+      instruction: `Use the latest Review diagnostics to repair '${issue.code}'. Focus on: ${issue.message}. Targets: ${issue.cardIds.length > 0 ? issue.cardIds.join(", ") : "project-level issue"}. Keep changes as explicit patch proposals.`
+    });
+  }
 
   return (
     <section className="panel">
@@ -3475,22 +3495,44 @@ function ReviewPanel({ diagnostics, aiAssistEnabled, onRun, onOpen, onAiAction, 
       )}
       {diagnostics ? (
         <>
-          <div className="health">
-            <strong>{diagnostics.healthScore}/100</strong>
-            <span>{diagnostics.headline}</span>
-          </div>
-          <NarrativeCoverage narrative={diagnostics.narrative} onOpenStory={() => onOpen("story")} />
-          <ul className="warning-list">
-            {(diagnostics.warnings ?? []).map((warning, index) => (
-              <li key={`${warning.code}-${index}`} className={`warning warning--${warning.severity}`}>
-                <button className="btn btn--ghost btn--compact warning__code" type="button" onClick={() => onOpen("content")}>
-                  {warning.code}
-                </button>
-                <span>{warning.message}</span>
-              </li>
+          <ReviewSummary diagnostics={diagnostics} gaugeLabels={gaugeLabels} />
+          <div className="review-tabs" role="tablist" aria-label="Review views">
+            {[
+              ["overview", "Overview"],
+              ["coverage", "Coverage"],
+              ["story", "Story"],
+              ["issues", `Issues ${issueCards.length}`]
+            ].map(([id, label]) => (
+              <button
+                key={id}
+                className={view === id ? "review-tabs__item review-tabs__item--active" : "review-tabs__item"}
+                type="button"
+                role="tab"
+                aria-selected={view === id}
+                onClick={() => setView(id)}
+              >
+                {label}
+              </button>
             ))}
-            {diagnostics.warnings?.length === 0 && <li className="warning">No diagnostics warnings.</li>}
-          </ul>
+          </div>
+          {view === "overview" && (
+            <ReviewOverview diagnostics={diagnostics} gaugeLabels={gaugeLabels} coverageRows={coverageRows} issueCards={issueCards} onOpenStory={() => onOpen("story")} />
+          )}
+          {view === "coverage" && (
+            <ReviewCoverage rows={coverageRows} onFocusCard={onFocusCard} />
+          )}
+          {view === "story" && (
+            <NarrativeCoverage narrative={diagnostics.narrative} onOpenStory={() => onOpen("story")} onFocusCard={onFocusCard} />
+          )}
+          {view === "issues" && (
+            <ReviewIssues
+              issues={issueCards}
+              cardMap={cardMap}
+              onFocusCard={onFocusCard}
+              onOpenStory={() => onOpen("story")}
+              onAiRepair={aiRepairForIssue}
+            />
+          )}
         </>
       ) : (
         <div className="empty-state">
@@ -3501,7 +3543,179 @@ function ReviewPanel({ diagnostics, aiAssistEnabled, onRun, onOpen, onAiAction, 
   );
 }
 
-function NarrativeCoverage({ narrative, onOpenStory }) {
+function ReviewSummary({ diagnostics, gaugeLabels }) {
+  const coverage = diagnostics.coverage ?? {};
+  const warningCounts = diagnostics.warningCounts ?? {};
+  return (
+    <section className="review-summary" aria-label="Review summary">
+      <div className="review-score">
+        <strong>{diagnostics.healthScore}/100</strong>
+        <span>{diagnostics.headline}</span>
+      </div>
+      <div className="review-summary__metrics">
+        <Metric label="Cycles" value={String(diagnostics.sampleSize ?? 0)} />
+        <Metric label="Avg turns" value={String(coverage.averageTurns ?? 0)} />
+        <Metric label="Game over" value={formatRate(coverage.gameOverRate ?? 0)} tone={(coverage.gameOverRate ?? 0) > 0.8 ? "bad" : ""} />
+        <Metric label="Stalled" value={formatRate(coverage.stalledRate ?? 0)} tone={(coverage.stalledRate ?? 0) > 0 ? "bad" : ""} />
+        <Metric label="Errors" value={String(warningCounts.error ?? 0)} tone={(warningCounts.error ?? 0) > 0 ? "bad" : "good"} />
+        <Metric label="Warnings" value={String(warningCounts.warning ?? 0)} tone={(warningCounts.warning ?? 0) > 0 ? "bad" : ""} />
+      </div>
+      <div className="review-gauge-strip" aria-label="Gauge pressure">
+        {(diagnostics.factions ?? []).map((entry) => (
+          <div className="review-gauge" key={entry.faction}>
+            <div>
+              <strong>{gaugeDisplayName(entry.faction, gaugeLabels)}</strong>
+              <span>avg {entry.average} · end {formatRate(entry.gameOverShare ?? 0)}</span>
+            </div>
+            <div className="review-gauge__bar"><span style={{ width: `${Math.max(2, Math.round((entry.gameOverShare ?? 0) * 100))}%` }} /></div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ReviewOverview({ diagnostics, gaugeLabels, coverageRows, issueCards, onOpenStory }) {
+  const worstCoverage = coverageRows.filter((row) => row.status !== "covered").slice(0, 5);
+  return (
+    <div className="review-overview">
+      <div className="review-panel-block">
+        <div className="review-panel-block__head">
+          <strong>Top risks</strong>
+          <span>{issueCards.length} issue{issueCards.length === 1 ? "" : "s"}</span>
+        </div>
+        {issueCards.length > 0 ? (
+          <div className="review-risk-list">
+            {issueCards.slice(0, 4).map((issue) => (
+              <div className={`review-risk review-risk--${issue.severity}`} key={issue.id}>
+                <code>{issue.code}</code>
+                <span>{issue.message}</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="muted">No review issues.</p>
+        )}
+      </div>
+      <div className="review-panel-block">
+        <div className="review-panel-block__head">
+          <strong>Weak coverage</strong>
+          <span>{worstCoverage.length} cards</span>
+        </div>
+        {worstCoverage.length > 0 ? (
+          <div className="review-risk-list">
+            {worstCoverage.map((row) => (
+              <div className={`review-risk review-risk--${row.tone}`} key={row.cardId}>
+                <code>{row.cardId}</code>
+                <span>{row.status} · visit {formatRate(row.visitRate)} · cycle {formatRate(row.cycleRate)}</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="muted">All reviewed cards were visited.</p>
+        )}
+      </div>
+      <div className="review-panel-block">
+        <div className="review-panel-block__head">
+          <strong>Ending coverage</strong>
+          <button className="btn btn--ghost btn--compact" type="button" onClick={onOpenStory}>Story</button>
+        </div>
+        <div className="review-ending-summary">
+          <Metric label="Endings" value={`${diagnostics.narrative?.summary?.coveredEndingGroupCount ?? 0}/${diagnostics.narrative?.summary?.endingGroupCount ?? 0}`} />
+          <Metric label="Story groups" value={`${diagnostics.narrative?.summary?.coveredGroupCount ?? 0}/${diagnostics.narrative?.summary?.groupCount ?? 0}`} />
+          <Metric label="Story issues" value={String(diagnostics.narrative?.summary?.issueCount ?? 0)} tone={(diagnostics.narrative?.summary?.issueCount ?? 0) > 0 ? "bad" : "good"} />
+        </div>
+      </div>
+      <div className="review-panel-block">
+        <div className="review-panel-block__head">
+          <strong>Gauge pressure</strong>
+          <span>{diagnostics.factions?.length ?? 0} gauges</span>
+        </div>
+        <div className="review-risk-list">
+          {(diagnostics.factions ?? []).map((entry) => (
+            <div className="review-risk" key={entry.faction}>
+              <code>{gaugeDisplayName(entry.faction, gaugeLabels)}</code>
+              <span>average {entry.average}; game-over share {formatRate(entry.gameOverShare ?? 0)}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ReviewCoverage({ rows, onFocusCard }) {
+  return (
+    <section className="review-coverage" aria-label="Card coverage">
+      {rows.map((row) => (
+        <article className={`review-card-row review-card-row--${row.tone}`} key={row.cardId}>
+          <div className="review-card-row__head">
+            <button className="btn btn--ghost btn--compact" type="button" onClick={() => onFocusCard(row.cardId)}>{row.cardId}</button>
+            <span>{row.status}</span>
+          </div>
+          <p>{row.excerpt}</p>
+          <div className="review-card-row__bars">
+            <ReviewRateBar label="Visit" rate={row.visitRate} />
+            <ReviewRateBar label="Cycle" rate={row.cycleRate} />
+          </div>
+          <div className="review-targets">
+            {row.unvisited && <span className="review-chip review-chip--bad">unvisited</span>}
+            {row.lowCycle && <span className="review-chip review-chip--warn">low cycle {formatRate(row.lowCycleRate)}</span>}
+          </div>
+        </article>
+      ))}
+      {rows.length === 0 && <p className="muted">Run Review to inspect card coverage.</p>}
+    </section>
+  );
+}
+
+function ReviewRateBar({ label, rate }) {
+  return (
+    <div className="review-rate">
+      <div>
+        <span>{label}</span>
+        <strong>{formatRate(rate)}</strong>
+      </div>
+      <div className="review-rate__track"><span style={{ width: `${Math.max(2, Math.round(rate * 100))}%` }} /></div>
+    </div>
+  );
+}
+
+function ReviewIssues({ issues, cardMap, onFocusCard, onOpenStory, onAiRepair }) {
+  return (
+    <section className="review-issues" aria-label="Review issues">
+      {issues.length > 0 ? issues.map((issue) => (
+        <article className={`review-issue review-issue--${issue.severity}`} key={issue.id}>
+          <div className="review-issue__head">
+            <div>
+              <code>{issue.code}</code>
+              <strong>{issue.message}</strong>
+            </div>
+            <span>{issue.severity}</span>
+          </div>
+          <div className="review-targets">
+            {issue.cardIds.map((cardId) => (
+              <button className="review-chip review-chip--button" type="button" key={cardId} title={cardExcerpt(cardMap.get(cardId) ?? { id: cardId })} onClick={() => onFocusCard(cardId)}>
+                {cardId}
+              </button>
+            ))}
+            {issue.otherTargets.map((target) => <span className="review-chip" key={target}>{target}</span>)}
+            {issue.cardIds.length === 0 && issue.otherTargets.length === 0 && <span className="review-chip">project</span>}
+          </div>
+          <div className="action-row">
+            {issue.cardIds[0] && <button className="btn btn--ghost btn--compact" type="button" onClick={() => onFocusCard(issue.cardIds[0])}>Focus card</button>}
+            <button className="btn btn--ghost btn--compact" type="button" onClick={onOpenStory}>Story</button>
+            <button className="btn btn--primary btn--compact" type="button" onClick={() => onAiRepair(issue)}>AI Repair</button>
+          </div>
+        </article>
+      )) : (
+        <div className="empty-state"><p>No diagnostics warnings.</p></div>
+      )}
+    </section>
+  );
+}
+
+function NarrativeCoverage({ narrative, onOpenStory, onFocusCard }) {
   const groups = narrative?.storyGroups ?? [];
   const summary = narrative?.summary ?? {};
 
@@ -3550,6 +3764,25 @@ function NarrativeCoverage({ narrative, onOpenStory }) {
                   {group.unvisitedCardIds.length > 0 && <span>{group.unvisitedCardIds.length} unvisited</span>}
                   {group.unreachableCardIds.length > 0 && <span>{group.unreachableCardIds.length} unreachable</span>}
                 </div>
+                {(group.unvisitedCardIds.length > 0 || group.unreachableCardIds.length > 0 || group.lowCycleCards.length > 0) && (
+                  <div className="review-targets">
+                    {group.unreachableCardIds.map((cardId) => (
+                      <button className="review-chip review-chip--bad review-chip--button" type="button" key={`unreachable-${cardId}`} onClick={() => onFocusCard?.(cardId)}>
+                        {cardId}
+                      </button>
+                    ))}
+                    {group.unvisitedCardIds.filter((cardId) => !group.unreachableCardIds.includes(cardId)).map((cardId) => (
+                      <button className="review-chip review-chip--warn review-chip--button" type="button" key={`unvisited-${cardId}`} onClick={() => onFocusCard?.(cardId)}>
+                        {cardId}
+                      </button>
+                    ))}
+                    {group.lowCycleCards.map((entry) => (
+                      <button className="review-chip review-chip--warn review-chip--button" type="button" key={`low-${entry.cardId}`} onClick={() => onFocusCard?.(entry.cardId)}>
+                        {entry.cardId} {formatRate(entry.rate)}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </li>
             ))}
           </ul>
@@ -3559,6 +3792,88 @@ function NarrativeCoverage({ narrative, onOpenStory }) {
       )}
     </section>
   );
+}
+
+function buildReviewCoverageRows(cards, diagnostics) {
+  if (!diagnostics) return [];
+  const coverage = diagnostics.coverage ?? {};
+  const visitRates = coverage.cardVisitRates ?? {};
+  const cycleRates = coverage.cardCycleRates ?? {};
+  const unvisitedSet = new Set(coverage.unvisitedCards ?? []);
+  const lowCycleMap = new Map((coverage.lowCycleCards ?? []).map((entry) => [entry.cardId, entry.rate ?? 0]));
+
+  return cards.map((card) => {
+    const visitRate = visitRates[card.id] ?? 0;
+    const cycleRate = cycleRates[card.id] ?? 0;
+    const unvisited = unvisitedSet.has(card.id) || visitRate <= 0;
+    const lowCycle = lowCycleMap.has(card.id);
+    const status = unvisited ? "unvisited" : lowCycle ? "low cycle" : "covered";
+    return {
+      cardId: card.id,
+      excerpt: cardExcerpt(card),
+      visitRate,
+      cycleRate,
+      lowCycleRate: lowCycleMap.get(card.id) ?? 0,
+      unvisited,
+      lowCycle,
+      status,
+      tone: unvisited ? "bad" : lowCycle ? "warn" : "good"
+    };
+  }).sort((a, b) => reviewCoverageRank(a) - reviewCoverageRank(b) || a.cardId.localeCompare(b.cardId));
+}
+
+function reviewCoverageRank(row) {
+  if (row.unvisited) return 0;
+  if (row.lowCycle) return 1;
+  return 2;
+}
+
+function buildReviewIssues(diagnostics) {
+  if (!diagnostics) return [];
+  const warningIssues = (diagnostics.warnings ?? []).map((warning, index) => {
+    const targets = extractReviewTargets(warning.details ?? {});
+    return {
+      id: `warning-${warning.code}-${index}`,
+      code: warning.code,
+      severity: warning.severity ?? "warning",
+      message: warning.message ?? "Review warning.",
+      cardIds: targets.cardIds,
+      otherTargets: targets.otherTargets
+    };
+  });
+  const narrativeIssues = (diagnostics.narrative?.issues ?? []).map((issue, index) => ({
+    id: `story-${issue.code}-${index}`,
+    code: issue.code,
+    severity: issue.severity ?? "warning",
+    message: issue.message ?? "Story coverage issue.",
+    cardIds: normalizeStringArray(issue.cardIds),
+    otherTargets: [issue.groupId].filter(Boolean)
+  }));
+  const seen = new Set();
+  return [...warningIssues, ...narrativeIssues].filter((issue) => {
+    const key = `${issue.code}:${issue.cardIds.join(",")}:${issue.otherTargets.join(",")}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function extractReviewTargets(details = {}) {
+  const cardIds = new Set(normalizeStringArray(details.cardIds));
+  for (const entry of Array.isArray(details.cards) ? details.cards : []) {
+    if (typeof entry?.cardId === "string") cardIds.add(entry.cardId);
+  }
+  const otherTargets = [
+    ...normalizeStringArray(details.tags).map((tag) => `tag:${tag}`),
+    ...normalizeStringArray(details.variables).map((variable) => `var:${variable}`),
+    ...normalizeStringArray(details.factions).map((faction) => `gauge:${faction}`),
+    typeof details.faction === "string" ? `gauge:${details.faction}` : null
+  ].filter(Boolean);
+  return { cardIds: [...cardIds], otherTargets };
+}
+
+function normalizeStringArray(value) {
+  return Array.isArray(value) ? value.filter((entry) => typeof entry === "string" && entry.trim()) : [];
 }
 
 function PreviewPanel({ play, assetsByCard, playerReady, onStart, onSwipe }) {

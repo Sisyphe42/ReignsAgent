@@ -3041,6 +3041,280 @@ summary:focus-visible {
   gap: 8px;
 }
 
+.review-summary {
+  display: grid;
+  gap: 12px;
+  margin: 16px 0;
+}
+
+.review-score {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+  padding: 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface-2) 82%, #000);
+}
+
+.review-score strong {
+  color: var(--accent);
+  font-family: var(--font-data);
+  font-size: 2rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.review-score span {
+  color: var(--ink);
+}
+
+.review-summary__metrics,
+.review-ending-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.review-gauge-strip,
+.review-overview,
+.review-coverage,
+.review-issues {
+  display: grid;
+  gap: 10px;
+}
+
+.review-gauge-strip {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.review-gauge,
+.review-panel-block,
+.review-card-row,
+.review-issue {
+  min-width: 0;
+  padding: 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface-2) 78%, transparent);
+}
+
+.review-gauge {
+  display: grid;
+  gap: 7px;
+}
+
+.review-gauge > div:first-child {
+  display: grid;
+  gap: 3px;
+}
+
+.review-gauge strong,
+.review-panel-block__head strong,
+.review-issue__head strong {
+  color: var(--ink);
+}
+
+.review-gauge span,
+.review-panel-block__head span,
+.review-card-row p,
+.review-issue__head span {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.review-gauge__bar,
+.review-rate__track {
+  height: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg) 55%, transparent);
+}
+
+.review-gauge__bar span,
+.review-rate__track span {
+  display: block;
+  height: 100%;
+  min-width: 2px;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent-2), var(--accent));
+}
+
+.review-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin: 14px 0;
+}
+
+.review-tabs__item {
+  min-height: 32px;
+  padding: 6px 10px;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
+  font-family: var(--font-data);
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+.review-tabs__item--active {
+  color: var(--ink);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 15%, var(--surface));
+}
+
+.review-overview {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.review-panel-block {
+  display: grid;
+  gap: 10px;
+}
+
+.review-panel-block__head,
+.review-card-row__head,
+.review-issue__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.review-risk-list {
+  display: grid;
+  gap: 7px;
+}
+
+.review-risk {
+  display: grid;
+  grid-template-columns: minmax(110px, auto) minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--muted);
+  border-radius: calc(var(--radius) - 1px);
+  background: color-mix(in srgb, var(--bg) 30%, transparent);
+}
+
+.review-risk--error,
+.review-risk--bad {
+  border-left-color: var(--danger);
+}
+
+.review-risk--warning,
+.review-risk--warn {
+  border-left-color: var(--accent);
+}
+
+.review-risk code,
+.review-card-row__head span,
+.review-issue__head code {
+  color: var(--muted);
+  font-family: var(--font-data);
+  font-size: 0.68rem;
+}
+
+.review-card-row {
+  display: grid;
+  gap: 9px;
+  border-left: 3px solid var(--ok);
+}
+
+.review-card-row--warn {
+  border-left-color: var(--accent);
+}
+
+.review-card-row--bad {
+  border-left-color: var(--danger);
+}
+
+.review-card-row p {
+  margin: 0;
+}
+
+.review-card-row__bars {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.review-rate {
+  display: grid;
+  gap: 5px;
+}
+
+.review-rate > div:first-child {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--muted);
+  font-family: var(--font-data);
+  font-size: 0.68rem;
+}
+
+.review-rate strong {
+  color: var(--ink);
+}
+
+.review-targets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.review-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 3px 7px;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) - 2px);
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+  font-family: var(--font-data);
+  font-size: 0.66rem;
+}
+
+.review-chip--warn {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 60%, var(--border));
+}
+
+.review-chip--bad {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 60%, var(--border));
+}
+
+.review-chip--button {
+  cursor: pointer;
+}
+
+.review-issue {
+  display: grid;
+  gap: 10px;
+  border-left: 3px solid var(--muted);
+}
+
+.review-issue--error {
+  border-left-color: var(--danger);
+}
+
+.review-issue--warning {
+  border-left-color: var(--accent);
+}
+
+.review-issue__head > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
 .preview-layout {
   display: grid;
   grid-template-columns: minmax(180px, 280px) minmax(300px, 460px);
@@ -3107,6 +3381,11 @@ summary:focus-visible {
 :root[data-skin="phantom"] .play-card,
 :root[data-skin="phantom"] .output,
 :root[data-skin="phantom"] .health,
+:root[data-skin="phantom"] .review-score,
+:root[data-skin="phantom"] .review-gauge,
+:root[data-skin="phantom"] .review-panel-block,
+:root[data-skin="phantom"] .review-card-row,
+:root[data-skin="phantom"] .review-issue,
 :root[data-skin="phantom"] .narrative-review,
 :root[data-skin="phantom"] .warning {
   color: #09090a;
@@ -3116,7 +3395,8 @@ summary:focus-visible {
 }
 
 :root[data-skin="phantom"] .narrative-review__metrics div,
-:root[data-skin="phantom"] .narrative-review__item {
+:root[data-skin="phantom"] .narrative-review__item,
+:root[data-skin="phantom"] .review-risk {
   color: #09090a;
   border-color: rgba(9, 9, 10, 0.42);
   background: rgba(9, 9, 10, 0.07);
@@ -3126,17 +3406,29 @@ summary:focus-visible {
 :root[data-skin="phantom"] .narrative-review__item-head span,
 :root[data-skin="phantom"] .narrative-review__facts,
 :root[data-skin="phantom"] .narrative-review__metrics span,
-:root[data-skin="phantom"] .narrative-review__item-head code {
+:root[data-skin="phantom"] .narrative-review__item-head code,
+:root[data-skin="phantom"] .review-gauge span,
+:root[data-skin="phantom"] .review-panel-block__head span,
+:root[data-skin="phantom"] .review-card-row p,
+:root[data-skin="phantom"] .review-risk code,
+:root[data-skin="phantom"] .review-risk span,
+:root[data-skin="phantom"] .review-chip,
+:root[data-skin="phantom"] .review-issue__head code,
+:root[data-skin="phantom"] .review-issue__head span {
   color: #4b443c;
   font-weight: 800;
 }
 
-:root[data-skin="phantom"] .narrative-review__bar {
+:root[data-skin="phantom"] .narrative-review__bar,
+:root[data-skin="phantom"] .review-gauge__bar,
+:root[data-skin="phantom"] .review-rate__track {
   border-color: #09090a;
   background: rgba(9, 9, 10, 0.18);
 }
 
-:root[data-skin="phantom"] .narrative-review__bar span {
+:root[data-skin="phantom"] .narrative-review__bar span,
+:root[data-skin="phantom"] .review-gauge__bar span,
+:root[data-skin="phantom"] .review-rate__track span {
   background: linear-gradient(90deg, #1cfeff, #d71920);
 }
 
@@ -4160,8 +4452,18 @@ summary:focus-visible {
 
   .stage__status,
   .health,
-  .warning {
+  .warning,
+  .review-score,
+  .review-risk,
+  .review-card-row__bars {
     grid-template-columns: 1fr;
+  }
+
+  .review-overview,
+  .review-gauge-strip,
+  .review-summary__metrics,
+  .review-ending-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .choice-buttons {
@@ -4205,6 +4507,10 @@ summary:focus-visible {
   .editor-controls,
   .content-detail__toolbar,
   .narrative-review__metrics,
+  .review-overview,
+  .review-gauge-strip,
+  .review-summary__metrics,
+  .review-ending-summary,
   .effect-row,
   .effect-row--new {
     grid-template-columns: 1fr;
