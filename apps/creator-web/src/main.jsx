@@ -7,7 +7,7 @@ const PANELS = [
   { id: "content", label: "Content", group: "Authoring" },
   { id: "story", label: "Story", group: "Authoring" },
   { id: "review", label: "Review", group: "Quality" },
-  { id: "ai-edit", label: "AI Edit", group: "Quality" },
+  { id: "ai-edit", label: "AI Assist", group: "Quality" },
   { id: "preview", label: "Preview", group: "Quality" },
   { id: "build", label: "Build", group: "Release" },
   { id: "settings", label: "Settings", group: "Release" }
@@ -24,8 +24,22 @@ const SKINS = [
 
 const PERSIST_KEY = "reigns-agent.creator-web.skin";
 const DRAFT_KEY = "reigns-agent.creator-web.editor-draft";
+const AI_SETTINGS_KEY = "reigns-agent.creator-web.ai-settings";
 const DEFAULT_PANEL = "overview";
 const DEFAULT_SKIN = "workbench";
+const AI_PROTOCOLS = [
+  ["responses", "Responses"],
+  ["completions", "Completions"],
+  ["messages", "Messages"]
+];
+const AI_CAPABILITIES = [
+  ["vision", "Vision"],
+  ["structuredJson", "Structured JSON"],
+  ["tools", "Tools"],
+  ["reasoning", "Reasoning"],
+  ["streaming", "Streaming"]
+];
+const AI_PROGRESS_STEPS = ["Context", "Request", "Draft", "Validate", "Ready"];
 
 function isKnownPanel(value) {
   return PANELS.some((panel) => panel.id === value);
@@ -88,12 +102,79 @@ async function api(path, options = {}) {
   return json;
 }
 
+function defaultAiSettings() {
+  return {
+    baseUrl: "",
+    apiKey: "",
+    protocol: "responses",
+    modelId: "",
+    capabilities: {
+      vision: false,
+      structuredJson: true,
+      tools: false,
+      reasoning: false,
+      streaming: false
+    }
+  };
+}
+
+function normalizeAiSettings(settings = {}) {
+  const defaults = defaultAiSettings();
+  const protocol = AI_PROTOCOLS.some(([id]) => id === settings.protocol) ? settings.protocol : defaults.protocol;
+  const capabilities = { ...defaults.capabilities, ...(settings.capabilities ?? {}) };
+  return {
+    baseUrl: typeof settings.baseUrl === "string" ? settings.baseUrl : "",
+    apiKey: typeof settings.apiKey === "string" ? settings.apiKey : "",
+    protocol,
+    modelId: typeof settings.modelId === "string" ? settings.modelId : "",
+    capabilities
+  };
+}
+
+function readAiSettings() {
+  if (typeof localStorage === "undefined") return defaultAiSettings();
+  try {
+    const raw = localStorage.getItem(AI_SETTINGS_KEY);
+    return raw ? normalizeAiSettings(JSON.parse(raw)) : defaultAiSettings();
+  } catch {
+    return defaultAiSettings();
+  }
+}
+
+function isAiEndpointConfigured(settings) {
+  return Boolean(settings?.baseUrl?.trim() && settings?.modelId?.trim());
+}
+
+function enabledAiCapabilities(settings) {
+  return Object.entries(settings?.capabilities ?? {})
+    .filter(([, enabled]) => enabled)
+    .map(([id]) => id);
+}
+
+function buildAiConnectorConfig(settings, extra = {}) {
+  const normalized = normalizeAiSettings(settings);
+  return {
+    provider: normalized.protocol,
+    endpoint: normalized.baseUrl.trim() || null,
+    apiKeyRef: normalized.apiKey ? "browser-local" : null,
+    modelId: normalized.modelId.trim() || null,
+    capabilities: enabledAiCapabilities(normalized),
+    ...extra
+  };
+}
+
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function App() {
   const initialUrlState = useMemo(() => readUrlState(), []);
   const [activePanel, setActivePanel] = useState(initialUrlState.panel);
   const [editor, setEditor] = useState(null);
   const [status, setStatus] = useState("Loading project...");
   const [skin, setSkin] = useState(() => initialUrlState.skin ?? (localStorage.getItem(PERSIST_KEY) || DEFAULT_SKIN));
+  const [aiAssistEnabled, setAiAssistEnabled] = useState(false);
+  const [aiSettings, setAiSettings] = useState(() => readAiSettings());
   const [diagnostics, setDiagnostics] = useState(null);
   const [play, setPlay] = useState({ sessionId: null, state: null });
   const [build, setBuild] = useState(null);
@@ -133,6 +214,7 @@ function App() {
 
   const assetsByCard = useMemo(() => createAssetMap(editor?.assets ?? []), [editor]);
   const playerReady = editor?.playerValidation?.valid === true;
+  const aiConfigured = isAiEndpointConfigured(aiSettings);
   const activePanelLabel = PANELS.find((panel) => panel.id === activePanel)?.label ?? "Workspace";
 
   useEffect(() => {
@@ -140,6 +222,10 @@ function App() {
     localStorage.setItem(PERSIST_KEY, skin);
     syncWorkbenchUrl(activePanel, skin, "replace");
   }, [activePanel, skin]);
+
+  useEffect(() => {
+    localStorage.setItem(AI_SETTINGS_KEY, JSON.stringify(normalizeAiSettings(aiSettings)));
+  }, [aiSettings]);
 
   useEffect(() => {
     function onPopState() {
@@ -280,18 +366,18 @@ function App() {
   }
 
   async function buildAiEditPlan(form) {
-    return runAction("Building AI edit plan", async () => {
+    return runAction("Building AI Assist draft", async () => {
       const result = await api("/api/ai/edit/plan", { method: "POST", body: form });
-      setStatus(`AI Edit plan ready: ${result.proposals?.length ?? 0} proposals`);
+      setStatus(`AI Assist draft ready: ${result.proposals?.length ?? 0} proposals`);
       return result;
     });
   }
 
   async function applyAiEditPlan(plan, proposalIds) {
     return mutateEditor(
-      "Applying AI edit",
+      "Applying AI Assist draft",
       async () => api("/api/ai/edit/apply", { method: "POST", body: { plan, proposalIds } }),
-      "AI edit applied"
+      "AI Assist draft applied"
     );
   }
 
@@ -346,6 +432,17 @@ function App() {
           <span>{playerReady ? "player ready" : "player blocked"}</span>
         </div>
         <div className="topbar__tools">
+          <button
+            className={`ai-toggle ${aiAssistEnabled ? "ai-toggle--active" : ""} ${!aiConfigured ? "ai-toggle--unconfigured" : ""}`}
+            type="button"
+            onClick={() => setAiAssistEnabled((enabled) => !enabled)}
+            aria-pressed={aiAssistEnabled}
+            title={aiConfigured ? "Toggle AI Assist contextual actions" : "Configure an AI endpoint in Settings"}
+          >
+            <span className="ai-toggle__dot" aria-hidden="true" />
+            <span>AI Assist</span>
+            <small>{aiAssistEnabled ? (aiConfigured ? "active" : "setup") : "off"}</small>
+          </button>
           <label className="skin-select">
             Skin
             <select value={skin} onChange={(event) => changeSkin(event.target.value)}>
@@ -394,7 +491,10 @@ function App() {
               playerReady={playerReady}
               diagnostics={diagnostics}
               build={build}
+              aiAssistEnabled={aiAssistEnabled}
+              aiConfigured={aiConfigured}
               onOpen={openPanel}
+              onToggleAi={() => setAiAssistEnabled((enabled) => !enabled)}
             />
           )}
           {activePanel === "content" && (
@@ -420,9 +520,12 @@ function App() {
           )}
           {activePanel === "review" && <ReviewPanel diagnostics={diagnostics} onRun={runDiagnostics} onOpen={openPanel} />}
           {activePanel === "ai-edit" && (
-            <AiEditPanel
+            <AiAssistPanel
               editor={editor}
               diagnostics={diagnostics}
+              aiSettings={aiSettings}
+              aiAssistEnabled={aiAssistEnabled}
+              aiConfigured={aiConfigured}
               onBuildPlan={buildAiEditPlan}
               onApplyPlan={applyAiEditPlan}
               onOpen={openPanel}
@@ -438,24 +541,63 @@ function App() {
             />
           )}
           {activePanel === "build" && <BuildPanel build={build} onPrepare={prepareBuild} />}
-          {activePanel === "settings" && <SettingsPanel editor={editor} onRefresh={refreshEditor} onStatus={setStatus} />}
+          {activePanel === "settings" && (
+            <SettingsPanel
+              editor={editor}
+              aiSettings={aiSettings}
+              onAiSettingsChange={setAiSettings}
+              onRefresh={refreshEditor}
+              onStatus={setStatus}
+            />
+          )}
         </main>
       </div>
     </div>
   );
 }
 
-function Overview({ editor, playerReady, diagnostics, build, onOpen }) {
+function Overview({ editor, playerReady, diagnostics, build, aiAssistEnabled, aiConfigured, onOpen, onToggleAi }) {
+  const [brief, setBrief] = useState("");
+  const cardCount = editor?.cards?.length ?? 0;
+  const title = editor?.metadata?.title ?? "Untitled";
+  const sampleLike = /open court|oss|sample/i.test(title) || cardCount === 23;
+
   return (
     <section className="panel">
       <PanelHead title="Project Overview" note="Workspace health, content readiness, and next actions." />
       <div className="metric-grid">
-        <Metric label="Project" value={editor?.metadata?.title ?? "Untitled"} />
-        <Metric label="Cards" value={String(editor?.cards?.length ?? 0)} />
+        <Metric label="Project" value={title} />
+        <Metric label="Cards" value={String(cardCount)} />
         <Metric label="Validation" value={editor?.validation?.valid ? "Valid" : "Needs work"} tone={editor?.validation?.valid ? "good" : "bad"} />
         <Metric label="Player-ready" value={playerReady ? "Ready" : "Blocked"} tone={playerReady ? "good" : "bad"} />
         <Metric label="Review" value={diagnostics ? `${diagnostics.healthScore}/100` : "Not run"} />
         <Metric label="Build" value={build ? "Prepared" : "Not prepared"} />
+      </div>
+      <div className={`overview-ai ${aiAssistEnabled ? "overview-ai--active" : ""}`}>
+        <div className="overview-ai__head">
+          <div>
+            <h3>{cardCount === 0 ? "Start with AI Assist" : sampleLike ? "Adapt the sample with AI Assist" : "Shape this project with AI Assist"}</h3>
+            <p>
+              {aiConfigured
+                ? "Use the current project context and optional brief to prepare draft cards, repair review issues, or expand story structure."
+                : "Configure an endpoint when ready. Until then, AI Assist can still preview local draft plans over the current project context."}
+            </p>
+          </div>
+          <span>{aiAssistEnabled ? "assist visible" : "assist hidden"}</span>
+        </div>
+        <textarea
+          value={brief}
+          onChange={(event) => setBrief(event.target.value)}
+          placeholder="Premise, tone, branch depth, endings, or constraints for the next AI draft..."
+          rows={3}
+        />
+        <div className="action-row">
+          <button className="btn btn--primary" type="button" onClick={() => onOpen("ai-edit")}>Draft in AI Assist</button>
+          <button className="btn" type="button" onClick={() => onOpen("content")}>Open Content</button>
+          <button className="btn" type="button" onClick={() => onOpen("story")}>Open Story</button>
+          <button className="btn btn--ghost" type="button" onClick={onToggleAi}>{aiAssistEnabled ? "Hide AI Assist" : "Show AI Assist"}</button>
+        </div>
+        {brief && <p className="muted">Brief stays local here for now; paste it into AI Assist when building the draft.</p>}
       </div>
       <div className="action-row">
         <button className="btn btn--primary" onClick={() => onOpen("content")}>Edit cards</button>
@@ -3119,9 +3261,8 @@ function BuildPanel({ build, onPrepare }) {
   );
 }
 
-function AiEditPanel({ editor, diagnostics, onBuildPlan, onApplyPlan, onOpen }) {
+function AiAssistPanel({ editor, diagnostics, aiSettings, aiAssistEnabled, aiConfigured, onBuildPlan, onApplyPlan, onOpen }) {
   const [mode, setMode] = useState("generate_cards");
-  const [provider, setProvider] = useState("stub");
   const [theme, setTheme] = useState(editor?.metadata?.title ?? "small court");
   const [style, setStyle] = useState("ink wash card art");
   const [cardCount, setCardCount] = useState(2);
@@ -3131,6 +3272,8 @@ function AiEditPanel({ editor, diagnostics, onBuildPlan, onApplyPlan, onOpen }) 
   const [plan, setPlan] = useState(null);
   const [selected, setSelected] = useState([]);
   const [applyResult, setApplyResult] = useState("");
+  const [isBuilding, setIsBuilding] = useState(false);
+  const [progressStep, setProgressStep] = useState(-1);
   const cards = editor?.cards ?? [];
   const assets = editor?.assets ?? [];
   const requiresDiagnostics = mode === "repair_diagnostics";
@@ -3150,20 +3293,30 @@ function AiEditPanel({ editor, diagnostics, onBuildPlan, onApplyPlan, onOpen }) 
   }, [mode]);
 
   async function buildPlan() {
-    if (!canBuild) return;
+    if (!canBuild || isBuilding) return;
+    setIsBuilding(true);
+    setProgressStep(0);
+    await wait(110);
+    setProgressStep(1);
     const result = await onBuildPlan({
       mode,
-      config: { provider, theme, cardCount, style },
+      config: buildAiConnectorConfig(aiSettings, { theme, cardCount, style }),
       instruction,
       targetCardId: targetCardId || null,
       assetId: assetId || null,
       diagnostics: requiresDiagnostics ? diagnostics : null
     });
+    setProgressStep(2);
+    await wait(90);
     if (result && result !== true) {
+      setProgressStep(3);
+      await wait(90);
       setPlan(result);
       setSelected((result.proposals ?? []).filter((proposal) => (proposal.patches ?? []).length > 0).map((proposal) => proposal.id));
       setApplyResult("");
+      setProgressStep(4);
     }
+    setIsBuilding(false);
   }
 
   async function applySelected() {
@@ -3186,7 +3339,19 @@ function AiEditPanel({ editor, diagnostics, onBuildPlan, onApplyPlan, onOpen }) 
 
   return (
     <section className="panel">
-      <PanelHead title="AI Edit" note="Offline drafting, review repair, and future visual request planning." />
+      <PanelHead title="AI Assist" note="Contextual draft planning, review repair, and visual request previews." />
+      <div className={`ai-endpoint-card ${aiConfigured ? "ai-endpoint-card--ready" : "ai-endpoint-card--setup"}`}>
+        <div>
+          <span>{aiAssistEnabled ? "Assist layer visible" : "Assist layer hidden"}</span>
+          <strong>{aiConfigured ? aiSettings.modelId : "Local draft planner"}</strong>
+          <small>
+            {aiConfigured
+              ? `${aiSettings.protocol} · ${aiSettings.baseUrl}`
+              : "No endpoint configured. Real provider calls are not active in this UX shell."}
+          </small>
+        </div>
+        <button className="btn btn--ghost btn--compact" type="button" onClick={() => onOpen("settings")}>Settings</button>
+      </div>
       <div className="ai-edit-layout">
         <div className="subsection ai-edit-controls">
           <h3>Request</h3>
@@ -3197,7 +3362,6 @@ function AiEditPanel({ editor, diagnostics, onBuildPlan, onApplyPlan, onOpen }) 
               <option value="generate_asset">Generate visual request</option>
               <option value="analyze_asset">Analyze visual request</option>
             </select>
-            <input value={provider} onChange={(event) => setProvider(event.target.value)} placeholder="provider" />
             <input value={theme} onChange={(event) => setTheme(event.target.value)} placeholder="theme" />
             <input type="number" min="1" max="12" value={cardCount} onChange={(event) => setCardCount(Number(event.target.value))} />
           </div>
@@ -3218,8 +3382,11 @@ function AiEditPanel({ editor, diagnostics, onBuildPlan, onApplyPlan, onOpen }) 
             placeholder="Describe what the AI should draft, repair, generate, or inspect."
             rows={5}
           />
+          <AiProgress step={progressStep} active={isBuilding} />
           <div className="action-row">
-            <button className="btn btn--primary" disabled={!canBuild} onClick={() => void buildPlan()}>Build plan</button>
+            <button className="btn btn--primary" disabled={!canBuild || isBuilding} onClick={() => void buildPlan()}>
+              {isBuilding ? "Building draft..." : "Build draft"}
+            </button>
             <button className="btn" onClick={() => onOpen("content")}>Content</button>
             <button className="btn" onClick={() => onOpen("review")}>Review</button>
           </div>
@@ -3234,6 +3401,7 @@ function AiEditPanel({ editor, diagnostics, onBuildPlan, onApplyPlan, onOpen }) 
             <Metric label="Cards" value={String(cards.length)} />
             <Metric label="Assets" value={String(assets.length)} />
             <Metric label="Review" value={diagnostics ? `${diagnostics.healthScore}/100` : "Not run"} tone={diagnostics ? "" : "bad"} />
+            <Metric label="Endpoint" value={aiConfigured ? aiSettings.protocol : "Local"} />
             <Metric label="Target" value={targetCardId || "None"} />
           </div>
           <pre className="output output--compact">
@@ -3274,7 +3442,7 @@ function AiEditPanel({ editor, diagnostics, onBuildPlan, onApplyPlan, onOpen }) 
             </div>
           </>
         ) : (
-          <p className="muted">No AI Edit plan yet.</p>
+          <p className="muted">No AI Assist draft yet.</p>
         )}
         {applyResult && <p className="muted">{applyResult}</p>}
       </div>
@@ -3282,12 +3450,12 @@ function AiEditPanel({ editor, diagnostics, onBuildPlan, onApplyPlan, onOpen }) 
   );
 }
 
-function SettingsPanel({ editor, onRefresh, onStatus }) {
+function SettingsPanel({ editor, aiSettings, onAiSettingsChange, onRefresh, onStatus }) {
   const [title, setTitle] = useState(editor?.metadata?.title ?? "");
   const [plan, setPlan] = useState("");
-  const [provider, setProvider] = useState("stub");
   const [theme, setTheme] = useState("small kingdom");
   const [count, setCount] = useState(8);
+  const [testStatus, setTestStatus] = useState("");
 
   useEffect(() => setTitle(editor?.metadata?.title ?? ""), [editor?.metadata?.title]);
 
@@ -3300,14 +3468,36 @@ function SettingsPanel({ editor, onRefresh, onStatus }) {
   async function buildPlan() {
     const result = await api("/api/connector/plan", {
       method: "POST",
-      body: { config: { provider, theme, cardCount: count } }
+      body: { config: buildAiConnectorConfig(aiSettings, { theme, cardCount: count }) }
     });
     setPlan(JSON.stringify(result, null, 2));
   }
 
+  function updateAiSetting(key, value) {
+    onAiSettingsChange(normalizeAiSettings({ ...aiSettings, [key]: value }));
+  }
+
+  function toggleCapability(key) {
+    onAiSettingsChange(normalizeAiSettings({
+      ...aiSettings,
+      capabilities: {
+        ...aiSettings.capabilities,
+        [key]: !aiSettings.capabilities?.[key]
+      }
+    }));
+  }
+
+  function testEndpoint() {
+    if (!isAiEndpointConfigured(aiSettings)) {
+      setTestStatus("Add a base URL and model id before real provider calls.");
+      return;
+    }
+    setTestStatus(`Ready to build ${aiSettings.protocol} requests for ${aiSettings.modelId}. Network calls are not enabled in this shell.`);
+  }
+
   return (
     <section className="panel">
-      <PanelHead title="Settings / Pipeline" note="Project metadata, skin posture, locale hooks, and connector planning." />
+      <PanelHead title="Settings / Pipeline" note="Project metadata, AI endpoint posture, locale hooks, and connector planning." />
       <div className="subsection">
         <h3>Project</h3>
         <div className="field-row">
@@ -3316,9 +3506,47 @@ function SettingsPanel({ editor, onRefresh, onStatus }) {
         </div>
       </div>
       <div className="subsection">
-        <h3>Connector Plan</h3>
+        <h3>AI Endpoint</h3>
+        <div className="ai-settings-grid">
+          <label>
+            Base URL
+            <input value={aiSettings.baseUrl} onChange={(event) => updateAiSetting("baseUrl", event.target.value)} placeholder="https://api.example.com/v1" />
+          </label>
+          <label>
+            API key
+            <input type="password" value={aiSettings.apiKey} onChange={(event) => updateAiSetting("apiKey", event.target.value)} placeholder="Stored only in this creator browser" />
+          </label>
+          <label>
+            Protocol
+            <select value={aiSettings.protocol} onChange={(event) => updateAiSetting("protocol", event.target.value)}>
+              {AI_PROTOCOLS.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+            </select>
+          </label>
+          <label>
+            Model ID
+            <input value={aiSettings.modelId} onChange={(event) => updateAiSetting("modelId", event.target.value)} placeholder="gpt-4.1, claude-sonnet, local-model..." />
+          </label>
+        </div>
+        <div className="capability-grid" aria-label="Model capabilities">
+          {AI_CAPABILITIES.map(([id, label]) => (
+            <button
+              key={id}
+              className={aiSettings.capabilities?.[id] ? "capability-chip capability-chip--active" : "capability-chip"}
+              type="button"
+              onClick={() => toggleCapability(id)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="action-row">
+          <button className="btn" type="button" onClick={testEndpoint}>Check setup</button>
+          <span className="muted">{testStatus || "Endpoint settings are used for request planning only in this phase."}</span>
+        </div>
+      </div>
+      <div className="subsection">
+        <h3>Connector Request Preview</h3>
         <div className="field-row field-row--compact">
-          <input value={provider} onChange={(event) => setProvider(event.target.value)} placeholder="provider" />
           <input value={theme} onChange={(event) => setTheme(event.target.value)} placeholder="theme" />
           <input type="number" min="1" value={count} onChange={(event) => setCount(Number(event.target.value))} />
           <button className="btn btn--primary" onClick={() => void buildPlan()}>Build plan</button>
@@ -3326,6 +3554,27 @@ function SettingsPanel({ editor, onRefresh, onStatus }) {
         <pre className="output">{plan || "No connector plan generated."}</pre>
       </div>
     </section>
+  );
+}
+
+function AiProgress({ step, active }) {
+  if (step < 0) return null;
+  return (
+    <div className="ai-progress" aria-label="AI Assist progress">
+      {AI_PROGRESS_STEPS.map((label, index) => (
+        <span
+          key={label}
+          className={[
+            "ai-progress__step",
+            index < step ? "ai-progress__step--done" : "",
+            index === step ? "ai-progress__step--active" : "",
+            active && index === step ? "ai-progress__step--pulse" : ""
+          ].filter(Boolean).join(" ")}
+        >
+          {label}
+        </span>
+      ))}
+    </div>
   );
 }
 

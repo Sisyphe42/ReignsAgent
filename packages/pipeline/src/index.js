@@ -1144,8 +1144,8 @@ function createDraftCardProposals(bundle, config, instruction) {
     proposals.push({
       id: `proposal-${id}`,
       title: `Draft card ${index + 1}`,
-      summary: `Adds a deterministic offline draft for ${theme}.`,
-      source: { mode: "generate_cards", provider: config.provider ?? "offline-stub" },
+      summary: `Adds a deterministic local draft for ${theme}.`,
+      source: { mode: "generate_cards", provider: config.provider ?? "local-stub" },
       target: { cardIds: [id] },
       patches: [{ op: "addCard", card }],
       preview: { card }
@@ -1290,7 +1290,7 @@ function createAssetGenerationProposal(bundle, config, instruction, targetCardId
           cardId: card.id,
           uri: `pending://${card.id}`,
           title: `AI asset request for ${card.id}`,
-          source: "offline-ai-edit",
+          source: "local-ai-assist",
           metadata: {
             mode: "generate_asset",
             style,
@@ -1304,7 +1304,7 @@ function createAssetGenerationProposal(bundle, config, instruction, targetCardId
     id: "media-generate-preview",
     title: "Visual request preview",
     summary: card ? `Prepares a placeholder asset request for ${card.id}.` : "Previews a future visual generation request.",
-    source: { mode: "generate_asset", provider: config.provider ?? "offline-stub" },
+    source: { mode: "generate_asset", provider: config.provider ?? "local-stub" },
     target: { cardIds: card ? [card.id] : [], assetIds: patches[0] ? [patches[0].asset.id] : [] },
     patches,
     preview: { requestId: request.requestId, prompt: request.prompt, style }
@@ -1317,7 +1317,7 @@ function createAssetAnalysisProposal(bundle, instruction, targetCardId, assetId,
     id: "media-analysis-preview",
     title: "Visual analysis preview",
     summary: "Previews a future image analysis request without changing content.",
-    source: { mode: "analyze_asset", provider: "offline-stub" },
+    source: { mode: "analyze_asset", provider: "local-stub" },
     target: { cardIds: card ? [card.id] : [], assetIds: assetId ? [assetId] : [] },
     patches: [],
     preview: {

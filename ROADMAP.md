@@ -24,7 +24,7 @@ Story and Content work should now optimize for non-technical content authors: th
 - Reframe Review from a balance-only panel into narrative QA. Keep gauge pressure, game-over rate, and coverage, but add pacing, dead paths, early endings, unreachable story groups, unvisited endings, and chapter/theme coverage as review concerns.
 
 ## AI Assist Direction
-- Replace the current "offline AI Edit" framing with AI Assist: a context-aware creator assistance layer over Overview, Content, Story, and Review. It should not become a chat-first product or a separate editing mode that hides the normal workflow.
+- Replace the legacy AI Edit framing with AI Assist: a context-aware creator assistance layer over Overview, Content, Story, and Review. It should not become a chat-first product or a separate editing mode that hides the normal workflow.
 - Settings should support user-supplied endpoints with minimal fields: base URL, API key, API protocol (`completions`, `responses`, or `messages`), model id, and capability toggles for vision, structured JSON, tool/function calling, reasoning/thinking, and streaming. Image or vision endpoints may be configured separately only when the call shape requires it.
 - Avoid profile-management burden in the default UX. Provider presets, model-list fetch, multiple saved profiles, MCP, skills, and raw tool integrations are optional developer-mode enhancements after the basic endpoint and action flow works.
 - Overview should handle empty/sample initialization with a brief composer and safe actions for blank project, sample, import, or generated draft. Full regenerate and clear belong in project settings or a project menu with destructive styling and confirmation.
