@@ -20,7 +20,9 @@
   - `buildAiEditPlan({ editor, config, mode, instruction, targetCardId, assetId, diagnostics })`
   - `applyAiEditPlan({ editor, plan, proposalIds })`
 - Creator UI:
-  - `openAiAssistDraft({ mode, instruction, targetCardId?, assetId?, cardCount?, theme? })`
+  - `openAiAssistDraft({ mode, instruction, targetCardId?, assetId?, cardCount?, theme?, autoBuild? })`
+  - `openAiAssistPreflight({ source, actionId, actionLabel, mode, instruction, contextSummary, targetCardId?, assetId?, cardCount?, theme? })`
+  - `AiAssistPreflight({ request, onChange, onBuild, onOpenPanel, onClose })`
   - `AiAssistPanel({ draftRequest })`
 - Local API:
   - `POST /api/ai/edit/plan`
@@ -46,7 +48,13 @@
   - `setMetadata { metadata }`
   - `upsertAsset { asset }`
 - Visual modes are request previews. They may create JSON asset placeholders but must not generate, upload, download, or inspect binary files in this pass.
-- Contextual actions in Content, Story, and Review are routing helpers only. They may enable AI Assist, open the AI Assist panel, and prefill mode/instruction/target fields, but must not call providers or mutate cards directly.
+- Contextual actions in Overview, Content, Story, and Review are routing helpers only. They may enable AI Assist, open preflight, open the AI Assist panel, and prefill mode/instruction/target fields, but must not call providers or mutate cards directly.
+- Preflight request fields:
+  - `source`: creator surface label such as `Overview`, `Content`, `Story`, or `Review`
+  - `actionId`: stable UI action id for active/loading affordances
+  - `actionLabel`: user-facing operation label
+  - `contextSummary`: concise editable context explanation
+  - `autoBuild`: optional flag for the AI Assist panel to build the draft after applying prefilled fields
 
 ### 4. Validation & Error Matrix
 
@@ -63,7 +71,8 @@
 - Good: Creator runs Review, builds `repair_diagnostics`, previews patches, selects one proposal, and apply replaces the editor through the normal mutation path.
 - Base: Creator builds `generate_cards`; deterministic stub cards have unique ids and exactly left/right choices.
 - Base: Creator builds `generate_asset` or `analyze_asset`; UI shows request context and proposal preview without provider execution.
-- Base: Creator triggers a Content, Story, or Review contextual action; the AI Assist panel opens with a scoped prompt and waits for explicit plan generation.
+- Base: Creator triggers an Overview, Content, Story, or Review contextual action; the preflight surface opens with action, context, mode, output count, and editable prompt.
+- Base: Creator builds from preflight; the AI Assist panel opens, runs staged progress, previews proposals, and still requires explicit proposal apply.
 - Bad: Creator applies an old plan after editing content; apply is rejected as stale and no content is replaced.
 - Bad: Proposal contains an unsupported patch operation; validation rejects the proposal and no partial edit is stored.
 
