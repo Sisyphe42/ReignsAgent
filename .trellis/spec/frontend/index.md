@@ -20,6 +20,7 @@ This directory contains guidelines for frontend development. Fill in each file w
 | [State Management](./state-management.md) | Local state, global state, server state | To fill |
 | [Quality Guidelines](./quality-guidelines.md) | Code standards, forbidden patterns | To fill |
 | [Type Safety](./type-safety.md) | Type patterns, validation | To fill |
+| [AI Edit Contracts](./ai-edit-contracts.md) | Cross-layer AI Edit request, proposal, patch, and API contracts | Active |
 
 ---
 
@@ -33,6 +34,14 @@ For each guideline file:
 4. Add **common mistakes** your team has made
 
 The goal is to help AI assistants and new team members understand how YOUR project works.
+
+---
+
+## Pre-Development Checklist
+
+- Read [AI Edit Contracts](./ai-edit-contracts.md) before changing Pipeline AI requests, Interface editor orchestration, local creator API routes, or the Creator AI Edit panel.
+- Read [Quality Guidelines](./quality-guidelines.md) before visible Creator UI changes.
+- Read [Component Guidelines](./component-guidelines.md) before adding or reshaping Creator React components.
 
 ---
 

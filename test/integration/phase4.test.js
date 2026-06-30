@@ -60,9 +60,88 @@ describe("Phase 4 interface integration", () => {
       assert.equal(diagnostics.narrative.summary.groupCount, 9);
       assert.equal(diagnostics.narrative.storyGroups.some((group) => group.id === "gate-endings"), true);
 
+      const connectorPlan = await api(port, "/api/connector/plan", {
+        method: "POST",
+        body: { config: { provider: "stub", theme: "small kingdom", cardCount: 2 } }
+      });
+      assert.equal(connectorPlan.request.purpose, "card_generation");
+      assert.equal(connectorPlan.config.provider, "stub");
+
+      const aiPlan = await api(port, "/api/ai/edit/plan", {
+        method: "POST",
+        body: {
+          mode: "generate_cards",
+          config: { provider: "stub", theme: "court repair", cardCount: 1 },
+          instruction: "Add one restrained hearing."
+        }
+      });
+      assert.equal(aiPlan.mode, "generate_cards");
+      assert.equal(aiPlan.proposals.length, 1);
+      assert.equal(aiPlan.proposals[0].patches[0].op, "addCard");
+
+      const appliedAi = await api(port, "/api/ai/edit/apply", {
+        method: "POST",
+        body: { plan: aiPlan, proposalIds: [aiPlan.proposals[0].id] }
+      });
+      assert.equal(appliedAi.applied, true);
+      assert.equal(appliedAi.bundle.cards.length, 24);
+
+      const staleError = await apiError(port, "/api/ai/edit/apply", {
+        method: "POST",
+        body: { plan: aiPlan, proposalIds: [aiPlan.proposals[0].id] }
+      });
+      assert.match(staleError.message, /stale/);
+
+      const repairWithoutReview = await apiError(port, "/api/ai/edit/plan", {
+        method: "POST",
+        body: { mode: "repair_diagnostics", config: { provider: "stub" } }
+      });
+      assert.match(repairWithoutReview.message, /Run Review/);
+
+      const freshDiagnostics = await api(port, "/api/diagnostics/run", {
+        method: "POST",
+        body: { cycles: 6, maxTurns: 4, seed: 5 }
+      });
+      assert.equal(freshDiagnostics.module, "ReignsAgent-Reviewer");
+      const repairPlan = await api(port, "/api/ai/edit/plan", {
+        method: "POST",
+        body: {
+          mode: "repair_diagnostics",
+          config: { provider: "stub" },
+          targetCardId: "gate-petition"
+        }
+      });
+      assert.equal(repairPlan.mode, "repair_diagnostics");
+      assert.equal(Array.isArray(repairPlan.proposals), true);
+
+      const mediaPlan = await api(port, "/api/ai/edit/plan", {
+        method: "POST",
+        body: {
+          mode: "generate_asset",
+          config: { provider: "stub", style: "ink wash" },
+          targetCardId: "gate-petition",
+          instruction: "Prepare a spare monochrome portrait."
+        }
+      });
+      assert.equal(mediaPlan.request.purpose, "card_asset_generation");
+      assert.equal(mediaPlan.proposals[0].source.mode, "generate_asset");
+
+      const analysisPlan = await api(port, "/api/ai/edit/plan", {
+        method: "POST",
+        body: {
+          mode: "analyze_asset",
+          config: { provider: "stub" },
+          targetCardId: "gate-petition",
+          assetId: editor.assets[0].id,
+          instruction: "Check whether the image fits."
+        }
+      });
+      assert.equal(analysisPlan.request.purpose, "card_asset_analysis");
+      assert.equal(analysisPlan.proposals[0].patches.length, 0);
+
       const buildResult = await api(port, "/api/build/prepare", { method: "POST", body: {} });
       assert.equal(buildResult.build.player.choiceModel, "binary");
-      assert.equal(buildResult.build.content.cards.length, 23);
+      assert.equal(buildResult.build.content.cards.length, 24);
       assert.equal(buildResult.build.content.assets.length > 0, true);
 
       // Granular choice editing: set a label, then patch a single faction delta.
@@ -144,7 +223,7 @@ describe("Phase 4 interface integration", () => {
 
       // Snapshot/restore round-trips the working bundle through the server.
       const snapshot = await api(port, "/api/editor/snapshot");
-      assert.equal(snapshot.bundle.cards.length, editor.cards.length);
+      assert.equal(snapshot.bundle.cards.length, appliedAi.bundle.cards.length);
       assert.equal(snapshot.validation.valid, true);
 
       const restored = await api(port, "/api/editor/restore", {
@@ -176,6 +255,20 @@ async function api(port, path, options = {}) {
   }
 
   return json;
+}
+
+async function apiError(port, path, options = {}) {
+  const response = await fetch(`http://127.0.0.1:${port}${path}`, {
+    method: options.method ?? "GET",
+    headers: { "content-type": "application/json" },
+    body: options.body !== undefined ? JSON.stringify(options.body) : undefined
+  });
+  const text = await response.text();
+  const json = text ? JSON.parse(text) : null;
+  if (response.ok && !json?.error) {
+    throw new Error("Expected API error");
+  }
+  return json.error;
 }
 
 async function text(port, path) {

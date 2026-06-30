@@ -7,6 +7,7 @@ const PANELS = [
   { id: "content", label: "Content", group: "Authoring" },
   { id: "story", label: "Story", group: "Authoring" },
   { id: "review", label: "Review", group: "Quality" },
+  { id: "ai-edit", label: "AI Assist", group: "Quality" },
   { id: "preview", label: "Preview", group: "Quality" },
   { id: "build", label: "Build", group: "Release" },
   { id: "settings", label: "Settings", group: "Release" }
@@ -23,8 +24,28 @@ const SKINS = [
 
 const PERSIST_KEY = "reigns-agent.creator-web.skin";
 const DRAFT_KEY = "reigns-agent.creator-web.editor-draft";
+const AI_SETTINGS_KEY = "reigns-agent.creator-web.ai-settings";
 const DEFAULT_PANEL = "overview";
 const DEFAULT_SKIN = "workbench";
+const AI_PROTOCOLS = [
+  ["responses", "Responses"],
+  ["completions", "Completions"],
+  ["messages", "Messages"]
+];
+const AI_CAPABILITIES = [
+  ["vision", "Vision"],
+  ["structuredJson", "Structured JSON"],
+  ["tools", "Tools"],
+  ["reasoning", "Reasoning"],
+  ["streaming", "Streaming"]
+];
+const AI_PROGRESS_STEPS = ["Context", "Request", "Local draft", "Parse", "Validate", "Ready"];
+const AI_MODE_LABELS = {
+  generate_cards: "Draft cards",
+  repair_diagnostics: "Repair review",
+  generate_asset: "Generate visual request",
+  analyze_asset: "Analyze visual request"
+};
 
 function isKnownPanel(value) {
   return PANELS.some((panel) => panel.id === value);
@@ -87,12 +108,81 @@ async function api(path, options = {}) {
   return json;
 }
 
+function defaultAiSettings() {
+  return {
+    baseUrl: "",
+    apiKey: "",
+    protocol: "responses",
+    modelId: "",
+    capabilities: {
+      vision: false,
+      structuredJson: true,
+      tools: false,
+      reasoning: false,
+      streaming: false
+    }
+  };
+}
+
+function normalizeAiSettings(settings = {}) {
+  const defaults = defaultAiSettings();
+  const protocol = AI_PROTOCOLS.some(([id]) => id === settings.protocol) ? settings.protocol : defaults.protocol;
+  const capabilities = { ...defaults.capabilities, ...(settings.capabilities ?? {}) };
+  return {
+    baseUrl: typeof settings.baseUrl === "string" ? settings.baseUrl : "",
+    apiKey: typeof settings.apiKey === "string" ? settings.apiKey : "",
+    protocol,
+    modelId: typeof settings.modelId === "string" ? settings.modelId : "",
+    capabilities
+  };
+}
+
+function readAiSettings() {
+  if (typeof localStorage === "undefined") return defaultAiSettings();
+  try {
+    const raw = localStorage.getItem(AI_SETTINGS_KEY);
+    return raw ? normalizeAiSettings(JSON.parse(raw)) : defaultAiSettings();
+  } catch {
+    return defaultAiSettings();
+  }
+}
+
+function isAiEndpointConfigured(settings) {
+  return Boolean(settings?.baseUrl?.trim() && settings?.modelId?.trim());
+}
+
+function enabledAiCapabilities(settings) {
+  return Object.entries(settings?.capabilities ?? {})
+    .filter(([, enabled]) => enabled)
+    .map(([id]) => id);
+}
+
+function buildAiConnectorConfig(settings, extra = {}) {
+  const normalized = normalizeAiSettings(settings);
+  return {
+    provider: normalized.protocol,
+    endpoint: normalized.baseUrl.trim() || null,
+    apiKeyRef: normalized.apiKey ? "browser-local" : null,
+    modelId: normalized.modelId.trim() || null,
+    capabilities: enabledAiCapabilities(normalized),
+    ...extra
+  };
+}
+
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function App() {
   const initialUrlState = useMemo(() => readUrlState(), []);
   const [activePanel, setActivePanel] = useState(initialUrlState.panel);
   const [editor, setEditor] = useState(null);
   const [status, setStatus] = useState("Loading project...");
   const [skin, setSkin] = useState(() => initialUrlState.skin ?? (localStorage.getItem(PERSIST_KEY) || DEFAULT_SKIN));
+  const [aiAssistEnabled, setAiAssistEnabled] = useState(false);
+  const [aiSettings, setAiSettings] = useState(() => readAiSettings());
+  const [aiDraftRequest, setAiDraftRequest] = useState(null);
+  const [aiPreflight, setAiPreflight] = useState(null);
   const [diagnostics, setDiagnostics] = useState(null);
   const [play, setPlay] = useState({ sessionId: null, state: null });
   const [build, setBuild] = useState(null);
@@ -132,6 +222,7 @@ function App() {
 
   const assetsByCard = useMemo(() => createAssetMap(editor?.assets ?? []), [editor]);
   const playerReady = editor?.playerValidation?.valid === true;
+  const aiConfigured = isAiEndpointConfigured(aiSettings);
   const activePanelLabel = PANELS.find((panel) => panel.id === activePanel)?.label ?? "Workspace";
 
   useEffect(() => {
@@ -139,6 +230,10 @@ function App() {
     localStorage.setItem(PERSIST_KEY, skin);
     syncWorkbenchUrl(activePanel, skin, "replace");
   }, [activePanel, skin]);
+
+  useEffect(() => {
+    localStorage.setItem(AI_SETTINGS_KEY, JSON.stringify(normalizeAiSettings(aiSettings)));
+  }, [aiSettings]);
 
   useEffect(() => {
     function onPopState() {
@@ -191,8 +286,8 @@ function App() {
   async function runAction(label, action) {
     setBusy(label);
     try {
-      await action();
-      return true;
+      const result = await action();
+      return result ?? true;
     } catch (error) {
       setStatus(error.message);
       return false;
@@ -278,6 +373,22 @@ function App() {
     });
   }
 
+  async function buildAiEditPlan(form) {
+    return runAction("Building AI Assist draft", async () => {
+      const result = await api("/api/ai/edit/plan", { method: "POST", body: form });
+      setStatus(`AI Assist draft ready: ${result.proposals?.length ?? 0} proposals`);
+      return result;
+    });
+  }
+
+  async function applyAiEditPlan(plan, proposalIds) {
+    return mutateEditor(
+      "Applying AI Assist draft",
+      async () => api("/api/ai/edit/apply", { method: "POST", body: { plan, proposalIds } }),
+      "AI Assist draft applied"
+    );
+  }
+
   async function prepareBuild(exportBuild = false) {
     await runAction(exportBuild ? "Exporting build" : "Preparing build", async () => {
       const result = await api(exportBuild ? "/api/build/export" : "/api/build/prepare", {
@@ -293,6 +404,58 @@ function App() {
     if (!isKnownPanel(panelId)) return;
     setActivePanel(panelId);
     syncWorkbenchUrl(panelId, skin, "push");
+  }
+
+  function openAiAssistDraft(request) {
+    setAiAssistEnabled(true);
+    setAiDraftRequest({
+      id: `${Date.now()}:${Math.random().toString(36).slice(2)}`,
+      ...request
+    });
+    openPanel("ai-edit");
+  }
+
+  function openAiAssistPreflight(request) {
+    setAiAssistEnabled(true);
+    setAiPreflight({
+      id: `${Date.now()}:${Math.random().toString(36).slice(2)}`,
+      source: request.source ?? "AI Assist",
+      actionId: request.actionId ?? request.actionLabel ?? request.mode ?? "draft",
+      actionLabel: request.actionLabel ?? request.actionId ?? "Draft",
+      contextSummary: request.contextSummary ?? "Current project context",
+      status: "editing",
+      mode: "generate_cards",
+      cardCount: 1,
+      ...request
+    });
+  }
+
+  function updateAiPreflight(changes) {
+    setAiPreflight((current) => current ? { ...current, ...changes, status: "editing" } : current);
+  }
+
+  function buildAiPreflightDraft() {
+    if (!aiPreflight) return;
+    const request = {
+      ...aiPreflight,
+      autoBuild: true,
+      id: `${Date.now()}:${Math.random().toString(36).slice(2)}`
+    };
+    setAiPreflight((current) => current ? { ...current, status: "building" } : current);
+    setAiDraftRequest(request);
+    setAiPreflight(null);
+    openPanel("ai-edit");
+  }
+
+  function openAiPreflightInPanel() {
+    if (!aiPreflight) return;
+    setAiDraftRequest({
+      ...aiPreflight,
+      autoBuild: false,
+      id: `${Date.now()}:${Math.random().toString(36).slice(2)}`
+    });
+    setAiPreflight(null);
+    openPanel("ai-edit");
   }
 
   function focusOnCard(cardId) {
@@ -329,6 +492,17 @@ function App() {
           <span>{playerReady ? "player ready" : "player blocked"}</span>
         </div>
         <div className="topbar__tools">
+          <button
+            className={`ai-toggle ${aiAssistEnabled ? "ai-toggle--active" : ""} ${!aiConfigured ? "ai-toggle--unconfigured" : ""}`}
+            type="button"
+            onClick={() => setAiAssistEnabled((enabled) => !enabled)}
+            aria-pressed={aiAssistEnabled}
+            title={aiConfigured ? "Toggle AI Assist contextual actions" : "Configure an AI endpoint in Settings"}
+          >
+            <span className="ai-toggle__dot" aria-hidden="true" />
+            <span>AI Assist</span>
+            <small>{aiAssistEnabled ? (aiConfigured ? "active" : "setup") : "off"}</small>
+          </button>
           <label className="skin-select">
             Skin
             <select value={skin} onChange={(event) => changeSkin(event.target.value)}>
@@ -377,7 +551,12 @@ function App() {
               playerReady={playerReady}
               diagnostics={diagnostics}
               build={build}
+              aiAssistEnabled={aiAssistEnabled}
+              aiConfigured={aiConfigured}
               onOpen={openPanel}
+              onToggleAi={() => setAiAssistEnabled((enabled) => !enabled)}
+              onAiAction={openAiAssistPreflight}
+              activeAiAction={aiPreflight}
             />
           )}
           {activePanel === "content" && (
@@ -388,6 +567,9 @@ function App() {
               onMutate={mutateEditor}
               onStatus={setStatus}
               focusCardId={focusCardId}
+              aiAssistEnabled={aiAssistEnabled}
+              onAiAction={openAiAssistPreflight}
+              activeAiAction={aiPreflight}
             />
           )}
           {activePanel === "story" && (
@@ -399,9 +581,36 @@ function App() {
               onPushHistory={pushHistory}
               onUndo={undo}
               historyDepth={historyDepth}
+              aiAssistEnabled={aiAssistEnabled}
+              onAiAction={openAiAssistPreflight}
+              activeAiAction={aiPreflight}
             />
           )}
-          {activePanel === "review" && <ReviewPanel diagnostics={diagnostics} onRun={runDiagnostics} onOpen={openPanel} />}
+          {activePanel === "review" && (
+            <ReviewPanel
+              editor={editor}
+              diagnostics={diagnostics}
+              aiAssistEnabled={aiAssistEnabled}
+              onRun={runDiagnostics}
+              onOpen={openPanel}
+              onFocusCard={focusOnCard}
+              onAiAction={openAiAssistPreflight}
+              activeAiAction={aiPreflight}
+            />
+          )}
+          {activePanel === "ai-edit" && (
+            <AiAssistPanel
+              editor={editor}
+              diagnostics={diagnostics}
+              aiSettings={aiSettings}
+              aiAssistEnabled={aiAssistEnabled}
+              aiConfigured={aiConfigured}
+              draftRequest={aiDraftRequest}
+              onBuildPlan={buildAiEditPlan}
+              onApplyPlan={applyAiEditPlan}
+              onOpen={openPanel}
+            />
+          )}
           {activePanel === "preview" && (
             <PreviewPanel
               play={play}
@@ -412,24 +621,146 @@ function App() {
             />
           )}
           {activePanel === "build" && <BuildPanel build={build} onPrepare={prepareBuild} />}
-          {activePanel === "settings" && <SettingsPanel editor={editor} onRefresh={refreshEditor} onStatus={setStatus} />}
+          {activePanel === "settings" && (
+            <SettingsPanel
+              editor={editor}
+              aiSettings={aiSettings}
+              onAiSettingsChange={setAiSettings}
+              onRefresh={refreshEditor}
+              onStatus={setStatus}
+            />
+          )}
+          {aiPreflight && (
+            <AiAssistPreflight
+              request={aiPreflight}
+              aiConfigured={aiConfigured}
+              diagnostics={diagnostics}
+              onChange={updateAiPreflight}
+              onClose={() => setAiPreflight(null)}
+              onBuild={buildAiPreflightDraft}
+              onOpenPanel={openAiPreflightInPanel}
+            />
+          )}
         </main>
       </div>
     </div>
   );
 }
 
-function Overview({ editor, playerReady, diagnostics, build, onOpen }) {
+function Overview({ editor, playerReady, diagnostics, build, aiAssistEnabled, aiConfigured, onOpen, onToggleAi, onAiAction, activeAiAction }) {
+  const [brief, setBrief] = useState("");
+  const cardCount = editor?.cards?.length ?? 0;
+  const title = editor?.metadata?.title ?? "Untitled";
+  const sampleLike = /open court|oss|sample/i.test(title) || cardCount === 23;
+
   return (
     <section className="panel">
       <PanelHead title="Project Overview" note="Workspace health, content readiness, and next actions." />
       <div className="metric-grid">
-        <Metric label="Project" value={editor?.metadata?.title ?? "Untitled"} />
-        <Metric label="Cards" value={String(editor?.cards?.length ?? 0)} />
+        <Metric label="Project" value={title} />
+        <Metric label="Cards" value={String(cardCount)} />
         <Metric label="Validation" value={editor?.validation?.valid ? "Valid" : "Needs work"} tone={editor?.validation?.valid ? "good" : "bad"} />
         <Metric label="Player-ready" value={playerReady ? "Ready" : "Blocked"} tone={playerReady ? "good" : "bad"} />
         <Metric label="Review" value={diagnostics ? `${diagnostics.healthScore}/100` : "Not run"} />
         <Metric label="Build" value={build ? "Prepared" : "Not prepared"} />
+      </div>
+      <div className={`overview-ai ${aiAssistEnabled ? "overview-ai--active" : ""}`}>
+        <div className="overview-ai__head">
+          <div>
+            <h3>{cardCount === 0 ? "Start with AI Assist" : sampleLike ? "Adapt the sample with AI Assist" : "Shape this project with AI Assist"}</h3>
+            <p>
+              {aiConfigured
+                ? "Use the current project context and optional brief to prepare draft cards, repair review issues, or expand story structure."
+                : "Configure an endpoint when ready. Until then, AI Assist can still preview local draft plans over the current project context."}
+            </p>
+          </div>
+          <span>{aiAssistEnabled ? "assist visible" : "assist hidden"}</span>
+        </div>
+        <textarea
+          value={brief}
+          onChange={(event) => setBrief(event.target.value)}
+          placeholder="Premise, tone, branch depth, endings, or constraints for the next AI draft..."
+          rows={3}
+        />
+        <div className="action-row">
+          <button
+            className="btn btn--primary"
+            type="button"
+            onClick={() => aiAssistEnabled
+              ? onAiAction({
+                source: "Overview",
+                actionId: "project-draft",
+                actionLabel: cardCount === 0 ? "Start project" : sampleLike ? "Adapt sample" : "Project draft",
+                mode: "generate_cards",
+                cardCount: cardCount === 0 ? 6 : 3,
+                contextSummary: `${title} · ${cardCount} cards · review ${diagnostics ? `${diagnostics.healthScore}/100` : "not run"}`,
+                instruction: brief.trim()
+                  ? brief.trim()
+                  : cardCount === 0
+                    ? "Draft a compact playable starting set with at least two visible story branches, clear tags or variables, and binary left/right choices."
+                    : "Draft a small expansion plan for the current project. Preserve existing tone, add clearer branches, and explain any suggested tags or variables."
+              })
+              : onOpen("ai-edit")}
+          >
+            Draft in AI Assist
+          </button>
+          <button className="btn" type="button" onClick={() => onOpen("content")}>Open Content</button>
+          <button className="btn" type="button" onClick={() => onOpen("story")}>Open Story</button>
+          <button className="btn btn--ghost" type="button" onClick={onToggleAi}>{aiAssistEnabled ? "Hide AI Assist" : "Show AI Assist"}</button>
+        </div>
+        {aiAssistEnabled && (
+          <AiActionStrip
+            title="AI Assist: project"
+            note={brief ? "Your brief will be included in the preflight prompt." : "Start from project state, sample content, or latest review context."}
+            activeActionId={activeAiAction?.source === "Overview" ? activeAiAction.actionId : null}
+            activeStatus={activeAiAction?.source === "Overview" ? activeAiAction.status : null}
+            actions={[
+              {
+                id: "project-draft",
+                label: "Draft",
+                detail: "Draft cards from the project context",
+                onClick: () => onAiAction({
+                  source: "Overview",
+                  actionId: "project-draft",
+                  actionLabel: "Project draft",
+                  mode: "generate_cards",
+                  cardCount: 3,
+                  contextSummary: `${title} · ${cardCount} cards`,
+                  instruction: brief.trim() || "Draft three cards that expand the current project with clear story branches and binary choices."
+                })
+              },
+              {
+                id: "review-repair",
+                label: "Repair",
+                detail: "Use latest Review diagnostics",
+                disabled: !diagnostics,
+                onClick: () => onAiAction({
+                  source: "Overview",
+                  actionId: "review-repair",
+                  actionLabel: "Review repair",
+                  mode: "repair_diagnostics",
+                  cardCount: 1,
+                  contextSummary: diagnostics ? `Review ${diagnostics.healthScore}/100` : "Review not run",
+                  instruction: "Use the latest Review diagnostics to propose the smallest repair set for coverage, early endings, pacing, and gauge pressure."
+                })
+              },
+              {
+                id: "branch-plan",
+                label: "Branch",
+                detail: "Draft a branch expansion",
+                onClick: () => onAiAction({
+                  source: "Overview",
+                  actionId: "branch-plan",
+                  actionLabel: "Branch expansion",
+                  mode: "generate_cards",
+                  cardCount: 4,
+                  contextSummary: `${title} · branch expansion`,
+                  instruction: brief.trim() || "Draft a branch expansion with at least two routes and explain the tags, variables, or gauge thresholds that should trigger each route."
+                })
+              }
+            ]}
+          />
+        )}
       </div>
       <div className="action-row">
         <button className="btn btn--primary" onClick={() => onOpen("content")}>Edit cards</button>
@@ -456,7 +787,7 @@ function DraftBanner({ draftInfo, onRestore, onDiscard }) {
   );
 }
 
-function ContentPanel({ editor, assetsByCard, onImport, onMutate, onStatus, focusCardId }) {
+function ContentPanel({ editor, assetsByCard, onImport, onMutate, onStatus, focusCardId, aiAssistEnabled, onAiAction, activeAiAction }) {
   const [paste, setPaste] = useState("");
   const [query, setQuery] = useState("");
   const [validationFilter, setValidationFilter] = useState("all");
@@ -614,6 +945,61 @@ function ContentPanel({ editor, assetsByCard, onImport, onMutate, onStatus, focu
                   <button className="btn btn--ghost" type="button" disabled={activeIndex === -1 || activeIndex >= visibleItems.length - 1} onClick={() => selectRelative(1)}>Next</button>
                 </div>
               </div>
+              {aiAssistEnabled && (
+                <AiActionStrip
+                  title={`AI Assist: ${activeItem.card.id}`}
+                  note="Draft changes with this card as context. Proposals open in AI Assist before anything is applied."
+                  activeActionId={activeAiAction?.source === "Content" ? activeAiAction.actionId : null}
+                  activeStatus={activeAiAction?.source === "Content" ? activeAiAction.status : null}
+                  actions={[
+                    {
+                      id: "rewrite",
+                      label: "Rewrite",
+                      detail: "Tighten card text and choice wording",
+                      onClick: () => onAiAction({
+                        source: "Content",
+                        actionId: "rewrite",
+                        actionLabel: "Rewrite card",
+                        mode: "generate_cards",
+                        targetCardId: activeItem.card.id,
+                        cardCount: 1,
+                        contextSummary: `${activeItem.card.id} · ${cardExcerpt(activeItem.card)}`,
+                        instruction: `Rewrite or improve card '${activeItem.card.id}' for clarity, tone, and binary left/right readability. Preserve story state unless the proposal explicitly explains a safer change.`
+                      })
+                    },
+                    {
+                      id: "follow-up",
+                      label: "Follow-up",
+                      detail: "Draft a card that follows this beat",
+                      onClick: () => onAiAction({
+                        source: "Content",
+                        actionId: "follow-up",
+                        actionLabel: "Follow-up card",
+                        mode: "generate_cards",
+                        targetCardId: activeItem.card.id,
+                        cardCount: 1,
+                        contextSummary: `${activeItem.card.id} · follow-up`,
+                        instruction: `Draft one follow-up card for '${activeItem.card.id}'. Include a clear reason for how it should connect through tags, variables, or gauge thresholds.`
+                      })
+                    },
+                    {
+                      id: "branch",
+                      label: "Branch",
+                      detail: "Draft an alternate consequence",
+                      onClick: () => onAiAction({
+                        source: "Content",
+                        actionId: "branch",
+                        actionLabel: "Alternate branch",
+                        mode: "generate_cards",
+                        targetCardId: activeItem.card.id,
+                        cardCount: 2,
+                        contextSummary: `${activeItem.card.id} · alternate branch`,
+                        instruction: `Draft an alternate branch from '${activeItem.card.id}' with two possible downstream cards. Keep player interaction binary and avoid RPG management systems.`
+                      })
+                    }
+                  ]}
+                />
+              )}
               <CardEditor
                 key={activeItem.card.id}
                 card={activeItem.card}
@@ -1281,7 +1667,7 @@ function AddCard({ onMutate, onCreated }) {
   );
 }
 
-function StoryPanel({ editor, diagnostics, onOpen, onFocusCard, onPushHistory, onUndo, historyDepth = 0 }) {
+function StoryPanel({ editor, diagnostics, onOpen, onFocusCard, onPushHistory, onUndo, historyDepth = 0, aiAssistEnabled, onAiAction, activeAiAction }) {
   const [graph, setGraph] = useState(null);
   const [graphError, setGraphError] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
@@ -1302,6 +1688,7 @@ function StoryPanel({ editor, diagnostics, onOpen, onFocusCard, onPushHistory, o
   const selectedStoryGroup = useMemo(() => {
     return storyGroups.groups.find((group) => group.id === selectedGroupId) ?? null;
   }, [storyGroups.groups, selectedGroupId]);
+  const storyAiTarget = graphFocusCardId ?? selectedStoryGroup?.cardIds?.[0] ?? graph?.entryCards?.[0] ?? editor?.cards?.[0]?.id ?? null;
 
   useEffect(() => {
     if (selectedGroupId && !storyGroups.groups.some((group) => group.id === selectedGroupId)) {
@@ -1388,6 +1775,84 @@ function StoryPanel({ editor, diagnostics, onOpen, onFocusCard, onPushHistory, o
         />
         <GraphLegend hasHeat={Boolean(diagnostics?.coverage?.cardCycleRates || diagnostics?.coverage?.cardVisitRates)} />
       </div>
+      {aiAssistEnabled && (
+        <AiActionStrip
+          title="AI Assist: story structure"
+          note={storyAiTarget ? `Using ${storyAiTarget} as the story context.` : "Using the full project as story context."}
+          activeActionId={activeAiAction?.source === "Story" ? activeAiAction.actionId : null}
+          activeStatus={activeAiAction?.source === "Story" ? activeAiAction.status : null}
+          actions={[
+            {
+              id: "bridge",
+              label: "Bridge",
+              detail: "Draft a connective card",
+              onClick: () => onAiAction({
+                source: "Story",
+                actionId: "bridge",
+                actionLabel: "Bridge card",
+                mode: "generate_cards",
+                targetCardId: storyAiTarget,
+                cardCount: 1,
+                contextSummary: storyAiTarget ? `${storyAiTarget} · bridge` : "Story graph · bridge",
+                instruction: storyAiTarget
+                  ? `Draft a bridge card that can connect from '${storyAiTarget}' to another reachable story beat. Include suggested tags or requirements for wiring.`
+                  : "Draft a bridge card for the current story graph and include suggested tags or requirements for wiring."
+              })
+            },
+            {
+              id: "alt-branch",
+              label: "Alt branch",
+              detail: "Add a second path",
+              onClick: () => onAiAction({
+                source: "Story",
+                actionId: "alt-branch",
+                actionLabel: "Alternate branch",
+                mode: "generate_cards",
+                targetCardId: storyAiTarget,
+                cardCount: 2,
+                contextSummary: storyAiTarget ? `${storyAiTarget} · alternate path` : "Story graph · alternate path",
+                instruction: storyAiTarget
+                  ? `Draft an alternate branch from '${storyAiTarget}' with two downstream cards and clear trigger conditions.`
+                  : "Draft an alternate branch for the current story with clear trigger conditions."
+              })
+            },
+            {
+              id: "ending",
+              label: "Ending",
+              detail: "Draft an ending path",
+              onClick: () => onAiAction({
+                source: "Story",
+                actionId: "ending",
+                actionLabel: "Ending path",
+                mode: "generate_cards",
+                targetCardId: storyAiTarget,
+                cardCount: 1,
+                contextSummary: storyAiTarget ? `${storyAiTarget} · ending route` : "Story graph · ending route",
+                instruction: storyAiTarget
+                  ? `Draft one ending-path card that can follow '${storyAiTarget}'. Keep it data-driven through tags, variables, or gauge thresholds.`
+                  : "Draft one ending-path card for the current project. Keep it data-driven through tags, variables, or gauge thresholds."
+              })
+            },
+            {
+              id: "gate",
+              label: "Gate",
+              detail: "Make reachability stricter",
+              onClick: () => onAiAction({
+                source: "Story",
+                actionId: "gate",
+                actionLabel: "Branch gate",
+                mode: "generate_cards",
+                targetCardId: storyAiTarget,
+                cardCount: 1,
+                contextSummary: storyAiTarget ? `${storyAiTarget} · branch gate` : "Story graph · branch gate",
+                instruction: storyAiTarget
+                  ? `Suggest a stricter but understandable branch gate around '${storyAiTarget}' using existing tags, variables, or gauge thresholds.`
+                  : "Suggest a stricter but understandable branch gate using existing tags, variables, or gauge thresholds."
+              })
+            }
+          ]}
+        />
+      )}
       {graphError ? (
         <div className="empty-state">
           <p>Could not load story graph: {graphError}</p>
@@ -2941,10 +3406,28 @@ function drawChoiceHandle(ctx, x, y, label, colors) {
   ctx.fillText(label, x, y);
 }
 
-function ReviewPanel({ diagnostics, onRun, onOpen }) {
+function ReviewPanel({ editor, diagnostics, aiAssistEnabled, onRun, onOpen, onFocusCard, onAiAction, activeAiAction }) {
   const [cycles, setCycles] = useState(500);
   const [maxTurns, setMaxTurns] = useState(40);
   const [seed, setSeed] = useState(1);
+  const [view, setView] = useState("overview");
+  const cards = editor?.cards ?? [];
+  const cardMap = useMemo(() => new Map(cards.map((card) => [card.id, card])), [cards]);
+  const gaugeLabels = useMemo(() => createGaugeLabels(editor?.metadata?.presentation), [editor?.metadata?.presentation]);
+  const coverageRows = useMemo(() => buildReviewCoverageRows(cards, diagnostics), [cards, diagnostics]);
+  const issueCards = useMemo(() => buildReviewIssues(diagnostics), [diagnostics]);
+
+  function aiRepairForIssue(issue) {
+    onAiAction({
+      source: "Review",
+      actionId: `issue-${issue.code}`,
+      actionLabel: `Repair ${issue.code}`,
+      mode: "repair_diagnostics",
+      cardCount: 1,
+      contextSummary: `${issue.severity} · ${issue.code}`,
+      instruction: `Use the latest Review diagnostics to repair '${issue.code}'. Focus on: ${issue.message}. Targets: ${issue.cardIds.length > 0 ? issue.cardIds.join(", ") : "project-level issue"}. Keep changes as explicit patch proposals.`
+    });
+  }
 
   return (
     <section className="panel">
@@ -2955,24 +3438,101 @@ function ReviewPanel({ diagnostics, onRun, onOpen }) {
         <label>Seed <input type="number" value={seed} onChange={(event) => setSeed(Number(event.target.value))} /></label>
         <button className="btn btn--primary" onClick={() => void onRun({ cycles, maxTurns, seed })}>Run review</button>
       </div>
+      {aiAssistEnabled && (
+        <AiActionStrip
+          title="AI Assist: review diagnostics"
+          note={diagnostics ? `Latest review score: ${diagnostics.healthScore}/100.` : "Run Review before requesting repair proposals."}
+          activeActionId={activeAiAction?.source === "Review" ? activeAiAction.actionId : null}
+          activeStatus={activeAiAction?.source === "Review" ? activeAiAction.status : null}
+          actions={[
+            {
+              id: "repair",
+              label: "Repair",
+              detail: "Draft fixes from latest diagnostics",
+              disabled: !diagnostics,
+              onClick: () => onAiAction({
+                source: "Review",
+                actionId: "repair",
+                actionLabel: "Repair diagnostics",
+                mode: "repair_diagnostics",
+                cardCount: 1,
+                contextSummary: diagnostics ? `Review ${diagnostics.healthScore}/100 · repair` : "Review not run",
+                instruction: "Use the latest Review diagnostics to propose repair patches for coverage, pacing, early endings, unreachable cards, or gauge pressure."
+              })
+            },
+            {
+              id: "explain",
+              label: "Explain",
+              detail: "Summarize risks as draft guidance",
+              disabled: !diagnostics,
+              onClick: () => onAiAction({
+                source: "Review",
+                actionId: "explain",
+                actionLabel: "Explain diagnostics",
+                mode: "generate_cards",
+                cardCount: 1,
+                contextSummary: diagnostics ? `Review ${diagnostics.healthScore}/100 · explanation` : "Review not run",
+                instruction: `Explain the latest Review result (${diagnostics?.healthScore ?? "not run"}/100) as actionable author guidance. Focus on what to fix next before generating cards.`
+              })
+            },
+            {
+              id: "coverage",
+              label: "Coverage",
+              detail: "Draft missing branch coverage",
+              disabled: !diagnostics,
+              onClick: () => onAiAction({
+                source: "Review",
+                actionId: "coverage",
+                actionLabel: "Coverage repair",
+                mode: "generate_cards",
+                cardCount: 2,
+                contextSummary: diagnostics ? `Review ${diagnostics.healthScore}/100 · coverage` : "Review not run",
+                instruction: "Draft cards that improve narrative coverage for the weakest story groups or endings in the latest Review diagnostics."
+              })
+            }
+          ]}
+        />
+      )}
       {diagnostics ? (
         <>
-          <div className="health">
-            <strong>{diagnostics.healthScore}/100</strong>
-            <span>{diagnostics.headline}</span>
-          </div>
-          <NarrativeCoverage narrative={diagnostics.narrative} onOpenStory={() => onOpen("story")} />
-          <ul className="warning-list">
-            {(diagnostics.warnings ?? []).map((warning, index) => (
-              <li key={`${warning.code}-${index}`} className={`warning warning--${warning.severity}`}>
-                <button className="btn btn--ghost btn--compact warning__code" type="button" onClick={() => onOpen("content")}>
-                  {warning.code}
-                </button>
-                <span>{warning.message}</span>
-              </li>
+          <ReviewSummary diagnostics={diagnostics} gaugeLabels={gaugeLabels} />
+          <div className="review-tabs" role="tablist" aria-label="Review views">
+            {[
+              ["overview", "Overview"],
+              ["coverage", "Coverage"],
+              ["story", "Story"],
+              ["issues", `Issues ${issueCards.length}`]
+            ].map(([id, label]) => (
+              <button
+                key={id}
+                className={view === id ? "review-tabs__item review-tabs__item--active" : "review-tabs__item"}
+                type="button"
+                role="tab"
+                aria-selected={view === id}
+                onClick={() => setView(id)}
+              >
+                {label}
+              </button>
             ))}
-            {diagnostics.warnings?.length === 0 && <li className="warning">No diagnostics warnings.</li>}
-          </ul>
+          </div>
+          {view === "overview" && (
+            <ReviewOverview diagnostics={diagnostics} gaugeLabels={gaugeLabels} coverageRows={coverageRows} issueCards={issueCards} onOpenStory={() => onOpen("story")} />
+          )}
+          {view === "coverage" && (
+            <ReviewCoverage rows={coverageRows} onFocusCard={onFocusCard} />
+          )}
+          {view === "story" && (
+            <NarrativeCoverage narrative={diagnostics.narrative} onOpenStory={() => onOpen("story")} onFocusCard={onFocusCard} />
+          )}
+          {view === "issues" && (
+            <ReviewIssues
+              issues={issueCards}
+              cardMap={cardMap}
+              onFocusCard={onFocusCard}
+              onOpenStory={() => onOpen("story")}
+              onAiRepair={aiRepairForIssue}
+            />
+          )}
         </>
       ) : (
         <div className="empty-state">
@@ -2983,7 +3543,179 @@ function ReviewPanel({ diagnostics, onRun, onOpen }) {
   );
 }
 
-function NarrativeCoverage({ narrative, onOpenStory }) {
+function ReviewSummary({ diagnostics, gaugeLabels }) {
+  const coverage = diagnostics.coverage ?? {};
+  const warningCounts = diagnostics.warningCounts ?? {};
+  return (
+    <section className="review-summary" aria-label="Review summary">
+      <div className="review-score">
+        <strong>{diagnostics.healthScore}/100</strong>
+        <span>{diagnostics.headline}</span>
+      </div>
+      <div className="review-summary__metrics">
+        <Metric label="Cycles" value={String(diagnostics.sampleSize ?? 0)} />
+        <Metric label="Avg turns" value={String(coverage.averageTurns ?? 0)} />
+        <Metric label="Game over" value={formatRate(coverage.gameOverRate ?? 0)} tone={(coverage.gameOverRate ?? 0) > 0.8 ? "bad" : ""} />
+        <Metric label="Stalled" value={formatRate(coverage.stalledRate ?? 0)} tone={(coverage.stalledRate ?? 0) > 0 ? "bad" : ""} />
+        <Metric label="Errors" value={String(warningCounts.error ?? 0)} tone={(warningCounts.error ?? 0) > 0 ? "bad" : "good"} />
+        <Metric label="Warnings" value={String(warningCounts.warning ?? 0)} tone={(warningCounts.warning ?? 0) > 0 ? "bad" : ""} />
+      </div>
+      <div className="review-gauge-strip" aria-label="Gauge pressure">
+        {(diagnostics.factions ?? []).map((entry) => (
+          <div className="review-gauge" key={entry.faction}>
+            <div>
+              <strong>{gaugeDisplayName(entry.faction, gaugeLabels)}</strong>
+              <span>avg {entry.average} · end {formatRate(entry.gameOverShare ?? 0)}</span>
+            </div>
+            <div className="review-gauge__bar"><span style={{ width: `${Math.max(2, Math.round((entry.gameOverShare ?? 0) * 100))}%` }} /></div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ReviewOverview({ diagnostics, gaugeLabels, coverageRows, issueCards, onOpenStory }) {
+  const worstCoverage = coverageRows.filter((row) => row.status !== "covered").slice(0, 5);
+  return (
+    <div className="review-overview">
+      <div className="review-panel-block">
+        <div className="review-panel-block__head">
+          <strong>Top risks</strong>
+          <span>{issueCards.length} issue{issueCards.length === 1 ? "" : "s"}</span>
+        </div>
+        {issueCards.length > 0 ? (
+          <div className="review-risk-list">
+            {issueCards.slice(0, 4).map((issue) => (
+              <div className={`review-risk review-risk--${issue.severity}`} key={issue.id}>
+                <code>{issue.code}</code>
+                <span>{issue.message}</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="muted">No review issues.</p>
+        )}
+      </div>
+      <div className="review-panel-block">
+        <div className="review-panel-block__head">
+          <strong>Weak coverage</strong>
+          <span>{worstCoverage.length} cards</span>
+        </div>
+        {worstCoverage.length > 0 ? (
+          <div className="review-risk-list">
+            {worstCoverage.map((row) => (
+              <div className={`review-risk review-risk--${row.tone}`} key={row.cardId}>
+                <code>{row.cardId}</code>
+                <span>{row.status} · visit {formatRate(row.visitRate)} · cycle {formatRate(row.cycleRate)}</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="muted">All reviewed cards were visited.</p>
+        )}
+      </div>
+      <div className="review-panel-block">
+        <div className="review-panel-block__head">
+          <strong>Ending coverage</strong>
+          <button className="btn btn--ghost btn--compact" type="button" onClick={onOpenStory}>Story</button>
+        </div>
+        <div className="review-ending-summary">
+          <Metric label="Endings" value={`${diagnostics.narrative?.summary?.coveredEndingGroupCount ?? 0}/${diagnostics.narrative?.summary?.endingGroupCount ?? 0}`} />
+          <Metric label="Story groups" value={`${diagnostics.narrative?.summary?.coveredGroupCount ?? 0}/${diagnostics.narrative?.summary?.groupCount ?? 0}`} />
+          <Metric label="Story issues" value={String(diagnostics.narrative?.summary?.issueCount ?? 0)} tone={(diagnostics.narrative?.summary?.issueCount ?? 0) > 0 ? "bad" : "good"} />
+        </div>
+      </div>
+      <div className="review-panel-block">
+        <div className="review-panel-block__head">
+          <strong>Gauge pressure</strong>
+          <span>{diagnostics.factions?.length ?? 0} gauges</span>
+        </div>
+        <div className="review-risk-list">
+          {(diagnostics.factions ?? []).map((entry) => (
+            <div className="review-risk" key={entry.faction}>
+              <code>{gaugeDisplayName(entry.faction, gaugeLabels)}</code>
+              <span>average {entry.average}; game-over share {formatRate(entry.gameOverShare ?? 0)}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ReviewCoverage({ rows, onFocusCard }) {
+  return (
+    <section className="review-coverage" aria-label="Card coverage">
+      {rows.map((row) => (
+        <article className={`review-card-row review-card-row--${row.tone}`} key={row.cardId}>
+          <div className="review-card-row__head">
+            <button className="btn btn--ghost btn--compact" type="button" onClick={() => onFocusCard(row.cardId)}>{row.cardId}</button>
+            <span>{row.status}</span>
+          </div>
+          <p>{row.excerpt}</p>
+          <div className="review-card-row__bars">
+            <ReviewRateBar label="Visit" rate={row.visitRate} />
+            <ReviewRateBar label="Cycle" rate={row.cycleRate} />
+          </div>
+          <div className="review-targets">
+            {row.unvisited && <span className="review-chip review-chip--bad">unvisited</span>}
+            {row.lowCycle && <span className="review-chip review-chip--warn">low cycle {formatRate(row.lowCycleRate)}</span>}
+          </div>
+        </article>
+      ))}
+      {rows.length === 0 && <p className="muted">Run Review to inspect card coverage.</p>}
+    </section>
+  );
+}
+
+function ReviewRateBar({ label, rate }) {
+  return (
+    <div className="review-rate">
+      <div>
+        <span>{label}</span>
+        <strong>{formatRate(rate)}</strong>
+      </div>
+      <div className="review-rate__track"><span style={{ width: `${Math.max(2, Math.round(rate * 100))}%` }} /></div>
+    </div>
+  );
+}
+
+function ReviewIssues({ issues, cardMap, onFocusCard, onOpenStory, onAiRepair }) {
+  return (
+    <section className="review-issues" aria-label="Review issues">
+      {issues.length > 0 ? issues.map((issue) => (
+        <article className={`review-issue review-issue--${issue.severity}`} key={issue.id}>
+          <div className="review-issue__head">
+            <div>
+              <code>{issue.code}</code>
+              <strong>{issue.message}</strong>
+            </div>
+            <span>{issue.severity}</span>
+          </div>
+          <div className="review-targets">
+            {issue.cardIds.map((cardId) => (
+              <button className="review-chip review-chip--button" type="button" key={cardId} title={cardExcerpt(cardMap.get(cardId) ?? { id: cardId })} onClick={() => onFocusCard(cardId)}>
+                {cardId}
+              </button>
+            ))}
+            {issue.otherTargets.map((target) => <span className="review-chip" key={target}>{target}</span>)}
+            {issue.cardIds.length === 0 && issue.otherTargets.length === 0 && <span className="review-chip">project</span>}
+          </div>
+          <div className="action-row">
+            {issue.cardIds[0] && <button className="btn btn--ghost btn--compact" type="button" onClick={() => onFocusCard(issue.cardIds[0])}>Focus card</button>}
+            <button className="btn btn--ghost btn--compact" type="button" onClick={onOpenStory}>Story</button>
+            <button className="btn btn--primary btn--compact" type="button" onClick={() => onAiRepair(issue)}>AI Repair</button>
+          </div>
+        </article>
+      )) : (
+        <div className="empty-state"><p>No diagnostics warnings.</p></div>
+      )}
+    </section>
+  );
+}
+
+function NarrativeCoverage({ narrative, onOpenStory, onFocusCard }) {
   const groups = narrative?.storyGroups ?? [];
   const summary = narrative?.summary ?? {};
 
@@ -3032,6 +3764,25 @@ function NarrativeCoverage({ narrative, onOpenStory }) {
                   {group.unvisitedCardIds.length > 0 && <span>{group.unvisitedCardIds.length} unvisited</span>}
                   {group.unreachableCardIds.length > 0 && <span>{group.unreachableCardIds.length} unreachable</span>}
                 </div>
+                {(group.unvisitedCardIds.length > 0 || group.unreachableCardIds.length > 0 || group.lowCycleCards.length > 0) && (
+                  <div className="review-targets">
+                    {group.unreachableCardIds.map((cardId) => (
+                      <button className="review-chip review-chip--bad review-chip--button" type="button" key={`unreachable-${cardId}`} onClick={() => onFocusCard?.(cardId)}>
+                        {cardId}
+                      </button>
+                    ))}
+                    {group.unvisitedCardIds.filter((cardId) => !group.unreachableCardIds.includes(cardId)).map((cardId) => (
+                      <button className="review-chip review-chip--warn review-chip--button" type="button" key={`unvisited-${cardId}`} onClick={() => onFocusCard?.(cardId)}>
+                        {cardId}
+                      </button>
+                    ))}
+                    {group.lowCycleCards.map((entry) => (
+                      <button className="review-chip review-chip--warn review-chip--button" type="button" key={`low-${entry.cardId}`} onClick={() => onFocusCard?.(entry.cardId)}>
+                        {entry.cardId} {formatRate(entry.rate)}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </li>
             ))}
           </ul>
@@ -3041,6 +3792,88 @@ function NarrativeCoverage({ narrative, onOpenStory }) {
       )}
     </section>
   );
+}
+
+function buildReviewCoverageRows(cards, diagnostics) {
+  if (!diagnostics) return [];
+  const coverage = diagnostics.coverage ?? {};
+  const visitRates = coverage.cardVisitRates ?? {};
+  const cycleRates = coverage.cardCycleRates ?? {};
+  const unvisitedSet = new Set(coverage.unvisitedCards ?? []);
+  const lowCycleMap = new Map((coverage.lowCycleCards ?? []).map((entry) => [entry.cardId, entry.rate ?? 0]));
+
+  return cards.map((card) => {
+    const visitRate = visitRates[card.id] ?? 0;
+    const cycleRate = cycleRates[card.id] ?? 0;
+    const unvisited = unvisitedSet.has(card.id) || visitRate <= 0;
+    const lowCycle = lowCycleMap.has(card.id);
+    const status = unvisited ? "unvisited" : lowCycle ? "low cycle" : "covered";
+    return {
+      cardId: card.id,
+      excerpt: cardExcerpt(card),
+      visitRate,
+      cycleRate,
+      lowCycleRate: lowCycleMap.get(card.id) ?? 0,
+      unvisited,
+      lowCycle,
+      status,
+      tone: unvisited ? "bad" : lowCycle ? "warn" : "good"
+    };
+  }).sort((a, b) => reviewCoverageRank(a) - reviewCoverageRank(b) || a.cardId.localeCompare(b.cardId));
+}
+
+function reviewCoverageRank(row) {
+  if (row.unvisited) return 0;
+  if (row.lowCycle) return 1;
+  return 2;
+}
+
+function buildReviewIssues(diagnostics) {
+  if (!diagnostics) return [];
+  const warningIssues = (diagnostics.warnings ?? []).map((warning, index) => {
+    const targets = extractReviewTargets(warning.details ?? {});
+    return {
+      id: `warning-${warning.code}-${index}`,
+      code: warning.code,
+      severity: warning.severity ?? "warning",
+      message: warning.message ?? "Review warning.",
+      cardIds: targets.cardIds,
+      otherTargets: targets.otherTargets
+    };
+  });
+  const narrativeIssues = (diagnostics.narrative?.issues ?? []).map((issue, index) => ({
+    id: `story-${issue.code}-${index}`,
+    code: issue.code,
+    severity: issue.severity ?? "warning",
+    message: issue.message ?? "Story coverage issue.",
+    cardIds: normalizeStringArray(issue.cardIds),
+    otherTargets: [issue.groupId].filter(Boolean)
+  }));
+  const seen = new Set();
+  return [...warningIssues, ...narrativeIssues].filter((issue) => {
+    const key = `${issue.code}:${issue.cardIds.join(",")}:${issue.otherTargets.join(",")}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function extractReviewTargets(details = {}) {
+  const cardIds = new Set(normalizeStringArray(details.cardIds));
+  for (const entry of Array.isArray(details.cards) ? details.cards : []) {
+    if (typeof entry?.cardId === "string") cardIds.add(entry.cardId);
+  }
+  const otherTargets = [
+    ...normalizeStringArray(details.tags).map((tag) => `tag:${tag}`),
+    ...normalizeStringArray(details.variables).map((variable) => `var:${variable}`),
+    ...normalizeStringArray(details.factions).map((faction) => `gauge:${faction}`),
+    typeof details.faction === "string" ? `gauge:${details.faction}` : null
+  ].filter(Boolean);
+  return { cardIds: [...cardIds], otherTargets };
+}
+
+function normalizeStringArray(value) {
+  return Array.isArray(value) ? value.filter((entry) => typeof entry === "string" && entry.trim()) : [];
 }
 
 function PreviewPanel({ play, assetsByCard, playerReady, onStart, onSwipe }) {
@@ -3093,12 +3926,346 @@ function BuildPanel({ build, onPrepare }) {
   );
 }
 
-function SettingsPanel({ editor, onRefresh, onStatus }) {
+function AiAssistPreflight({ request, aiConfigured, diagnostics, onChange, onClose, onBuild, onOpenPanel }) {
+  const needsDiagnostics = request.mode === "repair_diagnostics";
+  const canBuild = !needsDiagnostics || Boolean(diagnostics);
+  const modeLabel = AI_MODE_LABELS[request.mode] ?? request.mode;
+
+  return (
+    <div className="ai-preflight" role="dialog" aria-modal="false" aria-label="AI Assist preflight">
+      <div className="ai-preflight__panel">
+        <div className="ai-preflight__head">
+          <div>
+            <span>{request.source}</span>
+            <h3>{request.actionLabel}</h3>
+          </div>
+          <button className="btn btn--ghost btn--compact" type="button" onClick={onClose}>Close</button>
+        </div>
+        <div className="ai-preflight__summary">
+          <Metric label="Mode" value={modeLabel} />
+          <Metric label="Target" value={request.targetCardId || request.assetId || "Project"} />
+          <Metric label="Output" value={`${request.cardCount ?? 1} item${(request.cardCount ?? 1) === 1 ? "" : "s"}`} />
+          <Metric label="Endpoint" value={aiConfigured ? "Configured" : "Local"} />
+        </div>
+        <label className="ai-preflight__field">
+          Context
+          <input value={request.contextSummary ?? ""} onChange={(event) => onChange({ contextSummary: event.target.value })} />
+        </label>
+        <div className="field-row field-row--compact">
+          <select value={request.mode} onChange={(event) => onChange({ mode: event.target.value })}>
+            {Object.entries(AI_MODE_LABELS).map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+          </select>
+          <input
+            type="number"
+            min="1"
+            max="12"
+            value={request.cardCount ?? 1}
+            onChange={(event) => onChange({ cardCount: Number(event.target.value) })}
+            aria-label="Expected output count"
+          />
+        </div>
+        <label className="ai-preflight__field">
+          Prompt
+          <textarea
+            value={request.instruction ?? ""}
+            onChange={(event) => onChange({ instruction: event.target.value })}
+            rows={5}
+          />
+        </label>
+        {needsDiagnostics && !diagnostics && (
+          <p className="ai-preflight__warning">Run Review before building repair proposals.</p>
+        )}
+        <div className="action-row">
+          <button className="btn btn--primary" type="button" disabled={!canBuild || !request.instruction?.trim()} onClick={onBuild}>
+            Build draft
+          </button>
+          <button className="btn" type="button" onClick={onOpenPanel}>Open full panel</button>
+          <button className="btn btn--ghost" type="button" onClick={onClose}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AiAssistPanel({ editor, diagnostics, aiSettings, aiAssistEnabled, aiConfigured, draftRequest, onBuildPlan, onApplyPlan, onOpen }) {
+  const [mode, setMode] = useState("generate_cards");
+  const [theme, setTheme] = useState(editor?.metadata?.title ?? "small court");
+  const [style, setStyle] = useState("ink wash card art");
+  const [cardCount, setCardCount] = useState(2);
+  const [targetCardId, setTargetCardId] = useState("");
+  const [assetId, setAssetId] = useState("");
+  const [instruction, setInstruction] = useState("");
+  const [plan, setPlan] = useState(null);
+  const [selected, setSelected] = useState([]);
+  const [applyResult, setApplyResult] = useState("");
+  const [isBuilding, setIsBuilding] = useState(false);
+  const [progressStep, setProgressStep] = useState(-1);
+  const [progressStatus, setProgressStatus] = useState("idle");
+  const [buildError, setBuildError] = useState("");
+  const promptRef = useRef(null);
+  const autoBuildRef = useRef(null);
+  const cards = editor?.cards ?? [];
+  const assets = editor?.assets ?? [];
+  const requiresDiagnostics = mode === "repair_diagnostics";
+  const canBuild = !requiresDiagnostics || Boolean(diagnostics);
+  const selectedSet = useMemo(() => new Set(selected), [selected]);
+
+  useEffect(() => {
+    if (!targetCardId && cards[0]?.id) {
+      setTargetCardId(cards[0].id);
+    }
+  }, [cards, targetCardId]);
+
+  useEffect(() => {
+    setPlan(null);
+    setSelected([]);
+    setApplyResult("");
+  }, [mode]);
+
+  useEffect(() => {
+    if (!draftRequest) return;
+    setMode(draftRequest.mode ?? "generate_cards");
+    setInstruction(draftRequest.instruction ?? "");
+    setTargetCardId(draftRequest.targetCardId ?? "");
+    setAssetId(draftRequest.assetId ?? "");
+    if (draftRequest.cardCount) setCardCount(draftRequest.cardCount);
+    if (draftRequest.theme) setTheme(draftRequest.theme);
+    setPlan(null);
+    setSelected([]);
+    setApplyResult("");
+    setBuildError("");
+    setProgressStep(-1);
+    setProgressStatus("idle");
+    if (draftRequest.autoBuild && autoBuildRef.current !== draftRequest.id) {
+      autoBuildRef.current = draftRequest.id;
+      void buildPlan(draftRequest);
+    }
+  }, [draftRequest?.id]);
+
+  async function buildPlan(overrides = null) {
+    const nextMode = overrides?.mode ?? mode;
+    const nextInstruction = overrides?.instruction ?? instruction;
+    const nextTargetCardId = overrides?.targetCardId ?? targetCardId;
+    const nextAssetId = overrides?.assetId ?? assetId;
+    const nextCardCount = overrides?.cardCount ?? cardCount;
+    const nextTheme = overrides?.theme ?? theme;
+    const nextStyle = overrides?.style ?? style;
+    const nextRequiresDiagnostics = nextMode === "repair_diagnostics";
+    if (isBuilding) return;
+    if (nextRequiresDiagnostics && !diagnostics) {
+      setProgressStep(0);
+      setProgressStatus("failed");
+      setBuildError("Review repair needs a completed Review result before AI Assist can build repair proposals.");
+      return;
+    }
+    if (!nextInstruction?.trim()) {
+      setProgressStep(0);
+      setProgressStatus("failed");
+      setBuildError("Add a prompt before building the draft.");
+      return;
+    }
+    setIsBuilding(true);
+    setBuildError("");
+    setProgressStatus("building");
+    setProgressStep(0);
+    await wait(110);
+    setProgressStep(1);
+    await wait(90);
+    setProgressStep(2);
+    const result = await onBuildPlan({
+      mode: nextMode,
+      config: buildAiConnectorConfig(aiSettings, { theme: nextTheme, cardCount: nextCardCount, style: nextStyle }),
+      instruction: nextInstruction,
+      targetCardId: nextTargetCardId || null,
+      assetId: nextAssetId || null,
+      diagnostics: nextRequiresDiagnostics ? diagnostics : null
+    });
+    if (!result || result === true) {
+      setProgressStatus("failed");
+      setBuildError("AI Assist draft failed. Check the status bar, edit the prompt, or retry.");
+      setIsBuilding(false);
+      return;
+    }
+    await wait(90);
+    setProgressStep(3);
+    await wait(90);
+    setProgressStep(4);
+    await wait(90);
+    if (result && result !== true) {
+      setPlan(result);
+      setSelected((result.proposals ?? []).filter((proposal) => (proposal.patches ?? []).length > 0).map((proposal) => proposal.id));
+      setApplyResult("");
+      setProgressStep(5);
+      setProgressStatus("ready");
+    }
+    setIsBuilding(false);
+  }
+
+  async function retryBuild() {
+    await buildPlan();
+  }
+
+  function focusPrompt() {
+    promptRef.current?.focus();
+  }
+
+  async function applySelected() {
+    if (!plan || selected.length === 0) return;
+    const result = await onApplyPlan(plan, selected);
+    if (result) {
+      setApplyResult(`Applied ${selected.length} proposal${selected.length === 1 ? "" : "s"}.`);
+      setPlan(null);
+      setSelected([]);
+    }
+  }
+
+  function toggleProposal(proposalId) {
+    setSelected((current) =>
+      current.includes(proposalId)
+        ? current.filter((id) => id !== proposalId)
+        : [...current, proposalId]
+    );
+  }
+
+  return (
+    <section className="panel">
+      <PanelHead title="AI Assist" note="Contextual draft planning, review repair, and visual request previews." />
+      <div className={`ai-endpoint-card ${aiConfigured ? "ai-endpoint-card--ready" : "ai-endpoint-card--setup"}`}>
+        <div>
+          <span>{aiAssistEnabled ? "Assist layer visible" : "Assist layer hidden"}</span>
+          <strong>{aiConfigured ? aiSettings.modelId : "Local draft planner"}</strong>
+          <small>
+            {aiConfigured
+              ? `${aiSettings.protocol} · ${aiSettings.baseUrl}`
+              : "No endpoint configured. Real provider calls are not active in this UX shell."}
+          </small>
+        </div>
+        <button className="btn btn--ghost btn--compact" type="button" onClick={() => onOpen("settings")}>Settings</button>
+      </div>
+      {draftRequest?.actionLabel && (
+        <div className="ai-request-source">
+          <span>{draftRequest.source ?? "Contextual action"}</span>
+          <strong>{draftRequest.actionLabel}</strong>
+          <small>{draftRequest.contextSummary ?? "Current project context"}</small>
+        </div>
+      )}
+      <div className="ai-edit-layout">
+        <div className="subsection ai-edit-controls">
+          <h3>Request</h3>
+          <div className="field-row field-row--compact">
+            <select value={mode} onChange={(event) => setMode(event.target.value)}>
+              <option value="generate_cards">Draft cards</option>
+              <option value="repair_diagnostics">Repair review</option>
+              <option value="generate_asset">Generate visual request</option>
+              <option value="analyze_asset">Analyze visual request</option>
+            </select>
+            <input value={theme} onChange={(event) => setTheme(event.target.value)} placeholder="theme" />
+            <input type="number" min="1" max="12" value={cardCount} onChange={(event) => setCardCount(Number(event.target.value))} />
+          </div>
+          <div className="field-row field-row--compact">
+            <select value={targetCardId} onChange={(event) => setTargetCardId(event.target.value)}>
+              <option value="">No target card</option>
+              {cards.map((card) => <option key={card.id} value={card.id}>{card.id}</option>)}
+            </select>
+            <select value={assetId} onChange={(event) => setAssetId(event.target.value)}>
+              <option value="">No target asset</option>
+              {assets.map((asset) => <option key={asset.id} value={asset.id}>{asset.id}</option>)}
+            </select>
+            <input value={style} onChange={(event) => setStyle(event.target.value)} placeholder="visual style" />
+          </div>
+          <textarea
+            ref={promptRef}
+            value={instruction}
+            onChange={(event) => setInstruction(event.target.value)}
+            placeholder="Describe what the AI should draft, repair, generate, or inspect."
+            rows={5}
+          />
+          <AiProgress step={progressStep} active={isBuilding} status={progressStatus} />
+          {buildError && (
+            <div className="ai-build-error" role="alert">
+              <div>
+                <strong>Draft failed</strong>
+                <span>{buildError}</span>
+              </div>
+              <div className="ai-build-error__actions">
+                <button className="btn btn--ghost btn--compact" type="button" disabled={isBuilding} onClick={() => void retryBuild()}>Retry</button>
+                <button className="btn btn--ghost btn--compact" type="button" onClick={focusPrompt}>Edit prompt</button>
+              </div>
+            </div>
+          )}
+          <div className="action-row">
+            <button className="btn btn--primary" disabled={!canBuild || isBuilding} onClick={() => void buildPlan()}>
+              {isBuilding ? "Building draft..." : "Build draft"}
+            </button>
+            <button className="btn" onClick={() => onOpen("content")}>Content</button>
+            <button className="btn" onClick={() => onOpen("review")}>Review</button>
+          </div>
+          {requiresDiagnostics && !diagnostics && (
+            <p className="muted">Repair proposals use the latest Review result. Run Review first, then return here.</p>
+          )}
+        </div>
+
+        <div className="subsection">
+          <h3>Context</h3>
+          <div className="ai-context-grid">
+            <Metric label="Cards" value={String(cards.length)} />
+            <Metric label="Assets" value={String(assets.length)} />
+            <Metric label="Review" value={diagnostics ? `${diagnostics.healthScore}/100` : "Not run"} tone={diagnostics ? "" : "bad"} />
+            <Metric label="Endpoint" value={aiConfigured ? aiSettings.protocol : "Local"} />
+            <Metric label="Target" value={targetCardId || "None"} />
+          </div>
+          <pre className="output output--compact">
+            {plan ? JSON.stringify(plan.request.context, null, 2) : "Build a plan to preview the AI context."}
+          </pre>
+        </div>
+      </div>
+
+      <div className="subsection">
+        <h3>Proposals</h3>
+        {plan ? (
+          <>
+            <div className="action-row">
+              <button className="btn" onClick={() => setSelected((plan.proposals ?? []).map((proposal) => proposal.id))}>Select all</button>
+              <button className="btn" onClick={() => setSelected([])}>Clear</button>
+              <button className="btn btn--primary" disabled={selected.length === 0} onClick={() => void applySelected()}>Apply selected</button>
+              <span className="muted">{selected.length}/{plan.proposals?.length ?? 0} selected</span>
+            </div>
+            <div className="ai-proposal-list">
+              {(plan.proposals ?? []).map((proposal) => (
+                <article className="ai-proposal" key={proposal.id}>
+                  <label className="ai-proposal__head">
+                    <input
+                      type="checkbox"
+                      checked={selectedSet.has(proposal.id)}
+                      onChange={() => toggleProposal(proposal.id)}
+                      disabled={(proposal.patches ?? []).length === 0}
+                    />
+                    <span>
+                      <strong>{proposal.title}</strong>
+                      <small>{proposal.source?.mode ?? plan.mode} · {(proposal.target?.cardIds ?? []).join(", ") || "context"}</small>
+                    </span>
+                  </label>
+                  <p>{proposal.summary}</p>
+                  <pre className="output output--compact">{JSON.stringify(proposal.patches, null, 2)}</pre>
+                </article>
+              ))}
+            </div>
+          </>
+        ) : (
+          <p className="muted">No AI Assist draft yet.</p>
+        )}
+        {applyResult && <p className="muted">{applyResult}</p>}
+      </div>
+    </section>
+  );
+}
+
+function SettingsPanel({ editor, aiSettings, onAiSettingsChange, onRefresh, onStatus }) {
   const [title, setTitle] = useState(editor?.metadata?.title ?? "");
   const [plan, setPlan] = useState("");
-  const [provider, setProvider] = useState("stub");
   const [theme, setTheme] = useState("small kingdom");
   const [count, setCount] = useState(8);
+  const [testStatus, setTestStatus] = useState("");
 
   useEffect(() => setTitle(editor?.metadata?.title ?? ""), [editor?.metadata?.title]);
 
@@ -3111,14 +4278,36 @@ function SettingsPanel({ editor, onRefresh, onStatus }) {
   async function buildPlan() {
     const result = await api("/api/connector/plan", {
       method: "POST",
-      body: { config: { provider, theme, cardCount: count } }
+      body: { config: buildAiConnectorConfig(aiSettings, { theme, cardCount: count }) }
     });
     setPlan(JSON.stringify(result, null, 2));
   }
 
+  function updateAiSetting(key, value) {
+    onAiSettingsChange(normalizeAiSettings({ ...aiSettings, [key]: value }));
+  }
+
+  function toggleCapability(key) {
+    onAiSettingsChange(normalizeAiSettings({
+      ...aiSettings,
+      capabilities: {
+        ...aiSettings.capabilities,
+        [key]: !aiSettings.capabilities?.[key]
+      }
+    }));
+  }
+
+  function testEndpoint() {
+    if (!isAiEndpointConfigured(aiSettings)) {
+      setTestStatus("Add a base URL and model id before real provider calls.");
+      return;
+    }
+    setTestStatus(`Ready to build ${aiSettings.protocol} requests for ${aiSettings.modelId}. Network calls are not enabled in this shell.`);
+  }
+
   return (
     <section className="panel">
-      <PanelHead title="Settings / Pipeline" note="Project metadata, skin posture, locale hooks, and connector planning." />
+      <PanelHead title="Settings / Pipeline" note="Project metadata, AI endpoint posture, locale hooks, and connector planning." />
       <div className="subsection">
         <h3>Project</h3>
         <div className="field-row">
@@ -3127,9 +4316,47 @@ function SettingsPanel({ editor, onRefresh, onStatus }) {
         </div>
       </div>
       <div className="subsection">
-        <h3>Connector Plan</h3>
+        <h3>AI Endpoint</h3>
+        <div className="ai-settings-grid">
+          <label>
+            Base URL
+            <input value={aiSettings.baseUrl} onChange={(event) => updateAiSetting("baseUrl", event.target.value)} placeholder="https://api.example.com/v1" />
+          </label>
+          <label>
+            API key
+            <input type="password" value={aiSettings.apiKey} onChange={(event) => updateAiSetting("apiKey", event.target.value)} placeholder="Stored only in this creator browser" />
+          </label>
+          <label>
+            Protocol
+            <select value={aiSettings.protocol} onChange={(event) => updateAiSetting("protocol", event.target.value)}>
+              {AI_PROTOCOLS.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+            </select>
+          </label>
+          <label>
+            Model ID
+            <input value={aiSettings.modelId} onChange={(event) => updateAiSetting("modelId", event.target.value)} placeholder="gpt-4.1, claude-sonnet, local-model..." />
+          </label>
+        </div>
+        <div className="capability-grid" aria-label="Model capabilities">
+          {AI_CAPABILITIES.map(([id, label]) => (
+            <button
+              key={id}
+              className={aiSettings.capabilities?.[id] ? "capability-chip capability-chip--active" : "capability-chip"}
+              type="button"
+              onClick={() => toggleCapability(id)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="action-row">
+          <button className="btn" type="button" onClick={testEndpoint}>Check setup</button>
+          <span className="muted">{testStatus || "Endpoint settings are used for request planning only in this phase."}</span>
+        </div>
+      </div>
+      <div className="subsection">
+        <h3>Connector Request Preview</h3>
         <div className="field-row field-row--compact">
-          <input value={provider} onChange={(event) => setProvider(event.target.value)} placeholder="provider" />
           <input value={theme} onChange={(event) => setTheme(event.target.value)} placeholder="theme" />
           <input type="number" min="1" value={count} onChange={(event) => setCount(Number(event.target.value))} />
           <button className="btn btn--primary" onClick={() => void buildPlan()}>Build plan</button>
@@ -3137,6 +4364,60 @@ function SettingsPanel({ editor, onRefresh, onStatus }) {
         <pre className="output">{plan || "No connector plan generated."}</pre>
       </div>
     </section>
+  );
+}
+
+function AiActionStrip({ title, note, actions, activeActionId, activeStatus }) {
+  return (
+    <div className="ai-action-strip">
+      <div className="ai-action-strip__copy">
+        <strong>{title}</strong>
+        <span>{activeActionId ? `${activeStatus === "building" ? "Building" : "Editing"}: ${activeActionId}` : note}</span>
+      </div>
+      <div className="ai-action-strip__actions">
+        {actions.map((action) => (
+          <button
+            key={action.id ?? action.label}
+            className={[
+              "btn",
+              "btn--ghost",
+              "btn--compact",
+              activeActionId === (action.id ?? action.label) ? "ai-action-strip__button--active" : ""
+            ].filter(Boolean).join(" ")}
+            type="button"
+            disabled={action.disabled}
+            title={action.detail}
+            onClick={action.onClick}
+          >
+            {activeActionId === (action.id ?? action.label) && <span className="ai-action-strip__spinner" aria-hidden="true" />}
+            {action.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AiProgress({ step, active, status = "idle" }) {
+  if (step < 0) return null;
+  return (
+    <div className="ai-progress" aria-label="AI Assist progress">
+      {AI_PROGRESS_STEPS.map((label, index) => (
+        <span
+          key={label}
+          className={[
+            "ai-progress__step",
+            index < step ? "ai-progress__step--done" : "",
+            index === step ? "ai-progress__step--active" : "",
+            status === "failed" && index === step ? "ai-progress__step--failed" : "",
+            status === "ready" && index === AI_PROGRESS_STEPS.length - 1 ? "ai-progress__step--ready" : "",
+            active && index === step ? "ai-progress__step--pulse" : ""
+          ].filter(Boolean).join(" ")}
+        >
+          {label}
+        </span>
+      ))}
+    </div>
   );
 }
 
@@ -3165,6 +4446,7 @@ function panelStatus(id, { editor, playerReady, diagnostics, build }) {
   if (id === "content") return `${editor?.cards?.length ?? 0}`;
   if (id === "story") return `${editor?.cards?.length ?? 0}`;
   if (id === "review") return diagnostics ? `${diagnostics.healthScore}` : "new";
+  if (id === "ai-edit") return diagnostics ? "ready" : "draft";
   if (id === "preview") return playerReady ? "ready" : "blocked";
   if (id === "build") return build ? "ready" : "new";
   if (id === "settings") return editor?.metadata?.title ? "set" : "new";

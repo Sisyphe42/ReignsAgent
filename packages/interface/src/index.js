@@ -1,5 +1,7 @@
 import { FACTIONS, createRuntime, normalizeCards, normalizeFactionKey, restoreState, serializeState } from "../../core/src/index.js";
 import {
+  applyAiEditPatches,
+  createAiEditSuggestions,
   buildCardGenerationRequest,
   createContentBundle,
   createDiagnosticFeedback,
@@ -650,6 +652,66 @@ export function buildGenerationPlan({ config, diagnostics = null }) {
     schemaVersion: 1,
     config: descriptor,
     request
+  };
+}
+
+export function buildAiEditPlan({ editor, config = {}, mode = "generate_cards", instruction = "", targetCardId = null, assetId = null, diagnostics = null }) {
+  const bundle = editor?.toBundle ? editor.toBundle() : createContentBundle(editor ?? {});
+  return createAiEditSuggestions({
+    bundle,
+    mode,
+    config,
+    instruction,
+    targetCardId,
+    assetId,
+    diagnostics
+  });
+}
+
+export function applyAiEditPlan({ editor, plan, proposalIds = [] }) {
+  if (!plan || typeof plan !== "object" || Array.isArray(plan)) {
+    throw new InterfaceError("AI edit plan must be an object");
+  }
+  const bundle = editor?.toBundle ? editor.toBundle() : createContentBundle(editor ?? {});
+  const currentFingerprint = createAiEditSuggestions({
+    bundle,
+    mode: "generate_cards",
+    config: { cardCount: 1 },
+    instruction: ""
+  }).baseFingerprint;
+
+  if (plan.baseFingerprint !== currentFingerprint) {
+    throw new InterfaceError("AI edit plan is stale; rebuild the plan before applying proposals");
+  }
+
+  const selectedIds = normalizeStringList(proposalIds);
+  const selectedSet = new Set(selectedIds);
+  const proposals = Array.isArray(plan.proposals) ? plan.proposals : [];
+  const selected = selectedIds.length > 0
+    ? proposals.filter((proposal) => selectedSet.has(proposal.id))
+    : proposals;
+
+  if (selected.length === 0) {
+    throw new InterfaceError("Select at least one AI edit proposal to apply");
+  }
+
+  const patches = selected.flatMap((proposal) => Array.isArray(proposal.patches) ? proposal.patches : []);
+  const applied = applyAiEditPatches({ bundle, patches });
+  const nextEditor = createCardEditor({
+    cards: applied.bundle.cards,
+    metadata: applied.bundle.metadata,
+    assets: applied.bundle.assets
+  });
+  const playerValidation = nextEditor.validateForPlayer();
+
+  return {
+    applied: true,
+    proposalIds: selected.map((proposal) => proposal.id),
+    patchCount: patches.length,
+    bundle: nextEditor.toBundle(),
+    validation: applied.validation,
+    playerValidation,
+    editor: nextEditor
   };
 }
 

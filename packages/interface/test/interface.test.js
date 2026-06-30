@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+  applyAiEditPlan,
+  buildAiEditPlan,
   buildGenerationPlan,
   createCardEditor,
   createConnectorConfig,
@@ -351,6 +353,71 @@ describe("ReignsAgent interface controller", () => {
     const plan = buildGenerationPlan({ config });
     assert.equal(plan.request.metadata.theme, "small kingdom");
     assert.equal(plan.config.apiKeyRef, "vault://reigns/stub");
+  });
+
+  it("builds AI edit plans through the interface boundary", () => {
+    const editor = createCardEditor({ cards: [sampleCard("gate")], metadata: { title: "Court" } });
+    const plan = buildAiEditPlan({
+      editor,
+      mode: "generate_cards",
+      config: { provider: "stub", theme: "court audit", cardCount: 1 },
+      instruction: "Add a restrained hearing."
+    });
+
+    assert.equal(plan.schemaVersion, 1);
+    assert.equal(plan.mode, "generate_cards");
+    assert.match(plan.baseFingerprint, /^bundle:/);
+    assert.equal(plan.proposals.length, 1);
+    assert.equal(plan.request.context.bundle.metadata.title, "Court");
+  });
+
+  it("applies selected AI edit proposals atomically", () => {
+    const editor = createCardEditor({ cards: [sampleCard("gate")] });
+    const plan = buildAiEditPlan({
+      editor,
+      mode: "generate_cards",
+      config: { provider: "stub", theme: "court audit", cardCount: 2 }
+    });
+    const result = applyAiEditPlan({ editor, plan, proposalIds: [plan.proposals[0].id] });
+
+    assert.equal(result.applied, true);
+    assert.equal(result.patchCount, 1);
+    assert.equal(result.bundle.cards.length, 2);
+    assert.equal(editor.cardCount(), 1);
+    assert.equal(result.validation.valid, true);
+    assert.equal(result.playerValidation.valid, true);
+  });
+
+  it("rejects stale AI edit plans without mutating the editor", () => {
+    const editor = createCardEditor({ cards: [sampleCard("gate")] });
+    const plan = buildAiEditPlan({
+      editor,
+      mode: "generate_cards",
+      config: { provider: "stub", theme: "court audit", cardCount: 1 }
+    });
+    editor.addCard(sampleCard("arch"));
+
+    assert.throws(
+      () => applyAiEditPlan({ editor, plan, proposalIds: [plan.proposals[0].id] }),
+      /stale/
+    );
+    assert.equal(editor.cardCount(), 2);
+  });
+
+  it("rejects invalid AI edit patches before returning a replacement editor", () => {
+    const editor = createCardEditor({ cards: [sampleCard("gate")] });
+    const plan = buildAiEditPlan({
+      editor,
+      mode: "generate_cards",
+      config: { provider: "stub", theme: "court audit", cardCount: 1 }
+    });
+    plan.proposals[0].patches = [{ op: "updateCard", cardId: "missing", changes: { weight: 2 } }];
+
+    assert.throws(
+      () => applyAiEditPlan({ editor, plan, proposalIds: [plan.proposals[0].id] }),
+      /was not found/
+    );
+    assert.equal(editor.cardCount(), 1);
   });
 
   it("rejects connector configs with invalid card counts", () => {
