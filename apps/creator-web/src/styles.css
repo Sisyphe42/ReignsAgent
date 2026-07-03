@@ -612,7 +612,8 @@ select {
   gap: 8px;
   height: calc(100vh - 76px);
   padding: 18px 12px;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
   border-right: 1px solid var(--border);
   background: color-mix(in srgb, var(--surface) 78%, transparent);
 }
@@ -1043,64 +1044,907 @@ select {
   border-color: color-mix(in srgb, var(--warning) 44%, var(--border));
 }
 
-.ai-action-strip {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin: 12px 0;
-  padding: 11px;
-  border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--border));
-  border-radius: var(--radius);
-  background:
-    linear-gradient(90deg, color-mix(in srgb, var(--accent) 10%, transparent), transparent 70%),
-    color-mix(in srgb, var(--surface-2) 74%, transparent);
+.ai-ambient {
+  position: fixed;
+  inset: 0;
+  z-index: 72;
+  isolation: isolate;
+  --ai-glow-a: var(--accent);
+  --ai-glow-b: var(--accent-2);
+  --ai-glow-c: color-mix(in srgb, var(--accent) 46%, var(--accent-2));
+  --ai-brand-a: #67e8f9;
+  --ai-brand-b: #a78bfa;
+  --ai-brand-c: #f0abfc;
+  --ai-glass: rgba(18, 23, 35, 0.74);
+  --ai-glass-strong: rgba(245, 249, 255, 0.86);
+  --ai-ink: #f8fbff;
+  --ai-ink-dark: #172033;
+  --ai-muted: rgba(248, 251, 255, 0.68);
+  --ai-corner-card: 24px;
+  --ai-corner-panel: 16px;
+  --ai-corner-control: 12px;
+  overflow: hidden;
+  overflow: clip;
+  contain: paint;
+  pointer-events: none;
 }
 
-.ai-action-strip__copy {
+.ai-ambient::before {
+  position: absolute;
+  inset: -20%;
+  opacity: 0;
+  background:
+    radial-gradient(circle at 22% 18%, color-mix(in srgb, var(--ai-brand-a) 18%, transparent), transparent 28%),
+    radial-gradient(circle at 76% 24%, color-mix(in srgb, var(--ai-brand-b) 16%, transparent), transparent 30%),
+    radial-gradient(circle at 48% 82%, color-mix(in srgb, var(--ai-brand-c) 12%, transparent), transparent 34%);
+  filter: blur(38px) saturate(1.18);
+  content: "";
+  transform: translate3d(0, 0, 0);
+  backface-visibility: hidden;
+}
+
+.ai-ambient--loading::before {
+  opacity: 0.42;
+  animation: none;
+}
+
+.ai-ambient__wash {
+  position: absolute;
+  inset: -18%;
+  opacity: 0;
+  background:
+    radial-gradient(ellipse at 30% 44%, color-mix(in srgb, var(--ai-brand-a) 24%, transparent) 0 9%, transparent 34%),
+    radial-gradient(ellipse at 62% 56%, color-mix(in srgb, var(--ai-brand-b) 20%, transparent) 0 12%, transparent 38%),
+    conic-gradient(from 210deg at 50% 50%, transparent 0 20%, color-mix(in srgb, #fff 10%, transparent) 32%, color-mix(in srgb, var(--ai-brand-c) 14%, transparent) 44%, transparent 62% 100%);
+  filter: blur(30px) saturate(1.22);
+  transform: translate3d(0, 0, 0) scale(1.03);
+  backface-visibility: hidden;
+}
+
+.ai-ambient--loading .ai-ambient__wash {
+  opacity: 0.3;
+  animation: none;
+}
+
+.ai-ambient__liquid {
+  position: absolute;
+  inset: -16%;
+  opacity: 0;
+  background:
+    radial-gradient(ellipse at 22% 46%, color-mix(in srgb, var(--ai-brand-a) 16%, transparent) 0 8%, transparent 28%),
+    radial-gradient(ellipse at 58% 54%, color-mix(in srgb, var(--ai-brand-b) 14%, transparent) 0 10%, transparent 32%),
+    radial-gradient(ellipse at 76% 36%, color-mix(in srgb, var(--ai-brand-c) 12%, transparent) 0 7%, transparent 28%),
+    conic-gradient(from 220deg at 50% 50%, transparent 0 18%, color-mix(in srgb, #fff 8%, transparent) 30%, color-mix(in srgb, var(--ai-brand-a) 10%, transparent) 42%, transparent 60% 100%);
+  mix-blend-mode: screen;
+  transform: translate3d(-1.5%, -0.8%, 0) rotate(-2deg) scale(1.02);
+  backface-visibility: hidden;
+  pointer-events: none;
+}
+
+.ai-ambient--loading .ai-ambient__liquid {
+  opacity: 0.32;
+  animation: none;
+}
+
+.ai-ambient__frame {
+  position: fixed;
+  inset: 0;
+  opacity: 0;
+  border-radius: 0;
+  box-shadow:
+    0 0 48px color-mix(in srgb, var(--accent) 18%, transparent),
+    0 0 118px color-mix(in srgb, var(--accent-2) 12%, transparent);
+  overflow: hidden;
+  transition: none;
+  contain: paint;
+}
+
+.ai-ambient__frame::before,
+.ai-ambient__frame::after {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  content: "";
+}
+
+.ai-ambient__frame::before {
+  border: 1px solid color-mix(in srgb, var(--ai-glow-a) 18%, transparent);
+  box-shadow:
+    0 0 34px color-mix(in srgb, var(--ai-glow-a) 18%, transparent),
+    0 0 90px color-mix(in srgb, var(--ai-glow-b) 12%, transparent),
+    inset 0 0 0 1px color-mix(in srgb, #fff 5%, transparent);
+  opacity: 0.82;
+  animation: none;
+}
+
+.ai-ambient__frame::after {
+  inset: 5px;
+  border: 1px solid color-mix(in srgb, #fff 7%, transparent);
+  opacity: 0.24;
+}
+
+.ai-ambient--ready .ai-ambient__frame {
+  opacity: 1;
+}
+
+.ai-ambient__border-canvas {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.ai-ambient--ready .ai-ambient__border-canvas {
+  opacity: 1;
+}
+
+.ai-ambient__loading {
+  position: fixed;
+  left: 50%;
+  top: 94px;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 36px;
+  padding: 7px 12px;
+  transform: translateX(-50%);
+  color: var(--ink);
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
+  border-radius: 999px;
+  isolation: isolate;
+  overflow: hidden;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, #fff 16%, transparent), transparent 44%),
+    color-mix(in srgb, var(--surface) 78%, transparent);
+  box-shadow: 0 18px 54px color-mix(in srgb, #000 28%, transparent);
+  font-family: var(--font-data);
+  font-size: 0.68rem;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  pointer-events: none;
+  animation: none;
+}
+
+.ai-ambient__loading::before,
+.ai-ambient__loading::after {
+  position: absolute;
+  z-index: 0;
+  content: "";
+  pointer-events: none;
+}
+
+.ai-ambient__loading::before {
+  inset: -22px -42px;
+  background:
+    radial-gradient(ellipse at 28% 44%, color-mix(in srgb, var(--ai-brand-a) 42%, transparent) 0 12%, transparent 34%),
+    radial-gradient(ellipse at 60% 54%, color-mix(in srgb, var(--ai-brand-b) 34%, transparent) 0 14%, transparent 36%),
+    linear-gradient(110deg, transparent 0 22%, color-mix(in srgb, #fff 20%, transparent) 42%, color-mix(in srgb, var(--ai-brand-c) 20%, transparent) 54%, transparent 76% 100%);
+  transform: translate3d(-7%, -1%, 0) rotate(-4deg) scale(1.02);
+  animation: none;
+}
+
+.ai-ambient__loading::after {
+  inset: 1px;
+  border-radius: inherit;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, #fff 22%, transparent), transparent 46%),
+    radial-gradient(ellipse at 50% 112%, color-mix(in srgb, var(--ai-brand-a) 14%, transparent), transparent 58%);
+  transform: translate3d(0, 0, 0);
+  opacity: 0.8;
+}
+
+.ai-ambient__loading > * {
+  position: relative;
+  z-index: 1;
+}
+
+.ai-ambient__loading span {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--ai-brand-a), var(--ai-brand-b), var(--ai-brand-c));
+  box-shadow: 0 0 15px color-mix(in srgb, var(--ai-brand-b) 38%, transparent);
+  animation: none;
+}
+
+.ai-selection-aura {
+  position: fixed;
+  z-index: 74;
+  min-width: 18px;
+  min-height: 18px;
+  transform: translateZ(0);
+  border: 1px solid color-mix(in srgb, var(--ai-glow-a) 44%, transparent);
+  background: transparent;
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, #fff 8%, transparent) inset,
+    0 0 14px color-mix(in srgb, var(--ai-glow-a) 10%, transparent);
+  pointer-events: none;
+}
+
+.ai-selection-aura::after {
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  background:
+    linear-gradient(90deg, transparent, color-mix(in srgb, var(--ai-glow-a) 44%, transparent), color-mix(in srgb, #fff 24%, transparent), color-mix(in srgb, var(--ai-glow-b) 34%, transparent), transparent) 0 0 / 320% 2px no-repeat,
+    linear-gradient(180deg, transparent, color-mix(in srgb, var(--ai-glow-b) 34%, transparent), color-mix(in srgb, #fff 20%, transparent), transparent) 100% 0 / 2px 320% no-repeat,
+    linear-gradient(270deg, transparent, color-mix(in srgb, var(--ai-glow-c) 34%, transparent), color-mix(in srgb, #fff 20%, transparent), transparent) 100% 100% / 320% 2px no-repeat,
+    linear-gradient(0deg, transparent, color-mix(in srgb, var(--ai-glow-a) 30%, transparent), color-mix(in srgb, #fff 18%, transparent), transparent) 0 100% / 2px 320% no-repeat;
+  content: "";
+  opacity: 0.62;
+  animation: none;
+}
+
+.ai-selection-popover {
+  position: fixed;
+  z-index: 78;
+  width: var(--ai-bar-width);
+  height: 20px;
+  transform: translateY(-1px) translateZ(0);
+  pointer-events: auto;
+}
+
+.ai-selection-handle {
+  position: absolute;
+  inset: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 20px;
+  padding: 5px 0 4px;
+  transform: none;
+  color: var(--ai-ink);
+  border: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--ai-glow-a) 34%, transparent);
+  border-radius: 0 0 18px 18px;
+  corner-shape: squircle;
+  background:
+    linear-gradient(180deg, transparent 0 14%, color-mix(in srgb, #fff 8%, transparent) 36%, transparent 100%),
+    linear-gradient(90deg, color-mix(in srgb, var(--ai-glow-a) 16%, transparent), color-mix(in srgb, #fff 10%, transparent), color-mix(in srgb, var(--ai-glow-b) 14%, transparent), color-mix(in srgb, var(--ai-glow-a) 16%, transparent)) 0 0 / 100% 100%,
+    rgba(14, 18, 28, 0.62);
+  box-shadow:
+    0 9px 24px color-mix(in srgb, #000 14%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, #fff 9%, transparent);
+  font-family: var(--font-data);
+  font-size: 0.62rem;
+  font-weight: 900;
+  cursor: pointer;
+  backdrop-filter: blur(18px) saturate(1.4);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
+  transition:
+    min-height 260ms cubic-bezier(.2, 1.42, .32, 1),
+    transform 220ms cubic-bezier(.2, 1.42, .32, 1),
+    box-shadow 180ms ease,
+    opacity 180ms ease;
+  animation: none;
+}
+
+.ai-selection-handle::before,
+.ai-selection-handle::after {
+  position: absolute;
+  top: -2px;
+  bottom: 1px;
+  width: 1px;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--ai-glow-a) 38%, transparent),
+    color-mix(in srgb, var(--ai-glow-b) 30%, transparent),
+    color-mix(in srgb, var(--ai-glow-a) 24%, transparent)
+  );
+  content: "";
+  pointer-events: none;
+}
+
+.ai-selection-handle::before {
+  left: 0;
+}
+
+.ai-selection-handle::after {
+  right: 0;
+}
+
+.ai-selection-handle span {
+  width: 34px;
+  height: 3px;
+  border-radius: 999px;
+  corner-shape: squircle;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.7), currentColor, rgba(255, 255, 255, 0.72));
+  box-shadow: 0 0 10px color-mix(in srgb, currentColor 38%, transparent);
+}
+
+.ai-selection-popover:hover .ai-selection-handle,
+.ai-selection-handle:focus-visible {
+  min-height: 24px;
+  transform: translateY(0.5px);
+  outline: 0;
+}
+
+.ai-selection-card {
+  position: absolute;
+  left: var(--ai-card-left);
+  top: 20px;
+  display: grid;
+  gap: 11px;
+  width: var(--ai-card-width);
+  padding: 15px 14px 14px;
+  opacity: 0;
+  transform: translate(var(--ai-card-offset-x), calc(var(--ai-card-offset-y) - 8px)) scale(0.965);
+  transform-origin: top center;
+  filter: blur(6px);
+  color: var(--ai-ink-dark);
+  font-family: "Segoe UI Variable", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  border-radius: var(--ai-corner-card);
+  corner-shape: squircle;
+  background:
+    radial-gradient(circle at 18% 0%, rgba(255, 255, 255, 0.76), transparent 36%),
+    radial-gradient(circle at 90% 115%, color-mix(in srgb, var(--ai-glow-b) 22%, transparent), transparent 42%),
+    linear-gradient(145deg, rgba(249, 251, 255, 0.82), rgba(226, 233, 246, 0.62));
+  box-shadow:
+    0 28px 82px rgba(0, 0, 0, 0.34),
+    0 0 34px color-mix(in srgb, var(--ai-glow-a) 14%, transparent),
+    0 0 0 1px rgba(255, 255, 255, 0.16) inset,
+    inset 0 1px 0 rgba(255, 255, 255, 0.54);
+  backdrop-filter: blur(30px) saturate(1.65) contrast(1.04);
+  -webkit-backdrop-filter: blur(30px) saturate(1.65) contrast(1.04);
+  overflow: hidden;
+  pointer-events: none;
+  transition:
+    opacity 170ms ease,
+    filter 180ms ease,
+    transform 360ms cubic-bezier(.16, 1.28, .28, 1);
+}
+
+.ai-selection-card::before {
+  position: absolute;
+  inset: -34%;
+  z-index: 0;
+  border-radius: inherit;
+  corner-shape: inherit;
+  background:
+    linear-gradient(115deg, transparent 0 26%, color-mix(in srgb, var(--ai-glow-a) 8%, transparent) 40%, rgba(255, 255, 255, 0.14) 50%, color-mix(in srgb, var(--ai-glow-b) 8%, transparent) 62%, transparent 76%),
+    radial-gradient(circle at 26% 28%, rgba(255, 255, 255, 0.16), transparent 36%);
+  background-size: 320% 100%, 100% 100%;
+  opacity: 0.34;
+  content: "";
+  pointer-events: none;
+  animation: none;
+}
+
+.ai-selection-card::after {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  padding: 1px;
+  border-radius: inherit;
+  corner-shape: inherit;
+  background:
+    linear-gradient(125deg, color-mix(in srgb, var(--ai-glow-a) 34%, transparent), rgba(255, 255, 255, 0.34), color-mix(in srgb, var(--ai-glow-b) 26%, transparent), color-mix(in srgb, var(--ai-glow-c) 18%, transparent), color-mix(in srgb, var(--ai-glow-a) 34%, transparent)) 0 0 / 320% 320%;
+  content: "";
+  pointer-events: none;
+  opacity: 0.46;
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  animation: none;
+}
+
+.ai-selection-card > * {
+  position: relative;
+  z-index: 1;
+}
+
+.ai-selection-popover--above .ai-selection-card {
+  top: auto;
+  bottom: calc(var(--ai-selection-height) + 28px);
+  transform: translate(var(--ai-card-offset-x), calc(var(--ai-card-offset-y) + 8px)) scale(0.965);
+  transform-origin: bottom center;
+}
+
+.ai-selection-popover--expanded .ai-selection-card,
+.ai-selection-popover:focus-within .ai-selection-card {
+  opacity: 1;
+  filter: blur(0);
+  transform: translate(var(--ai-card-offset-x), var(--ai-card-offset-y)) scale(1);
+  pointer-events: auto;
+}
+
+.ai-selection-popover--above.ai-selection-popover--expanded .ai-selection-card,
+.ai-selection-popover--above:focus-within .ai-selection-card {
+  transform: translate(var(--ai-card-offset-x), var(--ai-card-offset-y)) scale(1);
+}
+
+.ai-selection-card__toolbar {
+  position: absolute;
+  top: 9px;
+  left: 12px;
+  right: 12px;
+  z-index: 3;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  justify-content: stretch;
+  min-width: 0;
+  min-height: 22px;
+  pointer-events: none;
+}
+
+.ai-selection-card__controls {
+  grid-column: 3;
+  display: flex;
+  align-items: center;
+  justify-self: end;
+  gap: 2px;
+  pointer-events: auto;
+}
+
+.ai-selection-card__toolbar button {
+  position: relative;
+  isolation: isolate;
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  color: rgba(23, 32, 51, 0.58);
+  border: 1px solid transparent;
+  border-radius: 999px;
+  corner-shape: squircle;
+  background: transparent;
+  box-shadow: none;
+  cursor: pointer;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  transition: transform 160ms cubic-bezier(.2, 1.35, .34, 1), color 160ms ease, border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
+}
+
+.ai-selection-card__control-bg {
+  position: absolute;
+  inset: 1px;
+  z-index: 0;
+  display: block;
+  border: 1px solid rgba(23, 32, 51, 0.1);
+  border-radius: 999px;
+  corner-shape: squircle;
+  background: rgba(255, 255, 255, 0.66);
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.12);
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+
+.ai-selection-card__toolbar button:hover {
+  transform: translateY(-0.5px);
+  color: #111827;
+}
+
+.ai-selection-card__toolbar button:focus-visible {
+  color: #111827;
+  background: transparent;
+  box-shadow: none;
+  outline: 1px solid color-mix(in srgb, var(--ai-glow-a) 58%, transparent);
+  outline-offset: 2px;
+}
+
+.ai-selection-card__toolbar button:hover .ai-selection-card__control-bg {
+  opacity: 1;
+}
+
+.ai-selection-card__control--hovered .ai-selection-card__control-bg {
+  opacity: 1;
+}
+
+.ai-selection-card__toolbar button:hover {
+  outline: 0;
+}
+
+.ai-selection-card__toolbar svg {
+  position: relative;
+  z-index: 1;
+  width: 12px;
+  height: 12px;
+  fill: currentColor;
+}
+
+.ai-selection-card__close svg {
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2.65;
+}
+
+.ai-selection-card__pin--active {
+  color: #f8fafc !important;
+  border-color: transparent !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.ai-selection-card__pin--active::after {
+  content: none;
+}
+
+.ai-selection-card__pin--active .ai-selection-card__control-bg {
+  border-color: rgba(255, 255, 255, 0.44);
+  background:
+    radial-gradient(circle at 30% 18%, rgba(255, 255, 255, 0.72), transparent 31%),
+    linear-gradient(135deg, color-mix(in srgb, var(--ai-brand-a) 80%, #111827), color-mix(in srgb, var(--ai-brand-b) 76%, #111827) 58%, color-mix(in srgb, var(--ai-brand-c) 70%, #111827));
+  box-shadow:
+    0 7px 20px color-mix(in srgb, var(--ai-brand-b) 28%, transparent),
+    0 0 18px color-mix(in srgb, var(--ai-brand-a) 22%, transparent),
+    0 0 0 1px rgba(255, 255, 255, 0.22) inset;
+  opacity: 1;
+}
+
+.ai-selection-card__pin--active:hover {
+  border-color: transparent !important;
+  background: transparent !important;
+}
+
+.ai-selection-card__pin--active:focus-visible {
+  background: transparent !important;
+}
+
+.ai-selection-card__drag {
+  grid-column: 2;
+  width: 46px !important;
+  height: 18px !important;
+  transform: none;
+  border-color: transparent !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  cursor: grab !important;
+  pointer-events: auto;
+}
+
+.ai-selection-card__drag:hover,
+.ai-selection-card__drag:focus-visible {
+  transform: translateY(-0.5px) scaleX(1.03) !important;
+}
+
+.ai-selection-card__drag:hover {
+  background: transparent !important;
+}
+
+.ai-selection-card__drag:focus-visible {
+  background: transparent !important;
+}
+
+.ai-selection-card__drag:active {
+  cursor: grabbing !important;
+}
+
+.ai-selection-card__drag-bar {
+  position: relative;
+  z-index: 1;
+  width: 34px;
+  height: 5px;
+  border-radius: 999px;
+  corner-shape: squircle;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(255, 255, 255, 0.36)),
+    color-mix(in srgb, #111827 16%, transparent);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.8) inset,
+    0 6px 12px rgba(15, 23, 42, 0.12);
+  animation: none;
+}
+
+.ai-selection-card__drag:hover .ai-selection-card__drag-bar,
+.ai-selection-card__drag:focus-visible .ai-selection-card__drag-bar {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(255, 255, 255, 0.44)),
+    color-mix(in srgb, var(--ai-glow-a) 26%, #111827 12%);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.84) inset,
+    0 0 16px color-mix(in srgb, var(--ai-glow-a) 18%, transparent);
+}
+
+.ai-selection-card__head {
   display: grid;
   gap: 3px;
   min-width: 0;
+  padding-right: 78px;
 }
 
-.ai-action-strip__copy strong {
-  color: var(--ink);
+.ai-selection-card__head span {
+  color: #4f46e5;
+  font-family: "Cascadia Mono", "SFMono-Regular", Consolas, ui-monospace, monospace;
+  font-size: 0.62rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.ai-selection-card__head strong,
+.ai-selection-card__head small,
+.ai-selection-card__head em {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-selection-card__head strong {
+  color: #111827;
   font-size: 0.86rem;
 }
 
-.ai-action-strip__copy span {
-  color: var(--muted);
-  font-size: 0.74rem;
-  line-height: 1.35;
+.ai-selection-card__head small {
+  color: #4b5563;
+  font-size: 0.7rem;
 }
 
-.ai-action-strip__actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
+.ai-selection-card__head em {
+  padding: 5px 7px;
+  color: #1f2937;
+  border: 1px solid rgba(23, 32, 51, 0.08);
+  border-radius: var(--ai-corner-control);
+  corner-shape: squircle;
+  background: rgba(255, 255, 255, 0.44);
+  font-size: 0.72rem;
+  font-style: normal;
+  font-weight: 650;
+}
+
+.ai-selection-card__suggestions {
+  display: grid;
+  gap: 4px;
+}
+
+.ai-selection-card__suggestions button {
+  min-height: 28px;
+  padding: 6px 8px;
+  color: #334155;
+  text-align: left;
+  border: 1px solid rgba(23, 32, 51, 0.06);
+  border-radius: var(--ai-corner-control);
+  corner-shape: squircle;
+  background: rgba(255, 255, 255, 0.28);
+  font-size: 0.72rem;
+  font-weight: 560;
+  line-height: 1.32;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
+}
+
+.ai-selection-card__suggestions button:hover {
+  transform: translateY(-1px);
+  color: #111827;
+  border-color: color-mix(in srgb, var(--ai-glow-a) 22%, rgba(23, 32, 51, 0.08));
+  background: rgba(255, 255, 255, 0.46);
+}
+
+.ai-selection-card__quick {
+  display: grid;
+  grid-template-columns: repeat(4, 34px);
   gap: 7px;
 }
 
-.ai-action-strip__button--active {
-  color: var(--ink);
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 16%, var(--surface-2));
+.ai-selection-card__quick button {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  color: #111827;
+  border: 1px solid rgba(23, 32, 51, 0.14);
+  border-radius: var(--ai-corner-control);
+  corner-shape: squircle;
+  background: rgba(255, 255, 255, 0.72);
+  cursor: pointer;
+  transition: transform 150ms ease, border-color 150ms ease, background 150ms ease;
 }
 
-.ai-action-strip__spinner {
-  display: inline-block;
-  width: 9px;
-  height: 9px;
-  margin-right: 5px;
-  border: 2px solid color-mix(in srgb, var(--accent) 30%, transparent);
-  border-top-color: var(--accent);
-  border-radius: 999px;
-  animation: ai-spin 0.8s linear infinite;
-  vertical-align: -1px;
+.ai-selection-card__quick button:hover,
+.ai-selection-card__quick button:focus-visible {
+  transform: translateY(-1px);
+  color: #0f172a;
+  border-color: rgba(103, 232, 249, 0.38);
+  background: rgba(255, 255, 255, 0.78);
+  outline: 0;
 }
 
-@keyframes ai-spin {
-  to { transform: rotate(360deg); }
+.ai-selection-card__quick svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.ai-selection-card__prompt {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 7px;
+  padding: 6px;
+  border: 1px solid rgba(23, 32, 51, 0.14);
+  border-radius: var(--ai-corner-panel);
+  corner-shape: squircle;
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.ai-selection-card__prompt input {
+  min-width: 0;
+  min-height: 32px;
+  padding: 7px 8px;
+  color: #111827;
+  border: 0;
+  background: transparent;
+  font-family: "Segoe UI Variable", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.ai-selection-card__prompt input::placeholder {
+  color: #64748b;
+}
+
+.ai-selection-card__prompt input:focus {
+  outline: 0;
+}
+
+.ai-selection-card__prompt button {
+  min-height: 32px;
+  padding: 7px 11px;
+  color: #f8fafc;
+  border: 0;
+  border-radius: var(--ai-corner-control);
+  corner-shape: squircle;
+  background:
+    radial-gradient(circle at 28% 8%, rgba(255, 255, 255, 0.44), transparent 32%),
+    linear-gradient(135deg, color-mix(in srgb, var(--ai-brand-a) 80%, #111827), color-mix(in srgb, var(--ai-brand-b) 76%, #111827) 58%, color-mix(in srgb, var(--ai-brand-c) 70%, #111827));
+  box-shadow:
+    0 8px 20px color-mix(in srgb, var(--ai-brand-b) 20%, transparent),
+    0 0 0 1px rgba(255, 255, 255, 0.2) inset;
+  font-family: "Segoe UI Variable", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.64rem;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+@keyframes ai-ambient-wash {
+  0% { opacity: 0.12; transform: translateX(-8%) scale(1.02); }
+  50% { opacity: 0.34; }
+  100% { opacity: 0.18; transform: translateX(8%) scale(1.02); }
+}
+
+@keyframes ai-loading-orbit {
+  0% { transform: rotate(0deg) scale(1); opacity: 0.38; }
+  50% { transform: rotate(12deg) scale(1.025); opacity: 0.56; }
+  100% { transform: rotate(24deg) scale(1); opacity: 0.42; }
+}
+
+@keyframes ai-loading-pulse {
+  0%, 100% { transform: scale(0.96); opacity: 0.76; }
+  50% { transform: scale(1.05); opacity: 0.92; }
+}
+
+@keyframes ai-loading-water-sweep {
+  0% { transform: translate3d(-8%, -1%, 0) rotate(-4deg) scale(1.02); }
+  100% { transform: translate3d(8%, 1%, 0) rotate(4deg) scale(1.05); }
+}
+
+@keyframes ai-loading-dot-tide {
+  0% { transform: scale(0.92); }
+  100% { transform: scale(1.08); }
+}
+
+@keyframes ai-loading-out {
+  to { opacity: 0; transform: translateX(-50%) translateY(-8px) scale(0.98); }
+}
+
+@keyframes ai-frame-arrive {
+  0% { opacity: 0; transform: scale(0.992); filter: blur(8px); }
+  100% { opacity: 1; transform: scale(1); filter: blur(0); }
+}
+
+@keyframes ai-frame-flow {
+  0% {
+    background-position:
+      -160% 0,
+      100% -160%,
+      260% 100%,
+      0 260%;
+  }
+  100% {
+    background-position:
+      260% 0,
+      100% 260%,
+      -160% 100%,
+      0 -160%;
+  }
+}
+
+@keyframes ai-frame-orbit-top-ccw {
+  0% { transform: translate3d(112vw, 0, 0); }
+  100% { transform: translate3d(-34vw, 0, 0); }
+}
+
+@keyframes ai-frame-orbit-right-ccw {
+  0% { transform: translate3d(0, 112vh, 0) rotate(90deg); }
+  100% { transform: translate3d(0, -34vh, 0) rotate(90deg); }
+}
+
+@keyframes ai-frame-orbit-bottom-ccw {
+  0% { transform: translate3d(-34vw, 0, 0); }
+  100% { transform: translate3d(112vw, 0, 0); }
+}
+
+@keyframes ai-frame-orbit-left-ccw {
+  0% { transform: translate3d(0, -34vh, 0) rotate(90deg); }
+  100% { transform: translate3d(0, 112vh, 0) rotate(90deg); }
+}
+
+@keyframes ai-selection-breathe {
+  0%, 100% {
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, #fff 8%, transparent) inset,
+      0 0 18px color-mix(in srgb, var(--ai-glow-a) 12%, transparent);
+  }
+  50% {
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, #fff 12%, transparent) inset,
+      0 0 26px color-mix(in srgb, var(--ai-glow-b) 16%, transparent);
+  }
+}
+
+@keyframes ai-selection-flow {
+  0% {
+    background-position:
+      -160% 0,
+      100% -160%,
+      260% 100%,
+      0 260%;
+  }
+  100% {
+    background-position:
+      260% 0,
+      100% 260%,
+      -160% 100%,
+      0 -160%;
+  }
+}
+
+@keyframes ai-ridge-flow {
+  0% { opacity: 0.42; transform: translateX(-14%) scaleX(0.72); }
+  48% { opacity: 1; transform: translateX(0) scaleX(1); }
+  100% { opacity: 0.42; transform: translateX(14%) scaleX(0.72); }
+}
+
+@keyframes ai-handle-flow {
+  0% { background-position: 0 0; }
+  100% { background-position: 360% 0; }
+}
+
+@keyframes ai-card-glass-flow {
+  0% {
+    background-position: -80% 0, 0 0;
+    transform: rotate(0deg) translateX(-0.8%);
+  }
+  100% {
+    background-position: 180% 0, 0 0;
+    transform: rotate(0deg) translateX(0.8%);
+  }
+}
+
+@keyframes ai-card-border-flow {
+  0% { background-position: 0 0; }
+  100% { background-position: 260% 260%; }
 }
 
 .ai-preflight {
@@ -1398,6 +2242,14 @@ select {
 .field-row--compact label,
 .field-row--compact input {
   width: 132px;
+}
+
+.review-run-row {
+  align-items: flex-end;
+}
+
+.review-run-row .btn {
+  min-height: 37px;
 }
 
 .json-paste {
@@ -4822,6 +5674,20 @@ summary:focus-visible {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .ai-ambient::before,
+  .ai-ambient__wash,
+  .ai-ambient__liquid,
+  .ai-ambient__frame::before,
+  .ai-ambient__border-canvas,
+  .ai-ambient__frame,
+  .ai-ambient__loading,
+  .ai-ambient__loading::before,
+  .ai-ambient__loading::after,
+  .ai-ambient__loading span,
+  .ai-selection-aura,
+  .ai-selection-aura::after,
+  .ai-selection-card,
+  .ai-selection-handle,
   :root[data-skin="phantom"] *,
   :root[data-skin="phantom"] *::before,
   :root[data-skin="phantom"] *::after {
@@ -5036,4 +5902,345 @@ summary:focus-visible {
   :root[data-skin="phantom"] .rail__item:focus-visible .rail__label {
     transform: none;
   }
+}
+
+/* AI Assist is a system overlay, not a skin surface. Keep it stable across themes. */
+:root[data-skin] .ai-ambient--ready .ai-ambient__frame {
+  opacity: 1;
+  animation: none;
+  box-shadow:
+    0 0 58px color-mix(in srgb, var(--ai-glow-a) 24%, transparent),
+    0 0 128px color-mix(in srgb, var(--ai-glow-b) 16%, transparent),
+    0 0 0 1px color-mix(in srgb, #fff 6%, transparent) inset;
+}
+
+:root[data-skin] .ai-ambient__frame::before {
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--ai-glow-a) 52%, transparent), color-mix(in srgb, #fff 38%, transparent), color-mix(in srgb, var(--ai-glow-b) 42%, transparent), color-mix(in srgb, var(--ai-glow-a) 52%, transparent)) 0 0 / 100% 4px no-repeat,
+    linear-gradient(180deg, color-mix(in srgb, var(--ai-glow-b) 42%, transparent), color-mix(in srgb, #fff 30%, transparent), color-mix(in srgb, var(--ai-glow-c) 36%, transparent), color-mix(in srgb, var(--ai-glow-b) 42%, transparent)) 100% 0 / 4px 100% no-repeat,
+    linear-gradient(270deg, color-mix(in srgb, var(--ai-glow-c) 38%, transparent), color-mix(in srgb, #fff 32%, transparent), color-mix(in srgb, var(--ai-glow-a) 40%, transparent), color-mix(in srgb, var(--ai-glow-c) 38%, transparent)) 100% 100% / 100% 4px no-repeat,
+    linear-gradient(0deg, color-mix(in srgb, var(--ai-glow-a) 36%, transparent), color-mix(in srgb, #fff 26%, transparent), color-mix(in srgb, var(--ai-glow-b) 36%, transparent), color-mix(in srgb, var(--ai-glow-a) 36%, transparent)) 0 100% / 4px 100% no-repeat;
+  opacity: 0.7;
+  animation: none;
+}
+
+:root[data-skin] .ai-selection-aura {
+  border-color: color-mix(in srgb, var(--ai-glow-a) 44%, transparent);
+  background: transparent;
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, #fff 8%, transparent) inset,
+    0 0 14px color-mix(in srgb, var(--ai-glow-a) 10%, transparent);
+  animation: none;
+}
+
+:root[data-skin] .ai-selection-handle,
+:root[data-skin] .ai-selection-popover--above .ai-selection-handle {
+  color: var(--ai-ink);
+  border: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--ai-glow-a) 34%, transparent);
+  border-radius: 0 0 18px 18px;
+  corner-shape: squircle;
+  background:
+    linear-gradient(180deg, transparent 0 14%, color-mix(in srgb, #fff 8%, transparent) 36%, transparent 100%),
+    linear-gradient(90deg, color-mix(in srgb, var(--ai-glow-a) 16%, transparent), color-mix(in srgb, #fff 10%, transparent), color-mix(in srgb, var(--ai-glow-b) 14%, transparent), color-mix(in srgb, var(--ai-glow-a) 16%, transparent)) 0 0 / 100% 100%,
+    rgba(14, 18, 28, 0.62);
+}
+
+:root[data-skin] .ai-selection-card {
+  color: var(--ai-ink-dark);
+  font-family: "Segoe UI Variable", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  border-radius: var(--ai-corner-card);
+  corner-shape: squircle;
+  background:
+    radial-gradient(circle at 18% 0%, rgba(255, 255, 255, 0.76), transparent 36%),
+    radial-gradient(circle at 90% 115%, color-mix(in srgb, var(--ai-glow-b) 22%, transparent), transparent 42%),
+    linear-gradient(145deg, rgba(249, 251, 255, 0.82), rgba(226, 233, 246, 0.62));
+  box-shadow:
+    0 28px 82px rgba(0, 0, 0, 0.34),
+    0 0 34px color-mix(in srgb, var(--ai-glow-a) 14%, transparent),
+    0 0 0 1px rgba(255, 255, 255, 0.16) inset,
+    inset 0 1px 0 rgba(255, 255, 255, 0.54);
+  backdrop-filter: blur(30px) saturate(1.65) contrast(1.04);
+  -webkit-backdrop-filter: blur(30px) saturate(1.65) contrast(1.04);
+}
+
+:root[data-skin] .ai-selection-card__head span {
+  color: #4f46e5;
+}
+
+:root[data-skin] .ai-selection-card__head strong,
+:root[data-skin] .ai-selection-card__head small,
+:root[data-skin] .ai-selection-card__head em,
+:root[data-skin] .ai-selection-card__suggestions button,
+:root[data-skin] .ai-selection-card__quick button,
+:root[data-skin] .ai-selection-card__prompt input {
+  color: var(--ai-ink-dark);
+  text-shadow: none;
+}
+
+:root[data-skin] .ai-selection-card__toolbar {
+  position: absolute;
+  top: 9px;
+  left: 12px;
+  right: 12px;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  min-height: 22px;
+  pointer-events: none;
+}
+
+:root[data-skin] .ai-selection-card__controls {
+  grid-column: 3;
+  display: flex;
+  align-items: center;
+  justify-self: end;
+  gap: 2px;
+  pointer-events: auto;
+}
+
+:root[data-skin] .ai-selection-card__toolbar button {
+  position: relative;
+  isolation: isolate;
+  width: 22px;
+  height: 22px;
+  color: rgba(23, 32, 51, 0.58);
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+:root[data-skin] .ai-selection-card__control-bg {
+  position: absolute;
+  inset: 1px;
+  z-index: 0;
+  display: block;
+  border: 1px solid rgba(23, 32, 51, 0.1);
+  border-radius: 999px;
+  corner-shape: squircle;
+  background: rgba(255, 255, 255, 0.66);
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.12);
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+
+:root[data-skin] .ai-selection-card__toolbar button:hover {
+  color: #111827;
+}
+
+:root[data-skin] .ai-selection-card__toolbar button:hover .ai-selection-card__control-bg {
+  opacity: 1;
+}
+
+:root[data-skin] .ai-selection-card__control--hovered .ai-selection-card__control-bg {
+  opacity: 1;
+}
+
+:root[data-skin] .ai-selection-card__toolbar button:focus-visible {
+  color: #111827;
+  background: transparent;
+  box-shadow: none;
+  outline: 1px solid color-mix(in srgb, var(--ai-glow-a) 58%, transparent);
+  outline-offset: 2px;
+}
+
+:root[data-skin] .ai-selection-card__toolbar svg {
+  position: relative;
+  z-index: 1;
+  width: 12px;
+  height: 12px;
+}
+
+:root[data-skin] .ai-selection-card__close svg {
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2.65;
+}
+
+:root[data-skin] .ai-selection-card__pin--active {
+  color: #f8fafc !important;
+  border-color: transparent !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+:root[data-skin] .ai-selection-card__pin--active::after {
+  content: none;
+}
+
+:root[data-skin] .ai-selection-card__pin--active .ai-selection-card__control-bg {
+  border-color: rgba(255, 255, 255, 0.44);
+  background:
+    radial-gradient(circle at 30% 18%, rgba(255, 255, 255, 0.72), transparent 31%),
+    linear-gradient(135deg, color-mix(in srgb, var(--ai-brand-a) 80%, #111827), color-mix(in srgb, var(--ai-brand-b) 76%, #111827) 58%, color-mix(in srgb, var(--ai-brand-c) 70%, #111827));
+  box-shadow:
+    0 7px 20px color-mix(in srgb, var(--ai-brand-b) 28%, transparent),
+    0 0 18px color-mix(in srgb, var(--ai-brand-a) 22%, transparent),
+    0 0 0 1px rgba(255, 255, 255, 0.22) inset;
+  opacity: 1;
+}
+
+:root[data-skin] .ai-selection-card__pin--active:hover {
+  border-color: transparent !important;
+  background: transparent !important;
+}
+
+:root[data-skin] .ai-selection-card__pin--active:focus-visible {
+  background: transparent !important;
+}
+
+:root[data-skin] .ai-selection-card__toolbar .ai-selection-card__pin--active:hover {
+  border-color: transparent !important;
+  background: transparent !important;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.12);
+}
+
+:root[data-skin] .ai-selection-card__drag {
+  grid-column: 2;
+  width: 46px !important;
+  height: 18px !important;
+  transform: none;
+  border-color: transparent !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  pointer-events: auto;
+}
+
+:root[data-skin] .ai-selection-card__drag:hover,
+:root[data-skin] .ai-selection-card__drag:focus-visible {
+  transform: translateY(-0.5px) scaleX(1.03) !important;
+}
+
+:root[data-skin] .ai-selection-card__drag:hover {
+  background: transparent !important;
+}
+
+:root[data-skin] .ai-selection-card__drag:focus-visible {
+  background: transparent !important;
+}
+
+:root[data-skin] .ai-selection-card__drag-bar {
+  position: relative;
+  z-index: 1;
+  width: 34px;
+  height: 5px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(255, 255, 255, 0.36)),
+    color-mix(in srgb, #111827 16%, transparent);
+}
+
+:root[data-skin] .ai-selection-card__drag:hover .ai-selection-card__drag-bar,
+:root[data-skin] .ai-selection-card__drag:focus-visible .ai-selection-card__drag-bar {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(255, 255, 255, 0.44)),
+    color-mix(in srgb, var(--ai-glow-a) 26%, #111827 12%);
+}
+
+:root[data-skin] .ai-selection-card__head {
+  padding-right: 78px;
+}
+
+:root[data-skin] .ai-selection-card__head strong {
+  color: #111827;
+}
+
+:root[data-skin] .ai-selection-card__head small {
+  color: #4b5563;
+}
+
+:root[data-skin] .ai-selection-card__head em {
+  color: #1f2937;
+  border: 1px solid rgba(23, 32, 51, 0.08);
+  background: rgba(255, 255, 255, 0.44);
+}
+
+:root[data-skin] .ai-selection-card__suggestions button {
+  color: #334155;
+  border: 1px solid rgba(23, 32, 51, 0.06);
+  background: rgba(255, 255, 255, 0.28);
+  font-size: 0.72rem;
+  font-weight: 560;
+  line-height: 1.32;
+}
+
+:root[data-skin] .ai-selection-card__suggestions button:hover {
+  color: #111827;
+  border-color: color-mix(in srgb, var(--ai-glow-a) 22%, rgba(23, 32, 51, 0.08));
+  background: rgba(255, 255, 255, 0.46);
+}
+
+:root[data-skin] .ai-selection-card__quick button {
+  color: #111827;
+  border: 1px solid rgba(23, 32, 51, 0.14);
+  background: rgba(255, 255, 255, 0.72);
+}
+
+:root[data-skin] .ai-selection-card__quick button:hover,
+:root[data-skin] .ai-selection-card__quick button:focus-visible {
+  color: #0f172a;
+  border-color: rgba(103, 232, 249, 0.38);
+  background: rgba(255, 255, 255, 0.78);
+}
+
+:root[data-skin] .ai-selection-card__prompt {
+  border: 1px solid rgba(23, 32, 51, 0.14);
+  background: rgba(255, 255, 255, 0.82);
+}
+
+:root[data-skin] .ai-selection-card__prompt input {
+  color: #111827;
+  font-family: "Segoe UI Variable", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+:root[data-skin] .ai-selection-card__prompt input::placeholder {
+  color: #64748b;
+}
+
+:root[data-skin] .ai-selection-card__prompt button {
+  color: #f8fafc;
+  background:
+    radial-gradient(circle at 28% 8%, rgba(255, 255, 255, 0.44), transparent 32%),
+    linear-gradient(135deg, color-mix(in srgb, var(--ai-brand-a) 80%, #111827), color-mix(in srgb, var(--ai-brand-b) 76%, #111827) 58%, color-mix(in srgb, var(--ai-brand-c) 70%, #111827));
+  box-shadow:
+    0 8px 20px color-mix(in srgb, var(--ai-brand-b) 20%, transparent),
+    0 0 0 1px rgba(255, 255, 255, 0.2) inset;
+  font-family: "Segoe UI Variable", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+}
+
+:root[data-skin] .ai-selection-card__toolbar button:hover .ai-selection-card__control-bg,
+.ai-selection-card__toolbar button:hover .ai-selection-card__control-bg,
+:root[data-skin] .ai-selection-card__control--hovered .ai-selection-card__control-bg,
+.ai-selection-card__control--hovered .ai-selection-card__control-bg {
+  opacity: 1;
+}
+
+:root[data-skin] .ai-selection-card__toolbar button:focus-visible .ai-selection-card__control-bg,
+.ai-selection-card__toolbar button:focus-visible .ai-selection-card__control-bg {
+  opacity: 0;
+}
+
+:root[data-skin] .ai-selection-card__control--hovered > .ai-selection-card__control-bg,
+.ai-selection-card__control--hovered > .ai-selection-card__control-bg {
+  opacity: 1 !important;
+}
+
+:root[data-skin] .ai-selection-card__pin--active > .ai-selection-card__control-bg,
+.ai-selection-card__pin--active > .ai-selection-card__control-bg {
+  border-color: rgba(255, 255, 255, 0.44);
+  background:
+    radial-gradient(circle at 30% 18%, rgba(255, 255, 255, 0.72), transparent 31%),
+    linear-gradient(135deg, color-mix(in srgb, var(--ai-brand-a) 80%, #111827), color-mix(in srgb, var(--ai-brand-b) 76%, #111827) 58%, color-mix(in srgb, var(--ai-brand-c) 70%, #111827));
+  box-shadow:
+    0 7px 20px color-mix(in srgb, var(--ai-brand-b) 28%, transparent),
+    0 0 18px color-mix(in srgb, var(--ai-brand-a) 22%, transparent),
+    0 0 0 1px rgba(255, 255, 255, 0.22) inset;
+  opacity: 1 !important;
 }
