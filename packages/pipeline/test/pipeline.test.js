@@ -16,6 +16,7 @@ import {
   buildMediaEditRequest,
   createContentBundle,
   createAiEditSuggestions,
+  createAiEditSuggestionsFromEndpoint,
   createDiagnosticFeedback,
   generateAssetDrafts,
   generateCardDrafts,
@@ -362,6 +363,116 @@ describe("ReignsAgent pipeline", () => {
     assert.equal(generateRequest.context.selection.cards[0].id, "opening");
     assert.equal(analyzePlan.proposals[0].patches.length, 0);
     assert.equal(assetPlan.proposals[0].patches[0].op, "upsertAsset");
+  });
+
+  it("builds AI edit proposals from a responses endpoint without echoing secrets", async () => {
+    const calls = [];
+    const bundle = createContentBundle({ cards: binaryCards(), metadata: { title: "Court Test" } });
+    const plan = await createAiEditSuggestionsFromEndpoint({
+      bundle,
+      mode: "generate_cards",
+      config: {
+        provider: "responses",
+        endpoint: "http://endpoint.test/v1",
+        modelId: "draft-model",
+        capabilities: ["structuredJson"],
+        apiKeyRef: "browser-local",
+        apiKey: "must-not-return"
+      },
+      credentials: { apiKey: "secret-key" },
+      instruction: "Rename the first choice.",
+      fetchImpl: async (url, options) => {
+        calls.push({ url, options, body: JSON.parse(options.body) });
+        return {
+          ok: true,
+          status: 200,
+          text: async () => JSON.stringify({
+            output: [{
+              content: [{
+                text: "```json\n{\"proposals\":[{\"id\":\"rename-left\",\"title\":\"Rename left\",\"summary\":\"Tightens the label.\",\"patches\":[{\"op\":\"setChoiceLabel\",\"cardId\":\"opening\",\"choiceId\":\"left\",\"label\":\"Listen\"}]}]}\n```"
+              }]
+            }]
+          })
+        };
+      }
+    });
+
+    assert.equal(calls[0].url, "http://endpoint.test/v1/responses");
+    assert.equal(calls[0].options.headers.authorization, "Bearer secret-key");
+    assert.equal(calls[0].body.model, "draft-model");
+    assert.equal(calls[0].body.text.format.type, "json_object");
+    assert.equal(plan.proposals[0].patches[0].label, "Listen");
+    assert.equal(plan.config.apiKey, undefined);
+    assert.equal(JSON.stringify(plan).includes("secret-key"), false);
+    assert.equal(JSON.stringify(plan).includes("must-not-return"), false);
+  });
+
+  it("formats messages and completions endpoint requests", async () => {
+    const bundle = createContentBundle({ cards: binaryCards() });
+    const calls = [];
+    const makeFetch = (payload) => async (url, options) => {
+      calls.push({ url, body: JSON.parse(options.body) });
+      return { ok: true, status: 200, text: async () => JSON.stringify(payload) };
+    };
+
+    const chatPlan = await createAiEditSuggestionsFromEndpoint({
+      bundle,
+      config: { provider: "messages", endpoint: "http://endpoint.test/openai/chat/completions", modelId: "chat-model" },
+      fetchImpl: makeFetch({
+        choices: [{
+          message: {
+            content: JSON.stringify({
+              proposals: [{ id: "chat-label", title: "Chat label", patches: [{ op: "setChoiceLabel", cardId: "opening", choiceId: "left", label: "Hear" }] }]
+            })
+          }
+        }]
+      })
+    });
+    const completionPlan = await createAiEditSuggestionsFromEndpoint({
+      bundle,
+      config: { provider: "completions", endpoint: "http://endpoint.test/v1", modelId: "completion-model" },
+      fetchImpl: makeFetch({
+        choices: [{
+          text: JSON.stringify({
+            proposals: [{ id: "completion-label", title: "Completion label", patches: [{ op: "setChoiceLabel", cardId: "opening", choiceId: "right", label: "Wait" }] }]
+          })
+        }]
+      })
+    });
+
+    assert.equal(calls[0].url, "http://endpoint.test/openai/chat/completions");
+    assert.equal(calls[0].body.messages[0].role, "system");
+    assert.equal(calls[0].body.response_format.type, "json_object");
+    assert.equal(chatPlan.proposals[0].patches[0].label, "Hear");
+    assert.equal(calls[1].url, "http://endpoint.test/v1/completions");
+    assert.match(calls[1].body.prompt, /Return only valid JSON/);
+    assert.equal(completionPlan.proposals[0].patches[0].label, "Wait");
+  });
+
+  it("rejects malformed endpoint proposals before returning a plan", async () => {
+    const bundle = createContentBundle({ cards: binaryCards() });
+    await assert.rejects(
+      () => createAiEditSuggestionsFromEndpoint({
+        bundle,
+        config: { provider: "responses", endpoint: "http://endpoint.test/v1", modelId: "draft-model" },
+        fetchImpl: async () => ({
+          ok: true,
+          status: 200,
+          text: async () => JSON.stringify({
+            proposals: [{ id: "bad-patch", title: "Bad patch", patches: [{ op: "removeCard", cardId: "opening" }] }]
+          })
+        })
+      }),
+      /Unsupported AI edit patch op/
+    );
+    await assert.rejects(
+      () => createAiEditSuggestionsFromEndpoint({
+        bundle,
+        config: { provider: "responses", endpoint: "http://endpoint.test/v1", modelId: "draft-model" },
+        fetchImpl: async () => ({ ok: true, status: 200, text: async () => JSON.stringify({ nope: [] }) })
+      }),
+      /proposals array/
+    );
   });
 
   it("converts card files through the local content tool", async () => {

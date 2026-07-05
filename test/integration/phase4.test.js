@@ -239,6 +239,68 @@ describe("Phase 4 interface integration", () => {
 
     assert.equal(server.exitCode === null || server.exitCode === 0 || server.signalCode === "SIGTERM", true, stderr);
   });
+
+  it("builds AI Assist plans through configured text endpoints", async () => {
+    const port = await reservePort();
+    const mock = await startMockAiEndpoint();
+    const server = spawn(process.execPath, ["scripts/dev-server.mjs"], {
+      env: { ...process.env, PORT: String(port) },
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+
+    try {
+      await waitForServer(port, server);
+      const endpoint = `http://127.0.0.1:${mock.port}/v1`;
+      const plans = [];
+      for (const provider of ["responses", "messages", "completions"]) {
+        plans.push(await api(port, "/api/ai/edit/plan", {
+          method: "POST",
+          body: {
+            mode: "generate_cards",
+            config: { provider, endpoint, modelId: `${provider}-model`, apiKeyRef: "browser-local" },
+            credentials: { apiKey: "secret-integration-key" },
+            instruction: `Build with ${provider}.`
+          }
+        }));
+      }
+
+      assert.deepEqual(mock.requests.map((request) => request.path), ["/v1/responses", "/v1/chat/completions", "/v1/completions"]);
+      assert.equal(mock.requests.every((request) => request.authorization === "Bearer secret-integration-key"), true);
+      assert.equal(mock.requests[0].body.model, "responses-model");
+      assert.equal(mock.requests[1].body.messages[0].role, "system");
+      assert.match(mock.requests[2].body.prompt, /Return only valid JSON/);
+      assert.equal(plans.every((plan) => JSON.stringify(plan).includes("secret-integration-key") === false), true);
+      assert.deepEqual(plans.map((plan) => plan.proposals[0].patches[0].op), ["setMetadata", "setChoiceLabel", "setChoiceLabel"]);
+
+      const failed = await apiError(port, "/api/ai/edit/plan", {
+        method: "POST",
+        body: {
+          config: { provider: "responses", endpoint: `http://127.0.0.1:${mock.port}/fail`, modelId: "bad-model" },
+          credentials: { apiKey: "secret-integration-key" }
+        }
+      });
+      assert.equal(failed.code, "endpoint_http_error");
+
+      const malformed = await apiError(port, "/api/ai/edit/plan", {
+        method: "POST",
+        body: {
+          config: { provider: "responses", endpoint: `http://127.0.0.1:${mock.port}/malformed`, modelId: "bad-model" },
+          credentials: { apiKey: "secret-integration-key" }
+        }
+      });
+      assert.equal(malformed.code, "endpoint_invalid_response");
+
+      const applied = await api(port, "/api/ai/edit/apply", {
+        method: "POST",
+        body: { plan: plans[0], proposalIds: [plans[0].proposals[0].id] }
+      });
+      assert.equal(applied.applied, true);
+      assert.equal(applied.bundle.metadata.title, "Endpoint Court");
+    } finally {
+      await stopServer(server);
+      await mock.close();
+    }
+  });
 });
 
 async function api(port, path, options = {}) {
@@ -289,6 +351,93 @@ async function reservePort() {
       server.close(() => resolve(address.port));
     });
   });
+}
+
+async function startMockAiEndpoint() {
+  const requests = [];
+  const server = createServer(async (req, res) => {
+    const body = await readRequestJson(req);
+    requests.push({
+      path: new URL(req.url, "http://127.0.0.1").pathname,
+      authorization: req.headers.authorization,
+      body
+    });
+
+    if (req.url.startsWith("/fail")) {
+      res.writeHead(503, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "offline" }));
+      return;
+    }
+
+    if (req.url.startsWith("/malformed")) {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ nope: [] }));
+      return;
+    }
+
+    res.writeHead(200, { "content-type": "application/json" });
+    if (req.url.endsWith("/responses")) {
+      res.end(JSON.stringify({
+        output_text: JSON.stringify({
+          proposals: [{
+            id: "endpoint-title",
+            title: "Endpoint title",
+            summary: "Renames the project.",
+            patches: [{ op: "setMetadata", metadata: { title: "Endpoint Court" } }]
+          }]
+        })
+      }));
+      return;
+    }
+    if (req.url.endsWith("/chat/completions")) {
+      res.end(JSON.stringify({
+        choices: [{
+          message: {
+            content: JSON.stringify({
+              proposals: [{
+                id: "endpoint-chat-label",
+                title: "Endpoint chat label",
+                summary: "Renames the left choice.",
+                patches: [{ op: "setChoiceLabel", cardId: "gate-audience", choiceId: "left", label: "Hear" }]
+              }]
+            })
+          }
+        }]
+      }));
+      return;
+    }
+    res.end(JSON.stringify({
+      choices: [{
+        text: JSON.stringify({
+          proposals: [{
+            id: "endpoint-completion-label",
+            title: "Endpoint completion label",
+            summary: "Renames the right choice.",
+            patches: [{ op: "setChoiceLabel", cardId: "gate-audience", choiceId: "right", label: "Wait" }]
+          }]
+        })
+      }]
+    }));
+  });
+
+  await new Promise((resolve, reject) => {
+    server.on("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  return {
+    port: server.address().port,
+    requests,
+    close: () => new Promise((resolve) => server.close(resolve))
+  };
+}
+
+async function readRequestJson(req) {
+  const chunks = [];
+  for await (const chunk of req) {
+    chunks.push(chunk);
+  }
+  const text = Buffer.concat(chunks).toString("utf8");
+  return text ? JSON.parse(text) : null;
 }
 
 async function waitForServer(port, child) {

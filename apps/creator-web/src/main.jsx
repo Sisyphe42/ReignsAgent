@@ -406,7 +406,15 @@ function App() {
 
   async function buildAiEditPlan(form) {
     return runAction("Building AI Assist draft", async () => {
-      const result = await api("/api/ai/edit/plan", { method: "POST", body: form });
+      const result = await api("/api/ai/edit/plan", {
+        method: "POST",
+        body: {
+          ...form,
+          credentials: {
+            apiKey: normalizeAiSettings(aiSettings).apiKey
+          }
+        }
+      });
       setStatus(`AI Assist draft ready: ${result.proposals?.length ?? 0} proposals`);
       return result;
     });
@@ -4054,7 +4062,7 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, aiAssistEnabled, aiCon
           <small>
             {aiConfigured
               ? `${aiSettings.protocol} · ${aiSettings.baseUrl}`
-              : "No endpoint configured. Real provider calls are not active in this UX shell."}
+              : "No endpoint configured. Local draft planning remains available."}
           </small>
         </div>
         <button className="btn btn--ghost btn--compact" type="button" onClick={() => onOpen("settings")}>Settings</button>
@@ -4219,7 +4227,7 @@ function SettingsPanel({ editor, aiSettings, onAiSettingsChange, onRefresh, onSt
       setTestStatus("Add a base URL and model id before real provider calls.");
       return;
     }
-    setTestStatus(`Ready to build ${aiSettings.protocol} requests for ${aiSettings.modelId}. Network calls are not enabled in this shell.`);
+    setTestStatus(`Ready to build ${aiSettings.protocol} requests for ${aiSettings.modelId}. Draft generation will call this endpoint.`);
   }
 
   return (

@@ -4,6 +4,7 @@ import { describe, it } from "node:test";
 import {
   applyAiEditPlan,
   buildAiEditPlan,
+  buildAiEditPlanAsync,
   buildGenerationPlan,
   createCardEditor,
   createConnectorConfig,
@@ -369,6 +370,72 @@ describe("ReignsAgent interface controller", () => {
     assert.match(plan.baseFingerprint, /^bundle:/);
     assert.equal(plan.proposals.length, 1);
     assert.equal(plan.request.context.bundle.metadata.title, "Court");
+  });
+
+  it("builds provider-backed AI edit plans through the async interface boundary", async () => {
+    const editor = createCardEditor({ cards: [sampleCard("gate")], metadata: { title: "Court" } });
+    const calls = [];
+    const plan = await buildAiEditPlanAsync({
+      editor,
+      mode: "generate_cards",
+      config: {
+        provider: "messages",
+        endpoint: "http://endpoint.test/v1",
+        modelId: "chat-model",
+        apiKeyRef: "browser-local",
+        apiKey: "must-not-return"
+      },
+      credentials: { apiKey: "secret-key" },
+      instruction: "Rename the gate choice.",
+      fetchImpl: async (url, options) => {
+        calls.push({ url, options });
+        return {
+          ok: true,
+          status: 200,
+          text: async () => JSON.stringify({
+            choices: [{
+              message: {
+                content: JSON.stringify({
+                  proposals: [{
+                    id: "rename-gate",
+                    title: "Rename gate",
+                    summary: "Adjusts the left label.",
+                    patches: [{ op: "setChoiceLabel", cardId: "gate", choiceId: "left", label: "Hear" }]
+                  }]
+                })
+              }
+            }]
+          })
+        };
+      }
+    });
+
+    assert.equal(calls[0].url, "http://endpoint.test/v1/chat/completions");
+    assert.equal(calls[0].options.headers.authorization, "Bearer secret-key");
+    assert.equal(plan.mode, "generate_cards");
+    assert.equal(plan.config.apiKey, undefined);
+    assert.equal(JSON.stringify(plan).includes("secret-key"), false);
+    assert.equal(JSON.stringify(plan).includes("must-not-return"), false);
+    assert.equal(plan.proposals[0].patches[0].label, "Hear");
+    assert.equal(editor.findCard("gate").choices[0].label, "Left");
+  });
+
+  it("keeps async AI edit planning on local stub when no endpoint is configured", async () => {
+    const editor = createCardEditor({ cards: [sampleCard("gate")] });
+    let called = false;
+    const plan = await buildAiEditPlanAsync({
+      editor,
+      mode: "generate_cards",
+      config: { provider: "stub", theme: "court audit", cardCount: 1 },
+      fetchImpl: async () => {
+        called = true;
+        throw new Error("should not call endpoint");
+      }
+    });
+
+    assert.equal(called, false);
+    assert.equal(plan.proposals.length, 1);
+    assert.equal(plan.proposals[0].patches[0].op, "addCard");
   });
 
   it("applies selected AI edit proposals atomically", () => {

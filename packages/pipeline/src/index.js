@@ -22,6 +22,11 @@ const EFFECT_KEYS = new Set(["tags", "variables", "factions", "activateHooks", "
 const AI_EDIT_SCHEMA_VERSION = 1;
 const AI_EDIT_MODES = new Set(["generate_cards", "repair_diagnostics", "generate_asset", "analyze_asset"]);
 const AI_EDIT_PATCH_OPS = new Set(["addCard", "updateCard", "setChoiceLabel", "setChoiceEffects", "setMetadata", "upsertAsset"]);
+const AI_ENDPOINT_ROUTES = {
+  responses: "/responses",
+  messages: "/chat/completions",
+  completions: "/completions"
+};
 
 export function createContentBundle({ cards, metadata = {}, assets = [] }) {
   const normalizedCards = normalizeCards(cards);
@@ -593,6 +598,72 @@ export function createAiEditSuggestions({
   };
 }
 
+export async function createAiEditSuggestionsFromEndpoint({
+  bundle,
+  mode = "generate_cards",
+  config = {},
+  credentials = {},
+  instruction = "",
+  targetCardId = null,
+  assetId = null,
+  diagnostics = null,
+  fetchImpl = globalThis.fetch
+}) {
+  if (!AI_EDIT_MODES.has(mode)) {
+    throw new PipelineError(`Unknown AI edit mode '${mode}'`, "unknown_ai_mode");
+  }
+  if (typeof fetchImpl !== "function") {
+    throw new PipelineError("AI endpoint execution requires fetch", "endpoint_fetch_unavailable");
+  }
+
+  const normalizedBundle = createContentBundle(bundle);
+  const descriptor = redactAiEndpointConfig(config ?? {});
+  const endpoint = normalizeEndpointValue(descriptor.endpoint);
+  const protocol = normalizeAiEndpointProtocol(descriptor.provider);
+  const model = normalizeEndpointValue(descriptor.modelId);
+  if (!endpoint || !model) {
+    throw new PipelineError("AI endpoint execution requires endpoint and modelId", "endpoint_config_required");
+  }
+
+  const targetCardIds = isNonEmptyString(targetCardId) ? [targetCardId] : [];
+  const style = isNonEmptyString(descriptor.style) ? descriptor.style : "editorial card art";
+  const request = mode === "generate_asset" || mode === "analyze_asset"
+    ? buildMediaEditRequest({ bundle: normalizedBundle, mode, instruction, targetCardId, assetId, style, diagnostics })
+    : buildCardEditRequest({ bundle: normalizedBundle, instruction, targetCardIds, diagnostics, constraints: descriptor.constraints ?? {} });
+  const feedback = diagnostics ? createDiagnosticFeedback(diagnostics) : null;
+  const endpointResult = await callAiEditEndpoint({
+    endpoint,
+    protocol,
+    model,
+    request,
+    config: descriptor,
+    apiKey: normalizeEndpointValue(credentials?.apiKey),
+    fetchImpl
+  });
+  const proposals = normalizeProviderProposals({
+    bundle: normalizedBundle,
+    mode,
+    protocol,
+    provider: descriptor.provider ?? protocol,
+    response: endpointResult.proposals
+  });
+
+  return {
+    schemaVersion: AI_EDIT_SCHEMA_VERSION,
+    baseFingerprint: request.context.bundle.fingerprint,
+    mode,
+    config: descriptor,
+    request,
+    provider: {
+      protocol,
+      endpoint: redactEndpointUrl(endpointResult.url),
+      model
+    },
+    ...(feedback ? { feedback } : {}),
+    proposals
+  };
+}
+
 export function applyAiEditPatches({ bundle, patches }) {
   if (!Array.isArray(patches)) {
     throw new PipelineError("AI edit patches must be an array");
@@ -637,9 +708,10 @@ export function buildCardGenerationPrompt({ theme, count, constraints = {}, diag
 }
 
 export class PipelineError extends Error {
-  constructor(message) {
+  constructor(message, code = "pipeline_error") {
     super(message);
     this.name = "PipelineError";
+    this.code = code;
   }
 }
 
@@ -1086,6 +1158,278 @@ function extractTextPayload(response) {
   }
 
   throw new PipelineError("generateText must return a string or an object with a text field");
+}
+
+async function callAiEditEndpoint({ endpoint, protocol, model, request, config, apiKey, fetchImpl }) {
+  const url = resolveAiEndpointUrl(endpoint, protocol);
+  const body = buildAiEndpointBody({ protocol, model, request, config });
+  const headers = {
+    "content-type": "application/json",
+    accept: "application/json"
+  };
+  if (apiKey) {
+    headers.authorization = `Bearer ${apiKey}`;
+  }
+
+  let response;
+  try {
+    response = await fetchImpl(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body)
+    });
+  } catch (error) {
+    throw new PipelineError(`AI endpoint request failed: ${error.message}`, "endpoint_network_error");
+  }
+
+  const text = typeof response?.text === "function" ? await response.text() : "";
+  if (!response?.ok) {
+    const status = response?.status ?? "unknown";
+    throw new PipelineError(`AI endpoint request failed with status ${status}`, "endpoint_http_error");
+  }
+
+  return {
+    url,
+    proposals: parseAiEndpointProposalResponse(text, protocol)
+  };
+}
+
+function resolveAiEndpointUrl(endpoint, protocol) {
+  const route = AI_ENDPOINT_ROUTES[protocol];
+  if (!route) {
+    throw new PipelineError(`Unsupported AI endpoint protocol '${protocol}'`, "endpoint_protocol_unsupported");
+  }
+  const trimmed = String(endpoint ?? "").trim().replace(/\/+$/, "");
+  if (!trimmed) {
+    throw new PipelineError("AI endpoint is required", "endpoint_config_required");
+  }
+  const normalizedRoute = route.replace(/^\/+/, "");
+  if (trimmed.toLowerCase().endsWith(`/${normalizedRoute.toLowerCase()}`)) {
+    return trimmed;
+  }
+  return `${trimmed}/${normalizedRoute}`;
+}
+
+function buildAiEndpointBody({ protocol, model, request, config }) {
+  const prompt = buildAiEndpointPrompt(request);
+  const wantsStructuredJson = Array.isArray(config.capabilities)
+    ? config.capabilities.includes("structuredJson")
+    : true;
+
+  if (protocol === "responses") {
+    return {
+      model,
+      input: prompt,
+      ...(wantsStructuredJson ? { text: { format: { type: "json_object" } } } : {}),
+      temperature: 0
+    };
+  }
+
+  if (protocol === "messages") {
+    return {
+      model,
+      messages: [
+        {
+          role: "system",
+          content: "You create ReignsAgent AI Assist edit proposals. Return only a JSON object with a proposals array."
+        },
+        {
+          role: "user",
+          content: prompt
+        }
+      ],
+      ...(wantsStructuredJson ? { response_format: { type: "json_object" } } : {}),
+      temperature: 0
+    };
+  }
+
+  if (protocol === "completions") {
+    return {
+      model,
+      prompt,
+      temperature: 0
+    };
+  }
+
+  throw new PipelineError(`Unsupported AI endpoint protocol '${protocol}'`, "endpoint_protocol_unsupported");
+}
+
+function buildAiEndpointPrompt(request) {
+  return [
+    "Return only valid JSON in this exact top-level shape:",
+    "{\"proposals\":[{\"id\":\"proposal-id\",\"title\":\"Title\",\"summary\":\"Summary\",\"source\":{},\"target\":{},\"patches\":[]}]}",
+    "Use only patch operations declared in the supplied ReignsAgent context.",
+    "Do not include markdown, commentary, external file references, or binary data.",
+    "Request:",
+    JSON.stringify(request, null, 2)
+  ].join("\n");
+}
+
+function parseAiEndpointProposalResponse(text, protocol) {
+  const raw = String(text ?? "").trim();
+  if (!raw) {
+    throw new PipelineError("AI endpoint returned an empty response", "endpoint_empty_response");
+  }
+  const parsed = parsePossiblyFencedJson(raw, "AI endpoint response");
+  const proposalDocument = findProposalDocument(parsed) ?? findProposalDocumentFromText(extractProviderText(parsed, protocol));
+  if (!proposalDocument) {
+    throw new PipelineError("AI endpoint response must contain a proposals array", "endpoint_invalid_response");
+  }
+  return proposalDocument.proposals;
+}
+
+function findProposalDocument(value) {
+  if (isPlainRecord(value) && Array.isArray(value.proposals)) {
+    return value;
+  }
+  return null;
+}
+
+function findProposalDocumentFromText(text) {
+  if (!text) {
+    return null;
+  }
+  return findProposalDocument(parsePossiblyFencedJson(text, "AI endpoint text payload"));
+}
+
+function extractProviderText(value, protocol) {
+  if (typeof value === "string") {
+    return value;
+  }
+  if (!isPlainRecord(value)) {
+    return "";
+  }
+  if (typeof value.output_text === "string") {
+    return value.output_text;
+  }
+  if (typeof value.text === "string") {
+    return value.text;
+  }
+  if (Array.isArray(value.output)) {
+    const parts = [];
+    for (const output of value.output) {
+      if (!isPlainRecord(output) || !Array.isArray(output.content)) continue;
+      for (const content of output.content) {
+        if (typeof content?.text === "string") parts.push(content.text);
+      }
+    }
+    if (parts.length > 0) return parts.join("\n");
+  }
+  const choice = Array.isArray(value.choices) ? value.choices[0] : null;
+  if (protocol === "messages" && typeof choice?.message?.content === "string") {
+    return choice.message.content;
+  }
+  if (protocol === "completions" && typeof choice?.text === "string") {
+    return choice.text;
+  }
+  if (typeof choice?.message?.content === "string") {
+    return choice.message.content;
+  }
+  if (typeof choice?.text === "string") {
+    return choice.text;
+  }
+  return "";
+}
+
+function parsePossiblyFencedJson(source, context) {
+  const raw = String(source ?? "").trim();
+  try {
+    return JSON.parse(raw);
+  } catch (error) {
+    const text = extractJsonPayload(raw);
+    try {
+      return JSON.parse(text);
+    } catch {
+      // Try the escaped-quote recovery below before reporting the original parse.
+    }
+    if (text.includes("\\\"")) {
+      try {
+        return JSON.parse(text.replace(/\\"/g, "\""));
+      } catch {
+        // Fall through to the original parse error; it points at the raw provider text.
+      }
+    }
+    throw new PipelineError(`${context} contains invalid JSON: ${error.message}`, "endpoint_parse_error");
+  }
+}
+
+function normalizeProviderProposals({ bundle, mode, protocol, provider, response }) {
+  if (!Array.isArray(response)) {
+    throw new PipelineError("AI endpoint proposals must be an array", "endpoint_invalid_response");
+  }
+
+  return response.map((proposal) => {
+    if (!isPlainRecord(proposal)) {
+      throw new PipelineError("AI endpoint proposal must be an object", "endpoint_invalid_response");
+    }
+    if (!isNonEmptyString(proposal.id)) {
+      throw new PipelineError("AI endpoint proposal requires a non-empty id", "endpoint_invalid_response");
+    }
+    if (!isNonEmptyString(proposal.title)) {
+      throw new PipelineError(`AI endpoint proposal '${proposal.id}' requires a title`, "endpoint_invalid_response");
+    }
+    if (!Array.isArray(proposal.patches)) {
+      throw new PipelineError(`AI endpoint proposal '${proposal.id}' requires patches`, "endpoint_invalid_response");
+    }
+
+    const normalized = {
+      id: proposal.id,
+      title: proposal.title,
+      summary: typeof proposal.summary === "string" ? proposal.summary : "Provider proposal.",
+      source: isPlainRecord(proposal.source)
+        ? cloneJsonValue(proposal.source, `AI endpoint proposal '${proposal.id}' source`)
+        : { mode, provider, protocol },
+      target: isPlainRecord(proposal.target)
+        ? cloneJsonValue(proposal.target, `AI endpoint proposal '${proposal.id}' target`)
+        : {},
+      patches: cloneJsonValue(proposal.patches, `AI endpoint proposal '${proposal.id}' patches`),
+      ...(proposal.preview !== undefined ? { preview: cloneJsonValue(proposal.preview, `AI endpoint proposal '${proposal.id}' preview`) } : {})
+    };
+
+    applyAiEditPatches({ bundle, patches: normalized.patches });
+    return normalized;
+  });
+}
+
+function redactEndpointUrl(url) {
+  try {
+    const parsed = new URL(url);
+    parsed.username = "";
+    parsed.password = "";
+    for (const key of [...parsed.searchParams.keys()]) {
+      if (/key|token|secret|credential/i.test(key)) {
+        parsed.searchParams.set(key, "[redacted]");
+      }
+    }
+    return parsed.toString();
+  } catch {
+    return String(url ?? "").replace(/([?&][^=]*(?:key|token|secret|credential)[^=]*=)[^&]+/gi, "$1[redacted]");
+  }
+}
+
+function redactAiEndpointConfig(config) {
+  const descriptor = cloneJsonValue(config ?? {}, "AI endpoint config");
+  if (isPlainRecord(descriptor)) {
+    delete descriptor.apiKey;
+    delete descriptor.credentials;
+    delete descriptor.secret;
+  }
+  return descriptor;
+}
+
+function normalizeEndpointValue(value) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function normalizeAiEndpointProtocol(provider) {
+  const value = normalizeEndpointValue(provider) ?? "responses";
+  if (value === "stub" || value === "local-stub") {
+    return "responses";
+  }
+  if (!AI_ENDPOINT_ROUTES[value]) {
+    throw new PipelineError(`Unsupported AI endpoint protocol '${value}'`, "endpoint_protocol_unsupported");
+  }
+  return value;
 }
 
 function addAction(actions, seenActions, action) {

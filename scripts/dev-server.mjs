@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 
 import {
   applyAiEditPlan,
-  buildAiEditPlan,
+  buildAiEditPlanAsync,
   buildGenerationPlan,
   createCardEditor,
   createConnectorConfig,
@@ -75,7 +75,7 @@ const server = createServer(async (req, res) => {
     res.end(JSON.stringify({ error: { message: `Not found: ${path}` } }));
   } catch (error) {
     res.writeHead(500, { "content-type": "application/json" });
-    res.end(JSON.stringify({ error: { name: error.name, message: error.message } }));
+    res.end(JSON.stringify({ error: { name: error.name, message: error.message, code: error.code ?? "internal_error" } }));
   }
 });
 
@@ -222,9 +222,10 @@ async function handleApi(req, res, url) {
         }
       });
     }
-    const plan = buildAiEditPlan({
+    const plan = await buildAiEditPlanAsync({
       editor: store.editor,
       config: body?.config ?? {},
+      credentials: body?.credentials ?? {},
       mode,
       instruction: body?.instruction ?? "",
       targetCardId: body?.targetCardId ?? null,
