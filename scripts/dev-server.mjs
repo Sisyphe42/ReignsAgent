@@ -5,6 +5,8 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
+  applyAiEditPlan,
+  buildAiEditPlan,
   buildGenerationPlan,
   createCardEditor,
   createConnectorConfig,
@@ -35,12 +37,26 @@ class SessionState {
   constructor(initialBundle = { cards: [] }) {
     this.editor = loadEditorFromContent(initialBundle);
     this.sessions = new Map();
+    this.lastDiagnostics = null;
   }
 
   loadEditor(bundleLike) {
     this.editor = loadEditorFromContent(bundleLike);
     this.sessions.clear();
+    this.lastDiagnostics = null;
     return this.editor;
+  }
+
+  replaceEditor(editor) {
+    this.editor = editor;
+    this.sessions.clear();
+    this.lastDiagnostics = null;
+    return this.editor;
+  }
+
+  markEdited() {
+    this.sessions.clear();
+    this.lastDiagnostics = null;
   }
 }
 
@@ -52,7 +68,7 @@ const server = createServer(async (req, res) => {
 
   try {
     if (path.startsWith("/api/")) {
-      return handleApi(req, res, url);
+      return await handleApi(req, res, url);
     }
 
     res.writeHead(404, { "content-type": "application/json" });
@@ -105,23 +121,27 @@ async function handleApi(req, res, url) {
 
   if (path === "/api/editor/cards" && req.method === "POST") {
     const card = store.editor.addCard(body.card);
+    store.markEdited();
     return sendJson(res, { card, validation: store.editor.validate() });
   }
 
   if (path.startsWith("/api/editor/cards/") && req.method === "PUT" && isCardRootPath(path)) {
     const cardId = decodeURIComponent(path.slice("/api/editor/cards/".length));
     const card = store.editor.updateCard(cardId, body.changes ?? {});
+    store.markEdited();
     return sendJson(res, { card, validation: store.editor.validate() });
   }
 
   if (path.startsWith("/api/editor/cards/") && req.method === "DELETE" && isCardRootPath(path)) {
     const cardId = decodeURIComponent(path.slice("/api/editor/cards/".length));
     const removed = store.editor.removeCard(cardId);
+    store.markEdited();
     return sendJson(res, { removed, validation: store.editor.validate() });
   }
 
   if (path === "/api/editor/metadata" && req.method === "PATCH") {
     const metadata = store.editor.setMetadata(body.metadata ?? {});
+    store.markEdited();
     return sendJson(res, { metadata });
   }
 
@@ -173,6 +193,7 @@ async function handleApi(req, res, url) {
       maxTurns: Number(body?.maxTurns ?? 50),
       seed: Number(body?.seed ?? 1)
     });
+    store.lastDiagnostics = projection;
     return sendJson(res, projection);
   }
 
@@ -188,6 +209,46 @@ async function handleApi(req, res, url) {
     const config = createConnectorConfig(body.config ?? body);
     const plan = buildGenerationPlan({ config, diagnostics: body.diagnostics ?? null });
     return sendJson(res, plan);
+  }
+
+  if (path === "/api/ai/edit/plan" && req.method === "POST") {
+    const mode = body?.mode ?? "generate_cards";
+    const diagnostics = body?.diagnostics ?? (mode === "repair_diagnostics" ? store.lastDiagnostics : null);
+    if (mode === "repair_diagnostics" && !diagnostics) {
+      return sendJson(res, {
+        error: {
+          message: "Run Review before building repair proposals",
+          code: "diagnostics_required"
+        }
+      });
+    }
+    const plan = buildAiEditPlan({
+      editor: store.editor,
+      config: body?.config ?? {},
+      mode,
+      instruction: body?.instruction ?? "",
+      targetCardId: body?.targetCardId ?? null,
+      assetId: body?.assetId ?? null,
+      diagnostics
+    });
+    return sendJson(res, plan);
+  }
+
+  if (path === "/api/ai/edit/apply" && req.method === "POST") {
+    const result = applyAiEditPlan({
+      editor: store.editor,
+      plan: body?.plan,
+      proposalIds: body?.proposalIds ?? []
+    });
+    store.replaceEditor(result.editor);
+    return sendJson(res, {
+      applied: result.applied,
+      proposalIds: result.proposalIds,
+      patchCount: result.patchCount,
+      bundle: result.bundle,
+      validation: result.validation,
+      playerValidation: result.playerValidation
+    });
   }
 
   if (path === "/api/play/start" && req.method === "POST") {
@@ -320,6 +381,7 @@ function handleChoiceRoute(req, res, match, body) {
     if (body?.effects !== undefined) {
       card = store.editor.setChoiceEffects(match.cardId, match.choiceId, body.effects);
     }
+    store.markEdited();
     return sendJson(res, { card, validation: store.editor.validate() });
   }
 
@@ -361,6 +423,7 @@ function handleChoiceRoute(req, res, match, body) {
   }
 
   const updated = store.editor.setChoiceEffects(match.cardId, match.choiceId, effects);
+  store.markEdited();
   return sendJson(res, { card: updated, validation: store.editor.validate() });
 }
 

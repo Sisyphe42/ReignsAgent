@@ -7,10 +7,15 @@ import { describe, it } from "node:test";
 import { promisify } from "node:util";
 
 import {
+  applyAiEditPatches,
   buildAssetGenerationRequest,
+  buildAiContext,
+  buildCardEditRequest,
   buildCardGenerationRequest,
   buildCardGenerationPrompt,
+  buildMediaEditRequest,
   createContentBundle,
+  createAiEditSuggestions,
   createDiagnosticFeedback,
   generateAssetDrafts,
   generateCardDrafts,
@@ -240,6 +245,125 @@ describe("ReignsAgent pipeline", () => {
     assert.match(prompt, /rebalance_faction_pressure/);
   });
 
+  it("builds AI edit context and card edit requests with project guidance", () => {
+    const bundle = createContentBundle({ cards: binaryCards(), metadata: { title: "Court Test" } });
+    const context = buildAiContext({
+      bundle,
+      instruction: "Add a court debate.",
+      targetCardIds: ["opening"],
+      constraints: { tone: "dry" }
+    });
+    const request = buildCardEditRequest({
+      bundle,
+      instruction: "Add a court debate.",
+      targetCardIds: ["opening"]
+    });
+
+    assert.equal(context.project.product, "ReignsAgent Creator");
+    assert.match(context.project.gameplayRule, /left and right/);
+    assert.equal(context.selection.cards[0].id, "opening");
+    assert.equal(request.purpose, "card_edit");
+    assert.match(request.requestId, /^card_edit:/);
+    assert.equal(request.context.instruction, "Add a court debate.");
+  });
+
+  it("creates deterministic AI card draft suggestions with binary choices", () => {
+    const bundle = createContentBundle({ cards: binaryCards(), metadata: { title: "Court Test" } });
+    const first = createAiEditSuggestions({
+      bundle,
+      mode: "generate_cards",
+      config: { provider: "stub", theme: "harbor trial", cardCount: 2 },
+      instruction: "Make the choices restrained."
+    });
+    const second = createAiEditSuggestions({
+      bundle,
+      mode: "generate_cards",
+      config: { provider: "stub", theme: "harbor trial", cardCount: 2 },
+      instruction: "Make the choices restrained."
+    });
+
+    assert.deepEqual(first.proposals, second.proposals);
+    assert.equal(first.proposals.length, 2);
+    assert.deepEqual(first.proposals[0].patches[0].card.choices.map((choice) => choice.id), ["left", "right"]);
+    assert.equal(first.proposals[0].patches[0].card.id.startsWith("ai-harbor-trial"), true);
+  });
+
+  it("converts diagnostics into patchable AI repair suggestions", () => {
+    const bundle = createContentBundle({ cards: binaryCards() });
+    const plan = createAiEditSuggestions({
+      bundle,
+      mode: "repair_diagnostics",
+      targetCardId: "opening",
+      diagnostics: {
+        warnings: [
+          { code: "low_card_cycle_coverage", severity: "warning", message: "low", details: { cards: [{ cardId: "hidden", rate: 0.01 }] } },
+          { code: "unreachable_cards", severity: "error", message: "blocked", details: { cardIds: ["hidden"] } },
+          { code: "unsatisfied_required_tags", severity: "error", message: "missing", details: { tags: ["seal"] } },
+          { code: "stalled_cycles", severity: "error", message: "stalled" },
+          { code: "dominant_game_over_faction", severity: "warning", message: "pressure", details: { faction: "gauge1" } }
+        ]
+      }
+    });
+
+    assert.equal(plan.feedback.summary.actionCount, 5);
+    assert.equal(plan.proposals.some((proposal) => proposal.patches.some((patch) => patch.op === "updateCard")), true);
+    assert.equal(plan.proposals.some((proposal) => proposal.patches.some((patch) => patch.op === "setChoiceEffects")), true);
+    assert.equal(plan.proposals.some((proposal) => proposal.patches.some((patch) => patch.op === "addCard")), true);
+  });
+
+  it("applies AI edit patches and rejects invalid operations", () => {
+    const bundle = createContentBundle({ cards: binaryCards(), metadata: { title: "Before" } });
+    const result = applyAiEditPatches({
+      bundle,
+      patches: [
+        { op: "setMetadata", metadata: { title: "After" } },
+        { op: "setChoiceLabel", cardId: "opening", choiceId: "left", label: "Listen" },
+        { op: "upsertAsset", asset: { id: "opening-ai", cardId: "opening", uri: "pending://opening" } }
+      ]
+    });
+
+    assert.equal(result.bundle.metadata.title, "After");
+    assert.equal(result.bundle.cards[0].choices.find((choice) => choice.id === "left").label, "Listen");
+    assert.equal(result.bundle.assets[0].id, "opening-ai");
+    assert.equal(bundle.metadata.title, "Before");
+    assert.throws(
+      () => applyAiEditPatches({ bundle, patches: [{ op: "removeCard", cardId: "opening" }] }),
+      /Unsupported AI edit patch op/
+    );
+  });
+
+  it("builds media AI edit request previews without provider calls", () => {
+    const bundle = createContentBundle({
+      cards: binaryCards(),
+      assets: [{ id: "opening-ref", cardId: "opening", uri: "memory://opening" }]
+    });
+    const generateRequest = buildMediaEditRequest({
+      bundle,
+      mode: "generate_asset",
+      targetCardId: "opening",
+      style: "ink wash",
+      instruction: "Make it austere."
+    });
+    const analyzePlan = createAiEditSuggestions({
+      bundle,
+      mode: "analyze_asset",
+      targetCardId: "opening",
+      assetId: "opening-ref",
+      instruction: "Check the fit."
+    });
+    const assetPlan = createAiEditSuggestions({
+      bundle,
+      mode: "generate_asset",
+      targetCardId: "opening",
+      config: { provider: "stub", style: "ink wash" }
+    });
+
+    assert.equal(generateRequest.purpose, "card_asset_generation");
+    assert.equal(generateRequest.context.selection.cards[0].id, "opening");
+    assert.equal(analyzePlan.proposals[0].patches.length, 0);
+    assert.equal(assetPlan.proposals[0].patches[0].op, "upsertAsset");
+  });
+
   it("converts card files through the local content tool", async () => {
     const dir = await mkdtemp(join(tmpdir(), "reigns-agent-convert-"));
 
@@ -275,6 +399,31 @@ function sampleCards() {
             tags: { taxed: true }
           }
         }
+      ]
+    }
+  ];
+}
+
+function binaryCards() {
+  return [
+    {
+      id: "opening",
+      text: "A tax is proposed.",
+      weight: 1,
+      requirements: {},
+      choices: [
+        { id: "left", label: "Approve", effects: { factions: { gauge1: -4, gauge3: 4 } } },
+        { id: "right", label: "Refuse", effects: { factions: { gauge1: 3, gauge3: -3 } } }
+      ]
+    },
+    {
+      id: "hidden",
+      text: "A sealed letter waits.",
+      weight: 1,
+      requirements: { allTags: ["seal"] },
+      choices: [
+        { id: "left", label: "Open", effects: { factions: { gauge1: -2 } } },
+        { id: "right", label: "Hold", effects: { factions: { gauge3: 2 } } }
       ]
     }
   ];

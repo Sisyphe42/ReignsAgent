@@ -7,6 +7,7 @@ const PANELS = [
   { id: "content", label: "Content", group: "Authoring" },
   { id: "story", label: "Story", group: "Authoring" },
   { id: "review", label: "Review", group: "Quality" },
+  { id: "ai-edit", label: "AI Assist", group: "Quality" },
   { id: "preview", label: "Preview", group: "Quality" },
   { id: "build", label: "Build", group: "Release" },
   { id: "settings", label: "Settings", group: "Release" }
@@ -23,8 +24,35 @@ const SKINS = [
 
 const PERSIST_KEY = "reigns-agent.creator-web.skin";
 const DRAFT_KEY = "reigns-agent.creator-web.editor-draft";
+const AI_SETTINGS_KEY = "reigns-agent.creator-web.ai-settings";
+const AI_ASSIST_KEY = "reigns-agent.creator-web.ai-assist";
 const DEFAULT_PANEL = "overview";
 const DEFAULT_SKIN = "workbench";
+const AI_PROTOCOLS = [
+  ["responses", "Responses"],
+  ["completions", "Completions"],
+  ["messages", "Messages"]
+];
+const AI_CAPABILITIES = [
+  ["vision", "Vision"],
+  ["structuredJson", "Structured JSON"],
+  ["tools", "Tools"],
+  ["reasoning", "Reasoning"],
+  ["streaming", "Streaming"]
+];
+const AI_PROGRESS_STEPS = ["Context", "Request", "Local draft", "Parse", "Validate", "Ready"];
+const AI_MODE_LABELS = {
+  generate_cards: "Draft cards",
+  repair_diagnostics: "Repair review",
+  generate_asset: "Generate visual request",
+  analyze_asset: "Analyze visual request"
+};
+const AI_AMBIENT_ACTIONS = [
+  ["rewrite", "Rewrite", "Rewrite selected content"],
+  ["translate", "Translate", "Translate to current locale"],
+  ["explain", "Explain", "Explain author impact"],
+  ["branch", "Branch", "Draft a branch from this context"]
+];
 
 function isKnownPanel(value) {
   return PANELS.some((panel) => panel.id === value);
@@ -36,7 +64,7 @@ function isKnownSkin(value) {
 
 function readUrlState() {
   if (typeof window === "undefined") {
-    return { panel: DEFAULT_PANEL, skin: null };
+    return { panel: DEFAULT_PANEL, skin: null, aiAssist: null };
   }
 
   const url = new URL(window.location.href);
@@ -46,10 +74,13 @@ function readUrlState() {
   const queryPanel = url.searchParams.get("panel");
   const panel = [directPanel, queryPanel].find(isKnownPanel) ?? DEFAULT_PANEL;
   const skin = url.searchParams.get("skin");
+  const ai = url.searchParams.get("ai");
+  const aiAssist = ai === null ? null : ["1", "true", "on"].includes(ai.toLowerCase());
 
   return {
     panel,
-    skin: isKnownSkin(skin) ? skin : null
+    skin: isKnownSkin(skin) ? skin : null,
+    aiAssist
   };
 }
 
@@ -73,6 +104,18 @@ function syncWorkbenchUrl(panel, skin, mode = "replace") {
   window.history[mode === "push" ? "pushState" : "replaceState"](null, "", nextUrl);
 }
 
+function syncAiAssistUrl(enabled, mode = "replace") {
+  if (typeof window === "undefined") return;
+  const url = new URL(window.location.href);
+  if (enabled) url.searchParams.set("ai", "1");
+  else url.searchParams.delete("ai");
+  const nextUrl = `${url.pathname}${url.search}${url.hash}`;
+  const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  if (nextUrl !== currentUrl) {
+    window.history[mode === "push" ? "pushState" : "replaceState"](null, "", nextUrl);
+  }
+}
+
 async function api(path, options = {}) {
   const response = await fetch(path, {
     method: options.method ?? "GET",
@@ -87,18 +130,88 @@ async function api(path, options = {}) {
   return json;
 }
 
+function defaultAiSettings() {
+  return {
+    baseUrl: "",
+    apiKey: "",
+    protocol: "responses",
+    modelId: "",
+    capabilities: {
+      vision: false,
+      structuredJson: true,
+      tools: false,
+      reasoning: false,
+      streaming: false
+    }
+  };
+}
+
+function normalizeAiSettings(settings = {}) {
+  const defaults = defaultAiSettings();
+  const protocol = AI_PROTOCOLS.some(([id]) => id === settings.protocol) ? settings.protocol : defaults.protocol;
+  const capabilities = { ...defaults.capabilities, ...(settings.capabilities ?? {}) };
+  return {
+    baseUrl: typeof settings.baseUrl === "string" ? settings.baseUrl : "",
+    apiKey: typeof settings.apiKey === "string" ? settings.apiKey : "",
+    protocol,
+    modelId: typeof settings.modelId === "string" ? settings.modelId : "",
+    capabilities
+  };
+}
+
+function readAiSettings() {
+  if (typeof localStorage === "undefined") return defaultAiSettings();
+  try {
+    const raw = localStorage.getItem(AI_SETTINGS_KEY);
+    return raw ? normalizeAiSettings(JSON.parse(raw)) : defaultAiSettings();
+  } catch {
+    return defaultAiSettings();
+  }
+}
+
+function isAiEndpointConfigured(settings) {
+  return Boolean(settings?.baseUrl?.trim() && settings?.modelId?.trim());
+}
+
+function enabledAiCapabilities(settings) {
+  return Object.entries(settings?.capabilities ?? {})
+    .filter(([, enabled]) => enabled)
+    .map(([id]) => id);
+}
+
+function buildAiConnectorConfig(settings, extra = {}) {
+  const normalized = normalizeAiSettings(settings);
+  return {
+    provider: normalized.protocol,
+    endpoint: normalized.baseUrl.trim() || null,
+    apiKeyRef: normalized.apiKey ? "browser-local" : null,
+    modelId: normalized.modelId.trim() || null,
+    capabilities: enabledAiCapabilities(normalized),
+    ...extra
+  };
+}
+
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function App() {
   const initialUrlState = useMemo(() => readUrlState(), []);
   const [activePanel, setActivePanel] = useState(initialUrlState.panel);
   const [editor, setEditor] = useState(null);
   const [status, setStatus] = useState("Loading project...");
   const [skin, setSkin] = useState(() => initialUrlState.skin ?? (localStorage.getItem(PERSIST_KEY) || DEFAULT_SKIN));
+  const [aiAssistEnabled, setAiAssistEnabled] = useState(() => initialUrlState.aiAssist ?? localStorage.getItem(AI_ASSIST_KEY) === "1");
+  const [aiSettings, setAiSettings] = useState(() => readAiSettings());
+  const [aiDraftRequest, setAiDraftRequest] = useState(null);
+  const [aiPreflight, setAiPreflight] = useState(null);
   const [diagnostics, setDiagnostics] = useState(null);
   const [play, setPlay] = useState({ sessionId: null, state: null });
   const [build, setBuild] = useState(null);
   const [busy, setBusy] = useState("");
   const [draftInfo, setDraftInfo] = useState(() => readDraftInfo());
   const [focusCardId, setFocusCardId] = useState(null);
+  const [aiGraphSelection, setAiGraphSelection] = useState(null);
   const historyRef = useRef([]);
   const [historyDepth, setHistoryDepth] = useState(0);
 
@@ -132,7 +245,10 @@ function App() {
 
   const assetsByCard = useMemo(() => createAssetMap(editor?.assets ?? []), [editor]);
   const playerReady = editor?.playerValidation?.valid === true;
+  const aiConfigured = isAiEndpointConfigured(aiSettings);
   const activePanelLabel = PANELS.find((panel) => panel.id === activePanel)?.label ?? "Workspace";
+  const aiPresenceState = aiAssistEnabled ? (aiConfigured ? "ready" : "setup") : "off";
+  const aiPresenceLabel = aiPresenceState === "ready" ? "Ready" : aiPresenceState === "setup" ? "Setup" : "Off";
 
   useEffect(() => {
     document.documentElement.dataset.skin = skin;
@@ -141,10 +257,20 @@ function App() {
   }, [activePanel, skin]);
 
   useEffect(() => {
+    localStorage.setItem(AI_SETTINGS_KEY, JSON.stringify(normalizeAiSettings(aiSettings)));
+  }, [aiSettings]);
+
+  useEffect(() => {
+    localStorage.setItem(AI_ASSIST_KEY, aiAssistEnabled ? "1" : "0");
+    syncAiAssistUrl(aiAssistEnabled, "replace");
+  }, [aiAssistEnabled]);
+
+  useEffect(() => {
     function onPopState() {
       const next = readUrlState();
       setActivePanel(next.panel);
       setSkin(next.skin ?? (localStorage.getItem(PERSIST_KEY) || DEFAULT_SKIN));
+      setAiAssistEnabled(next.aiAssist ?? localStorage.getItem(AI_ASSIST_KEY) === "1");
     }
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
@@ -191,8 +317,8 @@ function App() {
   async function runAction(label, action) {
     setBusy(label);
     try {
-      await action();
-      return true;
+      const result = await action();
+      return result ?? true;
     } catch (error) {
       setStatus(error.message);
       return false;
@@ -278,6 +404,22 @@ function App() {
     });
   }
 
+  async function buildAiEditPlan(form) {
+    return runAction("Building AI Assist draft", async () => {
+      const result = await api("/api/ai/edit/plan", { method: "POST", body: form });
+      setStatus(`AI Assist draft ready: ${result.proposals?.length ?? 0} proposals`);
+      return result;
+    });
+  }
+
+  async function applyAiEditPlan(plan, proposalIds) {
+    return mutateEditor(
+      "Applying AI Assist draft",
+      async () => api("/api/ai/edit/apply", { method: "POST", body: { plan, proposalIds } }),
+      "AI Assist draft applied"
+    );
+  }
+
   async function prepareBuild(exportBuild = false) {
     await runAction(exportBuild ? "Exporting build" : "Preparing build", async () => {
       const result = await api(exportBuild ? "/api/build/export" : "/api/build/prepare", {
@@ -293,6 +435,104 @@ function App() {
     if (!isKnownPanel(panelId)) return;
     setActivePanel(panelId);
     syncWorkbenchUrl(panelId, skin, "push");
+  }
+
+  function openAiAssistDraft(request) {
+    setAiAssistEnabled(true);
+    setAiDraftRequest({
+      id: `${Date.now()}:${Math.random().toString(36).slice(2)}`,
+      ...request
+    });
+    openPanel("ai-edit");
+  }
+
+  function openAiAssistPreflight(request) {
+    setAiAssistEnabled(true);
+    setAiPreflight({
+      id: `${Date.now()}:${Math.random().toString(36).slice(2)}`,
+      source: request.source ?? "AI Assist",
+      actionId: request.actionId ?? request.actionLabel ?? request.mode ?? "draft",
+      actionLabel: request.actionLabel ?? request.actionId ?? "Draft",
+      contextSummary: request.contextSummary ?? "Current project context",
+      status: "editing",
+      mode: "generate_cards",
+      cardCount: 1,
+      ...request
+    });
+  }
+
+  function openAmbientAiAction(actionId, selection, prompt = "") {
+    if (!selection) return;
+    const targetCardId = selection.targetCardId ?? null;
+    const locale = navigator.language || "current UI locale";
+    const promptSuffix = prompt.trim() ? `\n\nCreator direction: ${prompt.trim()}` : "";
+    const selectedText = selection.text ? ` Selected text: "${selection.text}".` : "";
+    const baseContext = `${selection.label}${selection.context ? ` · ${selection.context}` : ""}`;
+    const actionMap = {
+      rewrite: {
+        actionLabel: "Rewrite selection",
+        mode: "generate_cards",
+        cardCount: 1,
+        instruction: `Rewrite or improve the selected creator context. Context: ${baseContext}.${selectedText} Preserve binary left/right play and explain any story state impact.`
+      },
+      translate: {
+        actionLabel: "Translate selection",
+        mode: "generate_cards",
+        cardCount: 1,
+        instruction: `Translate the selected creator context to ${locale}. Context: ${baseContext}.${selectedText} Preserve ids, tags, variables, and left/right meaning unless the creator direction says otherwise.`
+      },
+      explain: {
+        actionLabel: "Explain selection",
+        mode: "generate_cards",
+        cardCount: 1,
+        instruction: `Explain the selected creator context in actionable author-facing terms. Context: ${baseContext}.${selectedText} Identify what it controls and what to check next.`
+      },
+      branch: {
+        actionLabel: "Branch from selection",
+        mode: "generate_cards",
+        cardCount: 2,
+        instruction: `Draft a narrative branch from the selected context. Context: ${baseContext}.${selectedText} Include clear trigger conditions through author-owned tags, variables, or gauge thresholds.`
+      }
+    };
+    const action = actionMap[actionId] ?? actionMap.explain;
+    openAiAssistPreflight({
+      source: "Ambient",
+      actionId: `ambient-${actionId}`,
+      actionLabel: action.actionLabel,
+      mode: action.mode,
+      targetCardId,
+      cardCount: action.cardCount,
+      contextSummary: baseContext,
+      instruction: `${action.instruction}${promptSuffix}`
+    });
+  }
+
+  function updateAiPreflight(changes) {
+    setAiPreflight((current) => current ? { ...current, ...changes, status: "editing" } : current);
+  }
+
+  function buildAiPreflightDraft() {
+    if (!aiPreflight) return;
+    const request = {
+      ...aiPreflight,
+      autoBuild: true,
+      id: `${Date.now()}:${Math.random().toString(36).slice(2)}`
+    };
+    setAiPreflight((current) => current ? { ...current, status: "building" } : current);
+    setAiDraftRequest(request);
+    setAiPreflight(null);
+    openPanel("ai-edit");
+  }
+
+  function openAiPreflightInPanel() {
+    if (!aiPreflight) return;
+    setAiDraftRequest({
+      ...aiPreflight,
+      autoBuild: false,
+      id: `${Date.now()}:${Math.random().toString(36).slice(2)}`
+    });
+    setAiPreflight(null);
+    openPanel("ai-edit");
   }
 
   function focusOnCard(cardId) {
@@ -315,6 +555,13 @@ function App() {
 
   return (
     <div className="app-shell">
+      {aiAssistEnabled && (
+        <AiAmbientLayer
+          activePanelLabel={activePanelLabel}
+          graphSelection={aiGraphSelection}
+          onAction={openAmbientAiAction}
+        />
+      )}
       <header className="topbar">
         <div className="brand">
           <span className="brand__mark">RA</span>
@@ -329,6 +576,26 @@ function App() {
           <span>{playerReady ? "player ready" : "player blocked"}</span>
         </div>
         <div className="topbar__tools">
+          <button
+            className={`ai-presence ai-presence--${aiPresenceState}`}
+            type="button"
+            onClick={() => setAiAssistEnabled((enabled) => !enabled)}
+            aria-pressed={aiAssistEnabled}
+            title={aiConfigured ? "Toggle ambient AI mode" : "AI mode can run local draft previews; configure an endpoint in Settings"}
+          >
+            <span className="ai-presence__orb" aria-hidden="true">
+              <span className="ai-presence__core" />
+            </span>
+            <span className="ai-presence__copy">
+              <strong>AI</strong>
+              <small>{aiPresenceLabel}</small>
+            </span>
+            <span className="ai-presence__wave" aria-hidden="true">
+              <span />
+              <span />
+              <span />
+            </span>
+          </button>
           <label className="skin-select">
             Skin
             <select value={skin} onChange={(event) => changeSkin(event.target.value)}>
@@ -377,7 +644,12 @@ function App() {
               playerReady={playerReady}
               diagnostics={diagnostics}
               build={build}
+              aiAssistEnabled={aiAssistEnabled}
+              aiConfigured={aiConfigured}
               onOpen={openPanel}
+              onToggleAi={() => setAiAssistEnabled((enabled) => !enabled)}
+              onAiAction={openAiAssistPreflight}
+              activeAiAction={aiPreflight}
             />
           )}
           {activePanel === "content" && (
@@ -388,6 +660,9 @@ function App() {
               onMutate={mutateEditor}
               onStatus={setStatus}
               focusCardId={focusCardId}
+              aiAssistEnabled={aiAssistEnabled}
+              onAiAction={openAiAssistPreflight}
+              activeAiAction={aiPreflight}
             />
           )}
           {activePanel === "story" && (
@@ -399,9 +674,37 @@ function App() {
               onPushHistory={pushHistory}
               onUndo={undo}
               historyDepth={historyDepth}
+              aiAssistEnabled={aiAssistEnabled}
+              onAiAction={openAiAssistPreflight}
+              activeAiAction={aiPreflight}
+              onAiGraphSelection={setAiGraphSelection}
             />
           )}
-          {activePanel === "review" && <ReviewPanel diagnostics={diagnostics} onRun={runDiagnostics} onOpen={openPanel} />}
+          {activePanel === "review" && (
+            <ReviewPanel
+              editor={editor}
+              diagnostics={diagnostics}
+              aiAssistEnabled={aiAssistEnabled}
+              onRun={runDiagnostics}
+              onOpen={openPanel}
+              onFocusCard={focusOnCard}
+              onAiAction={openAiAssistPreflight}
+              activeAiAction={aiPreflight}
+            />
+          )}
+          {activePanel === "ai-edit" && (
+            <AiAssistPanel
+              editor={editor}
+              diagnostics={diagnostics}
+              aiSettings={aiSettings}
+              aiAssistEnabled={aiAssistEnabled}
+              aiConfigured={aiConfigured}
+              draftRequest={aiDraftRequest}
+              onBuildPlan={buildAiEditPlan}
+              onApplyPlan={applyAiEditPlan}
+              onOpen={openPanel}
+            />
+          )}
           {activePanel === "preview" && (
             <PreviewPanel
               play={play}
@@ -412,24 +715,93 @@ function App() {
             />
           )}
           {activePanel === "build" && <BuildPanel build={build} onPrepare={prepareBuild} />}
-          {activePanel === "settings" && <SettingsPanel editor={editor} onRefresh={refreshEditor} onStatus={setStatus} />}
+          {activePanel === "settings" && (
+            <SettingsPanel
+              editor={editor}
+              aiSettings={aiSettings}
+              onAiSettingsChange={setAiSettings}
+              onRefresh={refreshEditor}
+              onStatus={setStatus}
+            />
+          )}
+          {aiPreflight && (
+            <AiAssistPreflight
+              request={aiPreflight}
+              aiConfigured={aiConfigured}
+              diagnostics={diagnostics}
+              onChange={updateAiPreflight}
+              onClose={() => setAiPreflight(null)}
+              onBuild={buildAiPreflightDraft}
+              onOpenPanel={openAiPreflightInPanel}
+            />
+          )}
         </main>
       </div>
     </div>
   );
 }
 
-function Overview({ editor, playerReady, diagnostics, build, onOpen }) {
+function Overview({ editor, playerReady, diagnostics, build, aiAssistEnabled, aiConfigured, onOpen, onToggleAi, onAiAction, activeAiAction }) {
+  const [brief, setBrief] = useState("");
+  const cardCount = editor?.cards?.length ?? 0;
+  const title = editor?.metadata?.title ?? "Untitled";
+  const sampleLike = /open court|oss|sample/i.test(title) || cardCount === 23;
+
   return (
     <section className="panel">
       <PanelHead title="Project Overview" note="Workspace health, content readiness, and next actions." />
       <div className="metric-grid">
-        <Metric label="Project" value={editor?.metadata?.title ?? "Untitled"} />
-        <Metric label="Cards" value={String(editor?.cards?.length ?? 0)} />
+        <Metric label="Project" value={title} />
+        <Metric label="Cards" value={String(cardCount)} />
         <Metric label="Validation" value={editor?.validation?.valid ? "Valid" : "Needs work"} tone={editor?.validation?.valid ? "good" : "bad"} />
         <Metric label="Player-ready" value={playerReady ? "Ready" : "Blocked"} tone={playerReady ? "good" : "bad"} />
         <Metric label="Review" value={diagnostics ? `${diagnostics.healthScore}/100` : "Not run"} />
         <Metric label="Build" value={build ? "Prepared" : "Not prepared"} />
+      </div>
+      <div className={`overview-ai ${aiAssistEnabled ? "overview-ai--active" : ""}`}>
+        <div className="overview-ai__head">
+          <div>
+            <h3>{cardCount === 0 ? "Start with AI Assist" : sampleLike ? "Adapt the sample with AI Assist" : "Shape this project with AI Assist"}</h3>
+            <p>
+              {aiConfigured
+                ? "Use the current project context and optional brief to prepare draft cards, repair review issues, or expand story structure."
+                : "Configure an endpoint when ready. Until then, AI Assist can still preview local draft plans over the current project context."}
+            </p>
+          </div>
+          <span>{aiAssistEnabled ? "assist visible" : "assist hidden"}</span>
+        </div>
+        <textarea
+          value={brief}
+          onChange={(event) => setBrief(event.target.value)}
+          placeholder="Premise, tone, branch depth, endings, or constraints for the next AI draft..."
+          rows={3}
+        />
+        <div className="action-row">
+          <button
+            className="btn btn--primary"
+            type="button"
+            onClick={() => aiAssistEnabled
+              ? onAiAction({
+                source: "Overview",
+                actionId: "project-draft",
+                actionLabel: cardCount === 0 ? "Start project" : sampleLike ? "Adapt sample" : "Project draft",
+                mode: "generate_cards",
+                cardCount: cardCount === 0 ? 6 : 3,
+                contextSummary: `${title} · ${cardCount} cards · review ${diagnostics ? `${diagnostics.healthScore}/100` : "not run"}`,
+                instruction: brief.trim()
+                  ? brief.trim()
+                  : cardCount === 0
+                    ? "Draft a compact playable starting set with at least two visible story branches, clear tags or variables, and binary left/right choices."
+                    : "Draft a small expansion plan for the current project. Preserve existing tone, add clearer branches, and explain any suggested tags or variables."
+              })
+              : onOpen("ai-edit")}
+          >
+            Draft in AI Assist
+          </button>
+          <button className="btn" type="button" onClick={() => onOpen("content")}>Open Content</button>
+          <button className="btn" type="button" onClick={() => onOpen("story")}>Open Story</button>
+          <button className="btn btn--ghost" type="button" onClick={onToggleAi}>{aiAssistEnabled ? "Hide AI Assist" : "Show AI Assist"}</button>
+        </div>
       </div>
       <div className="action-row">
         <button className="btn btn--primary" onClick={() => onOpen("content")}>Edit cards</button>
@@ -456,7 +828,7 @@ function DraftBanner({ draftInfo, onRestore, onDiscard }) {
   );
 }
 
-function ContentPanel({ editor, assetsByCard, onImport, onMutate, onStatus, focusCardId }) {
+function ContentPanel({ editor, assetsByCard, onImport, onMutate, onStatus, focusCardId, aiAssistEnabled, onAiAction, activeAiAction }) {
   const [paste, setPaste] = useState("");
   const [query, setQuery] = useState("");
   const [validationFilter, setValidationFilter] = useState("all");
@@ -584,6 +956,10 @@ function ContentPanel({ editor, assetsByCard, onImport, onMutate, onStatus, focu
                 type="button"
                 role="tab"
                 aria-selected={card.id === selectedCardId}
+                data-ai-target="card"
+                data-ai-label={card.id}
+                data-ai-context={cardExcerpt(card)}
+                data-ai-card-id={card.id}
                 onClick={() => setSelectedCardId(card.id)}
               >
                 <div className="card-switcher__meta">
@@ -669,7 +1045,7 @@ function CardEditor({ card, asset, validation, onMutate, onStatus, tagCatalog, g
   const messages = validation.messages;
 
   return (
-    <article className="card-editor">
+    <article className="card-editor" data-ai-target="card" data-ai-label={card.id} data-ai-context={cardExcerpt(card)} data-ai-card-id={card.id}>
       <div className="card-editor__head">
         {asset ? <img src={`/${asset.uri}`} alt="" /> : <span className="art-placeholder" />}
         <div>
@@ -1088,7 +1464,7 @@ function ChoiceEditor({ cardId, choice, onMutate, onStatus, gaugeLabels }) {
   }
 
   return (
-    <div className="choice-editor">
+    <div className="choice-editor" data-ai-target="choice" data-ai-label={`${cardId}:${choice.id}`} data-ai-context={choice.label ?? choice.id} data-ai-card-id={cardId}>
       <div className="choice-editor__head">
         <strong>{choice.id}</strong>
         <input value={label} onChange={(event) => setLabel(event.target.value)} onBlur={() => void saveLabel()} placeholder="choice label" />
@@ -1281,7 +1657,7 @@ function AddCard({ onMutate, onCreated }) {
   );
 }
 
-function StoryPanel({ editor, diagnostics, onOpen, onFocusCard, onPushHistory, onUndo, historyDepth = 0 }) {
+function StoryPanel({ editor, diagnostics, onOpen, onFocusCard, onPushHistory, onUndo, historyDepth = 0, aiAssistEnabled, onAiAction, activeAiAction, onAiGraphSelection }) {
   const [graph, setGraph] = useState(null);
   const [graphError, setGraphError] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
@@ -1302,6 +1678,7 @@ function StoryPanel({ editor, diagnostics, onOpen, onFocusCard, onPushHistory, o
   const selectedStoryGroup = useMemo(() => {
     return storyGroups.groups.find((group) => group.id === selectedGroupId) ?? null;
   }, [storyGroups.groups, selectedGroupId]);
+  const storyAiTarget = graphFocusCardId ?? selectedStoryGroup?.cardIds?.[0] ?? graph?.entryCards?.[0] ?? editor?.cards?.[0]?.id ?? null;
 
   useEffect(() => {
     if (selectedGroupId && !storyGroups.groups.some((group) => group.id === selectedGroupId)) {
@@ -1414,6 +1791,8 @@ function StoryPanel({ editor, diagnostics, onOpen, onFocusCard, onPushHistory, o
               diagnostics={diagnostics}
               focusCardId={graphFocusCardId}
               activeGroupCardIds={selectedStoryGroup?.cardIds ?? []}
+              aiAssistEnabled={aiAssistEnabled}
+              onAiGraphSelection={onAiGraphSelection}
             />
             <aside className="story-inspector">
               <StoryGroupDirectory
@@ -1558,7 +1937,13 @@ function StoryGroupDirectory({ groups, selectedGroupId, onSelect }) {
       ) : (
         <ul className="story-groups__list">
           {groups.map((group) => (
-            <li key={group.id} className={selectedGroupId === group.id ? "story-groups__item story-groups__item--active" : "story-groups__item"}>
+            <li
+              key={group.id}
+              className={selectedGroupId === group.id ? "story-groups__item story-groups__item--active" : "story-groups__item"}
+              data-ai-target="story group"
+              data-ai-label={group.label}
+              data-ai-context={`${group.type} · ${group.cardCount} cards`}
+            >
               <button type="button" onClick={() => onSelect(selectedGroupId === group.id ? null : group.id)}>
                 <span>{group.label}</span>
                 <small>{group.type} · {group.cardCount} cards</small>
@@ -1591,6 +1976,10 @@ function StoryIssueList({ issues, focusCardId, onFocusCard, onEditCard, onSelect
             <li
               key={issue.key}
               className={`story-issues__item story-issues__item--${issue.tone} ${focusCardId === issue.cardId ? "story-issues__item--active" : ""}`}
+              data-ai-target="story issue"
+              data-ai-label={issue.label}
+              data-ai-context={issue.detail}
+              data-ai-card-id={issue.cardId ?? ""}
             >
               <div className="story-issues__meta">
                 <span>{issue.label}</span>
@@ -1883,7 +2272,9 @@ function StoryGraph({
   onToggleFullscreen,
   diagnostics,
   focusCardId,
-  activeGroupCardIds = []
+  activeGroupCardIds = [],
+  aiAssistEnabled = false,
+  onAiGraphSelection
 }) {
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
@@ -2379,6 +2770,7 @@ function StoryGraph({
 
     function onMove(event) {
       const point = pointer(event);
+      const canvasRect = canvas.getBoundingClientRect();
 
       // Connection drag in progress: follow the cursor.
       if (layoutRef.current.connect) {
@@ -2405,6 +2797,21 @@ function StoryGraph({
           const card = cardById.get(id);
           const incoming = graph.edges.filter((edge) => edge.to === id);
           const outgoing = graph.edges.filter((edge) => edge.from === id);
+          if (aiAssistEnabled) {
+            onAiGraphSelection?.({
+              source: "graph",
+              type: "story node",
+              label: id,
+              context: card?.text ?? `${incoming.length} incoming · ${outgoing.length} outgoing`,
+              targetCardId: id,
+              rect: {
+                left: canvasRect.left + point.x - NODE_RADIUS,
+                top: canvasRect.top + point.y - NODE_RADIUS,
+                width: NODE_RADIUS * 2,
+                height: NODE_RADIUS * 2
+              }
+            });
+          }
           setTooltip({
             id,
             text: card?.text ?? "",
@@ -2425,6 +2832,21 @@ function StoryGraph({
       } else {
         const action = edgeActionAt(point);
         const edgeKey = action ? `${action.edge.from}->${action.edge.to}` : null;
+        if (aiAssistEnabled && action) {
+          onAiGraphSelection?.({
+            source: "graph",
+            type: "story edge",
+            label: `${action.edge.from} -> ${action.edge.to}`,
+            context: edgeSignalLabel(action.edge, tagCatalog?.byKey, gaugeLabels) || "graph connection",
+            targetCardId: action.edge.from,
+            rect: {
+              left: canvasRect.left + action.buttonX - 26,
+              top: canvasRect.top + action.buttonY - 8,
+              width: 52,
+              height: 22
+            }
+          });
+        }
         setHoverEdge((current) => (current?.key === edgeKey ? current : action ? { key: edgeKey, edge: action.edge } : null));
         setDisconnectButton(action ? { edge: action.edge, x: action.buttonX, y: action.buttonY } : null);
         canvas.style.cursor = action ? "default" : "grab";
@@ -2513,6 +2935,7 @@ function StoryGraph({
       if (containerRef.current?.contains(event.relatedTarget)) return;
       setHoverEdge(null);
       setDisconnectButton(null);
+      if (aiAssistEnabled) onAiGraphSelection?.(null);
       canvas.style.cursor = "default";
       setTooltip(null);
     }
@@ -2530,7 +2953,7 @@ function StoryGraph({
       window.removeEventListener("mouseup", onUp);
       canvas.removeEventListener("mouseleave", onLeave);
     };
-  }, [graph, cardById, nodeTone, onFocusCard, onDisconnect, heatByCard]);
+  }, [graph, cardById, nodeTone, onFocusCard, onDisconnect, heatByCard, aiAssistEnabled, onAiGraphSelection, tagCatalog, gaugeLabels]);
 
   return (
     <div className={fullscreen ? "graph-container graph-container--fullscreen" : "graph-container"} ref={containerRef}>
@@ -2941,15 +3364,33 @@ function drawChoiceHandle(ctx, x, y, label, colors) {
   ctx.fillText(label, x, y);
 }
 
-function ReviewPanel({ diagnostics, onRun, onOpen }) {
+function ReviewPanel({ editor, diagnostics, aiAssistEnabled, onRun, onOpen, onFocusCard, onAiAction, activeAiAction }) {
   const [cycles, setCycles] = useState(500);
   const [maxTurns, setMaxTurns] = useState(40);
   const [seed, setSeed] = useState(1);
+  const [view, setView] = useState("overview");
+  const cards = editor?.cards ?? [];
+  const cardMap = useMemo(() => new Map(cards.map((card) => [card.id, card])), [cards]);
+  const gaugeLabels = useMemo(() => createGaugeLabels(editor?.metadata?.presentation), [editor?.metadata?.presentation]);
+  const coverageRows = useMemo(() => buildReviewCoverageRows(cards, diagnostics), [cards, diagnostics]);
+  const issueCards = useMemo(() => buildReviewIssues(diagnostics), [diagnostics]);
+
+  function aiRepairForIssue(issue) {
+    onAiAction({
+      source: "Review",
+      actionId: `issue-${issue.code}`,
+      actionLabel: `Repair ${issue.code}`,
+      mode: "repair_diagnostics",
+      cardCount: 1,
+      contextSummary: `${issue.severity} · ${issue.code}`,
+      instruction: `Use the latest Review diagnostics to repair '${issue.code}'. Focus on: ${issue.message}. Targets: ${issue.cardIds.length > 0 ? issue.cardIds.join(", ") : "project-level issue"}. Keep changes as explicit patch proposals.`
+    });
+  }
 
   return (
     <section className="panel">
       <PanelHead title="Review Diagnostics" note="Creator-facing Monte Carlo review with reproducible seed inputs." />
-      <div className="field-row field-row--compact">
+      <div className="field-row field-row--compact review-run-row">
         <label>Cycles <input type="number" min="1" value={cycles} onChange={(event) => setCycles(Number(event.target.value))} /></label>
         <label>Max turns <input type="number" min="1" value={maxTurns} onChange={(event) => setMaxTurns(Number(event.target.value))} /></label>
         <label>Seed <input type="number" value={seed} onChange={(event) => setSeed(Number(event.target.value))} /></label>
@@ -2957,22 +3398,44 @@ function ReviewPanel({ diagnostics, onRun, onOpen }) {
       </div>
       {diagnostics ? (
         <>
-          <div className="health">
-            <strong>{diagnostics.healthScore}/100</strong>
-            <span>{diagnostics.headline}</span>
-          </div>
-          <NarrativeCoverage narrative={diagnostics.narrative} onOpenStory={() => onOpen("story")} />
-          <ul className="warning-list">
-            {(diagnostics.warnings ?? []).map((warning, index) => (
-              <li key={`${warning.code}-${index}`} className={`warning warning--${warning.severity}`}>
-                <button className="btn btn--ghost btn--compact warning__code" type="button" onClick={() => onOpen("content")}>
-                  {warning.code}
-                </button>
-                <span>{warning.message}</span>
-              </li>
+          <ReviewSummary diagnostics={diagnostics} gaugeLabels={gaugeLabels} />
+          <div className="review-tabs" role="tablist" aria-label="Review views">
+            {[
+              ["overview", "Overview"],
+              ["coverage", "Coverage"],
+              ["story", "Story"],
+              ["issues", `Issues ${issueCards.length}`]
+            ].map(([id, label]) => (
+              <button
+                key={id}
+                className={view === id ? "review-tabs__item review-tabs__item--active" : "review-tabs__item"}
+                type="button"
+                role="tab"
+                aria-selected={view === id}
+                onClick={() => setView(id)}
+              >
+                {label}
+              </button>
             ))}
-            {diagnostics.warnings?.length === 0 && <li className="warning">No diagnostics warnings.</li>}
-          </ul>
+          </div>
+          {view === "overview" && (
+            <ReviewOverview diagnostics={diagnostics} gaugeLabels={gaugeLabels} coverageRows={coverageRows} issueCards={issueCards} onOpenStory={() => onOpen("story")} />
+          )}
+          {view === "coverage" && (
+            <ReviewCoverage rows={coverageRows} onFocusCard={onFocusCard} />
+          )}
+          {view === "story" && (
+            <NarrativeCoverage narrative={diagnostics.narrative} onOpenStory={() => onOpen("story")} onFocusCard={onFocusCard} />
+          )}
+          {view === "issues" && (
+            <ReviewIssues
+              issues={issueCards}
+              cardMap={cardMap}
+              onFocusCard={onFocusCard}
+              onOpenStory={() => onOpen("story")}
+              onAiRepair={aiRepairForIssue}
+            />
+          )}
         </>
       ) : (
         <div className="empty-state">
@@ -2983,7 +3446,193 @@ function ReviewPanel({ diagnostics, onRun, onOpen }) {
   );
 }
 
-function NarrativeCoverage({ narrative, onOpenStory }) {
+function ReviewSummary({ diagnostics, gaugeLabels }) {
+  const coverage = diagnostics.coverage ?? {};
+  const warningCounts = diagnostics.warningCounts ?? {};
+  return (
+    <section className="review-summary" aria-label="Review summary">
+      <div className="review-score">
+        <strong>{diagnostics.healthScore}/100</strong>
+        <span>{diagnostics.headline}</span>
+      </div>
+      <div className="review-summary__metrics">
+        <Metric label="Cycles" value={String(diagnostics.sampleSize ?? 0)} />
+        <Metric label="Avg turns" value={String(coverage.averageTurns ?? 0)} />
+        <Metric label="Game over" value={formatRate(coverage.gameOverRate ?? 0)} tone={(coverage.gameOverRate ?? 0) > 0.8 ? "bad" : ""} />
+        <Metric label="Stalled" value={formatRate(coverage.stalledRate ?? 0)} tone={(coverage.stalledRate ?? 0) > 0 ? "bad" : ""} />
+        <Metric label="Errors" value={String(warningCounts.error ?? 0)} tone={(warningCounts.error ?? 0) > 0 ? "bad" : "good"} />
+        <Metric label="Warnings" value={String(warningCounts.warning ?? 0)} tone={(warningCounts.warning ?? 0) > 0 ? "bad" : ""} />
+      </div>
+      <div className="review-gauge-strip" aria-label="Gauge pressure">
+        {(diagnostics.factions ?? []).map((entry) => (
+          <div className="review-gauge" key={entry.faction}>
+            <div>
+              <strong>{gaugeDisplayName(entry.faction, gaugeLabels)}</strong>
+              <span>avg {entry.average} · end {formatRate(entry.gameOverShare ?? 0)}</span>
+            </div>
+            <div className="review-gauge__bar"><span style={{ width: `${Math.max(2, Math.round((entry.gameOverShare ?? 0) * 100))}%` }} /></div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ReviewOverview({ diagnostics, gaugeLabels, coverageRows, issueCards, onOpenStory }) {
+  const worstCoverage = coverageRows.filter((row) => row.status !== "covered").slice(0, 5);
+  return (
+    <div className="review-overview">
+      <div className="review-panel-block">
+        <div className="review-panel-block__head">
+          <strong>Top risks</strong>
+          <span>{issueCards.length} issue{issueCards.length === 1 ? "" : "s"}</span>
+        </div>
+        {issueCards.length > 0 ? (
+          <div className="review-risk-list">
+            {issueCards.slice(0, 4).map((issue) => (
+              <div className={`review-risk review-risk--${issue.severity}`} key={issue.id}>
+                <code>{issue.code}</code>
+                <span>{issue.message}</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="muted">No review issues.</p>
+        )}
+      </div>
+      <div className="review-panel-block">
+        <div className="review-panel-block__head">
+          <strong>Weak coverage</strong>
+          <span>{worstCoverage.length} cards</span>
+        </div>
+        {worstCoverage.length > 0 ? (
+          <div className="review-risk-list">
+            {worstCoverage.map((row) => (
+              <div className={`review-risk review-risk--${row.tone}`} key={row.cardId}>
+                <code>{row.cardId}</code>
+                <span>{row.status} · visit {formatRate(row.visitRate)} · cycle {formatRate(row.cycleRate)}</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="muted">All reviewed cards were visited.</p>
+        )}
+      </div>
+      <div className="review-panel-block">
+        <div className="review-panel-block__head">
+          <strong>Ending coverage</strong>
+          <button className="btn btn--ghost btn--compact" type="button" onClick={onOpenStory}>Story</button>
+        </div>
+        <div className="review-ending-summary">
+          <Metric label="Endings" value={`${diagnostics.narrative?.summary?.coveredEndingGroupCount ?? 0}/${diagnostics.narrative?.summary?.endingGroupCount ?? 0}`} />
+          <Metric label="Story groups" value={`${diagnostics.narrative?.summary?.coveredGroupCount ?? 0}/${diagnostics.narrative?.summary?.groupCount ?? 0}`} />
+          <Metric label="Story issues" value={String(diagnostics.narrative?.summary?.issueCount ?? 0)} tone={(diagnostics.narrative?.summary?.issueCount ?? 0) > 0 ? "bad" : "good"} />
+        </div>
+      </div>
+      <div className="review-panel-block">
+        <div className="review-panel-block__head">
+          <strong>Gauge pressure</strong>
+          <span>{diagnostics.factions?.length ?? 0} gauges</span>
+        </div>
+        <div className="review-risk-list">
+          {(diagnostics.factions ?? []).map((entry) => (
+            <div className="review-risk" key={entry.faction}>
+              <code>{gaugeDisplayName(entry.faction, gaugeLabels)}</code>
+              <span>average {entry.average}; game-over share {formatRate(entry.gameOverShare ?? 0)}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ReviewCoverage({ rows, onFocusCard }) {
+  return (
+    <section className="review-coverage" aria-label="Card coverage">
+      {rows.map((row) => (
+        <article
+          className={`review-card-row review-card-row--${row.tone}`}
+          key={row.cardId}
+          data-ai-target="review coverage"
+          data-ai-label={row.cardId}
+          data-ai-context={`${row.status} · visit ${formatRate(row.visitRate)} · cycle ${formatRate(row.cycleRate)}`}
+          data-ai-card-id={row.cardId}
+        >
+          <div className="review-card-row__head">
+            <button className="btn btn--ghost btn--compact" type="button" onClick={() => onFocusCard(row.cardId)}>{row.cardId}</button>
+            <span>{row.status}</span>
+          </div>
+          <p>{row.excerpt}</p>
+          <div className="review-card-row__bars">
+            <ReviewRateBar label="Visit" rate={row.visitRate} />
+            <ReviewRateBar label="Cycle" rate={row.cycleRate} />
+          </div>
+          <div className="review-targets">
+            {row.unvisited && <span className="review-chip review-chip--bad">unvisited</span>}
+            {row.lowCycle && <span className="review-chip review-chip--warn">low cycle {formatRate(row.lowCycleRate)}</span>}
+          </div>
+        </article>
+      ))}
+      {rows.length === 0 && <p className="muted">Run Review to inspect card coverage.</p>}
+    </section>
+  );
+}
+
+function ReviewRateBar({ label, rate }) {
+  return (
+    <div className="review-rate">
+      <div>
+        <span>{label}</span>
+        <strong>{formatRate(rate)}</strong>
+      </div>
+      <div className="review-rate__track"><span style={{ width: `${Math.max(2, Math.round(rate * 100))}%` }} /></div>
+    </div>
+  );
+}
+
+function ReviewIssues({ issues, cardMap, onFocusCard, onOpenStory, onAiRepair }) {
+  return (
+    <section className="review-issues" aria-label="Review issues">
+      {issues.length > 0 ? issues.map((issue) => (
+        <article
+          className={`review-issue review-issue--${issue.severity}`}
+          key={issue.id}
+          data-ai-target="review issue"
+          data-ai-label={issue.code}
+          data-ai-context={issue.message}
+          data-ai-card-id={issue.cardIds[0] ?? ""}
+        >
+          <div className="review-issue__head">
+            <div>
+              <code>{issue.code}</code>
+              <strong>{issue.message}</strong>
+            </div>
+            <span>{issue.severity}</span>
+          </div>
+          <div className="review-targets">
+            {issue.cardIds.map((cardId) => (
+              <button className="review-chip review-chip--button" type="button" key={cardId} title={cardExcerpt(cardMap.get(cardId) ?? { id: cardId })} onClick={() => onFocusCard(cardId)}>
+                {cardId}
+              </button>
+            ))}
+            {issue.otherTargets.map((target) => <span className="review-chip" key={target}>{target}</span>)}
+            {issue.cardIds.length === 0 && issue.otherTargets.length === 0 && <span className="review-chip">project</span>}
+          </div>
+          <div className="action-row">
+            {issue.cardIds[0] && <button className="btn btn--ghost btn--compact" type="button" onClick={() => onFocusCard(issue.cardIds[0])}>Focus card</button>}
+            <button className="btn btn--ghost btn--compact" type="button" onClick={onOpenStory}>Story</button>
+            <button className="btn btn--primary btn--compact" type="button" onClick={() => onAiRepair(issue)}>AI Repair</button>
+          </div>
+        </article>
+      )) : (
+        <div className="empty-state"><p>No diagnostics warnings.</p></div>
+      )}
+    </section>
+  );
+}
+
+function NarrativeCoverage({ narrative, onOpenStory, onFocusCard }) {
   const groups = narrative?.storyGroups ?? [];
   const summary = narrative?.summary ?? {};
 
@@ -3032,6 +3681,25 @@ function NarrativeCoverage({ narrative, onOpenStory }) {
                   {group.unvisitedCardIds.length > 0 && <span>{group.unvisitedCardIds.length} unvisited</span>}
                   {group.unreachableCardIds.length > 0 && <span>{group.unreachableCardIds.length} unreachable</span>}
                 </div>
+                {(group.unvisitedCardIds.length > 0 || group.unreachableCardIds.length > 0 || group.lowCycleCards.length > 0) && (
+                  <div className="review-targets">
+                    {group.unreachableCardIds.map((cardId) => (
+                      <button className="review-chip review-chip--bad review-chip--button" type="button" key={`unreachable-${cardId}`} onClick={() => onFocusCard?.(cardId)}>
+                        {cardId}
+                      </button>
+                    ))}
+                    {group.unvisitedCardIds.filter((cardId) => !group.unreachableCardIds.includes(cardId)).map((cardId) => (
+                      <button className="review-chip review-chip--warn review-chip--button" type="button" key={`unvisited-${cardId}`} onClick={() => onFocusCard?.(cardId)}>
+                        {cardId}
+                      </button>
+                    ))}
+                    {group.lowCycleCards.map((entry) => (
+                      <button className="review-chip review-chip--warn review-chip--button" type="button" key={`low-${entry.cardId}`} onClick={() => onFocusCard?.(entry.cardId)}>
+                        {entry.cardId} {formatRate(entry.rate)}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </li>
             ))}
           </ul>
@@ -3041,6 +3709,88 @@ function NarrativeCoverage({ narrative, onOpenStory }) {
       )}
     </section>
   );
+}
+
+function buildReviewCoverageRows(cards, diagnostics) {
+  if (!diagnostics) return [];
+  const coverage = diagnostics.coverage ?? {};
+  const visitRates = coverage.cardVisitRates ?? {};
+  const cycleRates = coverage.cardCycleRates ?? {};
+  const unvisitedSet = new Set(coverage.unvisitedCards ?? []);
+  const lowCycleMap = new Map((coverage.lowCycleCards ?? []).map((entry) => [entry.cardId, entry.rate ?? 0]));
+
+  return cards.map((card) => {
+    const visitRate = visitRates[card.id] ?? 0;
+    const cycleRate = cycleRates[card.id] ?? 0;
+    const unvisited = unvisitedSet.has(card.id) || visitRate <= 0;
+    const lowCycle = lowCycleMap.has(card.id);
+    const status = unvisited ? "unvisited" : lowCycle ? "low cycle" : "covered";
+    return {
+      cardId: card.id,
+      excerpt: cardExcerpt(card),
+      visitRate,
+      cycleRate,
+      lowCycleRate: lowCycleMap.get(card.id) ?? 0,
+      unvisited,
+      lowCycle,
+      status,
+      tone: unvisited ? "bad" : lowCycle ? "warn" : "good"
+    };
+  }).sort((a, b) => reviewCoverageRank(a) - reviewCoverageRank(b) || a.cardId.localeCompare(b.cardId));
+}
+
+function reviewCoverageRank(row) {
+  if (row.unvisited) return 0;
+  if (row.lowCycle) return 1;
+  return 2;
+}
+
+function buildReviewIssues(diagnostics) {
+  if (!diagnostics) return [];
+  const warningIssues = (diagnostics.warnings ?? []).map((warning, index) => {
+    const targets = extractReviewTargets(warning.details ?? {});
+    return {
+      id: `warning-${warning.code}-${index}`,
+      code: warning.code,
+      severity: warning.severity ?? "warning",
+      message: warning.message ?? "Review warning.",
+      cardIds: targets.cardIds,
+      otherTargets: targets.otherTargets
+    };
+  });
+  const narrativeIssues = (diagnostics.narrative?.issues ?? []).map((issue, index) => ({
+    id: `story-${issue.code}-${index}`,
+    code: issue.code,
+    severity: issue.severity ?? "warning",
+    message: issue.message ?? "Story coverage issue.",
+    cardIds: normalizeStringArray(issue.cardIds),
+    otherTargets: [issue.groupId].filter(Boolean)
+  }));
+  const seen = new Set();
+  return [...warningIssues, ...narrativeIssues].filter((issue) => {
+    const key = `${issue.code}:${issue.cardIds.join(",")}:${issue.otherTargets.join(",")}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function extractReviewTargets(details = {}) {
+  const cardIds = new Set(normalizeStringArray(details.cardIds));
+  for (const entry of Array.isArray(details.cards) ? details.cards : []) {
+    if (typeof entry?.cardId === "string") cardIds.add(entry.cardId);
+  }
+  const otherTargets = [
+    ...normalizeStringArray(details.tags).map((tag) => `tag:${tag}`),
+    ...normalizeStringArray(details.variables).map((variable) => `var:${variable}`),
+    ...normalizeStringArray(details.factions).map((faction) => `gauge:${faction}`),
+    typeof details.faction === "string" ? `gauge:${details.faction}` : null
+  ].filter(Boolean);
+  return { cardIds: [...cardIds], otherTargets };
+}
+
+function normalizeStringArray(value) {
+  return Array.isArray(value) ? value.filter((entry) => typeof entry === "string" && entry.trim()) : [];
 }
 
 function PreviewPanel({ play, assetsByCard, playerReady, onStart, onSwipe }) {
@@ -3093,12 +3843,346 @@ function BuildPanel({ build, onPrepare }) {
   );
 }
 
-function SettingsPanel({ editor, onRefresh, onStatus }) {
+function AiAssistPreflight({ request, aiConfigured, diagnostics, onChange, onClose, onBuild, onOpenPanel }) {
+  const needsDiagnostics = request.mode === "repair_diagnostics";
+  const canBuild = !needsDiagnostics || Boolean(diagnostics);
+  const modeLabel = AI_MODE_LABELS[request.mode] ?? request.mode;
+
+  return (
+    <div className="ai-preflight" role="dialog" aria-modal="false" aria-label="AI Assist preflight">
+      <div className="ai-preflight__panel">
+        <div className="ai-preflight__head">
+          <div>
+            <span>{request.source}</span>
+            <h3>{request.actionLabel}</h3>
+          </div>
+          <button className="btn btn--ghost btn--compact" type="button" onClick={onClose}>Close</button>
+        </div>
+        <div className="ai-preflight__summary">
+          <Metric label="Mode" value={modeLabel} />
+          <Metric label="Target" value={request.targetCardId || request.assetId || "Project"} />
+          <Metric label="Output" value={`${request.cardCount ?? 1} item${(request.cardCount ?? 1) === 1 ? "" : "s"}`} />
+          <Metric label="Endpoint" value={aiConfigured ? "Configured" : "Local"} />
+        </div>
+        <label className="ai-preflight__field">
+          Context
+          <input value={request.contextSummary ?? ""} onChange={(event) => onChange({ contextSummary: event.target.value })} />
+        </label>
+        <div className="field-row field-row--compact">
+          <select value={request.mode} onChange={(event) => onChange({ mode: event.target.value })}>
+            {Object.entries(AI_MODE_LABELS).map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+          </select>
+          <input
+            type="number"
+            min="1"
+            max="12"
+            value={request.cardCount ?? 1}
+            onChange={(event) => onChange({ cardCount: Number(event.target.value) })}
+            aria-label="Expected output count"
+          />
+        </div>
+        <label className="ai-preflight__field">
+          Prompt
+          <textarea
+            value={request.instruction ?? ""}
+            onChange={(event) => onChange({ instruction: event.target.value })}
+            rows={5}
+          />
+        </label>
+        {needsDiagnostics && !diagnostics && (
+          <p className="ai-preflight__warning">Run Review before building repair proposals.</p>
+        )}
+        <div className="action-row">
+          <button className="btn btn--primary" type="button" disabled={!canBuild || !request.instruction?.trim()} onClick={onBuild}>
+            Build draft
+          </button>
+          <button className="btn" type="button" onClick={onOpenPanel}>Open full panel</button>
+          <button className="btn btn--ghost" type="button" onClick={onClose}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AiAssistPanel({ editor, diagnostics, aiSettings, aiAssistEnabled, aiConfigured, draftRequest, onBuildPlan, onApplyPlan, onOpen }) {
+  const [mode, setMode] = useState("generate_cards");
+  const [theme, setTheme] = useState(editor?.metadata?.title ?? "small court");
+  const [style, setStyle] = useState("ink wash card art");
+  const [cardCount, setCardCount] = useState(2);
+  const [targetCardId, setTargetCardId] = useState("");
+  const [assetId, setAssetId] = useState("");
+  const [instruction, setInstruction] = useState("");
+  const [plan, setPlan] = useState(null);
+  const [selected, setSelected] = useState([]);
+  const [applyResult, setApplyResult] = useState("");
+  const [isBuilding, setIsBuilding] = useState(false);
+  const [progressStep, setProgressStep] = useState(-1);
+  const [progressStatus, setProgressStatus] = useState("idle");
+  const [buildError, setBuildError] = useState("");
+  const promptRef = useRef(null);
+  const autoBuildRef = useRef(null);
+  const cards = editor?.cards ?? [];
+  const assets = editor?.assets ?? [];
+  const requiresDiagnostics = mode === "repair_diagnostics";
+  const canBuild = !requiresDiagnostics || Boolean(diagnostics);
+  const selectedSet = useMemo(() => new Set(selected), [selected]);
+
+  useEffect(() => {
+    if (!targetCardId && cards[0]?.id) {
+      setTargetCardId(cards[0].id);
+    }
+  }, [cards, targetCardId]);
+
+  useEffect(() => {
+    setPlan(null);
+    setSelected([]);
+    setApplyResult("");
+  }, [mode]);
+
+  useEffect(() => {
+    if (!draftRequest) return;
+    setMode(draftRequest.mode ?? "generate_cards");
+    setInstruction(draftRequest.instruction ?? "");
+    setTargetCardId(draftRequest.targetCardId ?? "");
+    setAssetId(draftRequest.assetId ?? "");
+    if (draftRequest.cardCount) setCardCount(draftRequest.cardCount);
+    if (draftRequest.theme) setTheme(draftRequest.theme);
+    setPlan(null);
+    setSelected([]);
+    setApplyResult("");
+    setBuildError("");
+    setProgressStep(-1);
+    setProgressStatus("idle");
+    if (draftRequest.autoBuild && autoBuildRef.current !== draftRequest.id) {
+      autoBuildRef.current = draftRequest.id;
+      void buildPlan(draftRequest);
+    }
+  }, [draftRequest?.id]);
+
+  async function buildPlan(overrides = null) {
+    const nextMode = overrides?.mode ?? mode;
+    const nextInstruction = overrides?.instruction ?? instruction;
+    const nextTargetCardId = overrides?.targetCardId ?? targetCardId;
+    const nextAssetId = overrides?.assetId ?? assetId;
+    const nextCardCount = overrides?.cardCount ?? cardCount;
+    const nextTheme = overrides?.theme ?? theme;
+    const nextStyle = overrides?.style ?? style;
+    const nextRequiresDiagnostics = nextMode === "repair_diagnostics";
+    if (isBuilding) return;
+    if (nextRequiresDiagnostics && !diagnostics) {
+      setProgressStep(0);
+      setProgressStatus("failed");
+      setBuildError("Review repair needs a completed Review result before AI Assist can build repair proposals.");
+      return;
+    }
+    if (!nextInstruction?.trim()) {
+      setProgressStep(0);
+      setProgressStatus("failed");
+      setBuildError("Add a prompt before building the draft.");
+      return;
+    }
+    setIsBuilding(true);
+    setBuildError("");
+    setProgressStatus("building");
+    setProgressStep(0);
+    await wait(110);
+    setProgressStep(1);
+    await wait(90);
+    setProgressStep(2);
+    const result = await onBuildPlan({
+      mode: nextMode,
+      config: buildAiConnectorConfig(aiSettings, { theme: nextTheme, cardCount: nextCardCount, style: nextStyle }),
+      instruction: nextInstruction,
+      targetCardId: nextTargetCardId || null,
+      assetId: nextAssetId || null,
+      diagnostics: nextRequiresDiagnostics ? diagnostics : null
+    });
+    if (!result || result === true) {
+      setProgressStatus("failed");
+      setBuildError("AI Assist draft failed. Check the status bar, edit the prompt, or retry.");
+      setIsBuilding(false);
+      return;
+    }
+    await wait(90);
+    setProgressStep(3);
+    await wait(90);
+    setProgressStep(4);
+    await wait(90);
+    if (result && result !== true) {
+      setPlan(result);
+      setSelected((result.proposals ?? []).filter((proposal) => (proposal.patches ?? []).length > 0).map((proposal) => proposal.id));
+      setApplyResult("");
+      setProgressStep(5);
+      setProgressStatus("ready");
+    }
+    setIsBuilding(false);
+  }
+
+  async function retryBuild() {
+    await buildPlan();
+  }
+
+  function focusPrompt() {
+    promptRef.current?.focus();
+  }
+
+  async function applySelected() {
+    if (!plan || selected.length === 0) return;
+    const result = await onApplyPlan(plan, selected);
+    if (result) {
+      setApplyResult(`Applied ${selected.length} proposal${selected.length === 1 ? "" : "s"}.`);
+      setPlan(null);
+      setSelected([]);
+    }
+  }
+
+  function toggleProposal(proposalId) {
+    setSelected((current) =>
+      current.includes(proposalId)
+        ? current.filter((id) => id !== proposalId)
+        : [...current, proposalId]
+    );
+  }
+
+  return (
+    <section className="panel">
+      <PanelHead title="AI Assist" note="Contextual draft planning, review repair, and visual request previews." />
+      <div className={`ai-endpoint-card ${aiConfigured ? "ai-endpoint-card--ready" : "ai-endpoint-card--setup"}`}>
+        <div>
+          <span>{aiAssistEnabled ? "Assist layer visible" : "Assist layer hidden"}</span>
+          <strong>{aiConfigured ? aiSettings.modelId : "Local draft planner"}</strong>
+          <small>
+            {aiConfigured
+              ? `${aiSettings.protocol} · ${aiSettings.baseUrl}`
+              : "No endpoint configured. Real provider calls are not active in this UX shell."}
+          </small>
+        </div>
+        <button className="btn btn--ghost btn--compact" type="button" onClick={() => onOpen("settings")}>Settings</button>
+      </div>
+      {draftRequest?.actionLabel && (
+        <div className="ai-request-source">
+          <span>{draftRequest.source ?? "Contextual action"}</span>
+          <strong>{draftRequest.actionLabel}</strong>
+          <small>{draftRequest.contextSummary ?? "Current project context"}</small>
+        </div>
+      )}
+      <div className="ai-edit-layout">
+        <div className="subsection ai-edit-controls">
+          <h3>Request</h3>
+          <div className="field-row field-row--compact">
+            <select value={mode} onChange={(event) => setMode(event.target.value)}>
+              <option value="generate_cards">Draft cards</option>
+              <option value="repair_diagnostics">Repair review</option>
+              <option value="generate_asset">Generate visual request</option>
+              <option value="analyze_asset">Analyze visual request</option>
+            </select>
+            <input value={theme} onChange={(event) => setTheme(event.target.value)} placeholder="theme" />
+            <input type="number" min="1" max="12" value={cardCount} onChange={(event) => setCardCount(Number(event.target.value))} />
+          </div>
+          <div className="field-row field-row--compact">
+            <select value={targetCardId} onChange={(event) => setTargetCardId(event.target.value)}>
+              <option value="">No target card</option>
+              {cards.map((card) => <option key={card.id} value={card.id}>{card.id}</option>)}
+            </select>
+            <select value={assetId} onChange={(event) => setAssetId(event.target.value)}>
+              <option value="">No target asset</option>
+              {assets.map((asset) => <option key={asset.id} value={asset.id}>{asset.id}</option>)}
+            </select>
+            <input value={style} onChange={(event) => setStyle(event.target.value)} placeholder="visual style" />
+          </div>
+          <textarea
+            ref={promptRef}
+            value={instruction}
+            onChange={(event) => setInstruction(event.target.value)}
+            placeholder="Describe what the AI should draft, repair, generate, or inspect."
+            rows={5}
+          />
+          <AiProgress step={progressStep} active={isBuilding} status={progressStatus} />
+          {buildError && (
+            <div className="ai-build-error" role="alert">
+              <div>
+                <strong>Draft failed</strong>
+                <span>{buildError}</span>
+              </div>
+              <div className="ai-build-error__actions">
+                <button className="btn btn--ghost btn--compact" type="button" disabled={isBuilding} onClick={() => void retryBuild()}>Retry</button>
+                <button className="btn btn--ghost btn--compact" type="button" onClick={focusPrompt}>Edit prompt</button>
+              </div>
+            </div>
+          )}
+          <div className="action-row">
+            <button className="btn btn--primary" disabled={!canBuild || isBuilding} onClick={() => void buildPlan()}>
+              {isBuilding ? "Building draft..." : "Build draft"}
+            </button>
+            <button className="btn" onClick={() => onOpen("content")}>Content</button>
+            <button className="btn" onClick={() => onOpen("review")}>Review</button>
+          </div>
+          {requiresDiagnostics && !diagnostics && (
+            <p className="muted">Repair proposals use the latest Review result. Run Review first, then return here.</p>
+          )}
+        </div>
+
+        <div className="subsection">
+          <h3>Context</h3>
+          <div className="ai-context-grid">
+            <Metric label="Cards" value={String(cards.length)} />
+            <Metric label="Assets" value={String(assets.length)} />
+            <Metric label="Review" value={diagnostics ? `${diagnostics.healthScore}/100` : "Not run"} tone={diagnostics ? "" : "bad"} />
+            <Metric label="Endpoint" value={aiConfigured ? aiSettings.protocol : "Local"} />
+            <Metric label="Target" value={targetCardId || "None"} />
+          </div>
+          <pre className="output output--compact">
+            {plan ? JSON.stringify(plan.request.context, null, 2) : "Build a plan to preview the AI context."}
+          </pre>
+        </div>
+      </div>
+
+      <div className="subsection">
+        <h3>Proposals</h3>
+        {plan ? (
+          <>
+            <div className="action-row">
+              <button className="btn" onClick={() => setSelected((plan.proposals ?? []).map((proposal) => proposal.id))}>Select all</button>
+              <button className="btn" onClick={() => setSelected([])}>Clear</button>
+              <button className="btn btn--primary" disabled={selected.length === 0} onClick={() => void applySelected()}>Apply selected</button>
+              <span className="muted">{selected.length}/{plan.proposals?.length ?? 0} selected</span>
+            </div>
+            <div className="ai-proposal-list">
+              {(plan.proposals ?? []).map((proposal) => (
+                <article className="ai-proposal" key={proposal.id}>
+                  <label className="ai-proposal__head">
+                    <input
+                      type="checkbox"
+                      checked={selectedSet.has(proposal.id)}
+                      onChange={() => toggleProposal(proposal.id)}
+                      disabled={(proposal.patches ?? []).length === 0}
+                    />
+                    <span>
+                      <strong>{proposal.title}</strong>
+                      <small>{proposal.source?.mode ?? plan.mode} · {(proposal.target?.cardIds ?? []).join(", ") || "context"}</small>
+                    </span>
+                  </label>
+                  <p>{proposal.summary}</p>
+                  <pre className="output output--compact">{JSON.stringify(proposal.patches, null, 2)}</pre>
+                </article>
+              ))}
+            </div>
+          </>
+        ) : (
+          <p className="muted">No AI Assist draft yet.</p>
+        )}
+        {applyResult && <p className="muted">{applyResult}</p>}
+      </div>
+    </section>
+  );
+}
+
+function SettingsPanel({ editor, aiSettings, onAiSettingsChange, onRefresh, onStatus }) {
   const [title, setTitle] = useState(editor?.metadata?.title ?? "");
   const [plan, setPlan] = useState("");
-  const [provider, setProvider] = useState("stub");
   const [theme, setTheme] = useState("small kingdom");
   const [count, setCount] = useState(8);
+  const [testStatus, setTestStatus] = useState("");
 
   useEffect(() => setTitle(editor?.metadata?.title ?? ""), [editor?.metadata?.title]);
 
@@ -3111,14 +4195,36 @@ function SettingsPanel({ editor, onRefresh, onStatus }) {
   async function buildPlan() {
     const result = await api("/api/connector/plan", {
       method: "POST",
-      body: { config: { provider, theme, cardCount: count } }
+      body: { config: buildAiConnectorConfig(aiSettings, { theme, cardCount: count }) }
     });
     setPlan(JSON.stringify(result, null, 2));
   }
 
+  function updateAiSetting(key, value) {
+    onAiSettingsChange(normalizeAiSettings({ ...aiSettings, [key]: value }));
+  }
+
+  function toggleCapability(key) {
+    onAiSettingsChange(normalizeAiSettings({
+      ...aiSettings,
+      capabilities: {
+        ...aiSettings.capabilities,
+        [key]: !aiSettings.capabilities?.[key]
+      }
+    }));
+  }
+
+  function testEndpoint() {
+    if (!isAiEndpointConfigured(aiSettings)) {
+      setTestStatus("Add a base URL and model id before real provider calls.");
+      return;
+    }
+    setTestStatus(`Ready to build ${aiSettings.protocol} requests for ${aiSettings.modelId}. Network calls are not enabled in this shell.`);
+  }
+
   return (
     <section className="panel">
-      <PanelHead title="Settings / Pipeline" note="Project metadata, skin posture, locale hooks, and connector planning." />
+      <PanelHead title="Settings / Pipeline" note="Project metadata, AI endpoint posture, locale hooks, and connector planning." />
       <div className="subsection">
         <h3>Project</h3>
         <div className="field-row">
@@ -3127,9 +4233,47 @@ function SettingsPanel({ editor, onRefresh, onStatus }) {
         </div>
       </div>
       <div className="subsection">
-        <h3>Connector Plan</h3>
+        <h3>AI Endpoint</h3>
+        <div className="ai-settings-grid">
+          <label>
+            Base URL
+            <input value={aiSettings.baseUrl} onChange={(event) => updateAiSetting("baseUrl", event.target.value)} placeholder="https://api.example.com/v1" />
+          </label>
+          <label>
+            API key
+            <input type="password" value={aiSettings.apiKey} onChange={(event) => updateAiSetting("apiKey", event.target.value)} placeholder="Stored only in this creator browser" />
+          </label>
+          <label>
+            Protocol
+            <select value={aiSettings.protocol} onChange={(event) => updateAiSetting("protocol", event.target.value)}>
+              {AI_PROTOCOLS.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+            </select>
+          </label>
+          <label>
+            Model ID
+            <input value={aiSettings.modelId} onChange={(event) => updateAiSetting("modelId", event.target.value)} placeholder="gpt-4.1, claude-sonnet, local-model..." />
+          </label>
+        </div>
+        <div className="capability-grid" aria-label="Model capabilities">
+          {AI_CAPABILITIES.map(([id, label]) => (
+            <button
+              key={id}
+              className={aiSettings.capabilities?.[id] ? "capability-chip capability-chip--active" : "capability-chip"}
+              type="button"
+              onClick={() => toggleCapability(id)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="action-row">
+          <button className="btn" type="button" onClick={testEndpoint}>Check setup</button>
+          <span className="muted">{testStatus || "Endpoint settings are used for request planning only in this phase."}</span>
+        </div>
+      </div>
+      <div className="subsection">
+        <h3>Connector Request Preview</h3>
         <div className="field-row field-row--compact">
-          <input value={provider} onChange={(event) => setProvider(event.target.value)} placeholder="provider" />
           <input value={theme} onChange={(event) => setTheme(event.target.value)} placeholder="theme" />
           <input type="number" min="1" value={count} onChange={(event) => setCount(Number(event.target.value))} />
           <button className="btn btn--primary" onClick={() => void buildPlan()}>Build plan</button>
@@ -3137,6 +4281,696 @@ function SettingsPanel({ editor, onRefresh, onStatus }) {
         <pre className="output">{plan || "No connector plan generated."}</pre>
       </div>
     </section>
+  );
+}
+
+function AiAmbientLayer({ activePanelLabel, graphSelection, onAction }) {
+  const [phase, setPhase] = useState("loading");
+  const [selection, setSelection] = useState(null);
+  const [expanded, setExpanded] = useState(false);
+  const [pinned, setPinned] = useState(false);
+  const [cardOffset, setCardOffset] = useState({ x: 0, y: 0 });
+  const [prompt, setPrompt] = useState("");
+  const [hoveredControl, setHoveredControl] = useState("");
+  const borderCanvasRef = useRef(null);
+  const dragRef = useRef(null);
+
+  useEffect(() => {
+    setPhase("loading");
+    const timer = window.setTimeout(() => setPhase("ready"), 920);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if (phase !== "ready") return undefined;
+    const canvas = borderCanvasRef.current;
+    if (!canvas) return undefined;
+    const context = canvas.getContext("2d", { alpha: true });
+    if (!context) return undefined;
+
+    let frameId = 0;
+    let lastCanvasWidth = 0;
+    let lastCanvasHeight = 0;
+    let lastFrameWidth = 0;
+    let lastFrameHeight = 0;
+    let lastRatio = 0;
+    const startedAt = performance.now();
+
+    function resizeCanvas() {
+      const ratio = Math.min(window.devicePixelRatio || 1, 2);
+      const canvasWidth = window.innerWidth;
+      const canvasHeight = window.innerHeight;
+      const frameWidth = document.documentElement?.clientWidth || canvasWidth;
+      const frameHeight = document.documentElement?.clientHeight || canvasHeight;
+      if (
+        canvasWidth === lastCanvasWidth &&
+        canvasHeight === lastCanvasHeight &&
+        frameWidth === lastFrameWidth &&
+        frameHeight === lastFrameHeight &&
+        ratio === lastRatio
+      ) return;
+      lastCanvasWidth = canvasWidth;
+      lastCanvasHeight = canvasHeight;
+      lastFrameWidth = frameWidth;
+      lastFrameHeight = frameHeight;
+      lastRatio = ratio;
+      canvas.width = Math.max(1, Math.round(canvasWidth * ratio));
+      canvas.height = Math.max(1, Math.round(canvasHeight * ratio));
+      canvas.style.width = `${canvasWidth}px`;
+      canvas.style.height = `${canvasHeight}px`;
+      context.setTransform(ratio, 0, 0, ratio, 0, 0);
+    }
+
+    function colorAt(progress, alpha) {
+      const normalized = ((progress % 1) + 1) % 1;
+      const hue = Math.round(normalized * 360);
+      const wave = 0.5 + 0.5 * Math.cos((normalized - 0.12) * Math.PI * 2);
+      const lightness = 62 + wave * 19;
+      const opacity = alpha * (0.46 + wave * 0.46);
+      return `hsla(${hue}, 94%, ${lightness}%, ${opacity})`;
+    }
+
+    function addPerimeterStops(gradient, startDistance, endDistance, perimeter, offset, alpha) {
+      const stops = [0, 0.12, 0.24, 0.36, 0.5, 0.64, 0.76, 0.88, 1];
+      stops.forEach((stop) => {
+        const distance = startDistance + (endDistance - startDistance) * stop;
+        const progress = distance / perimeter - offset;
+        gradient.addColorStop(stop, colorAt(progress, alpha));
+      });
+    }
+
+    function paintEdge(gradient, x, y, width, height, alpha) {
+      context.fillStyle = gradient;
+      context.globalAlpha = alpha;
+      context.fillRect(x, y, width, height);
+    }
+
+    function draw(now) {
+      resizeCanvas();
+      const canvasWidth = lastCanvasWidth;
+      const canvasHeight = lastCanvasHeight;
+      const width = lastFrameWidth;
+      const height = lastFrameHeight;
+      const phaseOffset = ((now - startedAt) % 54000) / 54000;
+      const thickness = 4;
+      const glow = 12;
+      const perimeter = Math.max(1, (width + height) * 2);
+
+      context.clearRect(0, 0, canvasWidth, canvasHeight);
+
+      const top = context.createLinearGradient(0, 0, width, 0);
+      addPerimeterStops(top, 0, width, perimeter, phaseOffset, 1);
+      const right = context.createLinearGradient(width, 0, width, height);
+      addPerimeterStops(right, width, width + height, perimeter, phaseOffset, 1);
+      const bottom = context.createLinearGradient(width, height, 0, height);
+      addPerimeterStops(bottom, width + height, width * 2 + height, perimeter, phaseOffset, 1);
+      const left = context.createLinearGradient(0, height, 0, 0);
+      addPerimeterStops(left, width * 2 + height, perimeter, perimeter, phaseOffset, 1);
+
+      paintEdge(top, 0, 0, width, glow, 0.16);
+      paintEdge(right, width - glow, 0, glow, height, 0.14);
+      paintEdge(bottom, 0, height - glow, width, glow, 0.16);
+      paintEdge(left, 0, 0, glow, height, 0.14);
+
+      paintEdge(top, 0, 0, width, thickness, 0.92);
+      paintEdge(right, width - thickness, 0, thickness, height, 0.86);
+      paintEdge(bottom, 0, height - thickness, width, thickness, 0.92);
+      paintEdge(left, 0, 0, thickness, height, 0.86);
+
+      context.globalAlpha = 1;
+      frameId = window.requestAnimationFrame(draw);
+    }
+
+    frameId = window.requestAnimationFrame(draw);
+    window.addEventListener("resize", resizeCanvas);
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      window.removeEventListener("resize", resizeCanvas);
+      context.clearRect(0, 0, canvas.width, canvas.height);
+    };
+  }, [phase]);
+
+  useEffect(() => {
+    setSelection(null);
+    setExpanded(false);
+    setPinned(false);
+    setCardOffset({ x: 0, y: 0 });
+    setHoveredControl("");
+    setPrompt("");
+  }, [activePanelLabel]);
+
+  useEffect(() => {
+    if (graphSelection) {
+      setSelection(graphSelection);
+      setExpanded(false);
+      setPinned(false);
+      setCardOffset({ x: 0, y: 0 });
+      setHoveredControl("");
+      setPrompt("");
+      return;
+    }
+    setSelection((current) => current?.source === "graph" ? null : current);
+    setExpanded(false);
+    setPinned(false);
+    setCardOffset({ x: 0, y: 0 });
+    setHoveredControl("");
+  }, [graphSelection]);
+
+  useEffect(() => {
+    function isAiSurface(target) {
+      return target?.closest?.(".ai-ambient, .ai-preflight");
+    }
+
+    function elementAtPointIgnoringAi(x, y) {
+      const stack = document.elementsFromPoint?.(x, y) ?? [];
+      return stack.find((element) => !isAiSurface(element)) ?? null;
+    }
+
+    function ownsPoint(element, point) {
+      if (!element) return false;
+      const hit = elementAtPointIgnoringAi(point.x, point.y);
+      if (!hit) return false;
+      const target = element.closest?.("[data-ai-target]");
+      return element === hit || element.contains(hit) || target === hit || target?.contains(hit);
+    }
+
+    function isMeaningfullyVisible(rect, element) {
+      if (!element || rect.width < 10 || rect.height < 10) return false;
+      const insetX = Math.min(10, Math.max(2, rect.width * 0.18));
+      const insetY = Math.min(10, Math.max(2, rect.height * 0.18));
+      const center = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+      const points = [
+        center,
+        { x: rect.left + insetX, y: rect.top + insetY },
+        { x: rect.left + rect.width - insetX, y: rect.top + insetY },
+        { x: rect.left + insetX, y: rect.top + rect.height - insetY },
+        { x: rect.left + rect.width - insetX, y: rect.top + rect.height - insetY }
+      ].filter((point) => (
+        point.x >= 0 &&
+        point.y >= 0 &&
+        point.x <= window.innerWidth &&
+        point.y <= window.innerHeight
+      ));
+      return points.some((point) => ownsPoint(element, point));
+    }
+
+    function visibleSelectionRect(rect, element) {
+      const margin = 8;
+      const stripReserve = 30;
+      const left = Math.max(margin, rect.left);
+      const top = Math.max(margin, rect.top);
+      const right = Math.min(window.innerWidth - margin, rect.right);
+      const bottom = Math.min(window.innerHeight - margin - stripReserve, rect.bottom);
+      if (right <= left || bottom <= top) return null;
+      const visibleRect = {
+        left,
+        top,
+        width: right - left,
+        height: bottom - top
+      };
+      return isMeaningfullyVisible(visibleRect, element) ? visibleRect : null;
+    }
+
+    function selectionRadius(element) {
+      if (!element || element === document.documentElement || element === document.body) return "0px";
+      const style = window.getComputedStyle(element);
+      return style.borderRadius || "0px";
+    }
+
+    function selectionFromElement(element) {
+      const rect = element.getBoundingClientRect();
+      const visibleRect = visibleSelectionRect(rect, element);
+      if (!visibleRect) return null;
+      return {
+        source: "element",
+        type: element.dataset.aiTarget || "object",
+        label: element.dataset.aiLabel || element.dataset.aiTarget || activePanelLabel,
+        context: element.dataset.aiContext || "",
+        targetCardId: element.dataset.aiCardId || null,
+        anchorElement: element,
+        rect: {
+          ...visibleRect,
+          radius: selectionRadius(element)
+        }
+      };
+    }
+
+    function selectionFromFormControl(element) {
+      if (!element?.matches?.("input, textarea")) return null;
+      let start;
+      let end;
+      try {
+        start = element.selectionStart;
+        end = element.selectionEnd;
+      } catch {
+        return null;
+      }
+      if (typeof start !== "number" || typeof end !== "number" || start === end) return null;
+      const text = element.value.slice(Math.min(start, end), Math.max(start, end)).trim();
+      if (!text) return null;
+      const rect = element.getBoundingClientRect();
+      const visibleRect = visibleSelectionRect(rect, element);
+      if (!visibleRect) return null;
+      const target = element.closest("[data-ai-target]");
+      const contextHint = inferAiSelectionContext(element, target, activePanelLabel);
+      return {
+        source: "field",
+        type: target?.dataset.aiTarget || "field selection",
+        label: target?.dataset.aiLabel || contextHint || element.getAttribute("name") || element.placeholder || activePanelLabel,
+        context: target?.dataset.aiContext || contextHint || "Selected field text",
+        targetCardId: target?.dataset.aiCardId || null,
+        anchorElement: element,
+        text,
+        rect: {
+          ...visibleRect,
+          radius: selectionRadius(element)
+        }
+      };
+    }
+
+    function selectionFromRange() {
+      const nativeSelection = window.getSelection?.();
+      const text = nativeSelection?.toString?.().trim() ?? "";
+      if (!text || nativeSelection.rangeCount === 0) return null;
+      const range = nativeSelection.getRangeAt(0);
+      const rect = range.getBoundingClientRect();
+      const anchorElement = nativeSelection.anchorNode?.nodeType === Node.ELEMENT_NODE
+        ? nativeSelection.anchorNode
+        : nativeSelection.anchorNode?.parentElement;
+      const target = anchorElement?.closest?.("[data-ai-target]");
+      const radiusSource = target || anchorElement;
+      const visibleRect = visibleSelectionRect(rect, radiusSource);
+      if (!visibleRect) return null;
+      const contextHint = inferAiSelectionContext(anchorElement, target, activePanelLabel);
+      return {
+        source: "text",
+        type: target?.dataset.aiTarget || "text selection",
+        label: target?.dataset.aiLabel || contextHint || activePanelLabel,
+        context: target?.dataset.aiContext || contextHint || "Selected text",
+        targetCardId: target?.dataset.aiCardId || null,
+        anchorElement: target || anchorElement,
+        text,
+        rect: {
+          ...visibleRect,
+          radius: selectionRadius(radiusSource)
+        }
+      };
+    }
+
+    function captureSelection(event) {
+      if (isAiSurface(event.target)) return;
+      window.setTimeout(() => {
+        const textSelection = selectionFromFormControl(event.target) || selectionFromRange();
+        if (textSelection) {
+          setSelection(textSelection);
+          setExpanded(false);
+          setPinned(false);
+          setCardOffset({ x: 0, y: 0 });
+          setPrompt("");
+        }
+      }, 0);
+    }
+
+    function captureClick(event) {
+      if (isAiSurface(event.target)) return;
+      const target = event.target?.closest?.("[data-ai-target]");
+      if (!target) {
+        setSelection(null);
+        setExpanded(false);
+        setPrompt("");
+        return;
+      }
+      const next = selectionFromElement(target);
+      if (!next) return;
+      setSelection(next);
+      setExpanded(false);
+      setPinned(false);
+      setCardOffset({ x: 0, y: 0 });
+      setPrompt("");
+    }
+
+    function clearFloatingSelection() {
+      setSelection(null);
+      setExpanded(false);
+      setPinned(false);
+      setCardOffset({ x: 0, y: 0 });
+      setPrompt("");
+    }
+
+    function refreshFloatingSelection() {
+      setSelection((current) => {
+        if (!current) return current;
+        if (current.source === "graph") return current;
+        let refreshed = null;
+        if (current.source === "field" && current.anchorElement?.isConnected) {
+          refreshed = selectionFromFormControl(current.anchorElement);
+        } else if (current.source === "text") {
+          const nativeSelection = window.getSelection?.();
+          if (nativeSelection?.rangeCount) refreshed = selectionFromRange();
+          if (!refreshed && current.anchorElement?.isConnected) refreshed = selectionFromElement(current.anchorElement);
+        } else if (current.anchorElement?.isConnected) {
+          refreshed = selectionFromElement(current.anchorElement);
+        }
+        if (refreshed) return { ...current, ...refreshed, hidden: false };
+        if (current.anchorElement?.isConnected) return { ...current, hidden: true };
+        return null;
+      });
+    }
+
+    function onKeyDown(event) {
+      if (event.key === "Escape") {
+        clearFloatingSelection();
+      }
+    }
+
+    document.addEventListener("mouseup", captureSelection);
+    document.addEventListener("keyup", captureSelection);
+    document.addEventListener("click", captureClick);
+    document.addEventListener("keydown", onKeyDown);
+    window.addEventListener("scroll", refreshFloatingSelection, true);
+    window.addEventListener("resize", clearFloatingSelection);
+    return () => {
+      document.removeEventListener("mouseup", captureSelection);
+      document.removeEventListener("keyup", captureSelection);
+      document.removeEventListener("click", captureClick);
+      document.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("scroll", refreshFloatingSelection, true);
+      window.removeEventListener("resize", clearFloatingSelection);
+    };
+  }, [activePanelLabel]);
+
+  const rect = selection?.hidden ? null : selection?.rect;
+  const suggestions = getAiSelectionSuggestions(selection);
+  const popover = rect ? getAiPopoverLayout(rect) : null;
+  const selectedTextPreview = formatAiSelectionText(selection?.text);
+  const contextPreview = formatAiSelectionContext(selection, selectedTextPreview);
+
+  function runAction(actionId) {
+    if (!selection) return;
+    onAction?.(actionId, selection, prompt);
+    setPrompt("");
+    setExpanded(false);
+  }
+
+  function closeSelection() {
+    setSelection(null);
+    setExpanded(false);
+    setPinned(false);
+    setCardOffset({ x: 0, y: 0 });
+    setHoveredControl("");
+    setPrompt("");
+  }
+
+  function startCardDrag(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    setExpanded(true);
+    setPinned(true);
+    dragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: cardOffset.x,
+      originY: cardOffset.y
+    };
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  }
+
+  function moveCard(event) {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    setCardOffset({
+      x: drag.originX + event.clientX - drag.startX,
+      y: drag.originY + event.clientY - drag.startY
+    });
+  }
+
+  function endCardDrag(event) {
+    if (dragRef.current?.pointerId === event.pointerId) {
+      dragRef.current = null;
+      event.currentTarget.releasePointerCapture?.(event.pointerId);
+    }
+  }
+
+  return (
+    <div className={`ai-ambient ai-ambient--${phase}`} aria-live="polite">
+      <div className="ai-ambient__wash" aria-hidden="true" />
+      <div className="ai-ambient__liquid" aria-hidden="true" />
+      <div className="ai-ambient__frame" aria-hidden="true">
+        <canvas ref={borderCanvasRef} className="ai-ambient__border-canvas" />
+      </div>
+      {phase === "loading" && (
+        <div className="ai-ambient__loading" role="status">
+          <span />
+          <strong>Preparing AI context</strong>
+        </div>
+      )}
+      {rect && (
+        <>
+          <div
+            className="ai-selection-aura"
+            style={{
+              left: rect.left,
+              top: rect.top,
+              width: rect.width,
+              height: rect.height,
+              borderRadius: rect.radius
+            }}
+            aria-hidden="true"
+          />
+          <div
+            className={`ai-selection-popover ai-selection-popover--${popover.placement} ${expanded ? "ai-selection-popover--expanded" : ""}`}
+            style={{
+              left: popover.left,
+              top: popover.top,
+              "--ai-bar-width": `${popover.barWidth}px`,
+              "--ai-card-width": `${popover.width}px`,
+              "--ai-card-left": `${popover.cardLeft}px`,
+              "--ai-selection-height": `${rect.height}px`,
+              "--ai-card-offset-x": `${cardOffset.x}px`,
+              "--ai-card-offset-y": `${cardOffset.y}px`
+            }}
+            onMouseEnter={() => setExpanded(true)}
+            onMouseLeave={() => {
+              if (!pinned) setExpanded(false);
+            }}
+            onFocus={() => setExpanded(true)}
+          >
+            <button
+              className="ai-selection-handle"
+              type="button"
+              aria-expanded={expanded}
+              onClick={() => setExpanded((value) => !value)}
+            >
+              <span aria-hidden="true" />
+            </button>
+            <div className="ai-selection-card" role="dialog" aria-label="AI actions for selection">
+              <div className="ai-selection-card__toolbar" aria-label="AI card controls">
+                <button
+                  className={`ai-selection-card__drag ${hoveredControl === "drag" ? "ai-selection-card__control--hovered" : ""}`}
+                  type="button"
+                  title="Move"
+                  aria-label="Move AI card"
+                  onPointerEnter={() => setHoveredControl("drag")}
+                  onPointerLeave={() => setHoveredControl("")}
+                  onPointerDown={startCardDrag}
+                  onPointerMove={moveCard}
+                  onPointerUp={endCardDrag}
+                  onPointerCancel={endCardDrag}
+                >
+                  <span className="ai-selection-card__drag-bar" aria-hidden="true" />
+                </button>
+                <div className="ai-selection-card__controls">
+                  <button
+                    className={`ai-selection-card__pin ${pinned ? "ai-selection-card__pin--active" : ""} ${hoveredControl === "pin" ? "ai-selection-card__control--hovered" : ""}`}
+                    type="button"
+                    title={pinned ? "Unpin" : "Pin"}
+                    aria-label={pinned ? "Unpin AI card" : "Pin AI card"}
+                    aria-pressed={pinned}
+                    onPointerEnter={() => setHoveredControl("pin")}
+                    onPointerLeave={() => setHoveredControl("")}
+                    onClick={() => setPinned((value) => !value)}
+                  >
+                    <span className="ai-selection-card__control-bg" aria-hidden="true" />
+                    <AiControlIcon id="pin" />
+                  </button>
+                  <button
+                    className={`ai-selection-card__close ${hoveredControl === "close" ? "ai-selection-card__control--hovered" : ""}`}
+                    type="button"
+                    title="Close"
+                    aria-label="Close AI card"
+                    onPointerEnter={() => setHoveredControl("close")}
+                    onPointerLeave={() => setHoveredControl("")}
+                    onClick={closeSelection}
+                  >
+                    <span className="ai-selection-card__control-bg" aria-hidden="true" />
+                    <AiControlIcon id="close" />
+                  </button>
+                </div>
+              </div>
+              <div className="ai-selection-card__head">
+                <span>{selection.type}</span>
+                <strong>{selection.label}</strong>
+                {selectedTextPreview && <em title={selection.text}>{selectedTextPreview}</em>}
+                {contextPreview && <small>{contextPreview}</small>}
+              </div>
+              <div className="ai-selection-card__suggestions">
+                {suggestions.map((suggestion) => <button type="button" key={suggestion} onClick={() => setPrompt(suggestion)}>{suggestion}</button>)}
+              </div>
+              <div className="ai-selection-card__quick" aria-label="Quick AI actions">
+                {AI_AMBIENT_ACTIONS.map(([id, label, title]) => (
+                  <button key={id} type="button" title={title} aria-label={label} onClick={() => runAction(id)}>
+                    <AiActionIcon id={id} />
+                  </button>
+                ))}
+              </div>
+              <div className="ai-selection-card__prompt">
+                <input
+                  value={prompt}
+                  onChange={(event) => setPrompt(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      runAction("rewrite");
+                    }
+                  }}
+                  placeholder="Add direction..."
+                />
+                <button type="button" onClick={() => runAction("rewrite")}>Ask</button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function formatAiSelectionText(text) {
+  const normalized = text?.replace(/\s+/g, " ").trim() ?? "";
+  if (!normalized) return "";
+  return normalized.length > 56 ? `${normalized.slice(0, 53)}...` : normalized;
+}
+
+function formatAiSelectionContext(selection, textPreview = "") {
+  const context = selection?.context?.replace(/\s+/g, " ").trim() ?? "";
+  if (!context) return "";
+  const label = selection?.label?.replace(/\s+/g, " ").trim() ?? "";
+  const normalizedText = textPreview.replace(/\s+/g, " ").trim();
+  if (context === label || context === normalizedText) return "";
+  return context.length > 64 ? `${context.slice(0, 61)}...` : context;
+}
+
+function inferAiSelectionContext(element, target, fallback) {
+  if (target?.dataset.aiLabel) return target.dataset.aiLabel;
+  if (target?.dataset.aiContext) return target.dataset.aiContext;
+
+  const closest = element?.closest?.(".metric, label, .review-panel-block, .review-card-row, .panel, .subsection, .card-editor, .choice-editor");
+  if (!closest) return fallback;
+
+  if (closest.matches(".metric")) {
+    return closest.querySelector("span")?.textContent?.trim() || fallback;
+  }
+  if (closest.matches("label")) {
+    const clone = closest.cloneNode(true);
+    clone.querySelectorAll("input, textarea, select, button").forEach((node) => node.remove());
+    return clone.textContent?.trim() || fallback;
+  }
+  const heading = closest.querySelector("h2, h3, strong, .review-panel-block__head strong, .review-card-row__head strong");
+  return heading?.textContent?.trim() || fallback;
+}
+
+function getAiPopoverLayout(rect) {
+  const clampNumber = (value, min, max) => Math.min(Math.max(value, min), max);
+  const viewportWidth = Math.max(320, window.innerWidth || 320);
+  const viewportHeight = Math.max(320, window.innerHeight || 320);
+  const margin = 12;
+  const anchorX = rect.left + rect.width / 2;
+  const left = clampNumber(rect.left, margin, Math.max(margin, viewportWidth - margin - rect.width));
+  const barWidth = Math.min(rect.width, viewportWidth - margin * 2);
+  const cardWidth = Math.min(viewportWidth - margin * 2, Math.max(300, Math.min(barWidth, 430)));
+  const preferredCardLeft = anchorX - cardWidth / 2 - left;
+  const cardLeft = clampNumber(preferredCardLeft, margin - left, viewportWidth - margin - cardWidth - left);
+  const anchorTop = clampNumber(rect.top + rect.height, margin + 24, viewportHeight - margin - 24);
+  const estimatedExpandedHeight = 292;
+  const spaceBelow = viewportHeight - anchorTop - margin;
+  const spaceAbove = anchorTop - margin;
+  const placement = spaceBelow >= estimatedExpandedHeight || spaceBelow >= spaceAbove ? "below" : "above";
+  return {
+    left,
+    top: anchorTop,
+    width: cardWidth,
+    cardLeft,
+    barWidth,
+    placement
+  };
+}
+
+function getAiSelectionSuggestions(selection) {
+  if (!selection) return [];
+  if (selection.type?.includes("issue")) {
+    return ["Suggest the smallest repair", "Explain why this is risky", "Draft a safer route"];
+  }
+  if (selection.type?.includes("edge")) {
+    return ["Make this branch harder to reach", "Explain this connection", "Draft a bridge card"];
+  }
+  if (selection.type?.includes("node") || selection.type?.includes("card")) {
+    return ["Tighten the card wording", "Draft a follow-up branch", "Explain state changes"];
+  }
+  return ["Rewrite for clarity", "Translate this selection", "Explain author impact"];
+}
+
+function AiActionIcon({ id }) {
+  const paths = {
+    rewrite: <path d="M5 15.5 15.5 5l3.5 3.5L8.5 19H5v-3.5Zm9-9L17.5 10" />,
+    translate: <path d="M4 6h8M8 4v2m-3 5c2.5-.5 4.5-2 5.5-5M7 8c.7 1.5 1.8 2.7 3.5 3.5M13 19l3-7 3 7m-4.2-2h2.4" />,
+    explain: <path d="M12 18h.01M9.5 9a2.5 2.5 0 1 1 4.2 1.8c-.9.7-1.7 1.3-1.7 2.7M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Z" />,
+    branch: <path d="M6 4v5a4 4 0 0 0 4 4h8M6 20v-5a4 4 0 0 1 4-4h2m3-3 3 3-3 3m0 2 3 3-3 3" />
+  };
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      {paths[id] ?? paths.explain}
+    </svg>
+  );
+}
+
+function AiControlIcon({ id }) {
+  const paths = {
+    pin: <path fill="currentColor" d="M13.694 1.894c-.442-.442-1.06-.384-1.45.006-.379.378-.344 1.032.036 1.408l1.194 1.199-3.2 3.2c-.096.095-.267.107-.402.107l-6.31.434a.5.5 0 0 0-.359.15l-.568.567a1 1 0 0 0-.002 1.43l4.583 4.584-4.661 4.671a1 1 0 0 0 0 1.414l.015.015a1 1 0 0 0 1.415 0l4.664-4.665 4.584 4.58a1.005 1.005 0 0 0 1.422-.009l.57-.568a.5.5 0 0 0 .148-.36l.441-6.303c0-.13.025-.288.12-.383l3.201-3.2 1.199 1.191c.502.502 1.15.297 1.417.031.436-.436.379-1.063-.003-1.445zm1.227 4.058 2.833 2.83-3.828 3.835-.417 5.83-8.27-8.275 5.867-.4z" />,
+    close: (
+      <>
+        <path d="M6.2 6.2 17.8 17.8" />
+        <path d="M17.8 6.2 6.2 17.8" />
+      </>
+    )
+  };
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      {paths[id] ?? paths.close}
+    </svg>
+  );
+}
+
+function AiProgress({ step, active, status = "idle" }) {
+  if (step < 0) return null;
+  return (
+    <div className="ai-progress" aria-label="AI Assist progress">
+      {AI_PROGRESS_STEPS.map((label, index) => (
+        <span
+          key={label}
+          className={[
+            "ai-progress__step",
+            index < step ? "ai-progress__step--done" : "",
+            index === step ? "ai-progress__step--active" : "",
+            status === "failed" && index === step ? "ai-progress__step--failed" : "",
+            status === "ready" && index === AI_PROGRESS_STEPS.length - 1 ? "ai-progress__step--ready" : "",
+            active && index === step ? "ai-progress__step--pulse" : ""
+          ].filter(Boolean).join(" ")}
+        >
+          {label}
+        </span>
+      ))}
+    </div>
   );
 }
 
@@ -3153,7 +4987,7 @@ function PanelHead({ title, note }) {
 
 function Metric({ label, value, tone = "" }) {
   return (
-    <div className={`metric ${tone ? `metric--${tone}` : ""}`}>
+    <div className={`metric ${tone ? `metric--${tone}` : ""}`} data-ai-target="metric" data-ai-label={label} data-ai-context={label}>
       <span>{label}</span>
       <strong>{value}</strong>
     </div>
@@ -3165,6 +4999,7 @@ function panelStatus(id, { editor, playerReady, diagnostics, build }) {
   if (id === "content") return `${editor?.cards?.length ?? 0}`;
   if (id === "story") return `${editor?.cards?.length ?? 0}`;
   if (id === "review") return diagnostics ? `${diagnostics.healthScore}` : "new";
+  if (id === "ai-edit") return diagnostics ? "ready" : "draft";
   if (id === "preview") return playerReady ? "ready" : "blocked";
   if (id === "build") return build ? "ready" : "new";
   if (id === "settings") return editor?.metadata?.title ? "set" : "new";
