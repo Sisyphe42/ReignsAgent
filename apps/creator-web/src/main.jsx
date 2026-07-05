@@ -247,6 +247,8 @@ function App() {
   const playerReady = editor?.playerValidation?.valid === true;
   const aiConfigured = isAiEndpointConfigured(aiSettings);
   const activePanelLabel = PANELS.find((panel) => panel.id === activePanel)?.label ?? "Workspace";
+  const aiPresenceState = aiAssistEnabled ? (aiConfigured ? "ready" : "setup") : "off";
+  const aiPresenceLabel = aiPresenceState === "ready" ? "Ready" : aiPresenceState === "setup" ? "Setup" : "Off";
 
   useEffect(() => {
     document.documentElement.dataset.skin = skin;
@@ -575,15 +577,24 @@ function App() {
         </div>
         <div className="topbar__tools">
           <button
-            className={`ai-toggle ${aiAssistEnabled ? "ai-toggle--active" : ""} ${!aiConfigured ? "ai-toggle--unconfigured" : ""}`}
+            className={`ai-presence ai-presence--${aiPresenceState}`}
             type="button"
             onClick={() => setAiAssistEnabled((enabled) => !enabled)}
             aria-pressed={aiAssistEnabled}
-            title={aiConfigured ? "Toggle AI Assist contextual actions" : "Configure an AI endpoint in Settings"}
+            title={aiConfigured ? "Toggle ambient AI mode" : "AI mode can run local draft previews; configure an endpoint in Settings"}
           >
-            <span className="ai-toggle__dot" aria-hidden="true" />
-            <span>AI Assist</span>
-            <small>{aiAssistEnabled ? (aiConfigured ? "active" : "setup") : "off"}</small>
+            <span className="ai-presence__orb" aria-hidden="true">
+              <span className="ai-presence__core" />
+            </span>
+            <span className="ai-presence__copy">
+              <strong>AI</strong>
+              <small>{aiPresenceLabel}</small>
+            </span>
+            <span className="ai-presence__wave" aria-hidden="true">
+              <span />
+              <span />
+              <span />
+            </span>
           </button>
           <label className="skin-select">
             Skin
