@@ -42,11 +42,14 @@
   - `feedback`: optional reviewer feedback action summary
   - `proposals`: array of proposal records
 - Endpoint execution:
-  - `responses` calls OpenAI-compatible `/responses`
-  - `messages` calls OpenAI-compatible `/chat/completions`
-  - `completions` calls legacy `/completions`
+  - `openai_chat` calls OpenAI-compatible `/chat/completions`; legacy `messages` is accepted as an alias.
+  - `openai_responses` calls OpenAI-compatible `/responses`; legacy `responses` is accepted as an alias.
+  - `openai_completions` calls legacy `/completions`; legacy `completions` is accepted as an alias.
+  - Generic and unified base URI presets default to `openai_chat`; provider execution must not silently switch between Chat and Responses.
+  - Route mode defaults to `auto`: if the endpoint already ends in a known protocol route, use it as the full URL; otherwise append the selected route. `api_root` always appends and `full_url` never appends.
+  - JSON mode is capability-driven by default. If an endpoint rejects OpenAI JSON mode / `response_format`, retry once without that structured JSON parameter while keeping the same protocol.
   - provider output must parse to `{ proposals: [...] }`
-  - returned `config` may include `apiKeyRef` but must never include raw `apiKey` or `credentials`
+  - returned `config` may include redacted `apiKeyRef`, endpoint/model preset ids, icon keys, compatibility family, route mode, and JSON mode, but must never include raw `apiKey` or `credentials`
 - Proposal response:
   - `id`, `title`, `summary`, `source`, `target`, `patches`, optional `preview`
 - Allowed patch operations only:
@@ -97,7 +100,7 @@
   - Repair proposals cover low coverage, unreachable gates, missing tag producers, stalled runs, and dominant gauge pressure where unambiguous.
   - Patch application validates output and rejects unsupported operations.
   - Visual request modes return preview contracts without provider calls.
-  - Endpoint planning covers `responses`, `messages`, `completions`, malformed output, patch prevalidation, and secret redaction.
+  - Endpoint planning covers legacy and canonical OpenAI protocol values, route resolution, JSON-mode fallback, malformed output, patch prevalidation, and secret redaction.
 - Interface unit tests:
   - Plan creation includes active bundle context and fingerprint.
   - Async plan creation routes to endpoints when configured and stays local for stub/no endpoint.

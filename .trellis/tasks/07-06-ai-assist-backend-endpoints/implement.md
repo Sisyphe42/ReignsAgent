@@ -11,12 +11,14 @@
 7. Add unit tests for Pipeline and Interface provider execution, redaction, malformed provider output, and local fallback.
 8. Add integration tests with a local mock endpoint for `responses`, `messages`, `completions`, endpoint failure, malformed JSON, and no key echo.
 9. Run `npm run verify`.
+10. Amend endpoint compatibility with canonical OpenAI protocol aliases, route mode, JSON-mode fallback, and Creator endpoint/model presets in the same branch/PR.
 
 ## Validation Commands
 
 - `npm run test:unit`
 - `npm run test:integration`
 - `npm run verify`
+- `npm run build:dashboard`
 
 ## Risk Points
 

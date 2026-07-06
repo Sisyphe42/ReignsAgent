@@ -23,10 +23,17 @@ const AI_EDIT_SCHEMA_VERSION = 1;
 const AI_EDIT_MODES = new Set(["generate_cards", "repair_diagnostics", "generate_asset", "analyze_asset"]);
 const AI_EDIT_PATCH_OPS = new Set(["addCard", "updateCard", "setChoiceLabel", "setChoiceEffects", "setMetadata", "upsertAsset"]);
 const AI_ENDPOINT_ROUTES = {
-  responses: "/responses",
-  messages: "/chat/completions",
-  completions: "/completions"
+  openai_responses: "/responses",
+  openai_chat: "/chat/completions",
+  openai_completions: "/completions",
+  anthropic_messages: "/messages"
 };
+const AI_ENDPOINT_PROTOCOL_ALIASES = {
+  responses: "openai_responses",
+  messages: "openai_chat",
+  completions: "openai_completions"
+};
+const AI_ENDPOINT_ROUTE_MODES = new Set(["auto", "api_root", "full_url"]);
 
 export function createContentBundle({ cards, metadata = {}, assets = [] }) {
   const normalizedCards = normalizeCards(cards);
@@ -620,6 +627,7 @@ export async function createAiEditSuggestionsFromEndpoint({
   const descriptor = redactAiEndpointConfig(config ?? {});
   const endpoint = normalizeEndpointValue(descriptor.endpoint);
   const protocol = normalizeAiEndpointProtocol(descriptor.provider);
+  const routeMode = normalizeAiEndpointRouteMode(descriptor.routeMode);
   const model = normalizeEndpointValue(descriptor.modelId);
   if (!endpoint || !model) {
     throw new PipelineError("AI endpoint execution requires endpoint and modelId", "endpoint_config_required");
@@ -634,6 +642,7 @@ export async function createAiEditSuggestionsFromEndpoint({
   const endpointResult = await callAiEditEndpoint({
     endpoint,
     protocol,
+    routeMode,
     model,
     request,
     config: descriptor,
@@ -656,6 +665,7 @@ export async function createAiEditSuggestionsFromEndpoint({
     request,
     provider: {
       protocol,
+      routeMode,
       endpoint: redactEndpointUrl(endpointResult.url),
       model
     },
@@ -1160,17 +1170,49 @@ function extractTextPayload(response) {
   throw new PipelineError("generateText must return a string or an object with a text field");
 }
 
-async function callAiEditEndpoint({ endpoint, protocol, model, request, config, apiKey, fetchImpl }) {
-  const url = resolveAiEndpointUrl(endpoint, protocol);
-  const body = buildAiEndpointBody({ protocol, model, request, config });
+async function callAiEditEndpoint({ endpoint, protocol, routeMode = "auto", model, request, config, apiKey, fetchImpl }) {
+  const url = resolveAiEndpointUrl(endpoint, protocol, routeMode);
+  const wantsStructuredJson = shouldUseStructuredJson(config);
   const headers = {
     "content-type": "application/json",
     accept: "application/json"
   };
   if (apiKey) {
-    headers.authorization = `Bearer ${apiKey}`;
+    if (protocol === "anthropic_messages") {
+      headers["x-api-key"] = apiKey;
+      headers["anthropic-version"] = "2023-06-01";
+    } else {
+      headers.authorization = `Bearer ${apiKey}`;
+    }
   }
 
+  const firstAttempt = await postAiEditEndpoint({
+    fetchImpl,
+    url,
+    headers,
+    body: buildAiEndpointBody({ protocol, model, request, config, includeStructuredJson: wantsStructuredJson })
+  });
+  const result = firstAttempt.ok || !wantsStructuredJson || !isStructuredJsonUnsupportedError(firstAttempt.text)
+    ? firstAttempt
+    : await postAiEditEndpoint({
+      fetchImpl,
+      url,
+      headers,
+      body: buildAiEndpointBody({ protocol, model, request, config, includeStructuredJson: false })
+    });
+
+  if (!result.ok) {
+    const status = result.status ?? "unknown";
+    throw new PipelineError(`AI endpoint request failed with status ${status}`, "endpoint_http_error");
+  }
+
+  return {
+    url,
+    proposals: parseAiEndpointProposalResponse(result.text, protocol)
+  };
+}
+
+async function postAiEditEndpoint({ fetchImpl, url, headers, body }) {
   let response;
   try {
     response = await fetchImpl(url, {
@@ -1183,18 +1225,14 @@ async function callAiEditEndpoint({ endpoint, protocol, model, request, config, 
   }
 
   const text = typeof response?.text === "function" ? await response.text() : "";
-  if (!response?.ok) {
-    const status = response?.status ?? "unknown";
-    throw new PipelineError(`AI endpoint request failed with status ${status}`, "endpoint_http_error");
-  }
-
   return {
-    url,
-    proposals: parseAiEndpointProposalResponse(text, protocol)
+    ok: Boolean(response?.ok),
+    status: response?.status,
+    text
   };
 }
 
-function resolveAiEndpointUrl(endpoint, protocol) {
+function resolveAiEndpointUrl(endpoint, protocol, routeMode = "auto") {
   const route = AI_ENDPOINT_ROUTES[protocol];
   if (!route) {
     throw new PipelineError(`Unsupported AI endpoint protocol '${protocol}'`, "endpoint_protocol_unsupported");
@@ -1203,29 +1241,36 @@ function resolveAiEndpointUrl(endpoint, protocol) {
   if (!trimmed) {
     throw new PipelineError("AI endpoint is required", "endpoint_config_required");
   }
+  const normalizedRouteMode = normalizeAiEndpointRouteMode(routeMode);
+  if (normalizedRouteMode === "full_url") {
+    return trimmed;
+  }
   const normalizedRoute = route.replace(/^\/+/, "");
-  if (trimmed.toLowerCase().endsWith(`/${normalizedRoute.toLowerCase()}`)) {
+  if (
+    normalizedRouteMode === "auto" &&
+    Object.values(AI_ENDPOINT_ROUTES).some((candidate) => {
+      const normalizedCandidate = candidate.replace(/^\/+/, "").toLowerCase();
+      return trimmed.toLowerCase().endsWith(`/${normalizedCandidate}`);
+    })
+  ) {
     return trimmed;
   }
   return `${trimmed}/${normalizedRoute}`;
 }
 
-function buildAiEndpointBody({ protocol, model, request, config }) {
+function buildAiEndpointBody({ protocol, model, request, config, includeStructuredJson = shouldUseStructuredJson(config) }) {
   const prompt = buildAiEndpointPrompt(request);
-  const wantsStructuredJson = Array.isArray(config.capabilities)
-    ? config.capabilities.includes("structuredJson")
-    : true;
 
-  if (protocol === "responses") {
+  if (protocol === "openai_responses") {
     return {
       model,
       input: prompt,
-      ...(wantsStructuredJson ? { text: { format: { type: "json_object" } } } : {}),
+      ...(includeStructuredJson ? { text: { format: { type: "json_object" } } } : {}),
       temperature: 0
     };
   }
 
-  if (protocol === "messages") {
+  if (protocol === "openai_chat") {
     return {
       model,
       messages: [
@@ -1238,12 +1283,12 @@ function buildAiEndpointBody({ protocol, model, request, config }) {
           content: prompt
         }
       ],
-      ...(wantsStructuredJson ? { response_format: { type: "json_object" } } : {}),
+      ...(includeStructuredJson ? { response_format: { type: "json_object" } } : {}),
       temperature: 0
     };
   }
 
-  if (protocol === "completions") {
+  if (protocol === "openai_completions") {
     return {
       model,
       prompt,
@@ -1251,7 +1296,41 @@ function buildAiEndpointBody({ protocol, model, request, config }) {
     };
   }
 
+  if (protocol === "anthropic_messages") {
+    return {
+      model,
+      max_tokens: 4096,
+      system: "You create ReignsAgent AI Assist edit proposals. Return only a JSON object with a proposals array.",
+      messages: [{ role: "user", content: prompt }],
+      temperature: 0
+    };
+  }
+
   throw new PipelineError(`Unsupported AI endpoint protocol '${protocol}'`, "endpoint_protocol_unsupported");
+}
+
+function shouldUseStructuredJson(config = {}) {
+  if (config.jsonMode === "off") return false;
+  if (config.jsonMode === "force") return true;
+  return Array.isArray(config.capabilities)
+    ? config.capabilities.includes("structuredJson")
+    : true;
+}
+
+function isStructuredJsonUnsupportedError(text) {
+  const lower = String(text ?? "").toLowerCase();
+  return (
+    lower.includes("response_format") ||
+    lower.includes("json_object") ||
+    lower.includes("json mode") ||
+    lower.includes("structured json")
+  ) && (
+    lower.includes("unsupported") ||
+    lower.includes("not supported") ||
+    lower.includes("unknown parameter") ||
+    lower.includes("unrecognized") ||
+    lower.includes("invalid")
+  );
 }
 
 function buildAiEndpointPrompt(request) {
@@ -1316,11 +1395,17 @@ function extractProviderText(value, protocol) {
     if (parts.length > 0) return parts.join("\n");
   }
   const choice = Array.isArray(value.choices) ? value.choices[0] : null;
-  if (protocol === "messages" && typeof choice?.message?.content === "string") {
+  if (protocol === "openai_chat" && typeof choice?.message?.content === "string") {
     return choice.message.content;
   }
-  if (protocol === "completions" && typeof choice?.text === "string") {
+  if (protocol === "openai_completions" && typeof choice?.text === "string") {
     return choice.text;
+  }
+  if (protocol === "anthropic_messages" && Array.isArray(value.content)) {
+    const parts = value.content
+      .map((content) => typeof content?.text === "string" ? content.text : "")
+      .filter(Boolean);
+    if (parts.length > 0) return parts.join("\n");
   }
   if (typeof choice?.message?.content === "string") {
     return choice.message.content;
@@ -1422,14 +1507,23 @@ function normalizeEndpointValue(value) {
 }
 
 function normalizeAiEndpointProtocol(provider) {
-  const value = normalizeEndpointValue(provider) ?? "responses";
+  const value = normalizeEndpointValue(provider) ?? "openai_chat";
   if (value === "stub" || value === "local-stub") {
-    return "responses";
+    return "openai_chat";
   }
-  if (!AI_ENDPOINT_ROUTES[value]) {
-    throw new PipelineError(`Unsupported AI endpoint protocol '${value}'`, "endpoint_protocol_unsupported");
+  const canonical = AI_ENDPOINT_PROTOCOL_ALIASES[value] ?? value;
+  if (!AI_ENDPOINT_ROUTES[canonical]) {
+    throw new PipelineError(`Unsupported AI endpoint protocol '${canonical}'`, "endpoint_protocol_unsupported");
   }
-  return value;
+  return canonical;
+}
+
+function normalizeAiEndpointRouteMode(value) {
+  const normalized = normalizeEndpointValue(value) ?? "auto";
+  if (!AI_ENDPOINT_ROUTE_MODES.has(normalized)) {
+    throw new PipelineError(`Unsupported AI endpoint route mode '${normalized}'`, "endpoint_route_mode_unsupported");
+  }
+  return normalized;
 }
 
 function addAction(actions, seenActions, action) {

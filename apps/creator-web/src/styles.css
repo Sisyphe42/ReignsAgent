@@ -2202,13 +2202,79 @@ select {
   gap: 10px;
 }
 
-.ai-settings-grid label {
+.ai-settings-grid label,
+.ai-combo-field {
   display: grid;
   gap: 5px;
   color: var(--muted);
   font-family: var(--font-data);
   font-size: 0.7rem;
   text-transform: uppercase;
+}
+
+.ai-combo-field {
+  grid-column: 1 / -1;
+}
+
+.ai-settings-grid--advanced {
+  margin-top: 10px;
+}
+
+.ai-settings-grid--advanced label {
+  grid-column: auto;
+}
+
+.ai-combo-control {
+  display: grid;
+  grid-template-columns: auto minmax(8.5rem, 0.5fr) minmax(12rem, 1fr);
+  gap: 6px;
+  align-items: center;
+}
+
+.ai-combo-control select,
+.ai-combo-control input {
+  min-width: 0;
+}
+
+.endpoint-mark {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  color: var(--button-ink);
+  border: 1px solid color-mix(in srgb, var(--accent) 60%, var(--border));
+  border-radius: var(--radius);
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  font-family: var(--font-data);
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.endpoint-mark--custom {
+  color: var(--muted);
+  border-color: var(--border);
+  background: var(--surface-2);
+}
+
+.endpoint-mark--local {
+  background: linear-gradient(135deg, var(--ok), var(--accent-2));
+}
+
+.endpoint-mark--anthropic {
+  background: linear-gradient(135deg, #d8a83a, #e06b5f);
+}
+
+.ai-advanced {
+  margin: 10px 0 12px;
+  padding: 8px 0 0;
+  border-top: 1px solid var(--border);
+}
+
+.ai-advanced summary {
+  color: var(--muted);
+  font-family: var(--font-data);
+  font-size: 0.72rem;
+  cursor: pointer;
 }
 
 .capability-grid {
@@ -5461,6 +5527,19 @@ summary:focus-visible {
 
   .author-summary__grid {
     grid-template-columns: 1fr;
+  }
+
+  .ai-settings-grid,
+  .ai-settings-grid--advanced {
+    grid-template-columns: 1fr;
+  }
+
+  .ai-combo-control {
+    grid-template-columns: auto 1fr;
+  }
+
+  .ai-combo-control input {
+    grid-column: 1 / -1;
   }
 
   .rail {

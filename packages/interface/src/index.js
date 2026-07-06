@@ -634,6 +634,12 @@ export function createConnectorConfig(config) {
     apiKeyRef: isNonEmptyString(config.apiKeyRef) ? config.apiKeyRef : null,
     endpoint: isNonEmptyString(config.endpoint) ? config.endpoint : null,
     modelId: isNonEmptyString(config.modelId) ? config.modelId : null,
+    endpointPresetId: isNonEmptyString(config.endpointPresetId) ? config.endpointPresetId : null,
+    endpointIconKey: isNonEmptyString(config.endpointIconKey) ? config.endpointIconKey : null,
+    modelPresetId: isNonEmptyString(config.modelPresetId) ? config.modelPresetId : null,
+    compatibilityFamily: isNonEmptyString(config.compatibilityFamily) ? config.compatibilityFamily : null,
+    routeMode: isNonEmptyString(config.routeMode) ? config.routeMode : null,
+    jsonMode: isNonEmptyString(config.jsonMode) ? config.jsonMode : null,
     capabilities: Array.isArray(config.capabilities)
       ? config.capabilities.filter((capability) => isNonEmptyString(capability))
       : []
@@ -672,6 +678,12 @@ function normalizeAiEditConnectorConfig(config) {
     endpoint: isNonEmptyString(descriptor.endpoint) ? descriptor.endpoint : null,
     modelId: isNonEmptyString(descriptor.modelId) ? descriptor.modelId : null,
     apiKeyRef: isNonEmptyString(descriptor.apiKeyRef) ? descriptor.apiKeyRef : null,
+    endpointPresetId: isNonEmptyString(descriptor.endpointPresetId) ? descriptor.endpointPresetId : null,
+    endpointIconKey: isNonEmptyString(descriptor.endpointIconKey) ? descriptor.endpointIconKey : null,
+    modelPresetId: isNonEmptyString(descriptor.modelPresetId) ? descriptor.modelPresetId : null,
+    compatibilityFamily: isNonEmptyString(descriptor.compatibilityFamily) ? descriptor.compatibilityFamily : null,
+    routeMode: isNonEmptyString(descriptor.routeMode) ? descriptor.routeMode : null,
+    jsonMode: isNonEmptyString(descriptor.jsonMode) ? descriptor.jsonMode : null,
     capabilities: Array.isArray(descriptor.capabilities)
       ? descriptor.capabilities.filter((capability) => isNonEmptyString(capability))
       : []

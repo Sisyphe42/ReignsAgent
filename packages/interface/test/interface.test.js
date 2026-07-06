@@ -356,6 +356,29 @@ describe("ReignsAgent interface controller", () => {
     assert.equal(plan.config.apiKeyRef, "vault://reigns/stub");
   });
 
+  it("preserves AI endpoint preset compatibility metadata in connector configs", () => {
+    const config = createConnectorConfig({
+      provider: "openai_chat",
+      endpoint: "https://api.openai.com/v1",
+      modelId: "gpt-4.1-mini",
+      endpointPresetId: "openai",
+      endpointIconKey: "openai",
+      modelPresetId: "gpt-4.1-mini",
+      compatibilityFamily: "openai",
+      routeMode: "auto",
+      jsonMode: "auto",
+      capabilities: ["structuredJson"]
+    });
+
+    assert.equal(config.endpointPresetId, "openai");
+    assert.equal(config.endpointIconKey, "openai");
+    assert.equal(config.modelPresetId, "gpt-4.1-mini");
+    assert.equal(config.compatibilityFamily, "openai");
+    assert.equal(config.routeMode, "auto");
+    assert.equal(config.jsonMode, "auto");
+    assert.deepEqual(config.capabilities, ["structuredJson"]);
+  });
+
   it("builds AI edit plans through the interface boundary", () => {
     const editor = createCardEditor({ cards: [sampleCard("gate")], metadata: { title: "Court" } });
     const plan = buildAiEditPlan({
@@ -413,11 +436,53 @@ describe("ReignsAgent interface controller", () => {
     assert.equal(calls[0].url, "http://endpoint.test/v1/chat/completions");
     assert.equal(calls[0].options.headers.authorization, "Bearer secret-key");
     assert.equal(plan.mode, "generate_cards");
+    assert.equal(plan.provider.protocol, "openai_chat");
     assert.equal(plan.config.apiKey, undefined);
     assert.equal(JSON.stringify(plan).includes("secret-key"), false);
     assert.equal(JSON.stringify(plan).includes("must-not-return"), false);
     assert.equal(plan.proposals[0].patches[0].label, "Hear");
     assert.equal(editor.findCard("gate").choices[0].label, "Left");
+  });
+
+  it("builds provider-backed AI edit plans with the canonical OpenAI Chat protocol", async () => {
+    const editor = createCardEditor({ cards: [sampleCard("gate")], metadata: { title: "Court" } });
+    const calls = [];
+    const plan = await buildAiEditPlanAsync({
+      editor,
+      mode: "generate_cards",
+      config: {
+        provider: "openai_chat",
+        endpoint: "http://endpoint.test/v1",
+        modelId: "chat-model",
+        capabilities: ["structuredJson"]
+      },
+      instruction: "Rename the gate choice.",
+      fetchImpl: async (url, options) => {
+        calls.push({ url, body: JSON.parse(options.body) });
+        return {
+          ok: true,
+          status: 200,
+          text: async () => JSON.stringify({
+            choices: [{
+              message: {
+                content: JSON.stringify({
+                  proposals: [{
+                    id: "rename-gate",
+                    title: "Rename gate",
+                    patches: [{ op: "setChoiceLabel", cardId: "gate", choiceId: "right", label: "Stay" }]
+                  }]
+                })
+              }
+            }]
+          })
+        };
+      }
+    });
+
+    assert.equal(calls[0].url, "http://endpoint.test/v1/chat/completions");
+    assert.equal(calls[0].body.response_format.type, "json_object");
+    assert.equal(plan.provider.protocol, "openai_chat");
+    assert.equal(plan.proposals[0].patches[0].label, "Stay");
   });
 
   it("keeps async AI edit planning on local stub when no endpoint is configured", async () => {

@@ -29,9 +29,32 @@ const AI_ASSIST_KEY = "reigns-agent.creator-web.ai-assist";
 const DEFAULT_PANEL = "overview";
 const DEFAULT_SKIN = "workbench";
 const AI_PROTOCOLS = [
-  ["responses", "Responses"],
-  ["completions", "Completions"],
-  ["messages", "Messages"]
+  ["openai_chat", "OpenAI Chat"],
+  ["openai_responses", "OpenAI Responses"],
+  ["openai_completions", "OpenAI Completions"],
+  ["anthropic_messages", "Anthropic Messages"]
+];
+const AI_PROTOCOL_ALIASES = {
+  messages: "openai_chat",
+  responses: "openai_responses",
+  completions: "openai_completions"
+};
+const AI_ROUTE_MODES = [
+  ["auto", "Auto detect"],
+  ["api_root", "API root"],
+  ["full_url", "Full URL"]
+];
+const AI_COMPATIBILITY_FAMILIES = [
+  ["openai", "OpenAI-compatible"],
+  ["anthropic", "Anthropic direct"],
+  ["newapi", "NewAPI / Unified BaseURI"],
+  ["local", "Local gateway"],
+  ["custom", "Custom"]
+];
+const AI_JSON_MODES = [
+  ["auto", "Auto"],
+  ["force", "Force JSON mode"],
+  ["off", "Disable JSON mode"]
 ];
 const AI_CAPABILITIES = [
   ["vision", "Vision"],
@@ -39,6 +62,144 @@ const AI_CAPABILITIES = [
   ["tools", "Tools"],
   ["reasoning", "Reasoning"],
   ["streaming", "Streaming"]
+];
+const DEFAULT_AI_CAPABILITIES = {
+  vision: false,
+  structuredJson: true,
+  tools: false,
+  reasoning: false,
+  streaming: false
+};
+const AI_ENDPOINT_PRESETS = [
+  {
+    id: "openai",
+    label: "OpenAI",
+    baseUrl: "https://api.openai.com/v1",
+    iconKey: "openai",
+    iconLabel: "OA",
+    protocol: "openai_chat",
+    compatibilityFamily: "openai",
+    models: [
+      { id: "gpt-4.1", label: "GPT-4.1", protocol: "openai_chat", capabilities: { vision: true, structuredJson: true, tools: true, reasoning: true, streaming: true } },
+      { id: "gpt-4.1-mini", label: "GPT-4.1 mini", protocol: "openai_chat", capabilities: { vision: true, structuredJson: true, tools: true, reasoning: false, streaming: true } },
+      { id: "gpt-4o-mini", label: "GPT-4o mini", protocol: "openai_chat", capabilities: { vision: true, structuredJson: true, tools: true, reasoning: false, streaming: true } }
+    ]
+  },
+  {
+    id: "deepseek",
+    label: "DeepSeek",
+    baseUrl: "https://api.deepseek.com/v1",
+    iconKey: "deepseek",
+    iconLabel: "DS",
+    protocol: "openai_chat",
+    compatibilityFamily: "openai",
+    models: [
+      { id: "deepseek-v4-flash", label: "DeepSeek V4 Flash", protocol: "openai_chat", capabilities: { structuredJson: true, reasoning: true, streaming: true } },
+      { id: "deepseek-chat", label: "DeepSeek Chat legacy", protocol: "openai_chat", capabilities: { structuredJson: true, streaming: true } }
+    ]
+  },
+  {
+    id: "qwen",
+    label: "Qwen / DashScope",
+    baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    iconKey: "qwen",
+    iconLabel: "QW",
+    protocol: "openai_chat",
+    compatibilityFamily: "openai",
+    models: [
+      { id: "qwen-plus", label: "Qwen Plus", protocol: "openai_chat", capabilities: { structuredJson: true, streaming: true } },
+      { id: "qwen-max", label: "Qwen Max", protocol: "openai_chat", capabilities: { structuredJson: true, streaming: true } }
+    ]
+  },
+  {
+    id: "moonshot",
+    label: "Moonshot",
+    baseUrl: "https://api.moonshot.cn/v1",
+    iconKey: "moonshot",
+    iconLabel: "MS",
+    protocol: "openai_chat",
+    compatibilityFamily: "openai",
+    models: [
+      { id: "moonshot-v1-8k", label: "Moonshot v1 8K", protocol: "openai_chat", capabilities: { structuredJson: true, streaming: true } },
+      { id: "moonshot-v1-32k", label: "Moonshot v1 32K", protocol: "openai_chat", capabilities: { structuredJson: true, streaming: true } }
+    ]
+  },
+  {
+    id: "zhipu",
+    label: "Zhipu GLM",
+    baseUrl: "https://open.bigmodel.cn/api/paas/v4",
+    iconKey: "zhipu",
+    iconLabel: "GL",
+    protocol: "openai_chat",
+    compatibilityFamily: "openai",
+    models: [
+      { id: "glm-4-plus", label: "GLM-4 Plus", protocol: "openai_chat", capabilities: { structuredJson: true, streaming: true } },
+      { id: "glm-4-flash", label: "GLM-4 Flash", protocol: "openai_chat", capabilities: { structuredJson: true, streaming: true } }
+    ]
+  },
+  {
+    id: "gemini-openai",
+    label: "Gemini OpenAI compatibility",
+    baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
+    iconKey: "google",
+    iconLabel: "GE",
+    protocol: "openai_chat",
+    compatibilityFamily: "openai",
+    models: [
+      { id: "gemini-3.5-flash", label: "Gemini 3.5 Flash", protocol: "openai_chat", capabilities: { vision: true, structuredJson: true, streaming: true } },
+      { id: "gemini-2.5-pro", label: "Gemini 2.5 Pro", protocol: "openai_chat", capabilities: { vision: true, structuredJson: true, streaming: true } }
+    ]
+  },
+  {
+    id: "newapi",
+    label: "NewAPI / Unified BaseURI",
+    baseUrl: "https://your-newapi.example.com/v1",
+    iconKey: "newapi",
+    iconLabel: "NA",
+    protocol: "openai_chat",
+    compatibilityFamily: "newapi",
+    models: [
+      { id: "gpt-4.1-mini", label: "GPT-4.1 mini", protocol: "openai_chat", capabilities: { structuredJson: true, streaming: true } },
+      { id: "deepseek-v4-flash", label: "DeepSeek V4 Flash", protocol: "openai_chat", capabilities: { structuredJson: true, reasoning: true, streaming: true } },
+      { id: "qwen-plus", label: "Qwen Plus", protocol: "openai_chat", capabilities: { structuredJson: true, streaming: true } }
+    ]
+  },
+  {
+    id: "local",
+    label: "Local gateway",
+    baseUrl: "http://127.0.0.1:11434/v1",
+    iconKey: "local",
+    iconLabel: "LC",
+    protocol: "openai_chat",
+    compatibilityFamily: "local",
+    models: [
+      { id: "llama3.1", label: "Llama 3.1", protocol: "openai_chat", capabilities: { streaming: true } },
+      { id: "qwen2.5", label: "Qwen 2.5", protocol: "openai_chat", capabilities: { structuredJson: true, streaming: true } }
+    ]
+  },
+  {
+    id: "anthropic",
+    label: "Anthropic direct",
+    baseUrl: "https://api.anthropic.com/v1",
+    iconKey: "anthropic",
+    iconLabel: "AN",
+    protocol: "anthropic_messages",
+    compatibilityFamily: "anthropic",
+    models: [
+      { id: "claude-sonnet-4-20250514", label: "Claude Sonnet 4", protocol: "anthropic_messages", capabilities: { vision: true, structuredJson: false, streaming: true } },
+      { id: "claude-3-5-haiku-20241022", label: "Claude 3.5 Haiku", protocol: "anthropic_messages", capabilities: { vision: true, structuredJson: false, streaming: true } }
+    ]
+  },
+  {
+    id: "custom",
+    label: "Custom",
+    baseUrl: "",
+    iconKey: "custom",
+    iconLabel: "..",
+    protocol: "openai_chat",
+    compatibilityFamily: "custom",
+    models: []
+  }
 ];
 const AI_PROGRESS_STEPS = ["Context", "Request", "Local draft", "Parse", "Validate", "Ready"];
 const AI_MODE_LABELS = {
@@ -134,27 +295,74 @@ function defaultAiSettings() {
   return {
     baseUrl: "",
     apiKey: "",
-    protocol: "responses",
+    protocol: "openai_chat",
+    endpointPresetId: "custom",
+    endpointIconKey: "custom",
+    modelPresetId: null,
+    compatibilityFamily: "custom",
+    routeMode: "auto",
+    jsonMode: "auto",
     modelId: "",
-    capabilities: {
-      vision: false,
-      structuredJson: true,
-      tools: false,
-      reasoning: false,
-      streaming: false
-    }
+    capabilities: { ...DEFAULT_AI_CAPABILITIES }
   };
+}
+
+function normalizeAiProtocol(value) {
+  const canonical = AI_PROTOCOL_ALIASES[value] ?? value;
+  return AI_PROTOCOLS.some(([id]) => id === canonical) ? canonical : "openai_chat";
+}
+
+function findEndpointPresetByBaseUrl(baseUrl) {
+  const normalized = String(baseUrl ?? "").trim().replace(/\/+$/, "");
+  if (!normalized) return null;
+  return AI_ENDPOINT_PRESETS.find((preset) => preset.baseUrl && preset.baseUrl.replace(/\/+$/, "") === normalized) ?? null;
+}
+
+function getEndpointPreset(id) {
+  return AI_ENDPOINT_PRESETS.find((preset) => preset.id === id) ?? AI_ENDPOINT_PRESETS.find((preset) => preset.id === "custom");
+}
+
+function getModelPresetsForEndpoint(settings) {
+  const preset = getEndpointPreset(settings.endpointPresetId);
+  return preset?.models ?? [];
+}
+
+function findModelPresetByModelId(settings, modelId) {
+  const normalized = String(modelId ?? "").trim();
+  if (!normalized) return null;
+  return getModelPresetsForEndpoint(settings).find((model) => model.id === normalized) ?? null;
+}
+
+function normalizeCapabilityState(capabilities = {}) {
+  return { ...DEFAULT_AI_CAPABILITIES, ...capabilities };
 }
 
 function normalizeAiSettings(settings = {}) {
   const defaults = defaultAiSettings();
-  const protocol = AI_PROTOCOLS.some(([id]) => id === settings.protocol) ? settings.protocol : defaults.protocol;
-  const capabilities = { ...defaults.capabilities, ...(settings.capabilities ?? {}) };
+  const baseUrl = typeof settings.baseUrl === "string" ? settings.baseUrl : "";
+  const matchedEndpoint = findEndpointPresetByBaseUrl(baseUrl);
+  const requestedPreset = getEndpointPreset(settings.endpointPresetId);
+  const endpointPreset = matchedEndpoint ?? (baseUrl.trim() ? getEndpointPreset("custom") : requestedPreset);
+  const protocol = normalizeAiProtocol(settings.protocol ?? endpointPreset?.protocol ?? defaults.protocol);
+  const routeMode = AI_ROUTE_MODES.some(([id]) => id === settings.routeMode) ? settings.routeMode : defaults.routeMode;
+  const jsonMode = AI_JSON_MODES.some(([id]) => id === settings.jsonMode) ? settings.jsonMode : defaults.jsonMode;
+  const compatibilityFamily = AI_COMPATIBILITY_FAMILIES.some(([id]) => id === settings.compatibilityFamily)
+    ? settings.compatibilityFamily
+    : endpointPreset?.compatibilityFamily ?? defaults.compatibilityFamily;
+  const capabilities = normalizeCapabilityState(settings.capabilities ?? defaults.capabilities);
+  const modelId = typeof settings.modelId === "string" ? settings.modelId : "";
+  const matchedModel = (endpointPreset?.models ?? []).find((model) => model.id === modelId);
   return {
-    baseUrl: typeof settings.baseUrl === "string" ? settings.baseUrl : "",
+    baseUrl,
     apiKey: typeof settings.apiKey === "string" ? settings.apiKey : "",
     protocol,
-    modelId: typeof settings.modelId === "string" ? settings.modelId : "",
+    endpointPresetId: endpointPreset?.id ?? "custom",
+    endpointIconKey: endpointPreset?.iconKey ?? "custom",
+    modelPresetId: matchedModel?.id ?? null,
+    compatibilityFamily,
+    routeMode,
+    jsonMode,
+    modelId,
     capabilities
   };
 }
@@ -186,6 +394,12 @@ function buildAiConnectorConfig(settings, extra = {}) {
     endpoint: normalized.baseUrl.trim() || null,
     apiKeyRef: normalized.apiKey ? "browser-local" : null,
     modelId: normalized.modelId.trim() || null,
+    endpointPresetId: normalized.endpointPresetId,
+    endpointIconKey: normalized.endpointIconKey,
+    modelPresetId: normalized.modelPresetId,
+    compatibilityFamily: normalized.compatibilityFamily,
+    routeMode: normalized.routeMode,
+    jsonMode: normalized.jsonMode,
     capabilities: enabledAiCapabilities(normalized),
     ...extra
   };
@@ -4191,6 +4405,11 @@ function SettingsPanel({ editor, aiSettings, onAiSettingsChange, onRefresh, onSt
   const [theme, setTheme] = useState("small kingdom");
   const [count, setCount] = useState(8);
   const [testStatus, setTestStatus] = useState("");
+  const normalizedAiSettings = normalizeAiSettings(aiSettings);
+  const endpointPreset = getEndpointPreset(normalizedAiSettings.endpointPresetId);
+  const modelPresets = getModelPresetsForEndpoint(normalizedAiSettings);
+  const selectedModelPreset = findModelPresetByModelId(normalizedAiSettings, normalizedAiSettings.modelId);
+  const protocolLabel = AI_PROTOCOLS.find(([id]) => id === normalizedAiSettings.protocol)?.[1] ?? normalizedAiSettings.protocol;
 
   useEffect(() => setTitle(editor?.metadata?.title ?? ""), [editor?.metadata?.title]);
 
@@ -4203,31 +4422,103 @@ function SettingsPanel({ editor, aiSettings, onAiSettingsChange, onRefresh, onSt
   async function buildPlan() {
     const result = await api("/api/connector/plan", {
       method: "POST",
-      body: { config: buildAiConnectorConfig(aiSettings, { theme, cardCount: count }) }
+      body: { config: buildAiConnectorConfig(normalizedAiSettings, { theme, cardCount: count }) }
     });
     setPlan(JSON.stringify(result, null, 2));
   }
 
   function updateAiSetting(key, value) {
-    onAiSettingsChange(normalizeAiSettings({ ...aiSettings, [key]: value }));
+    onAiSettingsChange(normalizeAiSettings({ ...normalizedAiSettings, [key]: value }));
+  }
+
+  function applyEndpointPreset(presetId) {
+    const preset = getEndpointPreset(presetId);
+    onAiSettingsChange(normalizeAiSettings({
+      ...normalizedAiSettings,
+      baseUrl: preset.baseUrl,
+      endpointPresetId: preset.id,
+      endpointIconKey: preset.iconKey,
+      compatibilityFamily: preset.compatibilityFamily,
+      protocol: preset.protocol,
+      routeMode: "auto",
+      modelPresetId: null
+    }));
+  }
+
+  function updateEndpointBaseUrl(value) {
+    const matched = findEndpointPresetByBaseUrl(value);
+    if (matched) {
+      onAiSettingsChange(normalizeAiSettings({
+        ...normalizedAiSettings,
+        baseUrl: value,
+        endpointPresetId: matched.id,
+        endpointIconKey: matched.iconKey,
+        compatibilityFamily: matched.compatibilityFamily,
+        protocol: matched.protocol,
+        modelPresetId: null
+      }));
+      return;
+    }
+    onAiSettingsChange(normalizeAiSettings({
+      ...normalizedAiSettings,
+      baseUrl: value,
+      endpointPresetId: "custom",
+      endpointIconKey: "custom",
+      compatibilityFamily: "custom",
+      modelPresetId: null
+    }));
+  }
+
+  function applyModelPreset(modelId) {
+    const model = modelPresets.find((preset) => preset.id === modelId);
+    if (!model) {
+      updateModelId(normalizedAiSettings.modelId);
+      return;
+    }
+    onAiSettingsChange(normalizeAiSettings({
+      ...normalizedAiSettings,
+      modelId: model.id,
+      modelPresetId: model.id,
+      protocol: model.protocol ?? normalizedAiSettings.protocol,
+      capabilities: normalizeCapabilityState(model.capabilities)
+    }));
+  }
+
+  function updateModelId(value) {
+    const matched = findModelPresetByModelId(normalizedAiSettings, value);
+    if (matched) {
+      onAiSettingsChange(normalizeAiSettings({
+        ...normalizedAiSettings,
+        modelId: value,
+        modelPresetId: matched.id,
+        protocol: matched.protocol ?? normalizedAiSettings.protocol,
+        capabilities: normalizeCapabilityState(matched.capabilities)
+      }));
+      return;
+    }
+    onAiSettingsChange(normalizeAiSettings({
+      ...normalizedAiSettings,
+      modelId: value,
+      modelPresetId: null
+    }));
   }
 
   function toggleCapability(key) {
     onAiSettingsChange(normalizeAiSettings({
-      ...aiSettings,
+      ...normalizedAiSettings,
       capabilities: {
-        ...aiSettings.capabilities,
-        [key]: !aiSettings.capabilities?.[key]
+        ...normalizedAiSettings.capabilities,
+        [key]: !normalizedAiSettings.capabilities?.[key]
       }
     }));
   }
 
   function testEndpoint() {
-    if (!isAiEndpointConfigured(aiSettings)) {
+    if (!isAiEndpointConfigured(normalizedAiSettings)) {
       setTestStatus("Add a base URL and model id before real provider calls.");
       return;
     }
-    setTestStatus(`Ready to build ${aiSettings.protocol} requests for ${aiSettings.modelId}. Draft generation will call this endpoint.`);
+    setTestStatus(`Ready to build ${protocolLabel} requests for ${normalizedAiSettings.modelId}. Draft generation will call this endpoint.`);
   }
 
   return (
@@ -4243,30 +4534,58 @@ function SettingsPanel({ editor, aiSettings, onAiSettingsChange, onRefresh, onSt
       <div className="subsection">
         <h3>AI Endpoint</h3>
         <div className="ai-settings-grid">
-          <label>
-            Base URL
-            <input value={aiSettings.baseUrl} onChange={(event) => updateAiSetting("baseUrl", event.target.value)} placeholder="https://api.example.com/v1" />
-          </label>
+          <div className="ai-combo-field">
+            <span>Endpoint</span>
+            <div className="ai-combo-control">
+              <span className={`endpoint-mark endpoint-mark--${endpointPreset.iconKey}`} aria-hidden="true">{endpointPreset.iconLabel}</span>
+              <select value={normalizedAiSettings.endpointPresetId} onChange={(event) => applyEndpointPreset(event.target.value)} aria-label="Endpoint preset">
+                {AI_ENDPOINT_PRESETS.map((preset) => (
+                  <option key={preset.id} value={preset.id}>{`[${preset.iconLabel}] ${preset.label}`}</option>
+                ))}
+              </select>
+              <input
+                list="ai-endpoint-presets"
+                value={normalizedAiSettings.baseUrl}
+                onChange={(event) => updateEndpointBaseUrl(event.target.value)}
+                placeholder="https://api.example.com/v1"
+                aria-label="Endpoint base URL"
+              />
+            </div>
+            <datalist id="ai-endpoint-presets">
+              {AI_ENDPOINT_PRESETS.filter((preset) => preset.baseUrl).map((preset) => (
+                <option key={preset.id} value={preset.baseUrl}>{preset.label}</option>
+              ))}
+            </datalist>
+          </div>
           <label>
             API key
-            <input type="password" value={aiSettings.apiKey} onChange={(event) => updateAiSetting("apiKey", event.target.value)} placeholder="Stored only in this creator browser" />
+            <input type="password" value={normalizedAiSettings.apiKey} onChange={(event) => updateAiSetting("apiKey", event.target.value)} placeholder="Stored only in this creator browser" />
           </label>
-          <label>
-            Protocol
-            <select value={aiSettings.protocol} onChange={(event) => updateAiSetting("protocol", event.target.value)}>
-              {AI_PROTOCOLS.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
-            </select>
-          </label>
-          <label>
-            Model ID
-            <input value={aiSettings.modelId} onChange={(event) => updateAiSetting("modelId", event.target.value)} placeholder="gpt-4.1, claude-sonnet, local-model..." />
-          </label>
+          <div className="ai-combo-field">
+            <span>Model</span>
+            <div className="ai-combo-control">
+              <select value={selectedModelPreset?.id ?? "custom"} onChange={(event) => event.target.value === "custom" ? updateModelId(normalizedAiSettings.modelId) : applyModelPreset(event.target.value)} aria-label="Model preset">
+                <option value="custom">Custom model</option>
+                {modelPresets.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}
+              </select>
+              <input
+                list="ai-model-presets"
+                value={normalizedAiSettings.modelId}
+                onChange={(event) => updateModelId(event.target.value)}
+                placeholder="gpt-4.1, deepseek-chat, local-model..."
+                aria-label="Model ID"
+              />
+            </div>
+            <datalist id="ai-model-presets">
+              {modelPresets.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}
+            </datalist>
+          </div>
         </div>
         <div className="capability-grid" aria-label="Model capabilities">
           {AI_CAPABILITIES.map(([id, label]) => (
             <button
               key={id}
-              className={aiSettings.capabilities?.[id] ? "capability-chip capability-chip--active" : "capability-chip"}
+              className={normalizedAiSettings.capabilities?.[id] ? "capability-chip capability-chip--active" : "capability-chip"}
               type="button"
               onClick={() => toggleCapability(id)}
             >
@@ -4274,6 +4593,35 @@ function SettingsPanel({ editor, aiSettings, onAiSettingsChange, onRefresh, onSt
             </button>
           ))}
         </div>
+        <details className="ai-advanced">
+          <summary>Advanced compatibility</summary>
+          <div className="ai-settings-grid ai-settings-grid--advanced">
+            <label>
+              Protocol
+              <select value={normalizedAiSettings.protocol} onChange={(event) => updateAiSetting("protocol", event.target.value)}>
+                {AI_PROTOCOLS.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+              </select>
+            </label>
+            <label>
+              Route mode
+              <select value={normalizedAiSettings.routeMode} onChange={(event) => updateAiSetting("routeMode", event.target.value)}>
+                {AI_ROUTE_MODES.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+              </select>
+            </label>
+            <label>
+              Compatibility
+              <select value={normalizedAiSettings.compatibilityFamily} onChange={(event) => updateAiSetting("compatibilityFamily", event.target.value)}>
+                {AI_COMPATIBILITY_FAMILIES.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+              </select>
+            </label>
+            <label>
+              JSON mode
+              <select value={normalizedAiSettings.jsonMode} onChange={(event) => updateAiSetting("jsonMode", event.target.value)}>
+                {AI_JSON_MODES.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+              </select>
+            </label>
+          </div>
+        </details>
         <div className="action-row">
           <button className="btn" type="button" onClick={testEndpoint}>Check setup</button>
           <span className="muted">{testStatus || "Endpoint settings are used for request planning only in this phase."}</span>

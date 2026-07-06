@@ -252,7 +252,7 @@ describe("Phase 4 interface integration", () => {
       await waitForServer(port, server);
       const endpoint = `http://127.0.0.1:${mock.port}/v1`;
       const plans = [];
-      for (const provider of ["responses", "messages", "completions"]) {
+      for (const provider of ["responses", "messages", "openai_chat", "completions"]) {
         plans.push(await api(port, "/api/ai/edit/plan", {
           method: "POST",
           body: {
@@ -264,13 +264,14 @@ describe("Phase 4 interface integration", () => {
         }));
       }
 
-      assert.deepEqual(mock.requests.map((request) => request.path), ["/v1/responses", "/v1/chat/completions", "/v1/completions"]);
+      assert.deepEqual(mock.requests.map((request) => request.path), ["/v1/responses", "/v1/chat/completions", "/v1/chat/completions", "/v1/completions"]);
       assert.equal(mock.requests.every((request) => request.authorization === "Bearer secret-integration-key"), true);
       assert.equal(mock.requests[0].body.model, "responses-model");
       assert.equal(mock.requests[1].body.messages[0].role, "system");
-      assert.match(mock.requests[2].body.prompt, /Return only valid JSON/);
+      assert.equal(mock.requests[2].body.messages[0].role, "system");
+      assert.match(mock.requests[3].body.prompt, /Return only valid JSON/);
       assert.equal(plans.every((plan) => JSON.stringify(plan).includes("secret-integration-key") === false), true);
-      assert.deepEqual(plans.map((plan) => plan.proposals[0].patches[0].op), ["setMetadata", "setChoiceLabel", "setChoiceLabel"]);
+      assert.deepEqual(plans.map((plan) => plan.proposals[0].patches[0].op), ["setMetadata", "setChoiceLabel", "setChoiceLabel", "setChoiceLabel"]);
 
       const failed = await apiError(port, "/api/ai/edit/plan", {
         method: "POST",
