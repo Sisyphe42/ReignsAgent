@@ -20,6 +20,7 @@ Complete AI Assist backend endpoint execution so creator-supplied text endpoints
   - If the configured endpoint already ends with the protocol route, use it as-is; otherwise append the route.
 - Provider output must be accepted only as JSON containing `{ "proposals": [...] }`.
 - Provider proposals must be validated as patch proposals against the current bundle before returning a plan, without mutating the editor.
+- Settings endpoint validation must be a real provider call through the backend using the current bundle context, transient credentials, selected protocol/route/model settings, and `{ "proposals": [] }` response parsing. Validation must not mutate the editor or return raw credentials.
 - `POST /api/ai/edit/plan` must accept transient `credentials.apiKey`; the backend must use it only for the active request and must not store, log, echo, or include it in returned plans.
 - Endpoint, provider, model id, capability flags, and redacted API key reference must remain available in plan config for preview/debug context.
 - Endpoint/network/parse/validation failures must return structured JSON errors instead of silent local fallback when a real endpoint was configured.
@@ -27,6 +28,7 @@ Complete AI Assist backend endpoint execution so creator-supplied text endpoints
 - Update Creator request handling minimally so configured API keys are sent only with plan requests and UI text no longer says real network calls are disabled.
 - Add NewAPI-style Creator endpoint/model presets as frontend-owned convenience data:
   - Primary settings expose a compact provider channel type selector with official/brand logos, API key, editable model presets/model id, editable base URL, and capabilities.
+  - Include SenseNova / 商汤日日新 as an OpenAI-compatible preset using `https://token.sensenova.cn/v1` and `sensenova-6.7-flash-lite`.
   - Advanced settings expose protocol, route mode, compatibility family, and JSON mode preference.
   - Generic/unified base URI presets default to OpenAI-compatible Chat Completions.
   - Manual base URL edits reset preset/icon to Custom unless the value exactly matches a preset again.
@@ -37,6 +39,7 @@ Complete AI Assist backend endpoint execution so creator-supplied text endpoints
 ## Acceptance Criteria
 
 - [ ] Configured `responses`, `messages`, and `completions` endpoints can return AI Assist plans with provider proposals.
+- [ ] Settings Validate endpoint performs an actual backend/provider request and reports structured success/error without mutating the editor.
 - [ ] Local stub planning still works when no endpoint is configured or `provider: "stub"` is used.
 - [ ] Raw API keys do not appear in plan responses, proposal responses, logs, editor bundles, build manifests, or tests snapshots.
 - [ ] Invalid provider output, unsupported patch ops, missing patch targets, and endpoint failures return JSON errors and do not mutate the editor.

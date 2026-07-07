@@ -25,6 +25,7 @@ import {
   parseCardsJson,
   stringifyContentJson,
   stringifyCardsCsv,
+  validateAiEditEndpoint,
   validateContentBundle,
   validateCardSet,
   writeCardsCsv,
@@ -405,6 +406,49 @@ describe("ReignsAgent pipeline", () => {
     assert.equal(plan.config.apiKey, undefined);
     assert.equal(JSON.stringify(plan).includes("secret-key"), false);
     assert.equal(JSON.stringify(plan).includes("must-not-return"), false);
+  });
+
+  it("validates AI edit endpoints through the real protocol request path", async () => {
+    const calls = [];
+    const bundle = createContentBundle({ cards: binaryCards(), metadata: { title: "Court Test" } });
+    const result = await validateAiEditEndpoint({
+      bundle,
+      config: {
+        provider: "openai_chat",
+        endpoint: "'http://endpoint.test/v1';",
+        modelId: "chat-model",
+        capabilities: ["structuredJson"],
+        apiKeyRef: "browser-local",
+        apiKey: "must-not-return"
+      },
+      credentials: { apiKey: "'secret-key';" },
+      fetchImpl: async (url, options) => {
+        calls.push({ url, options, body: JSON.parse(options.body) });
+        return {
+          ok: true,
+          status: 200,
+          text: async () => JSON.stringify({
+            choices: [{
+              message: {
+                content: JSON.stringify({ proposals: [] })
+              }
+            }]
+          })
+        };
+      }
+    });
+
+    assert.equal(calls[0].url, "http://endpoint.test/v1/chat/completions");
+    assert.equal(calls[0].options.headers.authorization, "Bearer secret-key");
+    assert.equal(calls[0].body.model, "chat-model");
+    assert.equal(calls[0].body.response_format.type, "json_object");
+    assert.match(calls[0].body.messages[1].content, /connectivity and protocol validation request/);
+    assert.equal(result.ok, true);
+    assert.equal(result.proposalCount, 0);
+    assert.equal(result.provider.endpoint, "http://endpoint.test/v1/chat/completions");
+    assert.equal(result.config.apiKey, undefined);
+    assert.equal(JSON.stringify(result).includes("secret-key"), false);
+    assert.equal(JSON.stringify(result).includes("must-not-return"), false);
   });
 
   it("formats messages and completions endpoint requests", async () => {

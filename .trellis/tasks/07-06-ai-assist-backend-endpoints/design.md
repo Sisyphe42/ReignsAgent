@@ -19,11 +19,15 @@ AI Assist endpoint execution stays in Pipeline and Interface boundaries:
 6. Pipeline extracts JSON from the provider response, accepts only `{ proposals: [...] }`, validates the proposals through `applyAiEditPatches` against a cloned bundle, and returns a normal plan schema.
 7. Applying proposals remains unchanged: `applyAiEditPlan` checks `baseFingerprint`, applies selected patches atomically, validates the resulting editor, and only then replaces server state.
 
+Settings validation uses the same boundary stack without creating a plan: Creator posts redacted config plus transient credentials to `/api/ai/edit/validate`, Interface snapshots the current editor bundle, Pipeline sends a validation request through the selected protocol/route/model, parses `{ proposals: [] }`, prevalidates any returned proposals if present, and returns a redacted validation summary. It never mutates the editor.
+
 ## Contracts
 
 - `createAiEditSuggestions(...)` remains synchronous and deterministic.
 - Add an async provider-backed Pipeline function for AI Edit planning.
+- Add an async Pipeline endpoint validation function that reuses protocol request construction, auth headers, URL resolution, JSON extraction, JSON-mode fallback, and redaction.
 - Add an async Interface function for AI Edit planning that chooses provider execution when `config.endpoint` and `config.modelId` are present and `provider !== "stub"`.
+- Add an async Interface endpoint validation function used by local API `POST /api/ai/edit/validate`.
 - `credentials.apiKey` is accepted only as request input. Returned `config` may include `apiKeyRef`, never `apiKey`.
 - Protocol request shapes:
   - Responses: `{ model, input, text: { format: { type: "json_object" } } }`
@@ -45,4 +49,4 @@ AI Assist endpoint execution stays in Pipeline and Interface boundaries:
 - Canonical protocol values are `openai_chat`, `openai_responses`, and `openai_completions`; legacy `messages`, `responses`, and `completions` normalize to those values.
 - Route resolution supports `auto`, `api_root`, and `full_url`. `auto` treats known protocol-route suffixes as full endpoint URLs and appends the selected route otherwise.
 - JSON mode is controlled by `jsonMode` and `capabilities.structuredJson`; OpenAI JSON mode failures retry once without the structured JSON parameter on the same protocol.
-- Creator endpoint/model preset data is serializable and frontend-owned. The visible setup follows NewAPI channel configuration patterns: a compact provider channel type selector, official/brand logos for recognition, editable model defaults, editable base URL, and Advanced compatibility controls. Interface and Pipeline preserve/redact preset metadata but do not own provider profile management.
+- Creator endpoint/model preset data is serializable and frontend-owned. The visible setup follows NewAPI channel configuration patterns: a compact provider channel type selector, official/brand logos for recognition, editable model defaults, editable base URL, and Advanced compatibility controls. SenseNova is treated as an OpenAI-compatible preset (`https://token.sensenova.cn/v1`, `sensenova-6.7-flash-lite`). Interface and Pipeline preserve/redact preset metadata but do not own provider profile management.

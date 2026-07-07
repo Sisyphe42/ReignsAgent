@@ -22,6 +22,7 @@ import {
   serializeBuild,
   summarizeDiagnostics,
   summarizeFeedback,
+  validateAiEditEndpointConfig,
   validatePlayerCards
 } from "../src/index.js";
 
@@ -441,6 +442,44 @@ describe("ReignsAgent interface controller", () => {
     assert.equal(JSON.stringify(plan).includes("secret-key"), false);
     assert.equal(JSON.stringify(plan).includes("must-not-return"), false);
     assert.equal(plan.proposals[0].patches[0].label, "Hear");
+    assert.equal(editor.findCard("gate").choices[0].label, "Left");
+  });
+
+  it("validates provider endpoints through the async interface boundary without mutating the editor", async () => {
+    const editor = createCardEditor({ cards: [sampleCard("gate")], metadata: { title: "Court" } });
+    const calls = [];
+    const result = await validateAiEditEndpointConfig({
+      editor,
+      config: {
+        provider: "openai_chat",
+        endpoint: "http://endpoint.test/v1",
+        modelId: "chat-model",
+        apiKeyRef: "browser-local",
+        apiKey: "must-not-return"
+      },
+      credentials: { apiKey: "secret-key" },
+      fetchImpl: async (url, options) => {
+        calls.push({ url, options, body: JSON.parse(options.body) });
+        return {
+          ok: true,
+          status: 200,
+          text: async () => JSON.stringify({
+            choices: [{
+              message: {
+                content: JSON.stringify({ proposals: [] })
+              }
+            }]
+          })
+        };
+      }
+    });
+
+    assert.equal(calls[0].url, "http://endpoint.test/v1/chat/completions");
+    assert.equal(result.ok, true);
+    assert.equal(result.proposalCount, 0);
+    assert.equal(result.config.apiKey, undefined);
+    assert.equal(JSON.stringify(result).includes("secret-key"), false);
+    assert.equal(JSON.stringify(result).includes("must-not-return"), false);
     assert.equal(editor.findCard("gate").choices[0].label, "Left");
   });
 

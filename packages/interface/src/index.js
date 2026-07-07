@@ -3,6 +3,7 @@ import {
   applyAiEditPatches,
   createAiEditSuggestions,
   createAiEditSuggestionsFromEndpoint,
+  validateAiEditEndpoint,
   buildCardGenerationRequest,
   createContentBundle,
   createDiagnosticFeedback,
@@ -747,6 +748,26 @@ export async function buildAiEditPlanAsync({
     targetCardId,
     assetId,
     diagnostics,
+    fetchImpl
+  });
+}
+
+export async function validateAiEditEndpointConfig({
+  editor,
+  config = {},
+  credentials = {},
+  fetchImpl = globalThis.fetch
+}) {
+  const bundle = editor?.toBundle ? editor.toBundle() : createContentBundle(editor ?? {});
+  const descriptor = normalizeAiEditConnectorConfig(config);
+  if (!shouldUseAiEndpoint(descriptor)) {
+    throw new InterfaceError("AI endpoint validation requires a configured endpoint and model");
+  }
+
+  return validateAiEditEndpoint({
+    bundle,
+    config: descriptor,
+    credentials,
     fetchImpl
   });
 }

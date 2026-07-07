@@ -571,6 +571,32 @@ export function buildMediaEditRequest({
   };
 }
 
+function buildAiEndpointValidationRequest({ bundle }) {
+  const context = buildAiContext({
+    bundle,
+    instruction: "Endpoint validation only. Return exactly {\"proposals\":[]} and do not propose edits.",
+    targetCardIds: [],
+    diagnostics: null,
+    constraints: {
+      validationOnly: true,
+      expectedResponse: { proposals: [] }
+    },
+    mode: "generate_cards"
+  });
+
+  return {
+    requestId: createRequestId("ai_endpoint_validation", stableStringify(context)),
+    purpose: "ai_endpoint_validation",
+    prompt: "Validate endpoint compatibility. Return exactly {\"proposals\":[]} with no markdown.",
+    responseFormat: "json",
+    schema: aiEditProposalSchema(),
+    context,
+    metadata: {
+      validationOnly: true
+    }
+  };
+}
+
 export function createAiEditSuggestions({
   bundle,
   mode = "generate_cards",
@@ -671,6 +697,72 @@ export async function createAiEditSuggestionsFromEndpoint({
     },
     ...(feedback ? { feedback } : {}),
     proposals
+  };
+}
+
+export async function validateAiEditEndpoint({
+  bundle,
+  config = {},
+  credentials = {},
+  fetchImpl = globalThis.fetch
+}) {
+  if (typeof fetchImpl !== "function") {
+    throw new PipelineError("AI endpoint validation requires fetch", "endpoint_fetch_unavailable");
+  }
+
+  const normalizedBundle = createContentBundle(bundle);
+  const descriptor = redactAiEndpointConfig(config ?? {});
+  const endpoint = normalizeEndpointValue(descriptor.endpoint);
+  const protocol = normalizeAiEndpointProtocol(descriptor.provider);
+  const routeMode = normalizeAiEndpointRouteMode(descriptor.routeMode);
+  const model = normalizeEndpointValue(descriptor.modelId);
+  if (!endpoint || !model) {
+    throw new PipelineError("AI endpoint validation requires endpoint and modelId", "endpoint_config_required");
+  }
+
+  const request = buildAiEndpointValidationRequest({ bundle: normalizedBundle });
+  const endpointResult = await callAiEditEndpoint({
+    endpoint,
+    protocol,
+    routeMode,
+    model,
+    request,
+    config: descriptor,
+    apiKey: normalizeEndpointValue(credentials?.apiKey),
+    fetchImpl
+  });
+  const proposals = endpointResult.proposals.length > 0
+    ? normalizeProviderProposals({
+      bundle: normalizedBundle,
+      mode: "generate_cards",
+      protocol,
+      provider: descriptor.provider ?? protocol,
+      response: endpointResult.proposals
+    })
+    : [];
+
+  return {
+    schemaVersion: AI_EDIT_SCHEMA_VERSION,
+    ok: true,
+    baseFingerprint: request.context.bundle.fingerprint,
+    config: descriptor,
+    request: {
+      requestId: request.requestId,
+      purpose: request.purpose,
+      responseFormat: request.responseFormat,
+      context: {
+        fingerprint: request.context.bundle.fingerprint,
+        cardCount: request.context.bundle.cardCount,
+        assetCount: request.context.bundle.assetCount
+      }
+    },
+    provider: {
+      protocol,
+      routeMode,
+      endpoint: redactEndpointUrl(endpointResult.url),
+      model
+    },
+    proposalCount: proposals.length
   };
 }
 
@@ -1334,6 +1426,16 @@ function isStructuredJsonUnsupportedError(text) {
 }
 
 function buildAiEndpointPrompt(request) {
+  if (request?.purpose === "ai_endpoint_validation") {
+    return [
+      "Return only valid JSON exactly in this top-level shape:",
+      "{\"proposals\":[]}",
+      "This is a connectivity and protocol validation request. Do not propose edits, patches, markdown, commentary, or external file references.",
+      "Request:",
+      JSON.stringify(request, null, 2)
+    ].join("\n");
+  }
+
   return [
     "Return only valid JSON in this exact top-level shape:",
     "{\"proposals\":[{\"id\":\"proposal-id\",\"title\":\"Title\",\"summary\":\"Summary\",\"source\":{},\"target\":{},\"patches\":[]}]}",
@@ -1503,7 +1605,13 @@ function redactAiEndpointConfig(config) {
 }
 
 function normalizeEndpointValue(value) {
-  return typeof value === "string" && value.trim() ? value.trim() : null;
+  if (typeof value !== "string") return null;
+  let normalized = value.trim();
+  if (normalized.endsWith(";")) {
+    normalized = normalized.slice(0, -1).trim();
+  }
+  normalized = normalized.replace(/^['"]|['"]$/g, "").trim();
+  return normalized ? normalized : null;
 }
 
 function normalizeAiEndpointProtocol(provider) {

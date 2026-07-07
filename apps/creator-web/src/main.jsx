@@ -80,6 +80,7 @@ const AI_LOGO_SOURCES = {
   moonshot: ["https://www.moonshot.cn/favicon.ico", "https://logo.clearbit.com/moonshot.cn"],
   openrouter: ["https://cdn.simpleicons.org/openrouter/ffffff", "https://openrouter.ai/favicon.ico"],
   ollama: ["https://cdn.simpleicons.org/ollama/ffffff", "https://ollama.com/public/ollama.png"],
+  sensenova: ["https://platform.sensenova.cn/favicon.ico", "https://www.sensenova.cn/favicon.ico"],
   siliconflow: ["https://siliconflow.cn/favicon.ico", "https://logo.clearbit.com/siliconflow.cn"],
   volcengine: ["https://www.volcengine.com/favicon.ico", "https://logo.clearbit.com/volcengine.com"],
   baidu: ["https://cdn.simpleicons.org/baidu/2932E1", "https://cloud.baidu.com/favicon.ico"],
@@ -260,6 +261,19 @@ const AI_ENDPOINT_PRESETS = [
       aiModel("Qwen/Qwen3-235B-A22B", "Qwen3 235B", { reasoning: true }),
       aiModel("moonshotai/Kimi-K2-Instruct", "Kimi K2"),
       aiModel("THUDM/GLM-4.1V-9B-Thinking", "GLM-4.1V Thinking", { vision: true, reasoning: true })
+    ]
+  },
+  {
+    id: "sensenova",
+    label: "SenseNova",
+    baseUrl: "https://token.sensenova.cn/v1",
+    iconKey: "sensenova",
+    iconLabel: "SN",
+    protocol: "openai_chat",
+    compatibilityFamily: "openai",
+    models: [
+      aiModel("sensenova-6.7-flash-lite", "SenseNova 6.7 Flash-Lite"),
+      aiModel("deepseek-v4-flash", "DeepSeek V4 Flash")
     ]
   },
   {
@@ -4880,7 +4894,7 @@ function SettingsPanel({ editor, aiSettings, onAiSettingsChange, onRefresh, onSt
     }));
   }
 
-  function testEndpoint() {
+  async function testEndpoint() {
     const baseUrl = normalizedAiSettings.baseUrl.trim();
     const modelId = normalizedAiSettings.modelId.trim();
     if (!baseUrl || !modelId) {
@@ -4897,7 +4911,26 @@ function SettingsPanel({ editor, aiSettings, onAiSettingsChange, onRefresh, onSt
       setSetupCheck({ state: "warning", message: `${protocolLabel} request shape is valid, but no API key is set.` });
       return;
     }
-    setSetupCheck({ state: "success", message: `${protocolLabel} request shape is ready for ${modelId}.` });
+    setSetupCheck({ state: "checking", message: `Validating ${protocolLabel} endpoint with ${modelId}...` });
+    try {
+      const result = await api("/api/ai/edit/validate", {
+        method: "POST",
+        body: {
+          config: buildAiConnectorConfig(normalizedAiSettings),
+          credentials: {
+            apiKey: normalizedAiSettings.apiKey
+          }
+        }
+      });
+      setSetupCheck({
+        state: "success",
+        message: `${protocolLabel} endpoint validated for ${result.provider?.model ?? modelId}.`
+      });
+      onStatus(`AI endpoint validated: ${result.provider?.protocol ?? normalizedAiSettings.protocol}`);
+    } catch (error) {
+      setSetupCheck({ state: "error", message: error.message });
+      onStatus(error.message);
+    }
   }
 
   return (
@@ -4979,7 +5012,7 @@ function SettingsPanel({ editor, aiSettings, onAiSettingsChange, onRefresh, onSt
           </div>
         </details>
         <div className="action-row">
-          <button className="btn btn--primary endpoint-validate-btn" type="button" onClick={testEndpoint}>Validate endpoint</button>
+          <button className="btn btn--primary endpoint-validate-btn" type="button" onClick={() => void testEndpoint()}>Validate endpoint</button>
           <span className={`endpoint-check endpoint-check--${setupCheck.state}`}>
             {setupCheck.message || "Configured endpoints are used when drafting AI Assist plans."}
           </span>

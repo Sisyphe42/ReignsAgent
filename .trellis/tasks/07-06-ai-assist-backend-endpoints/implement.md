@@ -12,6 +12,8 @@
 8. Add integration tests with a local mock endpoint for `responses`, `messages`, `completions`, endpoint failure, malformed JSON, and no key echo.
 9. Run `npm run verify`.
 10. Amend endpoint compatibility with canonical OpenAI protocol aliases, route mode, JSON-mode fallback, and Creator endpoint/model presets in the same branch/PR.
+11. Add real backend endpoint validation for Creator Settings using the same provider call path as planning.
+12. Smoke test the full validate -> provider plan -> explicit apply flow with the `.env` test endpoint without logging or returning raw credentials.
 
 ## Validation Commands
 

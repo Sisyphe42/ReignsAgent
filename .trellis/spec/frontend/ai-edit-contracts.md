@@ -16,10 +16,12 @@
   - `buildMediaEditRequest({ bundle, mode, instruction, targetCardId, assetId, style, diagnostics, constraints })`
   - `createAiEditSuggestions({ bundle, mode, config, instruction, targetCardId, assetId, diagnostics })`
   - `createAiEditSuggestionsFromEndpoint({ bundle, mode, config, credentials, instruction, targetCardId, assetId, diagnostics, fetchImpl })`
+  - `validateAiEditEndpoint({ bundle, config, credentials, fetchImpl })`
   - `applyAiEditPatches({ bundle, patches })`
 - Interface:
   - `buildAiEditPlan({ editor, config, mode, instruction, targetCardId, assetId, diagnostics })`
   - `buildAiEditPlanAsync({ editor, config, credentials, mode, instruction, targetCardId, assetId, diagnostics, fetchImpl })`
+  - `validateAiEditEndpointConfig({ editor, config, credentials, fetchImpl })`
   - `applyAiEditPlan({ editor, plan, proposalIds })`
 - Creator UI:
   - `openAiAssistDraft({ mode, instruction, targetCardId?, assetId?, cardCount?, theme?, autoBuild? })`
@@ -27,6 +29,7 @@
   - `AiAssistPreflight({ request, onChange, onBuild, onOpenPanel, onClose })`
   - `AiAssistPanel({ draftRequest })`
 - Local API:
+  - `POST /api/ai/edit/validate` with optional transient `credentials.apiKey`
   - `POST /api/ai/edit/plan` with optional transient `credentials.apiKey`
   - `POST /api/ai/edit/apply`
 
@@ -49,6 +52,7 @@
   - Route mode defaults to `auto`: if the endpoint already ends in a known protocol route, use it as the full URL; otherwise append the selected route. `api_root` always appends and `full_url` never appends.
   - JSON mode is capability-driven by default. If an endpoint rejects OpenAI JSON mode / `response_format`, retry once without that structured JSON parameter while keeping the same protocol.
   - Creator settings present endpoint presets as a NewAPI-style channel type selector inside a compact row form. Preset data stays frontend-owned, can use official/brand logos for recognition, and must still emit only normalized endpoint/protocol/model/capability config to Interface/Pipeline.
+  - Endpoint validation is a real provider call through the same protocol, route resolution, auth header, response extraction, and JSON-mode fallback path as planning. It requests `{ proposals: [] }`, may prevalidate returned proposals if present, never mutates the editor, and never returns raw credentials.
   - provider output must parse to `{ proposals: [...] }`
   - returned `config` may include redacted `apiKeyRef`, endpoint/model preset ids, icon keys, compatibility family, route mode, and JSON mode, but must never include raw `apiKey` or `credentials`
 - Proposal response:

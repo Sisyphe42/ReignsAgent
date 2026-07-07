@@ -35,6 +35,7 @@ const modules = [
       "buildCardGenerationPrompt",
       "buildMediaEditRequest",
       "createAiEditSuggestions",
+      "createAiEditSuggestionsFromEndpoint",
       "createContentBundle",
       "createDiagnosticFeedback",
       "createLLMConnector",
@@ -49,6 +50,7 @@ const modules = [
       "stringifyContentJson",
       "stringifyCardsCsv",
       "stringifyCardsJson",
+      "validateAiEditEndpoint",
       "validateContentBundle",
       "validateCardSet",
       "writeContentJson",
@@ -63,6 +65,7 @@ const modules = [
       "InterfaceError",
       "applyAiEditPlan",
       "buildAiEditPlan",
+      "buildAiEditPlanAsync",
       "buildGenerationPlan",
       "createCardEditor",
       "createConnectorConfig",
@@ -79,6 +82,7 @@ const modules = [
       "serializeBuild",
       "summarizeDiagnostics",
       "summarizeFeedback",
+      "validateAiEditEndpointConfig",
       "validatePlayerCards"
     ]
   }

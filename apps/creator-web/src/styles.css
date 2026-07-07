@@ -2522,6 +2522,12 @@ select {
   background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
 
+.endpoint-check--checking {
+  color: var(--muted);
+  border-color: color-mix(in srgb, var(--accent) 38%, var(--border));
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
 .endpoint-check--error {
   color: var(--danger);
   border-color: color-mix(in srgb, var(--danger) 55%, var(--border));

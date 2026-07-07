@@ -21,6 +21,7 @@ import {
   serializeBuild,
   summarizeDiagnostics,
   summarizeFeedback,
+  validateAiEditEndpointConfig,
   validatePlayerCards
 } from "../packages/interface/src/index.js";
 
@@ -233,6 +234,15 @@ async function handleApi(req, res, url) {
       diagnostics
     });
     return sendJson(res, plan);
+  }
+
+  if (path === "/api/ai/edit/validate" && req.method === "POST") {
+    const result = await validateAiEditEndpointConfig({
+      editor: store.editor,
+      config: body?.config ?? {},
+      credentials: body?.credentials ?? {}
+    });
+    return sendJson(res, result);
   }
 
   if (path === "/api/ai/edit/apply" && req.method === "POST") {
