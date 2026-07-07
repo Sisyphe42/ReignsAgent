@@ -20,6 +20,7 @@ import {
   createDiagnosticFeedback,
   generateAssetDrafts,
   generateCardDrafts,
+  listAiEndpointModels,
   parseContentJson,
   parseCardsCsv,
   parseCardsJson,
@@ -446,6 +447,45 @@ describe("ReignsAgent pipeline", () => {
     assert.equal(result.ok, true);
     assert.equal(result.proposalCount, 0);
     assert.equal(result.provider.endpoint, "http://endpoint.test/v1/chat/completions");
+    assert.equal(result.config.apiKey, undefined);
+    assert.equal(JSON.stringify(result).includes("secret-key"), false);
+    assert.equal(JSON.stringify(result).includes("must-not-return"), false);
+  });
+
+  it("lists AI endpoint models through the redacted metadata path", async () => {
+    const calls = [];
+    const result = await listAiEndpointModels({
+      config: {
+        provider: "openai_chat",
+        endpoint: "http://endpoint.test/v1/chat/completions",
+        routeMode: "auto",
+        apiKey: "must-not-return"
+      },
+      credentials: { apiKey: "secret-key" },
+      fetchImpl: async (url, options) => {
+        calls.push({ url, options });
+        return {
+          ok: true,
+          status: 200,
+          text: async () => JSON.stringify({
+            data: [
+              { id: "chat-model", object: "model" },
+              { id: "vision-model", display_name: "Vision Model" },
+              { id: "chat-model" }
+            ]
+          })
+        };
+      }
+    });
+
+    assert.equal(calls[0].url, "http://endpoint.test/v1/models");
+    assert.equal(calls[0].options.method, "GET");
+    assert.equal(calls[0].options.headers.authorization, "Bearer secret-key");
+    assert.deepEqual(result.models, [
+      { id: "chat-model", label: "chat-model" },
+      { id: "vision-model", label: "Vision Model" }
+    ]);
+    assert.equal(result.provider.endpoint, "http://endpoint.test/v1/models");
     assert.equal(result.config.apiKey, undefined);
     assert.equal(JSON.stringify(result).includes("secret-key"), false);
     assert.equal(JSON.stringify(result).includes("must-not-return"), false);

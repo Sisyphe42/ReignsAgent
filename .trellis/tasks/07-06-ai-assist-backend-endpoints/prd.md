@@ -21,6 +21,7 @@ Complete AI Assist backend endpoint execution so creator-supplied text endpoints
 - Provider output must be accepted only as JSON containing `{ "proposals": [...] }`.
 - Provider proposals must be validated as patch proposals against the current bundle before returning a plan, without mutating the editor.
 - Settings endpoint validation must be a real provider call through the backend using the current bundle context, transient credentials, selected protocol/route/model settings, and `{ "proposals": [] }` response parsing. Validation must not mutate the editor or return raw credentials.
+- Settings model listing must be a real backend metadata request using the current endpoint and transient credentials. It should call the OpenAI-compatible `/models` route, return normalized editable model ids, and never mutate the editor or return raw credentials.
 - `POST /api/ai/edit/plan` must accept transient `credentials.apiKey`; the backend must use it only for the active request and must not store, log, echo, or include it in returned plans.
 - Endpoint, provider, model id, capability flags, and redacted API key reference must remain available in plan config for preview/debug context.
 - Endpoint/network/parse/validation failures must return structured JSON errors instead of silent local fallback when a real endpoint was configured.
@@ -40,6 +41,7 @@ Complete AI Assist backend endpoint execution so creator-supplied text endpoints
 
 - [ ] Configured `responses`, `messages`, and `completions` endpoints can return AI Assist plans with provider proposals.
 - [ ] Settings Validate endpoint performs an actual backend/provider request and reports structured success/error without mutating the editor.
+- [ ] Settings can fetch `/models` through the backend, populate editable model suggestions, and keep raw API keys out of responses.
 - [ ] Local stub planning still works when no endpoint is configured or `provider: "stub"` is used.
 - [ ] Raw API keys do not appear in plan responses, proposal responses, logs, editor bundles, build manifests, or tests snapshots.
 - [ ] Invalid provider output, unsupported patch ops, missing patch targets, and endpoint failures return JSON errors and do not mutate the editor.
@@ -48,4 +50,4 @@ Complete AI Assist backend endpoint execution so creator-supplied text endpoints
 
 ## Out of Scope
 
-- Streaming responses, tool/function calling, reasoning controls, provider presets, model discovery, MCP, skills, multi-profile management, and deployable-player AI behavior.
+- Streaming responses, tool/function calling, reasoning controls, automatic model discovery, provider profile management, MCP, skills, multi-profile management, and deployable-player AI behavior.

@@ -21,13 +21,17 @@ AI Assist endpoint execution stays in Pipeline and Interface boundaries:
 
 Settings validation uses the same boundary stack without creating a plan: Creator posts redacted config plus transient credentials to `/api/ai/edit/validate`, Interface snapshots the current editor bundle, Pipeline sends a validation request through the selected protocol/route/model, parses `{ proposals: [] }`, prevalidates any returned proposals if present, and returns a redacted validation summary. It never mutates the editor.
 
+Settings model listing is a separate read-only metadata probe: Creator posts redacted config plus transient credentials to `/api/ai/edit/models`, Interface normalizes the connector config, Pipeline resolves the current base URL to an OpenAI-compatible `/models` endpoint, sends a GET with the same auth header convention, parses OpenAI `{ data: [...] }` plus simple `models` array shapes, and returns normalized `{ id, label }` records. It never mutates the editor and never returns raw credentials.
+
 ## Contracts
 
 - `createAiEditSuggestions(...)` remains synchronous and deterministic.
 - Add an async provider-backed Pipeline function for AI Edit planning.
 - Add an async Pipeline endpoint validation function that reuses protocol request construction, auth headers, URL resolution, JSON extraction, JSON-mode fallback, and redaction.
+- Add an async Pipeline model-listing function that reuses endpoint normalization, auth header construction, model response parsing, and redaction.
 - Add an async Interface function for AI Edit planning that chooses provider execution when `config.endpoint` and `config.modelId` are present and `provider !== "stub"`.
 - Add an async Interface endpoint validation function used by local API `POST /api/ai/edit/validate`.
+- Add an async Interface model-listing function used by local API `POST /api/ai/edit/models`.
 - `credentials.apiKey` is accepted only as request input. Returned `config` may include `apiKeyRef`, never `apiKey`.
 - Protocol request shapes:
   - Responses: `{ model, input, text: { format: { type: "json_object" } } }`

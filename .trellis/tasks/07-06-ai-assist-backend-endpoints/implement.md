@@ -14,6 +14,7 @@
 10. Amend endpoint compatibility with canonical OpenAI protocol aliases, route mode, JSON-mode fallback, and Creator endpoint/model presets in the same branch/PR.
 11. Add real backend endpoint validation for Creator Settings using the same provider call path as planning.
 12. Smoke test the full validate -> provider plan -> explicit apply flow with the `.env` test endpoint without logging or returning raw credentials.
+13. Add backend `/models` metadata fetch, Creator model-list button, and API key show/hide control; smoke test with the `.env` endpoint without logging raw credentials.
 
 ## Validation Commands
 

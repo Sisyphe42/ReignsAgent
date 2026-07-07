@@ -251,6 +251,17 @@ describe("Phase 4 interface integration", () => {
     try {
       await waitForServer(port, server);
       const endpoint = `http://127.0.0.1:${mock.port}/v1`;
+      const models = await api(port, "/api/ai/edit/models", {
+        method: "POST",
+        body: {
+          config: { provider: "openai_chat", endpoint: `${endpoint}/chat/completions`, apiKeyRef: "browser-local" },
+          credentials: { apiKey: "secret-integration-key" }
+        }
+      });
+      assert.deepEqual(models.models.map((model) => model.id), ["mock-chat", "mock-vision"]);
+      assert.equal(models.provider.endpoint, `${endpoint}/models`);
+      assert.equal(JSON.stringify(models).includes("secret-integration-key"), false);
+
       const beforeValidation = await api(port, "/api/editor");
       const validation = await api(port, "/api/ai/edit/validate", {
         method: "POST",
@@ -279,14 +290,15 @@ describe("Phase 4 interface integration", () => {
         }));
       }
 
-      assert.deepEqual(mock.requests.map((request) => request.path), ["/v1/chat/completions", "/v1/responses", "/v1/chat/completions", "/v1/chat/completions", "/v1/completions"]);
+      assert.deepEqual(mock.requests.map((request) => request.path), ["/v1/models", "/v1/chat/completions", "/v1/responses", "/v1/chat/completions", "/v1/chat/completions", "/v1/completions"]);
       assert.equal(mock.requests.every((request) => request.authorization === "Bearer secret-integration-key"), true);
-      assert.equal(mock.requests[0].body.model, "validation-model");
-      assert.match(mock.requests[0].body.messages[1].content, /connectivity and protocol validation request/);
-      assert.equal(mock.requests[1].body.model, "responses-model");
-      assert.equal(mock.requests[2].body.messages[0].role, "system");
+      assert.equal(mock.requests[0].body, null);
+      assert.equal(mock.requests[1].body.model, "validation-model");
+      assert.match(mock.requests[1].body.messages[1].content, /connectivity and protocol validation request/);
+      assert.equal(mock.requests[2].body.model, "responses-model");
       assert.equal(mock.requests[3].body.messages[0].role, "system");
-      assert.match(mock.requests[4].body.prompt, /Return only valid JSON/);
+      assert.equal(mock.requests[4].body.messages[0].role, "system");
+      assert.match(mock.requests[5].body.prompt, /Return only valid JSON/);
       assert.equal(plans.every((plan) => JSON.stringify(plan).includes("secret-integration-key") === false), true);
       assert.deepEqual(plans.map((plan) => plan.proposals[0].patches[0].op), ["setMetadata", "setChoiceLabel", "setChoiceLabel", "setChoiceLabel"]);
 
@@ -394,6 +406,15 @@ async function startMockAiEndpoint() {
     }
 
     res.writeHead(200, { "content-type": "application/json" });
+    if (req.url.endsWith("/models")) {
+      res.end(JSON.stringify({
+        data: [
+          { id: "mock-chat" },
+          { id: "mock-vision", display_name: "Mock Vision" }
+        ]
+      }));
+      return;
+    }
     if (req.url.endsWith("/responses")) {
       res.end(JSON.stringify({
         output_text: JSON.stringify({

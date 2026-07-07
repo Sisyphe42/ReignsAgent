@@ -3,6 +3,7 @@ import {
   applyAiEditPatches,
   createAiEditSuggestions,
   createAiEditSuggestionsFromEndpoint,
+  listAiEndpointModels,
   validateAiEditEndpoint,
   buildCardGenerationRequest,
   createContentBundle,
@@ -766,6 +767,23 @@ export async function validateAiEditEndpointConfig({
 
   return validateAiEditEndpoint({
     bundle,
+    config: descriptor,
+    credentials,
+    fetchImpl
+  });
+}
+
+export async function listAiEditEndpointModels({
+  config = {},
+  credentials = {},
+  fetchImpl = globalThis.fetch
+}) {
+  const descriptor = normalizeAiEditConnectorConfig(config);
+  if (!descriptor.endpoint) {
+    throw new InterfaceError("AI endpoint model listing requires a configured endpoint");
+  }
+
+  return listAiEndpointModels({
     config: descriptor,
     credentials,
     fetchImpl

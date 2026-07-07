@@ -547,6 +547,14 @@ async function api(path, options = {}) {
   return json;
 }
 
+function formatAiEndpointError(error) {
+  const message = error?.message ?? String(error);
+  if (message.includes("Unknown API route")) {
+    return `${message}. Restart the local dashboard API server so it loads the latest backend routes.`;
+  }
+  return message;
+}
+
 function defaultAiSettings() {
   return {
     baseUrl: "",
@@ -587,6 +595,20 @@ function findModelPresetByModelId(settings, modelId) {
   const normalized = String(modelId ?? "").trim();
   if (!normalized) return null;
   return getModelPresetsForEndpoint(settings).find((model) => model.id === normalized) ?? null;
+}
+
+function mergeAiModelOptions(...modelGroups) {
+  const seen = new Set();
+  return modelGroups.flatMap((models) => (Array.isArray(models) ? models : []).flatMap((model) => {
+    const id = String(model?.id ?? "").trim();
+    if (!id || seen.has(id)) return [];
+    seen.add(id);
+    return [{
+      id,
+      label: String(model?.label ?? id),
+      capabilities: normalizeCapabilityState(model?.capabilities)
+    }];
+  }));
 }
 
 function normalizeCapabilityState(capabilities = {}) {
@@ -738,6 +760,9 @@ function AiModelDropdown({ models, value, providerLabel, onChange }) {
       </button>
       {open && (
         <div className="ai-dropdown__menu" role="listbox">
+          {models.length === 0 && (
+            <div className="ai-dropdown__empty">No model suggestions loaded.</div>
+          )}
           {models.map((model) => (
             <button
               key={model.id}
@@ -4784,12 +4809,15 @@ function SettingsPanel({ editor, aiSettings, onAiSettingsChange, onRefresh, onSt
   const [theme, setTheme] = useState("small kingdom");
   const [count, setCount] = useState(8);
   const [setupCheck, setSetupCheck] = useState({ state: "idle", message: "" });
+  const [apiKeyVisible, setApiKeyVisible] = useState(false);
+  const [fetchedModels, setFetchedModels] = useState([]);
   const normalizedAiSettings = normalizeAiSettings(aiSettings);
   const endpointPreset = getEndpointPreset(normalizedAiSettings.endpointPresetId);
-  const modelPresets = getModelPresetsForEndpoint(normalizedAiSettings);
+  const modelPresets = mergeAiModelOptions(getModelPresetsForEndpoint(normalizedAiSettings), fetchedModels);
   const protocolLabel = AI_PROTOCOLS.find(([id]) => id === normalizedAiSettings.protocol)?.[1] ?? normalizedAiSettings.protocol;
 
   useEffect(() => setTitle(editor?.metadata?.title ?? ""), [editor?.metadata?.title]);
+  useEffect(() => setFetchedModels([]), [normalizedAiSettings.baseUrl, normalizedAiSettings.protocol]);
 
   async function saveTitle() {
     await api("/api/editor/metadata", { method: "PATCH", body: { metadata: { title } } });
@@ -4928,8 +4956,53 @@ function SettingsPanel({ editor, aiSettings, onAiSettingsChange, onRefresh, onSt
       });
       onStatus(`AI endpoint validated: ${result.provider?.protocol ?? normalizedAiSettings.protocol}`);
     } catch (error) {
-      setSetupCheck({ state: "error", message: error.message });
-      onStatus(error.message);
+      const message = formatAiEndpointError(error);
+      setSetupCheck({ state: "error", message });
+      onStatus(message);
+    }
+  }
+
+  async function fetchEndpointModels() {
+    const baseUrl = normalizedAiSettings.baseUrl.trim();
+    if (!baseUrl) {
+      setSetupCheck({ state: "error", message: "Base URL is required before fetching models." });
+      return;
+    }
+    try {
+      new URL(baseUrl);
+    } catch {
+      setSetupCheck({ state: "error", message: "Base URL is not a valid URL." });
+      return;
+    }
+    if (!normalizedAiSettings.apiKey.trim() && normalizedAiSettings.compatibilityFamily !== "local") {
+      setSetupCheck({ state: "warning", message: "API key is required before fetching provider models." });
+      return;
+    }
+    setSetupCheck({ state: "checking", message: "Fetching models from /models..." });
+    try {
+      const result = await api("/api/ai/edit/models", {
+        method: "POST",
+        body: {
+          config: buildAiConnectorConfig(normalizedAiSettings),
+          credentials: {
+            apiKey: normalizedAiSettings.apiKey
+          }
+        }
+      });
+      const models = Array.isArray(result.models) ? result.models : [];
+      setFetchedModels(models);
+      if (!normalizedAiSettings.modelId.trim() && models[0]?.id) {
+        updateModelId(models[0].id);
+      }
+      setSetupCheck({
+        state: "success",
+        message: models.length ? `Loaded ${models.length} model${models.length === 1 ? "" : "s"} from /models.` : "The endpoint returned no models."
+      });
+      onStatus(models.length ? `Loaded ${models.length} AI models` : "AI endpoint returned no models");
+    } catch (error) {
+      const message = formatAiEndpointError(error);
+      setSetupCheck({ state: "error", message });
+      onStatus(message);
     }
   }
 
@@ -4962,13 +5035,24 @@ function SettingsPanel({ editor, aiSettings, onAiSettingsChange, onRefresh, onSt
           </div>
           <div className="ai-form-row">
             <label className="ai-field-label" htmlFor="ai-api-key">API Key</label>
-            <input
-              id="ai-api-key"
-              type="password"
-              value={normalizedAiSettings.apiKey}
-              onChange={(event) => updateAiSetting("apiKey", event.target.value)}
-              placeholder="Stored only in this creator browser"
-            />
+            <div className="secret-input">
+              <input
+                id="ai-api-key"
+                type={apiKeyVisible ? "text" : "password"}
+                value={normalizedAiSettings.apiKey}
+                onChange={(event) => updateAiSetting("apiKey", event.target.value)}
+                placeholder="Stored only in this creator browser"
+              />
+              <button
+                className={apiKeyVisible ? "secret-input__toggle secret-input__toggle--active" : "secret-input__toggle"}
+                type="button"
+                onClick={() => setApiKeyVisible((visible) => !visible)}
+                aria-label={apiKeyVisible ? "Hide API key" : "Show API key"}
+                title={apiKeyVisible ? "Hide API key" : "Show API key"}
+              >
+                <span className="eye-mark" aria-hidden="true" />
+              </button>
+            </div>
           </div>
           <div className="ai-form-row">
             <label className="ai-field-label">Model</label>
@@ -4981,6 +5065,7 @@ function SettingsPanel({ editor, aiSettings, onAiSettingsChange, onRefresh, onSt
                 placeholder="gpt-5, claude-sonnet-4-20250514, deepseek-chat..."
                 aria-label="Model ID"
               />
+              <button className="btn models-fetch-btn" type="button" onClick={() => void fetchEndpointModels()}>Fetch /models</button>
             </div>
           </div>
           <div className="ai-form-row ai-form-row--stack">

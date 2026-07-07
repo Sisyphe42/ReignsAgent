@@ -12,6 +12,7 @@ import {
   createPlaySession,
   deriveStoryGroups,
   deriveTagCatalog,
+  listAiEditEndpointModels,
   loadEditorFromContent,
   localizeCard,
   normalizePresentationConfig,
@@ -481,6 +482,34 @@ describe("ReignsAgent interface controller", () => {
     assert.equal(JSON.stringify(result).includes("secret-key"), false);
     assert.equal(JSON.stringify(result).includes("must-not-return"), false);
     assert.equal(editor.findCard("gate").choices[0].label, "Left");
+  });
+
+  it("lists provider models through the async interface boundary without echoing secrets", async () => {
+    const calls = [];
+    const result = await listAiEditEndpointModels({
+      config: {
+        provider: "openai_chat",
+        endpoint: "http://endpoint.test/v1",
+        apiKeyRef: "browser-local",
+        apiKey: "must-not-return"
+      },
+      credentials: { apiKey: "secret-key" },
+      fetchImpl: async (url, options) => {
+        calls.push({ url, options });
+        return {
+          ok: true,
+          status: 200,
+          text: async () => JSON.stringify({ data: [{ id: "alpha-model" }, { id: "beta-model" }] })
+        };
+      }
+    });
+
+    assert.equal(calls[0].url, "http://endpoint.test/v1/models");
+    assert.equal(calls[0].options.headers.authorization, "Bearer secret-key");
+    assert.deepEqual(result.models.map((model) => model.id), ["alpha-model", "beta-model"]);
+    assert.equal(result.config.apiKey, undefined);
+    assert.equal(JSON.stringify(result).includes("secret-key"), false);
+    assert.equal(JSON.stringify(result).includes("must-not-return"), false);
   });
 
   it("builds provider-backed AI edit plans with the canonical OpenAI Chat protocol", async () => {

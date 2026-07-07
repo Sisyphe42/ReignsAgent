@@ -14,6 +14,7 @@ import {
   deriveStoryGroups,
   deriveTagCatalog,
   getCardGraph,
+  listAiEditEndpointModels,
   loadEditorFromContent,
   prepareGameBuild,
   projectFactionGauges,
@@ -239,6 +240,14 @@ async function handleApi(req, res, url) {
   if (path === "/api/ai/edit/validate" && req.method === "POST") {
     const result = await validateAiEditEndpointConfig({
       editor: store.editor,
+      config: body?.config ?? {},
+      credentials: body?.credentials ?? {}
+    });
+    return sendJson(res, result);
+  }
+
+  if (path === "/api/ai/edit/models" && req.method === "POST") {
+    const result = await listAiEditEndpointModels({
       config: body?.config ?? {},
       credentials: body?.credentials ?? {}
     });

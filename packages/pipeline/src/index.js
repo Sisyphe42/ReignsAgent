@@ -766,6 +766,65 @@ export async function validateAiEditEndpoint({
   };
 }
 
+export async function listAiEndpointModels({
+  config = {},
+  credentials = {},
+  fetchImpl = globalThis.fetch
+}) {
+  if (typeof fetchImpl !== "function") {
+    throw new PipelineError("AI endpoint model listing requires fetch", "endpoint_fetch_unavailable");
+  }
+
+  const descriptor = redactAiEndpointConfig(config ?? {});
+  const endpoint = normalizeEndpointValue(descriptor.endpoint);
+  const protocol = normalizeAiEndpointProtocol(descriptor.provider);
+  const routeMode = normalizeAiEndpointRouteMode(descriptor.routeMode);
+  if (!endpoint) {
+    throw new PipelineError("AI endpoint model listing requires endpoint", "endpoint_config_required");
+  }
+
+  const url = resolveAiModelsEndpointUrl(endpoint, routeMode);
+  const headers = {
+    accept: "application/json"
+  };
+  const apiKey = normalizeEndpointValue(credentials?.apiKey);
+  if (apiKey) {
+    if (protocol === "anthropic_messages") {
+      headers["x-api-key"] = apiKey;
+      headers["anthropic-version"] = "2023-06-01";
+    } else {
+      headers.authorization = `Bearer ${apiKey}`;
+    }
+  }
+
+  let response;
+  try {
+    response = await fetchImpl(url, {
+      method: "GET",
+      headers
+    });
+  } catch (error) {
+    throw new PipelineError(`AI endpoint model listing failed: ${error.message}`, "endpoint_network_error");
+  }
+
+  const text = typeof response?.text === "function" ? await response.text() : "";
+  if (!response?.ok) {
+    throw new PipelineError(`AI endpoint model listing failed with status ${response?.status ?? "unknown"}`, "endpoint_http_error");
+  }
+
+  return {
+    schemaVersion: AI_EDIT_SCHEMA_VERSION,
+    ok: true,
+    config: descriptor,
+    provider: {
+      protocol,
+      routeMode,
+      endpoint: redactEndpointUrl(url)
+    },
+    models: parseAiEndpointModelsResponse(text)
+  };
+}
+
 export function applyAiEditPatches({ bundle, patches }) {
   if (!Array.isArray(patches)) {
     throw new PipelineError("AI edit patches must be an array");
@@ -1350,6 +1409,29 @@ function resolveAiEndpointUrl(endpoint, protocol, routeMode = "auto") {
   return `${trimmed}/${normalizedRoute}`;
 }
 
+function resolveAiModelsEndpointUrl(endpoint, routeMode = "auto") {
+  const trimmed = String(endpoint ?? "").trim().replace(/\/+$/, "");
+  if (!trimmed) {
+    throw new PipelineError("AI endpoint is required", "endpoint_config_required");
+  }
+  if (trimmed.toLowerCase().endsWith("/models")) {
+    return trimmed;
+  }
+
+  const normalizedRouteMode = normalizeAiEndpointRouteMode(routeMode);
+  let root = trimmed;
+  if (normalizedRouteMode !== "api_root") {
+    for (const route of Object.values(AI_ENDPOINT_ROUTES)) {
+      const suffix = `/${route.replace(/^\/+/, "")}`.toLowerCase();
+      if (root.toLowerCase().endsWith(suffix)) {
+        root = root.slice(0, -suffix.length);
+        break;
+      }
+    }
+  }
+  return `${root.replace(/\/+$/, "")}/models`;
+}
+
 function buildAiEndpointBody({ protocol, model, request, config, includeStructuredJson = shouldUseStructuredJson(config) }) {
   const prompt = buildAiEndpointPrompt(request);
 
@@ -1444,6 +1526,39 @@ function buildAiEndpointPrompt(request) {
     "Request:",
     JSON.stringify(request, null, 2)
   ].join("\n");
+}
+
+function parseAiEndpointModelsResponse(text) {
+  let payload;
+  try {
+    payload = text ? JSON.parse(text) : {};
+  } catch (error) {
+    throw new PipelineError(`AI endpoint models response was not valid JSON: ${error.message}`, "endpoint_parse_error");
+  }
+
+  const rawModels = Array.isArray(payload?.data)
+    ? payload.data
+    : Array.isArray(payload?.models)
+      ? payload.models
+      : Array.isArray(payload)
+        ? payload
+        : null;
+  if (!rawModels) {
+    throw new PipelineError("AI endpoint models response must include data or models array", "endpoint_parse_error");
+  }
+
+  const seen = new Set();
+  return rawModels.flatMap((model) => {
+    const id = typeof model === "string"
+      ? model.trim()
+      : normalizeEndpointValue(model?.id ?? model?.name ?? model?.model);
+    if (!id || seen.has(id)) return [];
+    seen.add(id);
+    const label = typeof model === "object" && model
+      ? normalizeEndpointValue(model.label ?? model.display_name ?? model.name) ?? id
+      : id;
+    return [{ id, label }];
+  });
 }
 
 function parseAiEndpointProposalResponse(text, protocol) {
