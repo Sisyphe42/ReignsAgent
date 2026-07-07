@@ -45,4 +45,4 @@ AI Assist endpoint execution stays in Pipeline and Interface boundaries:
 - Canonical protocol values are `openai_chat`, `openai_responses`, and `openai_completions`; legacy `messages`, `responses`, and `completions` normalize to those values.
 - Route resolution supports `auto`, `api_root`, and `full_url`. `auto` treats known protocol-route suffixes as full endpoint URLs and appends the selected route otherwise.
 - JSON mode is controlled by `jsonMode` and `capabilities.structuredJson`; OpenAI JSON mode failures retry once without the structured JSON parameter on the same protocol.
-- Creator endpoint/model preset data is serializable and frontend-owned. Interface and Pipeline preserve/redact preset metadata but do not own provider profile management.
+- Creator endpoint/model preset data is serializable and frontend-owned. The visible setup follows NewAPI channel configuration patterns: a compact provider channel type selector, official/brand logos for recognition, editable model defaults, editable base URL, and Advanced compatibility controls. Interface and Pipeline preserve/redact preset metadata but do not own provider profile management.

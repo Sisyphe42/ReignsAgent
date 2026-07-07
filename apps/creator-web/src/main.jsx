@@ -70,7 +70,52 @@ const DEFAULT_AI_CAPABILITIES = {
   reasoning: false,
   streaming: false
 };
+const AI_LOGO_SOURCES = {
+  openai: ["https://cdn.simpleicons.org/openai/ffffff", "https://openai.com/favicon.ico"],
+  anthropic: ["https://cdn.simpleicons.org/anthropic/ffffff", "https://www.anthropic.com/favicon.ico"],
+  google: ["https://cdn.simpleicons.org/googlegemini/8E75B2", "https://www.google.com/favicon.ico"],
+  deepseek: ["https://cdn.simpleicons.org/deepseek/4D6BFE", "https://www.deepseek.com/favicon.ico"],
+  qwen: ["https://cdn.simpleicons.org/alibabacloud/FF6A00", "https://dashscope.aliyuncs.com/favicon.ico"],
+  zhipu: ["https://open.bigmodel.cn/favicon.ico", "https://logo.clearbit.com/bigmodel.cn"],
+  moonshot: ["https://www.moonshot.cn/favicon.ico", "https://logo.clearbit.com/moonshot.cn"],
+  openrouter: ["https://cdn.simpleicons.org/openrouter/ffffff", "https://openrouter.ai/favicon.ico"],
+  ollama: ["https://cdn.simpleicons.org/ollama/ffffff", "https://ollama.com/public/ollama.png"],
+  siliconflow: ["https://siliconflow.cn/favicon.ico", "https://logo.clearbit.com/siliconflow.cn"],
+  volcengine: ["https://www.volcengine.com/favicon.ico", "https://logo.clearbit.com/volcengine.com"],
+  baidu: ["https://cdn.simpleicons.org/baidu/2932E1", "https://cloud.baidu.com/favicon.ico"],
+  tencent: ["https://cdn.simpleicons.org/tencentqq/1EBAFC", "https://cloud.tencent.com/favicon.ico"],
+  mistral: ["https://cdn.simpleicons.org/mistralai/FA520F", "https://mistral.ai/favicon.ico"],
+  perplexity: ["https://cdn.simpleicons.org/perplexity/1FB8CD", "https://www.perplexity.ai/favicon.ico"],
+  xai: ["https://cdn.simpleicons.org/x/ffffff", "https://x.ai/favicon.ico"],
+  cohere: ["https://cdn.simpleicons.org/cohere/39594D", "https://cohere.com/favicon.ico"],
+  minimax: ["https://www.minimax.io/favicon.ico", "https://logo.clearbit.com/minimax.io"],
+  lingyi: ["https://www.01.ai/favicon.ico", "https://logo.clearbit.com/01.ai"],
+  newapi: ["https://newapi.pro/favicon.ico", "https://logo.clearbit.com/newapi.pro"],
+  local: ["https://cdn.simpleicons.org/ollama/ffffff", "https://ollama.com/public/ollama.png"],
+  custom: []
+};
 const AI_ENDPOINT_PRESETS = [
+  {
+    id: "newapi",
+    label: "NewAPI / Unified BaseURI",
+    channelName: "NewAPI",
+    baseUrl: "https://your-newapi.example.com/v1",
+    iconKey: "newapi",
+    iconLabel: "NA",
+    protocol: "openai_chat",
+    compatibilityFamily: "newapi",
+    models: [
+      aiModel("gpt-5", "GPT-5", { vision: true, tools: true, reasoning: true }),
+      aiModel("gpt-5-mini", "GPT-5 mini", { vision: true, tools: true, reasoning: true }),
+      aiModel("claude-sonnet-4-20250514", "Claude Sonnet 4", { vision: true, structuredJson: false }),
+      aiModel("gemini-2.5-pro", "Gemini 2.5 Pro", { vision: true }),
+      aiModel("deepseek-chat", "DeepSeek Chat"),
+      aiModel("deepseek-reasoner", "DeepSeek Reasoner", { reasoning: true }),
+      aiModel("qwen-max", "Qwen Max"),
+      aiModel("glm-4-plus", "GLM-4 Plus"),
+      aiModel("moonshot-v1-128k", "Moonshot v1 128K")
+    ]
+  },
   {
     id: "openai",
     label: "OpenAI",
@@ -80,9 +125,45 @@ const AI_ENDPOINT_PRESETS = [
     protocol: "openai_chat",
     compatibilityFamily: "openai",
     models: [
-      { id: "gpt-4.1", label: "GPT-4.1", protocol: "openai_chat", capabilities: { vision: true, structuredJson: true, tools: true, reasoning: true, streaming: true } },
-      { id: "gpt-4.1-mini", label: "GPT-4.1 mini", protocol: "openai_chat", capabilities: { vision: true, structuredJson: true, tools: true, reasoning: false, streaming: true } },
-      { id: "gpt-4o-mini", label: "GPT-4o mini", protocol: "openai_chat", capabilities: { vision: true, structuredJson: true, tools: true, reasoning: false, streaming: true } }
+      aiModel("gpt-5", "GPT-5", { vision: true, tools: true, reasoning: true }),
+      aiModel("gpt-5-mini", "GPT-5 mini", { vision: true, tools: true, reasoning: true }),
+      aiModel("gpt-5-nano", "GPT-5 nano", { tools: true, reasoning: true }),
+      aiModel("gpt-4.1", "GPT-4.1", { vision: true, tools: true, reasoning: true }),
+      aiModel("gpt-4.1-mini", "GPT-4.1 mini", { vision: true, tools: true }),
+      aiModel("gpt-4o", "GPT-4o", { vision: true, tools: true }),
+      aiModel("gpt-4o-mini", "GPT-4o mini", { vision: true, tools: true }),
+      aiModel("o3", "o3", { reasoning: true, tools: true }),
+      aiModel("o4-mini", "o4-mini", { reasoning: true, tools: true })
+    ]
+  },
+  {
+    id: "anthropic",
+    label: "Anthropic",
+    baseUrl: "https://api.anthropic.com/v1",
+    iconKey: "anthropic",
+    iconLabel: "AN",
+    protocol: "anthropic_messages",
+    compatibilityFamily: "anthropic",
+    models: [
+      aiModel("claude-sonnet-4-20250514", "Claude Sonnet 4", { vision: true, structuredJson: false }, "anthropic_messages"),
+      aiModel("claude-opus-4-20250514", "Claude Opus 4", { vision: true, structuredJson: false, reasoning: true }, "anthropic_messages"),
+      aiModel("claude-3-7-sonnet-20250219", "Claude 3.7 Sonnet", { vision: true, structuredJson: false, reasoning: true }, "anthropic_messages"),
+      aiModel("claude-3-5-haiku-20241022", "Claude 3.5 Haiku", { vision: true, structuredJson: false }, "anthropic_messages")
+    ]
+  },
+  {
+    id: "gemini-openai",
+    label: "Gemini",
+    baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
+    iconKey: "google",
+    iconLabel: "GE",
+    protocol: "openai_chat",
+    compatibilityFamily: "openai",
+    models: [
+      aiModel("gemini-2.5-pro", "Gemini 2.5 Pro", { vision: true }),
+      aiModel("gemini-2.5-flash", "Gemini 2.5 Flash", { vision: true }),
+      aiModel("gemini-2.5-flash-lite", "Gemini 2.5 Flash Lite", { vision: true }),
+      aiModel("gemini-2.0-flash", "Gemini 2.0 Flash", { vision: true })
     ]
   },
   {
@@ -94,8 +175,9 @@ const AI_ENDPOINT_PRESETS = [
     protocol: "openai_chat",
     compatibilityFamily: "openai",
     models: [
-      { id: "deepseek-v4-flash", label: "DeepSeek V4 Flash", protocol: "openai_chat", capabilities: { structuredJson: true, reasoning: true, streaming: true } },
-      { id: "deepseek-chat", label: "DeepSeek Chat legacy", protocol: "openai_chat", capabilities: { structuredJson: true, streaming: true } }
+      aiModel("deepseek-chat", "DeepSeek Chat"),
+      aiModel("deepseek-reasoner", "DeepSeek Reasoner", { reasoning: true }),
+      aiModel("deepseek-coder", "DeepSeek Coder")
     ]
   },
   {
@@ -107,8 +189,13 @@ const AI_ENDPOINT_PRESETS = [
     protocol: "openai_chat",
     compatibilityFamily: "openai",
     models: [
-      { id: "qwen-plus", label: "Qwen Plus", protocol: "openai_chat", capabilities: { structuredJson: true, streaming: true } },
-      { id: "qwen-max", label: "Qwen Max", protocol: "openai_chat", capabilities: { structuredJson: true, streaming: true } }
+      aiModel("qwen-max", "Qwen Max"),
+      aiModel("qwen-plus", "Qwen Plus"),
+      aiModel("qwen-turbo", "Qwen Turbo"),
+      aiModel("qwen3-max", "Qwen3 Max", { reasoning: true }),
+      aiModel("qwen3-plus", "Qwen3 Plus", { reasoning: true }),
+      aiModel("qwen-vl-plus", "Qwen VL Plus", { vision: true }),
+      aiModel("qwq-plus", "QwQ Plus", { reasoning: true })
     ]
   },
   {
@@ -120,8 +207,10 @@ const AI_ENDPOINT_PRESETS = [
     protocol: "openai_chat",
     compatibilityFamily: "openai",
     models: [
-      { id: "moonshot-v1-8k", label: "Moonshot v1 8K", protocol: "openai_chat", capabilities: { structuredJson: true, streaming: true } },
-      { id: "moonshot-v1-32k", label: "Moonshot v1 32K", protocol: "openai_chat", capabilities: { structuredJson: true, streaming: true } }
+      aiModel("kimi-k2-0711-preview", "Kimi K2"),
+      aiModel("moonshot-v1-8k", "Moonshot v1 8K"),
+      aiModel("moonshot-v1-32k", "Moonshot v1 32K"),
+      aiModel("moonshot-v1-128k", "Moonshot v1 128K")
     ]
   },
   {
@@ -133,35 +222,44 @@ const AI_ENDPOINT_PRESETS = [
     protocol: "openai_chat",
     compatibilityFamily: "openai",
     models: [
-      { id: "glm-4-plus", label: "GLM-4 Plus", protocol: "openai_chat", capabilities: { structuredJson: true, streaming: true } },
-      { id: "glm-4-flash", label: "GLM-4 Flash", protocol: "openai_chat", capabilities: { structuredJson: true, streaming: true } }
+      aiModel("glm-4-plus", "GLM-4 Plus"),
+      aiModel("glm-4-flash", "GLM-4 Flash"),
+      aiModel("glm-4-air", "GLM-4 Air"),
+      aiModel("glm-4.5", "GLM-4.5", { reasoning: true }),
+      aiModel("glm-4v-plus", "GLM-4V Plus", { vision: true })
     ]
   },
   {
-    id: "gemini-openai",
-    label: "Gemini OpenAI compatibility",
-    baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
-    iconKey: "google",
-    iconLabel: "GE",
+    id: "openrouter",
+    label: "OpenRouter",
+    baseUrl: "https://openrouter.ai/api/v1",
+    iconKey: "openrouter",
+    iconLabel: "OR",
     protocol: "openai_chat",
     compatibilityFamily: "openai",
     models: [
-      { id: "gemini-3.5-flash", label: "Gemini 3.5 Flash", protocol: "openai_chat", capabilities: { vision: true, structuredJson: true, streaming: true } },
-      { id: "gemini-2.5-pro", label: "Gemini 2.5 Pro", protocol: "openai_chat", capabilities: { vision: true, structuredJson: true, streaming: true } }
+      aiModel("openai/gpt-5", "OpenAI GPT-5", { vision: true, tools: true, reasoning: true }),
+      aiModel("anthropic/claude-sonnet-4", "Claude Sonnet 4", { vision: true, structuredJson: false }),
+      aiModel("google/gemini-2.5-pro", "Gemini 2.5 Pro", { vision: true }),
+      aiModel("deepseek/deepseek-chat", "DeepSeek Chat"),
+      aiModel("qwen/qwen3-235b-a22b", "Qwen3 235B", { reasoning: true }),
+      aiModel("mistralai/mistral-large", "Mistral Large")
     ]
   },
   {
-    id: "newapi",
-    label: "NewAPI / Unified BaseURI",
-    baseUrl: "https://your-newapi.example.com/v1",
-    iconKey: "newapi",
-    iconLabel: "NA",
+    id: "siliconflow",
+    label: "SiliconFlow",
+    baseUrl: "https://api.siliconflow.cn/v1",
+    iconKey: "siliconflow",
+    iconLabel: "SF",
     protocol: "openai_chat",
-    compatibilityFamily: "newapi",
+    compatibilityFamily: "openai",
     models: [
-      { id: "gpt-4.1-mini", label: "GPT-4.1 mini", protocol: "openai_chat", capabilities: { structuredJson: true, streaming: true } },
-      { id: "deepseek-v4-flash", label: "DeepSeek V4 Flash", protocol: "openai_chat", capabilities: { structuredJson: true, reasoning: true, streaming: true } },
-      { id: "qwen-plus", label: "Qwen Plus", protocol: "openai_chat", capabilities: { structuredJson: true, streaming: true } }
+      aiModel("deepseek-ai/DeepSeek-V3", "DeepSeek V3"),
+      aiModel("deepseek-ai/DeepSeek-R1", "DeepSeek R1", { reasoning: true }),
+      aiModel("Qwen/Qwen3-235B-A22B", "Qwen3 235B", { reasoning: true }),
+      aiModel("moonshotai/Kimi-K2-Instruct", "Kimi K2"),
+      aiModel("THUDM/GLM-4.1V-9B-Thinking", "GLM-4.1V Thinking", { vision: true, reasoning: true })
     ]
   },
   {
@@ -173,21 +271,145 @@ const AI_ENDPOINT_PRESETS = [
     protocol: "openai_chat",
     compatibilityFamily: "local",
     models: [
-      { id: "llama3.1", label: "Llama 3.1", protocol: "openai_chat", capabilities: { streaming: true } },
-      { id: "qwen2.5", label: "Qwen 2.5", protocol: "openai_chat", capabilities: { structuredJson: true, streaming: true } }
+      aiModel("llama3.3", "Llama 3.3", { structuredJson: false }),
+      aiModel("llama3.1", "Llama 3.1", { structuredJson: false }),
+      aiModel("qwen3", "Qwen3", { reasoning: true }),
+      aiModel("qwen2.5", "Qwen 2.5"),
+      aiModel("deepseek-r1", "DeepSeek R1", { structuredJson: false, reasoning: true }),
+      aiModel("mistral", "Mistral", { structuredJson: false }),
+      aiModel("gemma3", "Gemma 3", { structuredJson: false })
     ]
   },
   {
-    id: "anthropic",
-    label: "Anthropic direct",
-    baseUrl: "https://api.anthropic.com/v1",
-    iconKey: "anthropic",
-    iconLabel: "AN",
-    protocol: "anthropic_messages",
-    compatibilityFamily: "anthropic",
+    id: "volcengine",
+    label: "VolcEngine / Doubao",
+    baseUrl: "https://ark.cn-beijing.volces.com/api/v3",
+    iconKey: "volcengine",
+    iconLabel: "DB",
+    protocol: "openai_chat",
+    compatibilityFamily: "openai",
     models: [
-      { id: "claude-sonnet-4-20250514", label: "Claude Sonnet 4", protocol: "anthropic_messages", capabilities: { vision: true, structuredJson: false, streaming: true } },
-      { id: "claude-3-5-haiku-20241022", label: "Claude 3.5 Haiku", protocol: "anthropic_messages", capabilities: { vision: true, structuredJson: false, streaming: true } }
+      aiModel("doubao-seed-1-6", "Doubao Seed 1.6", { reasoning: true }),
+      aiModel("doubao-1-5-pro-32k", "Doubao 1.5 Pro 32K"),
+      aiModel("doubao-1-5-lite-32k", "Doubao 1.5 Lite 32K"),
+      aiModel("doubao-1-5-vision-pro-32k", "Doubao Vision Pro", { vision: true })
+    ]
+  },
+  {
+    id: "mistral",
+    label: "Mistral",
+    baseUrl: "https://api.mistral.ai/v1",
+    iconKey: "mistral",
+    iconLabel: "MI",
+    protocol: "openai_chat",
+    compatibilityFamily: "openai",
+    models: [
+      aiModel("mistral-large-latest", "Mistral Large"),
+      aiModel("mistral-small-latest", "Mistral Small"),
+      aiModel("pixtral-large-latest", "Pixtral Large", { vision: true }),
+      aiModel("codestral-latest", "Codestral"),
+      aiModel("magistral-medium-latest", "Magistral Medium", { reasoning: true })
+    ]
+  },
+  {
+    id: "perplexity",
+    label: "Perplexity",
+    baseUrl: "https://api.perplexity.ai",
+    iconKey: "perplexity",
+    iconLabel: "PX",
+    protocol: "openai_chat",
+    compatibilityFamily: "openai",
+    models: [
+      aiModel("sonar", "Sonar"),
+      aiModel("sonar-pro", "Sonar Pro"),
+      aiModel("sonar-reasoning", "Sonar Reasoning", { reasoning: true }),
+      aiModel("sonar-deep-research", "Sonar Deep Research", { reasoning: true })
+    ]
+  },
+  {
+    id: "xai",
+    label: "xAI",
+    baseUrl: "https://api.x.ai/v1",
+    iconKey: "xai",
+    iconLabel: "XA",
+    protocol: "openai_chat",
+    compatibilityFamily: "openai",
+    models: [
+      aiModel("grok-4", "Grok 4", { reasoning: true }),
+      aiModel("grok-3", "Grok 3", { reasoning: true }),
+      aiModel("grok-3-mini", "Grok 3 mini", { reasoning: true })
+    ]
+  },
+  {
+    id: "baidu",
+    label: "Baidu Qianfan",
+    baseUrl: "https://qianfan.baidubce.com/v2",
+    iconKey: "baidu",
+    iconLabel: "BD",
+    protocol: "openai_chat",
+    compatibilityFamily: "openai",
+    models: [
+      aiModel("ernie-4.5-turbo-128k", "ERNIE 4.5 Turbo 128K"),
+      aiModel("ernie-4.5-turbo-vl-32k", "ERNIE 4.5 Turbo VL", { vision: true }),
+      aiModel("ernie-x1-turbo-32k", "ERNIE X1 Turbo", { reasoning: true }),
+      aiModel("ernie-speed-128k", "ERNIE Speed 128K")
+    ]
+  },
+  {
+    id: "tencent",
+    label: "Tencent Hunyuan",
+    baseUrl: "https://api.hunyuan.cloud.tencent.com/v1",
+    iconKey: "tencent",
+    iconLabel: "HY",
+    protocol: "openai_chat",
+    compatibilityFamily: "openai",
+    models: [
+      aiModel("hunyuan-turbos-latest", "Hunyuan TurboS"),
+      aiModel("hunyuan-t1-latest", "Hunyuan T1", { reasoning: true }),
+      aiModel("hunyuan-vision", "Hunyuan Vision", { vision: true })
+    ]
+  },
+  {
+    id: "cohere",
+    label: "Cohere",
+    baseUrl: "https://api.cohere.ai/compatibility/v1",
+    iconKey: "cohere",
+    iconLabel: "CO",
+    protocol: "openai_chat",
+    compatibilityFamily: "openai",
+    models: [
+      aiModel("command-a-03-2025", "Command A"),
+      aiModel("command-r-plus", "Command R+"),
+      aiModel("command-r", "Command R")
+    ]
+  },
+  {
+    id: "minimax",
+    label: "MiniMax",
+    baseUrl: "https://api.minimax.chat/v1",
+    iconKey: "minimax",
+    iconLabel: "MM",
+    protocol: "openai_chat",
+    compatibilityFamily: "openai",
+    models: [
+      aiModel("MiniMax-M1", "MiniMax M1", { reasoning: true }),
+      aiModel("MiniMax-Text-01", "MiniMax Text 01"),
+      aiModel("abab6.5s-chat", "abab6.5s Chat")
+    ]
+  },
+  {
+    id: "lingyi",
+    label: "01.AI",
+    baseUrl: "https://api.lingyiwanwu.com/v1",
+    iconKey: "lingyi",
+    iconLabel: "01",
+    protocol: "openai_chat",
+    compatibilityFamily: "openai",
+    models: [
+      aiModel("yi-large", "Yi Large"),
+      aiModel("yi-medium", "Yi Medium"),
+      aiModel("yi-lightning", "Yi Lightning"),
+      aiModel("yi-vision", "Yi Vision", { vision: true })
     ]
   },
   {
@@ -198,9 +420,29 @@ const AI_ENDPOINT_PRESETS = [
     iconLabel: "..",
     protocol: "openai_chat",
     compatibilityFamily: "custom",
-    models: []
+    models: [
+      aiModel("gpt-5", "GPT-5", { vision: true, tools: true, reasoning: true }),
+      aiModel("gpt-4.1-mini", "GPT-4.1 mini", { vision: true, tools: true }),
+      aiModel("claude-sonnet-4-20250514", "Claude Sonnet 4", { vision: true, structuredJson: false }),
+      aiModel("gemini-2.5-pro", "Gemini 2.5 Pro", { vision: true }),
+      aiModel("deepseek-chat", "DeepSeek Chat"),
+      aiModel("deepseek-reasoner", "DeepSeek Reasoner", { reasoning: true }),
+      aiModel("qwen-plus", "Qwen Plus"),
+      aiModel("glm-4-plus", "GLM-4 Plus"),
+      aiModel("moonshot-v1-128k", "Moonshot 128K"),
+      aiModel("mistral-large-latest", "Mistral Large")
+    ]
   }
 ];
+
+function aiModel(id, label = id, capabilities = {}, protocol = "openai_chat") {
+  return {
+    id,
+    label,
+    protocol,
+    capabilities: normalizeCapabilityState(capabilities)
+  };
+}
 const AI_PROGRESS_STEPS = ["Context", "Request", "Local draft", "Parse", "Validate", "Ready"];
 const AI_MODE_LABELS = {
   generate_cards: "Draft cards",
@@ -403,6 +645,129 @@ function buildAiConnectorConfig(settings, extra = {}) {
     capabilities: enabledAiCapabilities(normalized),
     ...extra
   };
+}
+
+function AiProviderLogo({ preset }) {
+  const sources = AI_LOGO_SOURCES[preset?.iconKey] ?? [];
+  const [sourceIndex, setSourceIndex] = useState(0);
+  useEffect(() => setSourceIndex(0), [preset?.iconKey]);
+  const logoUrl = sources[sourceIndex] ?? "";
+  if (!logoUrl) {
+    return <span className="provider-logo provider-logo--fallback" aria-hidden="true">{preset?.iconLabel ?? ".."}</span>;
+  }
+  return (
+    <span className="provider-logo" aria-hidden="true">
+      <img src={logoUrl} alt="" loading="lazy" referrerPolicy="no-referrer" onError={() => setSourceIndex((index) => index + 1)} />
+    </span>
+  );
+}
+
+function AiProviderDropdown({ value, onChange }) {
+  const [open, setOpen] = useState(false);
+  const selected = getEndpointPreset(value);
+
+  return (
+    <div className="ai-dropdown" onBlur={(event) => {
+      if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
+    }}>
+      <button className="ai-dropdown__button" type="button" onClick={() => setOpen((next) => !next)} aria-expanded={open}>
+        <AiProviderLogo preset={selected} />
+        <span>
+          <strong>{selected.label}</strong>
+          <small>{selected.compatibilityFamily === "anthropic" ? "Anthropic Messages" : selected.baseUrl || "Custom endpoint"}</small>
+        </span>
+        <span className="ai-dropdown__chevron" aria-hidden="true">⌄</span>
+      </button>
+      {open && (
+        <div className="ai-dropdown__menu ai-dropdown__menu--providers" role="listbox">
+          {AI_ENDPOINT_PRESETS.map((preset) => (
+            <button
+              key={preset.id}
+              className={preset.id === selected.id ? "ai-dropdown__option ai-dropdown__option--active" : "ai-dropdown__option"}
+              type="button"
+              role="option"
+              aria-selected={preset.id === selected.id}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => {
+                onChange(preset.id);
+                setOpen(false);
+              }}
+            >
+              <AiProviderLogo preset={preset} />
+              <span>
+                <strong>{preset.label}</strong>
+                <small>{preset.baseUrl || "Custom endpoint"}</small>
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AiModelDropdown({ models, value, providerLabel, onChange }) {
+  const [open, setOpen] = useState(false);
+  const selected = models.find((model) => model.id === value) ?? null;
+
+  return (
+    <div className="ai-dropdown" onBlur={(event) => {
+      if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
+    }}>
+      <button className="ai-dropdown__button" type="button" onClick={() => setOpen((next) => !next)} aria-expanded={open}>
+        <span className="model-dot" aria-hidden="true">{selected ? "M" : ".."}</span>
+        <span>
+          <strong>{selected?.label ?? "Custom model"}</strong>
+          <small>{selected?.id ?? `${providerLabel} model id`}</small>
+        </span>
+        <span className="ai-dropdown__chevron" aria-hidden="true">⌄</span>
+      </button>
+      {open && (
+        <div className="ai-dropdown__menu" role="listbox">
+          {models.map((model) => (
+            <button
+              key={model.id}
+              className={model.id === value ? "ai-dropdown__option ai-dropdown__option--active" : "ai-dropdown__option"}
+              type="button"
+              role="option"
+              aria-selected={model.id === value}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => {
+                onChange(model.id);
+                setOpen(false);
+              }}
+            >
+              <span className="model-dot" aria-hidden="true">M</span>
+              <span>
+                <strong>{model.label}</strong>
+                <small>{model.id}</small>
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AiOptionGroup({ label, value, options, onChange }) {
+  return (
+    <div className="ai-option-group">
+      <span className="ai-field-label">{label}</span>
+      <div className="ai-option-group__list">
+        {options.map(([id, optionLabel]) => (
+          <button
+            key={id}
+            type="button"
+            className={value === id ? "ai-option-pill ai-option-pill--active" : "ai-option-pill"}
+            onClick={() => onChange(id)}
+          >
+            {optionLabel}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function wait(ms) {
@@ -4404,11 +4769,10 @@ function SettingsPanel({ editor, aiSettings, onAiSettingsChange, onRefresh, onSt
   const [plan, setPlan] = useState("");
   const [theme, setTheme] = useState("small kingdom");
   const [count, setCount] = useState(8);
-  const [testStatus, setTestStatus] = useState("");
+  const [setupCheck, setSetupCheck] = useState({ state: "idle", message: "" });
   const normalizedAiSettings = normalizeAiSettings(aiSettings);
   const endpointPreset = getEndpointPreset(normalizedAiSettings.endpointPresetId);
   const modelPresets = getModelPresetsForEndpoint(normalizedAiSettings);
-  const selectedModelPreset = findModelPresetByModelId(normalizedAiSettings, normalizedAiSettings.modelId);
   const protocolLabel = AI_PROTOCOLS.find(([id]) => id === normalizedAiSettings.protocol)?.[1] ?? normalizedAiSettings.protocol;
 
   useEffect(() => setTitle(editor?.metadata?.title ?? ""), [editor?.metadata?.title]);
@@ -4433,6 +4797,7 @@ function SettingsPanel({ editor, aiSettings, onAiSettingsChange, onRefresh, onSt
 
   function applyEndpointPreset(presetId) {
     const preset = getEndpointPreset(presetId);
+    const firstModel = preset.models[0] ?? null;
     onAiSettingsChange(normalizeAiSettings({
       ...normalizedAiSettings,
       baseUrl: preset.baseUrl,
@@ -4441,7 +4806,9 @@ function SettingsPanel({ editor, aiSettings, onAiSettingsChange, onRefresh, onSt
       compatibilityFamily: preset.compatibilityFamily,
       protocol: preset.protocol,
       routeMode: "auto",
-      modelPresetId: null
+      modelId: firstModel?.id ?? "",
+      modelPresetId: firstModel?.id ?? null,
+      capabilities: firstModel ? normalizeCapabilityState(firstModel.capabilities) : normalizedAiSettings.capabilities
     }));
   }
 
@@ -4514,11 +4881,23 @@ function SettingsPanel({ editor, aiSettings, onAiSettingsChange, onRefresh, onSt
   }
 
   function testEndpoint() {
-    if (!isAiEndpointConfigured(normalizedAiSettings)) {
-      setTestStatus("Add a base URL and model id before real provider calls.");
+    const baseUrl = normalizedAiSettings.baseUrl.trim();
+    const modelId = normalizedAiSettings.modelId.trim();
+    if (!baseUrl || !modelId) {
+      setSetupCheck({ state: "error", message: "Base URL and model id are required before endpoint planning." });
       return;
     }
-    setTestStatus(`Ready to build ${protocolLabel} requests for ${normalizedAiSettings.modelId}. Draft generation will call this endpoint.`);
+    try {
+      new URL(baseUrl);
+    } catch {
+      setSetupCheck({ state: "error", message: "Base URL is not a valid URL." });
+      return;
+    }
+    if (!normalizedAiSettings.apiKey.trim() && normalizedAiSettings.compatibilityFamily !== "local") {
+      setSetupCheck({ state: "warning", message: `${protocolLabel} request shape is valid, but no API key is set.` });
+      return;
+    }
+    setSetupCheck({ state: "success", message: `${protocolLabel} request shape is ready for ${modelId}.` });
   }
 
   return (
@@ -4533,98 +4912,77 @@ function SettingsPanel({ editor, aiSettings, onAiSettingsChange, onRefresh, onSt
       </div>
       <div className="subsection">
         <h3>AI Endpoint</h3>
-        <div className="ai-settings-grid">
-          <div className="ai-combo-field">
-            <span>Endpoint</span>
-            <div className="ai-combo-control">
-              <span className={`endpoint-mark endpoint-mark--${endpointPreset.iconKey}`} aria-hidden="true">{endpointPreset.iconLabel}</span>
-              <select value={normalizedAiSettings.endpointPresetId} onChange={(event) => applyEndpointPreset(event.target.value)} aria-label="Endpoint preset">
-                {AI_ENDPOINT_PRESETS.map((preset) => (
-                  <option key={preset.id} value={preset.id}>{`[${preset.iconLabel}] ${preset.label}`}</option>
-                ))}
-              </select>
-              <input
-                list="ai-endpoint-presets"
-                value={normalizedAiSettings.baseUrl}
-                onChange={(event) => updateEndpointBaseUrl(event.target.value)}
-                placeholder="https://api.example.com/v1"
-                aria-label="Endpoint base URL"
-              />
-            </div>
-            <datalist id="ai-endpoint-presets">
-              {AI_ENDPOINT_PRESETS.filter((preset) => preset.baseUrl).map((preset) => (
-                <option key={preset.id} value={preset.baseUrl}>{preset.label}</option>
-              ))}
-            </datalist>
+        <div className="ai-channel-form">
+          <div className="ai-form-row">
+            <label className="ai-field-label">Channel Type</label>
+            <AiProviderDropdown value={normalizedAiSettings.endpointPresetId} onChange={applyEndpointPreset} />
           </div>
-          <label>
-            API key
-            <input type="password" value={normalizedAiSettings.apiKey} onChange={(event) => updateAiSetting("apiKey", event.target.value)} placeholder="Stored only in this creator browser" />
-          </label>
-          <div className="ai-combo-field">
-            <span>Model</span>
-            <div className="ai-combo-control">
-              <select value={selectedModelPreset?.id ?? "custom"} onChange={(event) => event.target.value === "custom" ? updateModelId(normalizedAiSettings.modelId) : applyModelPreset(event.target.value)} aria-label="Model preset">
-                <option value="custom">Custom model</option>
-                {modelPresets.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}
-              </select>
+          <div className="ai-form-row">
+            <label className="ai-field-label" htmlFor="ai-base-url">Base URL</label>
+            <input
+              id="ai-base-url"
+              value={normalizedAiSettings.baseUrl}
+              onChange={(event) => updateEndpointBaseUrl(event.target.value)}
+              placeholder="https://api.example.com/v1"
+              aria-label="Endpoint base URL"
+            />
+          </div>
+          <div className="ai-form-row">
+            <label className="ai-field-label" htmlFor="ai-api-key">API Key</label>
+            <input
+              id="ai-api-key"
+              type="password"
+              value={normalizedAiSettings.apiKey}
+              onChange={(event) => updateAiSetting("apiKey", event.target.value)}
+              placeholder="Stored only in this creator browser"
+            />
+          </div>
+          <div className="ai-form-row">
+            <label className="ai-field-label">Model</label>
+            <div className="ai-model-control">
+              <AiModelDropdown models={modelPresets} value={normalizedAiSettings.modelId} providerLabel={endpointPreset.label} onChange={applyModelPreset} />
               <input
-                list="ai-model-presets"
+                id="ai-model-id"
                 value={normalizedAiSettings.modelId}
                 onChange={(event) => updateModelId(event.target.value)}
-                placeholder="gpt-4.1, deepseek-chat, local-model..."
+                placeholder="gpt-5, claude-sonnet-4-20250514, deepseek-chat..."
                 aria-label="Model ID"
               />
             </div>
-            <datalist id="ai-model-presets">
-              {modelPresets.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}
-            </datalist>
+          </div>
+          <div className="ai-form-row ai-form-row--stack">
+            <span className="ai-field-label">Capabilities</span>
+            <div className="capability-grid" aria-label="Model capabilities">
+              {AI_CAPABILITIES.map(([id, label]) => (
+                <button
+                  key={id}
+                  className={normalizedAiSettings.capabilities?.[id] ? "capability-chip capability-chip--active" : "capability-chip"}
+                  type="button"
+                  onClick={() => toggleCapability(id)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
-        <div className="capability-grid" aria-label="Model capabilities">
-          {AI_CAPABILITIES.map(([id, label]) => (
-            <button
-              key={id}
-              className={normalizedAiSettings.capabilities?.[id] ? "capability-chip capability-chip--active" : "capability-chip"}
-              type="button"
-              onClick={() => toggleCapability(id)}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
         <details className="ai-advanced">
-          <summary>Advanced compatibility</summary>
-          <div className="ai-settings-grid ai-settings-grid--advanced">
-            <label>
-              Protocol
-              <select value={normalizedAiSettings.protocol} onChange={(event) => updateAiSetting("protocol", event.target.value)}>
-                {AI_PROTOCOLS.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
-              </select>
-            </label>
-            <label>
-              Route mode
-              <select value={normalizedAiSettings.routeMode} onChange={(event) => updateAiSetting("routeMode", event.target.value)}>
-                {AI_ROUTE_MODES.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
-              </select>
-            </label>
-            <label>
-              Compatibility
-              <select value={normalizedAiSettings.compatibilityFamily} onChange={(event) => updateAiSetting("compatibilityFamily", event.target.value)}>
-                {AI_COMPATIBILITY_FAMILIES.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
-              </select>
-            </label>
-            <label>
-              JSON mode
-              <select value={normalizedAiSettings.jsonMode} onChange={(event) => updateAiSetting("jsonMode", event.target.value)}>
-                {AI_JSON_MODES.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
-              </select>
-            </label>
+          <summary>
+            <span className="ai-field-label">Advanced</span>
+            <span>Protocol, route, compatibility, and JSON mode</span>
+          </summary>
+          <div className="ai-advanced-grid">
+            <AiOptionGroup label="Protocol" value={normalizedAiSettings.protocol} options={AI_PROTOCOLS} onChange={(value) => updateAiSetting("protocol", value)} />
+            <AiOptionGroup label="Route mode" value={normalizedAiSettings.routeMode} options={AI_ROUTE_MODES} onChange={(value) => updateAiSetting("routeMode", value)} />
+            <AiOptionGroup label="Compatibility" value={normalizedAiSettings.compatibilityFamily} options={AI_COMPATIBILITY_FAMILIES} onChange={(value) => updateAiSetting("compatibilityFamily", value)} />
+            <AiOptionGroup label="JSON mode" value={normalizedAiSettings.jsonMode} options={AI_JSON_MODES} onChange={(value) => updateAiSetting("jsonMode", value)} />
           </div>
         </details>
         <div className="action-row">
-          <button className="btn" type="button" onClick={testEndpoint}>Check setup</button>
-          <span className="muted">{testStatus || "Endpoint settings are used for request planning only in this phase."}</span>
+          <button className="btn btn--primary endpoint-validate-btn" type="button" onClick={testEndpoint}>Validate endpoint</button>
+          <span className={`endpoint-check endpoint-check--${setupCheck.state}`}>
+            {setupCheck.message || "Configured endpoints are used when drafting AI Assist plans."}
+          </span>
         </div>
       </div>
       <div className="subsection">

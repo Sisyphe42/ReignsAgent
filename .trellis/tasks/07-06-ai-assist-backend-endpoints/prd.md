@@ -25,8 +25,8 @@ Complete AI Assist backend endpoint execution so creator-supplied text endpoints
 - Endpoint/network/parse/validation failures must return structured JSON errors instead of silent local fallback when a real endpoint was configured.
 - Visual modes remain JSON request/proposal previews only; no binary upload, download, generation, or inspection is in scope.
 - Update Creator request handling minimally so configured API keys are sent only with plan requests and UI text no longer says real network calls are disabled.
-- Add lightweight Creator endpoint/model presets as frontend-owned convenience data:
-  - Primary settings expose editable endpoint preset/base URL, editable model preset/model id, API key, and capabilities.
+- Add NewAPI-style Creator endpoint/model presets as frontend-owned convenience data:
+  - Primary settings expose a compact provider channel type selector with official/brand logos, API key, editable model presets/model id, editable base URL, and capabilities.
   - Advanced settings expose protocol, route mode, compatibility family, and JSON mode preference.
   - Generic/unified base URI presets default to OpenAI-compatible Chat Completions.
   - Manual base URL edits reset preset/icon to Custom unless the value exactly matches a preset again.
