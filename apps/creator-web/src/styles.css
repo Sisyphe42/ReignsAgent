@@ -54,7 +54,7 @@
   color-scheme: light;
 }
 
-:root[data-skin="workbench"] {
+:root[data-skin="classic"] {
   --bg: #10110f;
   --bg-grid: rgba(225, 216, 190, 0.035);
   --surface: #171915;
@@ -332,10 +332,10 @@ select {
 :root[data-skin="arcade"] input,
 :root[data-skin="arcade"] textarea,
 :root[data-skin="arcade"] select,
-:root[data-skin="workbench"] button,
-:root[data-skin="workbench"] input,
-:root[data-skin="workbench"] textarea,
-:root[data-skin="workbench"] select,
+:root[data-skin="classic"] button,
+:root[data-skin="classic"] input,
+:root[data-skin="classic"] textarea,
+:root[data-skin="classic"] select,
 :root[data-skin="phantom"] button,
 :root[data-skin="phantom"] input,
 :root[data-skin="phantom"] textarea,

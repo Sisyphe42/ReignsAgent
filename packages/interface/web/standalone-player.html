@@ -30,7 +30,7 @@
       --button-ink: #ffffff;
       color-scheme: light;
     }
-    :root[data-skin="workbench"] {
+    :root[data-skin="classic"] {
       --bg: #0f1115;
       --panel: #1f232c;
       --ink: #e8e6e1;
@@ -198,8 +198,13 @@
     const requestedLocale = params.get("locale") || navigator.language || "en";
     const requestedSkin = params.get("skin");
     const DEFAULT_SKIN = "github-light";
-    const KNOWN_SKINS = new Set(["github-light", "catppuccin-latte", "workbench", "famicom", "phantom", "arcade", "terminal"]);
-    document.documentElement.dataset.skin = KNOWN_SKINS.has(requestedSkin) ? requestedSkin : DEFAULT_SKIN;
+    const KNOWN_SKINS = new Set(["github-light", "catppuccin-latte", "classic", "famicom", "phantom", "arcade", "terminal"]);
+    const SKIN_ALIASES = { workbench: "classic" };
+    const requestedSkinId = SKIN_ALIASES[requestedSkin] ?? requestedSkin;
+    const skin = KNOWN_SKINS.has(requestedSkinId) ? requestedSkinId : DEFAULT_SKIN;
+    document.documentElement.dataset.skin = skin;
+    params.set("skin", skin);
+    window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}${window.location.hash}`);
 
     let player = null;
     let assetByCard = new Map();

@@ -17,7 +17,7 @@ const FACTIONS = ["gauge0", "gauge1", "gauge2", "gauge3"];
 const SKINS = [
   ["github-light", "Github Light"],
   ["catppuccin-latte", "Catppuccin Latte"],
-  ["workbench", "Workbench"],
+  ["classic", "Classic"],
   ["famicom", "Famicom"],
   ["phantom", "Phantom"],
   ["arcade", "Arcade"],
@@ -30,6 +30,9 @@ const AI_SETTINGS_KEY = "reigns-agent.creator-web.ai-settings";
 const AI_ASSIST_KEY = "reigns-agent.creator-web.ai-assist";
 const DEFAULT_PANEL = "overview";
 const DEFAULT_SKIN = "github-light";
+const SKIN_ALIASES = {
+  workbench: "classic"
+};
 const AI_PROTOCOLS = [
   ["openai_chat", "OpenAI Chat"],
   ["openai_responses", "OpenAI Responses"],
@@ -481,6 +484,11 @@ function isKnownSkin(value) {
   return SKINS.some(([id]) => id === value);
 }
 
+function resolveSkinId(value) {
+  const skin = SKIN_ALIASES[value] ?? value;
+  return isKnownSkin(skin) ? skin : null;
+}
+
 function readUrlState() {
   if (typeof window === "undefined") {
     return { panel: DEFAULT_PANEL, skin: null, aiAssist: null };
@@ -498,7 +506,7 @@ function readUrlState() {
 
   return {
     panel,
-    skin: isKnownSkin(skin) ? skin : null,
+    skin: resolveSkinId(skin),
     aiAssist
   };
 }
@@ -506,11 +514,7 @@ function readUrlState() {
 function buildWorkbenchUrl(panel, skin) {
   const url = new URL(window.location.href);
   url.pathname = panel === DEFAULT_PANEL ? "/workbench" : `/workbench/${panel}`;
-  if (skin && skin !== DEFAULT_SKIN) {
-    url.searchParams.set("skin", skin);
-  } else {
-    url.searchParams.delete("skin");
-  }
+  url.searchParams.set("skin", resolveSkinId(skin) ?? DEFAULT_SKIN);
   url.searchParams.delete("panel");
   return `${url.pathname}${url.search}${url.hash}`;
 }
@@ -818,7 +822,7 @@ function App() {
   const [activePanel, setActivePanel] = useState(initialUrlState.panel);
   const [editor, setEditor] = useState(null);
   const [status, setStatus] = useState("Loading project...");
-  const [skin, setSkin] = useState(() => initialUrlState.skin ?? (localStorage.getItem(PERSIST_KEY) || DEFAULT_SKIN));
+  const [skin, setSkin] = useState(() => initialUrlState.skin ?? DEFAULT_SKIN);
   const [aiAssistEnabled, setAiAssistEnabled] = useState(() => initialUrlState.aiAssist ?? localStorage.getItem(AI_ASSIST_KEY) === "1");
   const [aiSettings, setAiSettings] = useState(() => readAiSettings());
   const [aiApiKey, setAiApiKey] = useState("");
@@ -888,7 +892,7 @@ function App() {
     function onPopState() {
       const next = readUrlState();
       setActivePanel(next.panel);
-      setSkin(next.skin ?? (localStorage.getItem(PERSIST_KEY) || DEFAULT_SKIN));
+      setSkin(next.skin ?? DEFAULT_SKIN);
       setAiAssistEnabled(next.aiAssist ?? localStorage.getItem(AI_ASSIST_KEY) === "1");
     }
     window.addEventListener("popstate", onPopState);
@@ -1169,15 +1173,16 @@ function App() {
   }
 
   function changeSkin(nextSkin) {
-    if (!isKnownSkin(nextSkin)) return;
-    setSkin(nextSkin);
-    syncWorkbenchUrl(activePanel, nextSkin, "replace");
+    const resolvedSkin = resolveSkinId(nextSkin);
+    if (!resolvedSkin) return;
+    setSkin(resolvedSkin);
+    syncWorkbenchUrl(activePanel, resolvedSkin, "replace");
   }
 
   const playerHref = useMemo(() => {
     const params = new URLSearchParams();
-    if (skin !== DEFAULT_SKIN) params.set("skin", skin);
-    return params.size > 0 ? `/play?${params.toString()}` : "/play";
+    params.set("skin", resolveSkinId(skin) ?? DEFAULT_SKIN);
+    return `/play?${params.toString()}`;
   }, [skin]);
 
   return (

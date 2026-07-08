@@ -31,7 +31,7 @@
   color-scheme: light;
 }
 
-:root[data-skin="workbench"] {
+:root[data-skin="classic"] {
   --bg: #0f1115;
   --panel: #171a21;
   --panel-2: #1f232c;
