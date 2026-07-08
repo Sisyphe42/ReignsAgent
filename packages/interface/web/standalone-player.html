@@ -7,14 +7,28 @@
   <title>ReignsAgent Player</title>
   <style>
     :root {
-      --bg: #0f1115;
-      --panel: #1f232c;
-      --ink: #e8e6e1;
-      --muted: #8a8f99;
-      --accent: #c9a24b;
-      --accent-2: #6d8fd6;
-      --border: #2a2f3a;
+      --bg: #f6f8fa;
+      --panel: #ffffff;
+      --ink: #24292f;
+      --muted: #57606a;
+      --accent: #0969da;
+      --accent-2: #8250df;
+      --border: #d0d7de;
+      --radius: 6px;
+      --button-ink: #ffffff;
+      color-scheme: light;
+    }
+    :root[data-skin="catppuccin-latte"] {
+      --bg: #eff1f5;
+      --panel: #ffffff;
+      --ink: #4c4f69;
+      --muted: #6c6f85;
+      --accent: #1e66f5;
+      --accent-2: #8839ef;
+      --border: #ccd0da;
       --radius: 8px;
+      --button-ink: #ffffff;
+      color-scheme: light;
     }
     :root[data-skin="arcade"] {
       --bg: #15111c;
@@ -25,6 +39,7 @@
       --accent-2: #6fe6c4;
       --border: #654f83;
       --radius: 4px;
+      --button-ink: #17111f;
     }
     :root[data-skin="famicom"] {
       --bg: #efe4cc;
@@ -35,6 +50,7 @@
       --accent-2: #275c9a;
       --border: #24211d;
       --radius: 0px;
+      --button-ink: #fff8e8;
       color-scheme: light;
     }
     :root[data-skin="phantom"] {
@@ -46,6 +62,7 @@
       --accent-2: #f4f0e8;
       --border: #f7f2e9;
       --radius: 0px;
+      --button-ink: #f7f2e9;
     }
     :root[data-skin="terminal"] {
       --bg: #07100c;
@@ -56,6 +73,7 @@
       --accent-2: #78c6ff;
       --border: #28543a;
       --radius: 2px;
+      --button-ink: #06100a;
     }
     body {
       margin: 0;
@@ -130,7 +148,7 @@
     }
     button:hover:not(:disabled) { border-color: var(--accent); transform: translateY(-1px); box-shadow: 0 10px 22px rgba(0,0,0,0.16); }
     button:disabled { opacity: 0.4; cursor: not-allowed; }
-    .primary { background: var(--accent); color: #1a1405; font-weight: 600; border-color: var(--accent); }
+    .primary { background: var(--accent); color: var(--button-ink); font-weight: 600; border-color: var(--accent); }
     .status { margin-top: 16px; font-size: 13px; color: var(--muted); text-align: center; min-height: 18px; }
   </style>
 </head>
@@ -168,7 +186,7 @@
     const params = new URLSearchParams(window.location.search);
     const requestedLocale = params.get("locale") || navigator.language || "en";
     const requestedSkin = params.get("skin");
-    const KNOWN_SKINS = new Set(["workbench", "famicom", "phantom", "arcade", "terminal"]);
+    const KNOWN_SKINS = new Set(["workbench", "catppuccin-latte", "famicom", "phantom", "arcade", "terminal"]);
     document.documentElement.dataset.skin = KNOWN_SKINS.has(requestedSkin) ? requestedSkin : "workbench";
 
     let player = null;

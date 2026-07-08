@@ -15,7 +15,8 @@ const PANELS = [
 
 const FACTIONS = ["gauge0", "gauge1", "gauge2", "gauge3"];
 const SKINS = [
-  ["workbench", "Workbench"],
+  ["workbench", "Github Light"],
+  ["catppuccin-latte", "Catppuccin Latte"],
   ["famicom", "Famicom"],
   ["phantom", "Phantom"],
   ["arcade", "Arcade"],
@@ -3825,9 +3826,8 @@ function createGraphLayoutNodes(graph) {
 
 /**
  * useSkinColors reads the active dashboard CSS variables once per render so the
- * canvas graph repaints with the correct palette for whichever skin (workbench,
- * famicom, phantom, arcade, terminal) is active. The skin value is read from
- * document.documentElement.dataset.skin, matching how App sets it.
+ * canvas graph repaints with the correct palette for the active skin. The skin
+ * value is read from document.documentElement.dataset.skin, matching App.
  */
 function useSkinColors() {
   const [colors, setColors] = useState(() => readSkinColors());
@@ -3844,14 +3844,14 @@ function readSkinColors() {
   const root = getComputedStyle(document.documentElement);
   const read = (name) => root.getPropertyValue(name).trim();
   return {
-    bg: read("--bg") || "#10110f",
-    ink: read("--ink") || "#f1eee4",
-    muted: read("--muted") || "#a5a091",
-    accent: read("--accent") || "#d8a83a",
-    accent2: read("--accent-2") || "#53b6a5",
-    ok: read("--ok") || "#7ccf8a",
-    danger: read("--danger") || "#e06b5f",
-    surface: read("--surface") || "#171915"
+    bg: read("--bg") || "#f6f8fa",
+    ink: read("--ink") || "#24292f",
+    muted: read("--muted") || "#57606a",
+    accent: read("--accent") || "#0969da",
+    accent2: read("--accent-2") || "#8250df",
+    ok: read("--ok") || "#1a7f37",
+    danger: read("--danger") || "#cf222e",
+    surface: read("--surface") || "#ffffff"
   };
 }
 

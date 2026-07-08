@@ -1,24 +1,24 @@
 :root {
-  --bg: #10110f;
-  --bg-grid: rgba(225, 216, 190, 0.035);
-  --surface: #171915;
-  --surface-2: #20241d;
-  --surface-3: #292e25;
-  --ink: #f1eee4;
-  --muted: #a5a091;
-  --subtle: #6f7267;
-  --border: #3b4037;
-  --border-strong: #626a58;
-  --accent: #d8a83a;
-  --accent-2: #53b6a5;
-  --danger: #e06b5f;
-  --ok: #7ccf8a;
-  --button-ink: #17130a;
-  --shadow: rgba(4, 6, 3, 0.36);
+  --bg: #f6f8fa;
+  --bg-grid: rgba(9, 105, 218, 0.055);
+  --surface: #ffffff;
+  --surface-2: #f6f8fa;
+  --surface-3: #eaeef2;
+  --ink: #24292f;
+  --muted: #57606a;
+  --subtle: #6e7781;
+  --border: #d0d7de;
+  --border-strong: #8c959f;
+  --accent: #0969da;
+  --accent-2: #8250df;
+  --danger: #cf222e;
+  --ok: #1a7f37;
+  --button-ink: #ffffff;
+  --shadow: rgba(27, 31, 36, 0.12);
   --radius: 6px;
-  --scrollbar-track: color-mix(in srgb, var(--bg) 88%, #000);
-  --scrollbar-thumb: color-mix(in srgb, var(--accent) 46%, var(--surface-3));
-  --scrollbar-thumb-hover: color-mix(in srgb, var(--accent-2) 58%, var(--accent));
+  --scrollbar-track: #eaeef2;
+  --scrollbar-thumb: #afb8c1;
+  --scrollbar-thumb-hover: #6e7781;
   --scrollbar-radius: 8px;
   --font-ui: Aptos, "Segoe UI Variable", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
   --font-data: "Cascadia Mono", "SFMono-Regular", Consolas, ui-monospace, monospace;
@@ -26,6 +26,32 @@
   color: var(--ink);
   background: var(--bg);
   letter-spacing: 0;
+  color-scheme: light;
+}
+
+:root[data-skin="catppuccin-latte"] {
+  --bg: #eff1f5;
+  --bg-grid: rgba(30, 102, 245, 0.055);
+  --surface: #ffffff;
+  --surface-2: #e6e9ef;
+  --surface-3: #dce0e8;
+  --ink: #4c4f69;
+  --muted: #6c6f85;
+  --subtle: #8c8fa1;
+  --border: #ccd0da;
+  --border-strong: #9ca0b0;
+  --accent: #1e66f5;
+  --accent-2: #8839ef;
+  --danger: #d20f39;
+  --ok: #40a02b;
+  --button-ink: #ffffff;
+  --shadow: rgba(76, 79, 105, 0.14);
+  --radius: 8px;
+  --scrollbar-track: #e6e9ef;
+  --scrollbar-thumb: #bcc0cc;
+  --scrollbar-thumb-hover: #8c8fa1;
+  --scrollbar-radius: 8px;
+  color-scheme: light;
 }
 
 :root[data-skin="arcade"] {
@@ -274,20 +300,21 @@ input,
 textarea,
 select {
   font: inherit;
-  color-scheme: dark;
-}
-
-:root[data-skin="famicom"] button,
-:root[data-skin="famicom"] input,
-:root[data-skin="famicom"] textarea,
-:root[data-skin="famicom"] select {
   color-scheme: light;
 }
 
+:root[data-skin="arcade"] button,
+:root[data-skin="arcade"] input,
+:root[data-skin="arcade"] textarea,
+:root[data-skin="arcade"] select,
 :root[data-skin="phantom"] button,
 :root[data-skin="phantom"] input,
 :root[data-skin="phantom"] textarea,
-:root[data-skin="phantom"] select {
+:root[data-skin="phantom"] select,
+:root[data-skin="terminal"] button,
+:root[data-skin="terminal"] input,
+:root[data-skin="terminal"] textarea,
+:root[data-skin="terminal"] select {
   color-scheme: dark;
 }
 
@@ -843,6 +870,16 @@ select {
   background: var(--accent);
 }
 
+:root[data-skin="workbench"] .rail__item:hover,
+:root[data-skin="catppuccin-latte"] .rail__item:hover {
+  background: color-mix(in srgb, var(--surface) 82%, var(--surface-3));
+}
+
+:root[data-skin="workbench"] .rail__item--active,
+:root[data-skin="catppuccin-latte"] .rail__item--active {
+  background: color-mix(in srgb, var(--surface) 72%, var(--surface-3));
+}
+
 :root[data-skin="famicom"] .rail__item {
   border-width: 2px;
 }
@@ -1144,6 +1181,18 @@ select {
 
 .metric--bad strong {
   color: var(--danger);
+}
+
+:root[data-skin="workbench"] :is(.topbar, .panel, .card-editor, .choice-editor, .empty-state, .subsection),
+:root[data-skin="catppuccin-latte"] :is(.topbar, .panel, .card-editor, .choice-editor, .empty-state, .subsection) {
+  background: color-mix(in srgb, var(--surface) 92%, var(--bg));
+}
+
+:root[data-skin="workbench"] .metric,
+:root[data-skin="catppuccin-latte"] .metric {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.42), transparent),
+    color-mix(in srgb, var(--surface) 82%, var(--surface-3));
 }
 
 .overview-ai,

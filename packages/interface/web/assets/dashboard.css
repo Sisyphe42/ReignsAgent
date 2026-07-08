@@ -1,16 +1,32 @@
 :root {
-  --bg: #0f1115;
-  --panel: #171a21;
-  --panel-2: #1f232c;
-  --ink: #e8e6e1;
-  --muted: #8a8f99;
-  --accent: #c9a24b;
-  --accent-2: #6d8fd6;
-  --danger: #d96a6a;
-  --ok: #6ad98f;
-  --border: #2a2f3a;
-  --radius: 8px;
+  --bg: #f6f8fa;
+  --panel: #ffffff;
+  --panel-2: #f6f8fa;
+  --ink: #24292f;
+  --muted: #57606a;
+  --accent: #0969da;
+  --accent-2: #8250df;
+  --danger: #cf222e;
+  --ok: #1a7f37;
+  --border: #d0d7de;
+  --radius: 6px;
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  color-scheme: light;
+}
+
+:root[data-skin="catppuccin-latte"] {
+  --bg: #eff1f5;
+  --panel: #ffffff;
+  --panel-2: #e6e9ef;
+  --ink: #4c4f69;
+  --muted: #6c6f85;
+  --accent: #1e66f5;
+  --accent-2: #8839ef;
+  --danger: #d20f39;
+  --ok: #40a02b;
+  --border: #ccd0da;
+  --radius: 8px;
+  color-scheme: light;
 }
 
 :root[data-skin="arcade"] {
@@ -95,7 +111,7 @@ body {
   align-items: center;
   justify-content: space-between;
   padding: 14px 22px;
-  background: linear-gradient(180deg, #1a1d25, #14171d);
+  background: linear-gradient(180deg, var(--panel), var(--panel-2));
   border-bottom: 1px solid var(--border);
 }
 
