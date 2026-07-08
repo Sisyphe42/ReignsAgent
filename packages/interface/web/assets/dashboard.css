@@ -10,23 +10,41 @@
   --ok: #1a7f37;
   --border: #d0d7de;
   --radius: 6px;
+  --button-ink: #ffffff;
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   color-scheme: light;
 }
 
 :root[data-skin="catppuccin-latte"] {
   --bg: #eff1f5;
-  --panel: #ffffff;
+  --panel: #fafafa;
   --panel-2: #e6e9ef;
   --ink: #4c4f69;
   --muted: #6c6f85;
-  --accent: #1e66f5;
-  --accent-2: #8839ef;
+  --accent: #8839ef;
+  --accent-2: #ea76cb;
   --danger: #d20f39;
-  --ok: #40a02b;
+  --ok: #179299;
   --border: #ccd0da;
   --radius: 8px;
+  --button-ink: #ffffff;
   color-scheme: light;
+}
+
+:root[data-skin="workbench"] {
+  --bg: #0f1115;
+  --panel: #171a21;
+  --panel-2: #1f232c;
+  --ink: #e8e6e1;
+  --muted: #8a8f99;
+  --accent: #c9a24b;
+  --accent-2: #6d8fd6;
+  --danger: #d96a6a;
+  --ok: #6ad98f;
+  --border: #2a2f3a;
+  --radius: 8px;
+  --button-ink: #1a1405;
+  color-scheme: dark;
 }
 
 :root[data-skin="arcade"] {
@@ -41,6 +59,7 @@
   --ok: #94ef68;
   --border: #654f83;
   --radius: 4px;
+  --button-ink: #17111f;
   font-family: "Trebuchet MS", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
 }
 
@@ -56,6 +75,7 @@
   --ok: #1f8b58;
   --border: #24211d;
   --radius: 0px;
+  --button-ink: #fff8e8;
   font-family: "Courier New", "Cascadia Mono", ui-monospace, monospace;
   color-scheme: light;
 }
@@ -72,6 +92,7 @@
   --ok: #00a66a;
   --border: #f7f2e9;
   --radius: 0px;
+  --button-ink: #f7f2e9;
   font-family: Impact, Haettenschweiler, "Arial Black", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
 }
 
@@ -87,6 +108,7 @@
   --ok: #68ff95;
   --border: #28543a;
   --radius: 2px;
+  --button-ink: #06100a;
   font-family: "Cascadia Mono", "SFMono-Regular", Consolas, ui-monospace, monospace;
 }
 
@@ -156,7 +178,7 @@ body {
   padding: 18px 10px;
   min-width: 190px;
   min-height: calc(100vh - 67px);
-  background: #12151b;
+  background: color-mix(in srgb, var(--panel) 92%, var(--bg));
   border-right: 1px solid var(--border);
 }
 .rail__step {
@@ -176,7 +198,7 @@ body {
 }
 .rail__step:hover { background: var(--panel-2); }
 .rail__step[aria-current="page"] { background: var(--panel-2); }
-.rail__step[aria-current="page"] .rail__index { background: var(--accent); color: #1a1405; }
+.rail__step[aria-current="page"] .rail__index { background: var(--accent); color: var(--button-ink); }
 .rail__index {
   display: inline-flex;
   align-items: center;
@@ -227,7 +249,7 @@ body {
 .panel h2 { margin: 0 0 8px; font-size: 15px; letter-spacing: 0.4px; }
 .panel h3 { margin: 0 0 10px; font-size: 13px; color: var(--ink); }
 .muted { color: var(--muted); font-size: 13px; margin: 0 0 10px; }
-code { background: #0c0e12; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+code { background: var(--panel-2); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
 
 .subpanel {
   background: var(--panel-2);
@@ -267,7 +289,7 @@ code { background: #0c0e12; padding: 1px 5px; border-radius: 4px; font-size: 12p
   border-radius: 8px;
   padding: 18px;
   color: var(--muted);
-  background: #0c0e12;
+  background: color-mix(in srgb, var(--panel-2) 86%, var(--bg));
 }
 .empty-state p { margin: 0; max-width: 680px; }
 .preview-shell { max-width: 520px; }
@@ -278,7 +300,7 @@ code { background: #0c0e12; padding: 1px 5px; border-radius: 4px; font-size: 12p
 .row input { width: 90px; }
 
 input[type="text"], input[type="number"], textarea {
-  background: #0c0e12;
+  background: color-mix(in srgb, var(--panel) 88%, var(--bg));
   border: 1px solid var(--border);
   color: var(--ink);
   border-radius: 6px;
@@ -322,7 +344,7 @@ textarea { resize: vertical; font-family: ui-monospace, "SFMono-Regular", monosp
   box-shadow: 0 10px 22px rgba(0, 0, 0, 0.16);
 }
 .btn:disabled { opacity: 0.4; cursor: not-allowed; }
-.btn--primary { background: var(--accent); color: #1a1405; border-color: var(--accent); font-weight: 600; }
+.btn--primary { background: var(--accent); color: var(--button-ink); border-color: var(--accent); font-weight: 600; }
 .btn--primary:hover { filter: brightness(1.08); }
 .btn--choice { flex: 1; font-size: 14px; padding: 12px; }
 
@@ -375,7 +397,7 @@ textarea { resize: vertical; font-family: ui-monospace, "SFMono-Regular", monosp
   height: 34px;
   border: 1px solid var(--border);
   border-radius: 6px;
-  background: #0c0e12;
+  background: color-mix(in srgb, var(--panel) 88%, var(--bg));
   object-fit: contain;
   padding: 4px;
   flex: 0 0 auto;
@@ -394,7 +416,7 @@ textarea { resize: vertical; font-family: ui-monospace, "SFMono-Regular", monosp
 .effects__body { margin-top: 10px; display: flex; flex-direction: column; gap: 12px; }
 
 .choice-editor {
-  background: #0c0e12;
+  background: color-mix(in srgb, var(--panel) 88%, var(--bg));
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 10px;
@@ -427,11 +449,11 @@ textarea { resize: vertical; font-family: ui-monospace, "SFMono-Regular", monosp
 .gauge { background: var(--panel-2); border-radius: 6px; padding: 8px; }
 .gauge__name { font-size: 11px; color: var(--muted); text-transform: capitalize; }
 .gauge__desc { margin-top: 2px; font-size: 10px; color: var(--muted); line-height: 1.35; }
-.gauge__bar { height: 6px; background: #0c0e12; border-radius: 3px; overflow: hidden; margin-top: 4px; }
+.gauge__bar { height: 6px; background: color-mix(in srgb, var(--bg) 72%, var(--panel-2)); border-radius: 3px; overflow: hidden; margin-top: 4px; }
 .gauge__fill { height: 100%; background: var(--accent-2); }
 
 .card {
-  background: linear-gradient(160deg, #222732, #181b22);
+  background: linear-gradient(160deg, color-mix(in srgb, var(--panel) 82%, white 8%), color-mix(in srgb, var(--panel) 92%, black 8%));
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 18px;
@@ -459,7 +481,7 @@ textarea { resize: vertical; font-family: ui-monospace, "SFMono-Regular", monosp
   aspect-ratio: 1;
   align-self: center;
   object-fit: contain;
-  background: #0c0e12;
+  background: color-mix(in srgb, var(--panel) 88%, var(--bg));
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 12px;
@@ -486,7 +508,7 @@ textarea { resize: vertical; font-family: ui-monospace, "SFMono-Regular", monosp
 .warning__code { font-weight: 600; }
 
 .output {
-  background: #0c0e12;
+  background: color-mix(in srgb, var(--panel) 88%, var(--bg));
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 10px;

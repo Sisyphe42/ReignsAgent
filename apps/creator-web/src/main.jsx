@@ -15,8 +15,9 @@ const PANELS = [
 
 const FACTIONS = ["gauge0", "gauge1", "gauge2", "gauge3"];
 const SKINS = [
-  ["workbench", "Github Light"],
+  ["github-light", "Github Light"],
   ["catppuccin-latte", "Catppuccin Latte"],
+  ["workbench", "Workbench"],
   ["famicom", "Famicom"],
   ["phantom", "Phantom"],
   ["arcade", "Arcade"],
@@ -28,7 +29,7 @@ const DRAFT_KEY = "reigns-agent.creator-web.editor-draft";
 const AI_SETTINGS_KEY = "reigns-agent.creator-web.ai-settings";
 const AI_ASSIST_KEY = "reigns-agent.creator-web.ai-assist";
 const DEFAULT_PANEL = "overview";
-const DEFAULT_SKIN = "workbench";
+const DEFAULT_SKIN = "github-light";
 const AI_PROTOCOLS = [
   ["openai_chat", "OpenAI Chat"],
   ["openai_responses", "OpenAI Responses"],

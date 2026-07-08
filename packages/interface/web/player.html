@@ -98,8 +98,9 @@
       <label class="skin-select">
         Skin
         <select id="skin">
-          <option value="workbench">Github Light</option>
+          <option value="github-light">Github Light</option>
           <option value="catppuccin-latte">Catppuccin Latte</option>
+          <option value="workbench">Workbench</option>
           <option value="famicom">Famicom</option>
           <option value="phantom">Phantom</option>
           <option value="arcade">Arcade</option>
@@ -153,8 +154,8 @@
     const setStatus = (msg, kind = "") => { el("status").textContent = msg; el("status").className = `status ${kind ? `status--${kind}` : ""}`; };
     const escapeHtml = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
     const PERSIST_KEY = "reigns-agent.creator-web.skin";
-    const DEFAULT_SKIN = "workbench";
-    const KNOWN_SKINS = new Set(["workbench", "catppuccin-latte", "famicom", "phantom", "arcade", "terminal"]);
+    const DEFAULT_SKIN = "github-light";
+    const KNOWN_SKINS = new Set(["github-light", "catppuccin-latte", "workbench", "famicom", "phantom", "arcade", "terminal"]);
     const params = new URLSearchParams(window.location.search);
     const requestedLocale = params.get("locale") || navigator.language || "en";
     const requestedSkin = params.get("skin");

@@ -31,8 +31,8 @@
 
 :root[data-skin="catppuccin-latte"] {
   --bg: #eff1f5;
-  --bg-grid: rgba(30, 102, 245, 0.055);
-  --surface: #ffffff;
+  --bg-grid: rgba(136, 57, 239, 0.07);
+  --surface: #fafafa;
   --surface-2: #e6e9ef;
   --surface-3: #dce0e8;
   --ink: #4c4f69;
@@ -40,18 +40,43 @@
   --subtle: #8c8fa1;
   --border: #ccd0da;
   --border-strong: #9ca0b0;
-  --accent: #1e66f5;
-  --accent-2: #8839ef;
+  --accent: #8839ef;
+  --accent-2: #ea76cb;
   --danger: #d20f39;
-  --ok: #40a02b;
+  --ok: #179299;
   --button-ink: #ffffff;
-  --shadow: rgba(76, 79, 105, 0.14);
+  --shadow: rgba(76, 79, 105, 0.12);
   --radius: 8px;
   --scrollbar-track: #e6e9ef;
-  --scrollbar-thumb: #bcc0cc;
-  --scrollbar-thumb-hover: #8c8fa1;
+  --scrollbar-thumb: #acb0be;
+  --scrollbar-thumb-hover: #8839ef;
   --scrollbar-radius: 8px;
   color-scheme: light;
+}
+
+:root[data-skin="workbench"] {
+  --bg: #10110f;
+  --bg-grid: rgba(225, 216, 190, 0.035);
+  --surface: #171915;
+  --surface-2: #20241d;
+  --surface-3: #292e25;
+  --ink: #f1eee4;
+  --muted: #a5a091;
+  --subtle: #6f7267;
+  --border: #3b4037;
+  --border-strong: #626a58;
+  --accent: #d8a83a;
+  --accent-2: #53b6a5;
+  --danger: #e06b5f;
+  --ok: #7ccf8a;
+  --button-ink: #17130a;
+  --shadow: rgba(4, 6, 3, 0.36);
+  --radius: 6px;
+  --scrollbar-track: color-mix(in srgb, var(--bg) 88%, #000);
+  --scrollbar-thumb: color-mix(in srgb, var(--accent) 46%, var(--surface-3));
+  --scrollbar-thumb-hover: color-mix(in srgb, var(--accent-2) 58%, var(--accent));
+  --scrollbar-radius: 8px;
+  color-scheme: dark;
 }
 
 :root[data-skin="arcade"] {
@@ -307,6 +332,10 @@ select {
 :root[data-skin="arcade"] input,
 :root[data-skin="arcade"] textarea,
 :root[data-skin="arcade"] select,
+:root[data-skin="workbench"] button,
+:root[data-skin="workbench"] input,
+:root[data-skin="workbench"] textarea,
+:root[data-skin="workbench"] select,
 :root[data-skin="phantom"] button,
 :root[data-skin="phantom"] input,
 :root[data-skin="phantom"] textarea,
@@ -870,12 +899,12 @@ select {
   background: var(--accent);
 }
 
-:root[data-skin="workbench"] .rail__item:hover,
+:root[data-skin="github-light"] .rail__item:hover,
 :root[data-skin="catppuccin-latte"] .rail__item:hover {
   background: color-mix(in srgb, var(--surface) 82%, var(--surface-3));
 }
 
-:root[data-skin="workbench"] .rail__item--active,
+:root[data-skin="github-light"] .rail__item--active,
 :root[data-skin="catppuccin-latte"] .rail__item--active {
   background: color-mix(in srgb, var(--surface) 72%, var(--surface-3));
 }
@@ -1183,12 +1212,12 @@ select {
   color: var(--danger);
 }
 
-:root[data-skin="workbench"] :is(.topbar, .panel, .card-editor, .choice-editor, .empty-state, .subsection),
+:root[data-skin="github-light"] :is(.topbar, .panel, .card-editor, .choice-editor, .empty-state, .subsection),
 :root[data-skin="catppuccin-latte"] :is(.topbar, .panel, .card-editor, .choice-editor, .empty-state, .subsection) {
   background: color-mix(in srgb, var(--surface) 92%, var(--bg));
 }
 
-:root[data-skin="workbench"] .metric,
+:root[data-skin="github-light"] .metric,
 :root[data-skin="catppuccin-latte"] .metric {
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.42), transparent),

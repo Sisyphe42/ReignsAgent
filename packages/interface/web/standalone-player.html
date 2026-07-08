@@ -20,15 +20,26 @@
     }
     :root[data-skin="catppuccin-latte"] {
       --bg: #eff1f5;
-      --panel: #ffffff;
+      --panel: #fafafa;
       --ink: #4c4f69;
       --muted: #6c6f85;
-      --accent: #1e66f5;
-      --accent-2: #8839ef;
+      --accent: #8839ef;
+      --accent-2: #ea76cb;
       --border: #ccd0da;
       --radius: 8px;
       --button-ink: #ffffff;
       color-scheme: light;
+    }
+    :root[data-skin="workbench"] {
+      --bg: #0f1115;
+      --panel: #1f232c;
+      --ink: #e8e6e1;
+      --muted: #8a8f99;
+      --accent: #c9a24b;
+      --accent-2: #6d8fd6;
+      --border: #2a2f3a;
+      --radius: 8px;
+      --button-ink: #1a1405;
     }
     :root[data-skin="arcade"] {
       --bg: #15111c;
@@ -186,8 +197,9 @@
     const params = new URLSearchParams(window.location.search);
     const requestedLocale = params.get("locale") || navigator.language || "en";
     const requestedSkin = params.get("skin");
-    const KNOWN_SKINS = new Set(["workbench", "catppuccin-latte", "famicom", "phantom", "arcade", "terminal"]);
-    document.documentElement.dataset.skin = KNOWN_SKINS.has(requestedSkin) ? requestedSkin : "workbench";
+    const DEFAULT_SKIN = "github-light";
+    const KNOWN_SKINS = new Set(["github-light", "catppuccin-latte", "workbench", "famicom", "phantom", "arcade", "terminal"]);
+    document.documentElement.dataset.skin = KNOWN_SKINS.has(requestedSkin) ? requestedSkin : DEFAULT_SKIN;
 
     let player = null;
     let assetByCard = new Map();
