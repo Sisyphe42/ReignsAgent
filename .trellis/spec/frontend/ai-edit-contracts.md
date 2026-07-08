@@ -57,6 +57,7 @@
   - Creator settings present endpoint presets as a NewAPI-style channel type selector inside a compact row form. Preset data stays frontend-owned, can use official/brand logos for recognition, and must still emit only normalized endpoint/protocol/model/capability config to Interface/Pipeline.
   - Endpoint validation is a real provider call through the same protocol, route resolution, auth header, response extraction, and JSON-mode fallback path as planning. It requests `{ proposals: [] }`, may prevalidate returned proposals if present, never mutates the editor, and never returns raw credentials.
   - Endpoint model listing is a creator settings metadata probe only: local API posts transient credentials to Pipeline, Pipeline performs a GET against the resolved OpenAI-compatible `/models` endpoint, returns `{ models: [{ id, label }] }`, and never mutates the editor or returns raw credentials.
+  - Endpoint draft prompts must include ReignsAgent-specific editing rules: preserve tense binary left/right card decisions, use only author-owned tags/variables/metadata/default gauges, avoid built-in RPG or management loops, prefer small reviewable patches, and prioritize reachable story flow, missing producers, stalled runs, ending coverage, and gauge pressure when repairing diagnostics.
   - provider output must parse to `{ proposals: [...] }`
   - returned `config` may include redacted `apiKeyRef`, endpoint/model preset ids, icon keys, compatibility family, route mode, and JSON mode, but must never include raw `apiKey` or `credentials`
 - Proposal response:
@@ -111,6 +112,7 @@
   - Patch application validates output and rejects unsupported operations.
   - Visual request modes return preview contracts without provider calls.
   - Endpoint planning covers legacy and canonical OpenAI protocol values, route resolution, JSON-mode fallback, malformed output, patch prevalidation, and secret redaction.
+  - Endpoint planning asserts provider request prompts include the ReignsAgent professional editing rules, not only generic JSON formatting instructions.
   - Endpoint validation and model listing cover redacted credentials, `/models` route derivation from API roots or full protocol routes, malformed metadata rejection, and no editor mutation.
 - Interface unit tests:
   - Plan creation includes active bundle context and fingerprint.

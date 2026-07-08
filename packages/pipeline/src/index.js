@@ -34,6 +34,21 @@ const AI_ENDPOINT_PROTOCOL_ALIASES = {
   completions: "openai_completions"
 };
 const AI_ENDPOINT_ROUTE_MODES = new Set(["auto", "api_root", "full_url"]);
+const AI_ENDPOINT_SYSTEM_PROMPT = [
+  "You are ReignsAgent Creator AI Assist, a specialist editor for Reigns-like card narratives.",
+  "Return only the requested JSON object with explicit patch proposals; never mutate content outside those patches.",
+  "Preserve the pure player loop: card text plus exactly two player choices with ids left and right."
+].join(" ");
+const AI_ENDPOINT_EDITOR_RULES = [
+  "Work as a professional Reigns-like narrative systems editor, not a chat assistant.",
+  "Keep every player-facing card focused on one tense binary decision with clear left/right consequences.",
+  "Use only author-owned story state: tags, variables, requirements, metadata labels, and default gauge effects.",
+  "Do not introduce built-in RPG-style management, collection, economy, progression, or loadout subsystems.",
+  "Prefer small reviewable patches that preserve existing ids, tone, and story intent unless the creator explicitly asks for a rewrite.",
+  "When repairing diagnostics, prioritize reachable story flow, missing tag or variable producers, stalled runs, ending coverage, and gauge pressure.",
+  "For every addCard patch, include exactly left and right choices and keep effects valid for the supplied ReignsAgent schema.",
+  "Summaries should explain the author-facing design intent and the expected narrative or balance effect."
+];
 
 export function createContentBundle({ cards, metadata = {}, assets = [] }) {
   const normalizedCards = normalizeCards(cards);
@@ -1450,7 +1465,7 @@ function buildAiEndpointBody({ protocol, model, request, config, includeStructur
       messages: [
         {
           role: "system",
-          content: "You create ReignsAgent AI Assist edit proposals. Return only a JSON object with a proposals array."
+          content: AI_ENDPOINT_SYSTEM_PROMPT
         },
         {
           role: "user",
@@ -1474,7 +1489,7 @@ function buildAiEndpointBody({ protocol, model, request, config, includeStructur
     return {
       model,
       max_tokens: 4096,
-      system: "You create ReignsAgent AI Assist edit proposals. Return only a JSON object with a proposals array.",
+      system: AI_ENDPOINT_SYSTEM_PROMPT,
       messages: [{ role: "user", content: prompt }],
       temperature: 0
     };
@@ -1521,6 +1536,8 @@ function buildAiEndpointPrompt(request) {
   return [
     "Return only valid JSON in this exact top-level shape:",
     "{\"proposals\":[{\"id\":\"proposal-id\",\"title\":\"Title\",\"summary\":\"Summary\",\"source\":{},\"target\":{},\"patches\":[]}]}",
+    "Professional ReignsAgent editing rules:",
+    ...AI_ENDPOINT_EDITOR_RULES.map((rule) => `- ${rule}`),
     "Use only patch operations declared in the supplied ReignsAgent context.",
     "Do not include markdown, commentary, external file references, or binary data.",
     "Request:",

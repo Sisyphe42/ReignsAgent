@@ -41,6 +41,33 @@ Story progression remains data-driven. Authors should express narrative evolutio
 
 AI Assist is a creator-only workflow. The local creator backend can execute user-configured text endpoints for canonical `openai_chat`, `openai_responses`, and `openai_completions` protocols while keeping legacy `messages`, `responses`, and `completions` as accepted aliases. Generic, unified base URI, and SenseNova presets default to OpenAI-compatible Chat Completions; route mode can auto-detect full protocol URLs or force API-root/full-URL behavior. API keys are passed transiently for the active local request and are not stored or returned in validation results or plans. AI Assist must not put API keys, provider SDKs, AI request code, or generated-edit tooling into the deployable player. Endpoint/model presets are frontend-owned convenience data, not backend provider profiles.
 
+```mermaid
+flowchart LR
+  creator["Creator Web UI<br/>settings, prompt, proposal preview"]
+  localApi["Local Creator API<br/>/api/ai/edit/*"]
+  interface["Interface Package<br/>editor snapshot, config redaction, stale apply guard"]
+  pipeline["Pipeline Package<br/>AI context, endpoint protocol, JSON parsing, patch prevalidation"]
+  provider["User Endpoint<br/>OpenAI-compatible responses/chat/completions"]
+  reviewer["Reviewer Package<br/>headless diagnostics JSON"]
+  core["Core Package<br/>headless rules and validation"]
+  player["Deployable Player<br/>core-only swipe runtime"]
+
+  creator -->|"transient credentials.apiKey only"| localApi
+  localApi --> interface
+  interface -->|"current content bundle + diagnostics"| pipeline
+  reviewer -->|"diagnostic report for repair context"| interface
+  pipeline -->|"redacted fetch, no SDK"| provider
+  provider -->|"{ proposals: [...] }"| pipeline
+  pipeline -->|"validated plan, no mutation"| interface
+  interface -->|"explicit selected patches only"| localApi
+  localApi --> creator
+  interface -->|"apply after baseFingerprint check"| core
+  core -->|"validated bundle"| interface
+  core --> player
+
+  provider -. no provider calls from protected modules .-> player
+```
+
 `npm run build:game -- <bundle.json> <out.dir>` stitches a deployable player (`player.html` + `player-runtime.js`) that imports only the headless core — no pipeline, reviewer, or dashboard code ships to players.
 
 ## Core Runtime Example

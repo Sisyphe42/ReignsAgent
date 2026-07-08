@@ -403,6 +403,9 @@ describe("ReignsAgent pipeline", () => {
     assert.equal(calls[0].options.headers.authorization, "Bearer secret-key");
     assert.equal(calls[0].body.model, "draft-model");
     assert.equal(calls[0].body.text.format.type, "json_object");
+    assert.match(calls[0].body.input, /Professional ReignsAgent editing rules/);
+    assert.match(calls[0].body.input, /one tense binary decision/);
+    assert.match(calls[0].body.input, /Do not introduce built-in RPG-style management/);
     assert.equal(plan.proposals[0].patches[0].label, "Listen");
     assert.equal(plan.config.apiKey, undefined);
     assert.equal(JSON.stringify(plan).includes("secret-key"), false);
@@ -526,10 +529,13 @@ describe("ReignsAgent pipeline", () => {
 
     assert.equal(calls[0].url, "http://endpoint.test/openai/chat/completions");
     assert.equal(calls[0].body.messages[0].role, "system");
+    assert.match(calls[0].body.messages[0].content, /specialist editor for Reigns-like card narratives/);
+    assert.match(calls[0].body.messages[1].content, /Professional ReignsAgent editing rules/);
     assert.equal(calls[0].body.response_format.type, "json_object");
     assert.equal(chatPlan.proposals[0].patches[0].label, "Hear");
     assert.equal(calls[1].url, "http://endpoint.test/v1/completions");
     assert.match(calls[1].body.prompt, /Return only valid JSON/);
+    assert.match(calls[1].body.prompt, /When repairing diagnostics, prioritize reachable story flow/);
     assert.equal(completionPlan.proposals[0].patches[0].label, "Wait");
   });
 
