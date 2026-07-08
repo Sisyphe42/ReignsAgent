@@ -558,7 +558,6 @@ function formatAiEndpointError(error) {
 function defaultAiSettings() {
   return {
     baseUrl: "",
-    apiKey: "",
     protocol: "openai_chat",
     endpointPresetId: "custom",
     endpointIconKey: "custom",
@@ -632,7 +631,6 @@ function normalizeAiSettings(settings = {}) {
   const matchedModel = (endpointPreset?.models ?? []).find((model) => model.id === modelId);
   return {
     baseUrl,
-    apiKey: typeof settings.apiKey === "string" ? settings.apiKey : "",
     protocol,
     endpointPresetId: endpointPreset?.id ?? "custom",
     endpointIconKey: endpointPreset?.iconKey ?? "custom",
@@ -665,12 +663,12 @@ function enabledAiCapabilities(settings) {
     .map(([id]) => id);
 }
 
-function buildAiConnectorConfig(settings, extra = {}) {
+function buildAiConnectorConfig(settings, extra = {}, options = {}) {
   const normalized = normalizeAiSettings(settings);
   return {
     provider: normalized.protocol,
     endpoint: normalized.baseUrl.trim() || null,
-    apiKeyRef: normalized.apiKey ? "browser-local" : null,
+    apiKeyRef: options.hasApiKey ? "browser-local" : null,
     modelId: normalized.modelId.trim() || null,
     endpointPresetId: normalized.endpointPresetId,
     endpointIconKey: normalized.endpointIconKey,
@@ -821,6 +819,7 @@ function App() {
   const [skin, setSkin] = useState(() => initialUrlState.skin ?? (localStorage.getItem(PERSIST_KEY) || DEFAULT_SKIN));
   const [aiAssistEnabled, setAiAssistEnabled] = useState(() => initialUrlState.aiAssist ?? localStorage.getItem(AI_ASSIST_KEY) === "1");
   const [aiSettings, setAiSettings] = useState(() => readAiSettings());
+  const [aiApiKey, setAiApiKey] = useState("");
   const [aiDraftRequest, setAiDraftRequest] = useState(null);
   const [aiPreflight, setAiPreflight] = useState(null);
   const [diagnostics, setDiagnostics] = useState(null);
@@ -1029,7 +1028,7 @@ function App() {
         body: {
           ...form,
           credentials: {
-            apiKey: normalizeAiSettings(aiSettings).apiKey
+            apiKey: aiApiKey
           }
         }
       });
@@ -1323,6 +1322,7 @@ function App() {
               editor={editor}
               diagnostics={diagnostics}
               aiSettings={aiSettings}
+              apiKeyAvailable={Boolean(aiApiKey.trim())}
               aiAssistEnabled={aiAssistEnabled}
               aiConfigured={aiConfigured}
               draftRequest={aiDraftRequest}
@@ -1345,7 +1345,9 @@ function App() {
             <SettingsPanel
               editor={editor}
               aiSettings={aiSettings}
+              apiKey={aiApiKey}
               onAiSettingsChange={setAiSettings}
+              onApiKeyChange={setAiApiKey}
               onRefresh={refreshEditor}
               onStatus={setStatus}
             />
@@ -4530,7 +4532,7 @@ function AiAssistPreflight({ request, aiConfigured, diagnostics, onChange, onClo
   );
 }
 
-function AiAssistPanel({ editor, diagnostics, aiSettings, aiAssistEnabled, aiConfigured, draftRequest, onBuildPlan, onApplyPlan, onOpen }) {
+function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAssistEnabled, aiConfigured, draftRequest, onBuildPlan, onApplyPlan, onOpen }) {
   const [mode, setMode] = useState("generate_cards");
   const [theme, setTheme] = useState(editor?.metadata?.title ?? "small court");
   const [style, setStyle] = useState("ink wash card art");
@@ -4617,7 +4619,11 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, aiAssistEnabled, aiCon
     setProgressStep(2);
     const result = await onBuildPlan({
       mode: nextMode,
-      config: buildAiConnectorConfig(aiSettings, { theme: nextTheme, cardCount: nextCardCount, style: nextStyle }),
+      config: buildAiConnectorConfig(
+        aiSettings,
+        { theme: nextTheme, cardCount: nextCardCount, style: nextStyle },
+        { hasApiKey: apiKeyAvailable }
+      ),
       instruction: nextInstruction,
       targetCardId: nextTargetCardId || null,
       assetId: nextAssetId || null,
@@ -4803,7 +4809,7 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, aiAssistEnabled, aiCon
   );
 }
 
-function SettingsPanel({ editor, aiSettings, onAiSettingsChange, onRefresh, onStatus }) {
+function SettingsPanel({ editor, aiSettings, apiKey, onAiSettingsChange, onApiKeyChange, onRefresh, onStatus }) {
   const [title, setTitle] = useState(editor?.metadata?.title ?? "");
   const [plan, setPlan] = useState("");
   const [theme, setTheme] = useState("small kingdom");
@@ -4812,6 +4818,8 @@ function SettingsPanel({ editor, aiSettings, onAiSettingsChange, onRefresh, onSt
   const [apiKeyVisible, setApiKeyVisible] = useState(false);
   const [fetchedModels, setFetchedModels] = useState([]);
   const normalizedAiSettings = normalizeAiSettings(aiSettings);
+  const transientApiKey = typeof apiKey === "string" ? apiKey : "";
+  const hasTransientApiKey = Boolean(transientApiKey.trim());
   const endpointPreset = getEndpointPreset(normalizedAiSettings.endpointPresetId);
   const modelPresets = mergeAiModelOptions(getModelPresetsForEndpoint(normalizedAiSettings), fetchedModels);
   const protocolLabel = AI_PROTOCOLS.find(([id]) => id === normalizedAiSettings.protocol)?.[1] ?? normalizedAiSettings.protocol;
@@ -4828,7 +4836,13 @@ function SettingsPanel({ editor, aiSettings, onAiSettingsChange, onRefresh, onSt
   async function buildPlan() {
     const result = await api("/api/connector/plan", {
       method: "POST",
-      body: { config: buildAiConnectorConfig(normalizedAiSettings, { theme, cardCount: count }) }
+      body: {
+        config: buildAiConnectorConfig(
+          normalizedAiSettings,
+          { theme, cardCount: count },
+          { hasApiKey: hasTransientApiKey }
+        )
+      }
     });
     setPlan(JSON.stringify(result, null, 2));
   }
@@ -4935,7 +4949,7 @@ function SettingsPanel({ editor, aiSettings, onAiSettingsChange, onRefresh, onSt
       setSetupCheck({ state: "error", message: "Base URL is not a valid URL." });
       return;
     }
-    if (!normalizedAiSettings.apiKey.trim() && normalizedAiSettings.compatibilityFamily !== "local") {
+    if (!hasTransientApiKey && normalizedAiSettings.compatibilityFamily !== "local") {
       setSetupCheck({ state: "warning", message: `${protocolLabel} request shape is valid, but no API key is set.` });
       return;
     }
@@ -4944,9 +4958,9 @@ function SettingsPanel({ editor, aiSettings, onAiSettingsChange, onRefresh, onSt
       const result = await api("/api/ai/edit/validate", {
         method: "POST",
         body: {
-          config: buildAiConnectorConfig(normalizedAiSettings),
+          config: buildAiConnectorConfig(normalizedAiSettings, {}, { hasApiKey: hasTransientApiKey }),
           credentials: {
-            apiKey: normalizedAiSettings.apiKey
+            apiKey: transientApiKey
           }
         }
       });
@@ -4974,7 +4988,7 @@ function SettingsPanel({ editor, aiSettings, onAiSettingsChange, onRefresh, onSt
       setSetupCheck({ state: "error", message: "Base URL is not a valid URL." });
       return;
     }
-    if (!normalizedAiSettings.apiKey.trim() && normalizedAiSettings.compatibilityFamily !== "local") {
+    if (!hasTransientApiKey && normalizedAiSettings.compatibilityFamily !== "local") {
       setSetupCheck({ state: "warning", message: "API key is required before fetching provider models." });
       return;
     }
@@ -4983,9 +4997,9 @@ function SettingsPanel({ editor, aiSettings, onAiSettingsChange, onRefresh, onSt
       const result = await api("/api/ai/edit/models", {
         method: "POST",
         body: {
-          config: buildAiConnectorConfig(normalizedAiSettings),
+          config: buildAiConnectorConfig(normalizedAiSettings, {}, { hasApiKey: hasTransientApiKey }),
           credentials: {
-            apiKey: normalizedAiSettings.apiKey
+            apiKey: transientApiKey
           }
         }
       });
@@ -5039,9 +5053,9 @@ function SettingsPanel({ editor, aiSettings, onAiSettingsChange, onRefresh, onSt
               <input
                 id="ai-api-key"
                 type={apiKeyVisible ? "text" : "password"}
-                value={normalizedAiSettings.apiKey}
-                onChange={(event) => updateAiSetting("apiKey", event.target.value)}
-                placeholder="Stored only in this creator browser"
+                value={transientApiKey}
+                onChange={(event) => onApiKeyChange(event.target.value)}
+                placeholder="Kept only until this dashboard tab reloads"
               />
               <button
                 className={apiKeyVisible ? "secret-input__toggle secret-input__toggle--active" : "secret-input__toggle"}
