@@ -29,9 +29,32 @@ const AI_ASSIST_KEY = "reigns-agent.creator-web.ai-assist";
 const DEFAULT_PANEL = "overview";
 const DEFAULT_SKIN = "workbench";
 const AI_PROTOCOLS = [
-  ["responses", "Responses"],
-  ["completions", "Completions"],
-  ["messages", "Messages"]
+  ["openai_chat", "OpenAI Chat"],
+  ["openai_responses", "OpenAI Responses"],
+  ["openai_completions", "OpenAI Completions"],
+  ["anthropic_messages", "Anthropic Messages"]
+];
+const AI_PROTOCOL_ALIASES = {
+  messages: "openai_chat",
+  responses: "openai_responses",
+  completions: "openai_completions"
+};
+const AI_ROUTE_MODES = [
+  ["auto", "Auto detect"],
+  ["api_root", "API root"],
+  ["full_url", "Full URL"]
+];
+const AI_COMPATIBILITY_FAMILIES = [
+  ["openai", "OpenAI-compatible"],
+  ["anthropic", "Anthropic direct"],
+  ["newapi", "NewAPI / Unified BaseURI"],
+  ["local", "Local gateway"],
+  ["custom", "Custom"]
+];
+const AI_JSON_MODES = [
+  ["auto", "Auto"],
+  ["force", "Force JSON mode"],
+  ["off", "Disable JSON mode"]
 ];
 const AI_CAPABILITIES = [
   ["vision", "Vision"],
@@ -40,6 +63,400 @@ const AI_CAPABILITIES = [
   ["reasoning", "Reasoning"],
   ["streaming", "Streaming"]
 ];
+const DEFAULT_AI_CAPABILITIES = {
+  vision: false,
+  structuredJson: true,
+  tools: false,
+  reasoning: false,
+  streaming: false
+};
+const AI_LOGO_SOURCES = {
+  openai: ["https://cdn.simpleicons.org/openai/ffffff", "https://openai.com/favicon.ico"],
+  anthropic: ["https://cdn.simpleicons.org/anthropic/ffffff", "https://www.anthropic.com/favicon.ico"],
+  google: ["https://cdn.simpleicons.org/googlegemini/8E75B2", "https://www.google.com/favicon.ico"],
+  deepseek: ["https://cdn.simpleicons.org/deepseek/4D6BFE", "https://www.deepseek.com/favicon.ico"],
+  qwen: ["https://cdn.simpleicons.org/alibabacloud/FF6A00", "https://dashscope.aliyuncs.com/favicon.ico"],
+  zhipu: ["https://open.bigmodel.cn/favicon.ico", "https://logo.clearbit.com/bigmodel.cn"],
+  moonshot: ["https://www.moonshot.cn/favicon.ico", "https://logo.clearbit.com/moonshot.cn"],
+  openrouter: ["https://cdn.simpleicons.org/openrouter/ffffff", "https://openrouter.ai/favicon.ico"],
+  ollama: ["https://cdn.simpleicons.org/ollama/ffffff", "https://ollama.com/public/ollama.png"],
+  sensenova: ["https://platform.sensenova.cn/favicon.ico", "https://www.sensenova.cn/favicon.ico"],
+  siliconflow: ["https://siliconflow.cn/favicon.ico", "https://logo.clearbit.com/siliconflow.cn"],
+  volcengine: ["https://www.volcengine.com/favicon.ico", "https://logo.clearbit.com/volcengine.com"],
+  baidu: ["https://cdn.simpleicons.org/baidu/2932E1", "https://cloud.baidu.com/favicon.ico"],
+  tencent: ["https://cdn.simpleicons.org/tencentqq/1EBAFC", "https://cloud.tencent.com/favicon.ico"],
+  mistral: ["https://cdn.simpleicons.org/mistralai/FA520F", "https://mistral.ai/favicon.ico"],
+  perplexity: ["https://cdn.simpleicons.org/perplexity/1FB8CD", "https://www.perplexity.ai/favicon.ico"],
+  xai: ["https://cdn.simpleicons.org/x/ffffff", "https://x.ai/favicon.ico"],
+  cohere: ["https://cdn.simpleicons.org/cohere/39594D", "https://cohere.com/favicon.ico"],
+  minimax: ["https://www.minimax.io/favicon.ico", "https://logo.clearbit.com/minimax.io"],
+  lingyi: ["https://www.01.ai/favicon.ico", "https://logo.clearbit.com/01.ai"],
+  newapi: ["https://newapi.pro/favicon.ico", "https://logo.clearbit.com/newapi.pro"],
+  local: ["https://cdn.simpleicons.org/ollama/ffffff", "https://ollama.com/public/ollama.png"],
+  custom: []
+};
+const AI_ENDPOINT_PRESETS = [
+  {
+    id: "newapi",
+    label: "NewAPI / Unified BaseURI",
+    channelName: "NewAPI",
+    baseUrl: "https://your-newapi.example.com/v1",
+    iconKey: "newapi",
+    iconLabel: "NA",
+    protocol: "openai_chat",
+    compatibilityFamily: "newapi",
+    models: [
+      aiModel("gpt-5", "GPT-5", { vision: true, tools: true, reasoning: true }),
+      aiModel("gpt-5-mini", "GPT-5 mini", { vision: true, tools: true, reasoning: true }),
+      aiModel("claude-sonnet-4-20250514", "Claude Sonnet 4", { vision: true, structuredJson: false }),
+      aiModel("gemini-2.5-pro", "Gemini 2.5 Pro", { vision: true }),
+      aiModel("deepseek-chat", "DeepSeek Chat"),
+      aiModel("deepseek-reasoner", "DeepSeek Reasoner", { reasoning: true }),
+      aiModel("qwen-max", "Qwen Max"),
+      aiModel("glm-4-plus", "GLM-4 Plus"),
+      aiModel("moonshot-v1-128k", "Moonshot v1 128K")
+    ]
+  },
+  {
+    id: "openai",
+    label: "OpenAI",
+    baseUrl: "https://api.openai.com/v1",
+    iconKey: "openai",
+    iconLabel: "OA",
+    protocol: "openai_chat",
+    compatibilityFamily: "openai",
+    models: [
+      aiModel("gpt-5", "GPT-5", { vision: true, tools: true, reasoning: true }),
+      aiModel("gpt-5-mini", "GPT-5 mini", { vision: true, tools: true, reasoning: true }),
+      aiModel("gpt-5-nano", "GPT-5 nano", { tools: true, reasoning: true }),
+      aiModel("gpt-4.1", "GPT-4.1", { vision: true, tools: true, reasoning: true }),
+      aiModel("gpt-4.1-mini", "GPT-4.1 mini", { vision: true, tools: true }),
+      aiModel("gpt-4o", "GPT-4o", { vision: true, tools: true }),
+      aiModel("gpt-4o-mini", "GPT-4o mini", { vision: true, tools: true }),
+      aiModel("o3", "o3", { reasoning: true, tools: true }),
+      aiModel("o4-mini", "o4-mini", { reasoning: true, tools: true })
+    ]
+  },
+  {
+    id: "anthropic",
+    label: "Anthropic",
+    baseUrl: "https://api.anthropic.com/v1",
+    iconKey: "anthropic",
+    iconLabel: "AN",
+    protocol: "anthropic_messages",
+    compatibilityFamily: "anthropic",
+    models: [
+      aiModel("claude-sonnet-4-20250514", "Claude Sonnet 4", { vision: true, structuredJson: false }, "anthropic_messages"),
+      aiModel("claude-opus-4-20250514", "Claude Opus 4", { vision: true, structuredJson: false, reasoning: true }, "anthropic_messages"),
+      aiModel("claude-3-7-sonnet-20250219", "Claude 3.7 Sonnet", { vision: true, structuredJson: false, reasoning: true }, "anthropic_messages"),
+      aiModel("claude-3-5-haiku-20241022", "Claude 3.5 Haiku", { vision: true, structuredJson: false }, "anthropic_messages")
+    ]
+  },
+  {
+    id: "gemini-openai",
+    label: "Gemini",
+    baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
+    iconKey: "google",
+    iconLabel: "GE",
+    protocol: "openai_chat",
+    compatibilityFamily: "openai",
+    models: [
+      aiModel("gemini-2.5-pro", "Gemini 2.5 Pro", { vision: true }),
+      aiModel("gemini-2.5-flash", "Gemini 2.5 Flash", { vision: true }),
+      aiModel("gemini-2.5-flash-lite", "Gemini 2.5 Flash Lite", { vision: true }),
+      aiModel("gemini-2.0-flash", "Gemini 2.0 Flash", { vision: true })
+    ]
+  },
+  {
+    id: "deepseek",
+    label: "DeepSeek",
+    baseUrl: "https://api.deepseek.com/v1",
+    iconKey: "deepseek",
+    iconLabel: "DS",
+    protocol: "openai_chat",
+    compatibilityFamily: "openai",
+    models: [
+      aiModel("deepseek-chat", "DeepSeek Chat"),
+      aiModel("deepseek-reasoner", "DeepSeek Reasoner", { reasoning: true }),
+      aiModel("deepseek-coder", "DeepSeek Coder")
+    ]
+  },
+  {
+    id: "qwen",
+    label: "Qwen / DashScope",
+    baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    iconKey: "qwen",
+    iconLabel: "QW",
+    protocol: "openai_chat",
+    compatibilityFamily: "openai",
+    models: [
+      aiModel("qwen-max", "Qwen Max"),
+      aiModel("qwen-plus", "Qwen Plus"),
+      aiModel("qwen-turbo", "Qwen Turbo"),
+      aiModel("qwen3-max", "Qwen3 Max", { reasoning: true }),
+      aiModel("qwen3-plus", "Qwen3 Plus", { reasoning: true }),
+      aiModel("qwen-vl-plus", "Qwen VL Plus", { vision: true }),
+      aiModel("qwq-plus", "QwQ Plus", { reasoning: true })
+    ]
+  },
+  {
+    id: "moonshot",
+    label: "Moonshot",
+    baseUrl: "https://api.moonshot.cn/v1",
+    iconKey: "moonshot",
+    iconLabel: "MS",
+    protocol: "openai_chat",
+    compatibilityFamily: "openai",
+    models: [
+      aiModel("kimi-k2-0711-preview", "Kimi K2"),
+      aiModel("moonshot-v1-8k", "Moonshot v1 8K"),
+      aiModel("moonshot-v1-32k", "Moonshot v1 32K"),
+      aiModel("moonshot-v1-128k", "Moonshot v1 128K")
+    ]
+  },
+  {
+    id: "zhipu",
+    label: "Zhipu GLM",
+    baseUrl: "https://open.bigmodel.cn/api/paas/v4",
+    iconKey: "zhipu",
+    iconLabel: "GL",
+    protocol: "openai_chat",
+    compatibilityFamily: "openai",
+    models: [
+      aiModel("glm-4-plus", "GLM-4 Plus"),
+      aiModel("glm-4-flash", "GLM-4 Flash"),
+      aiModel("glm-4-air", "GLM-4 Air"),
+      aiModel("glm-4.5", "GLM-4.5", { reasoning: true }),
+      aiModel("glm-4v-plus", "GLM-4V Plus", { vision: true })
+    ]
+  },
+  {
+    id: "openrouter",
+    label: "OpenRouter",
+    baseUrl: "https://openrouter.ai/api/v1",
+    iconKey: "openrouter",
+    iconLabel: "OR",
+    protocol: "openai_chat",
+    compatibilityFamily: "openai",
+    models: [
+      aiModel("openai/gpt-5", "OpenAI GPT-5", { vision: true, tools: true, reasoning: true }),
+      aiModel("anthropic/claude-sonnet-4", "Claude Sonnet 4", { vision: true, structuredJson: false }),
+      aiModel("google/gemini-2.5-pro", "Gemini 2.5 Pro", { vision: true }),
+      aiModel("deepseek/deepseek-chat", "DeepSeek Chat"),
+      aiModel("qwen/qwen3-235b-a22b", "Qwen3 235B", { reasoning: true }),
+      aiModel("mistralai/mistral-large", "Mistral Large")
+    ]
+  },
+  {
+    id: "siliconflow",
+    label: "SiliconFlow",
+    baseUrl: "https://api.siliconflow.cn/v1",
+    iconKey: "siliconflow",
+    iconLabel: "SF",
+    protocol: "openai_chat",
+    compatibilityFamily: "openai",
+    models: [
+      aiModel("deepseek-ai/DeepSeek-V3", "DeepSeek V3"),
+      aiModel("deepseek-ai/DeepSeek-R1", "DeepSeek R1", { reasoning: true }),
+      aiModel("Qwen/Qwen3-235B-A22B", "Qwen3 235B", { reasoning: true }),
+      aiModel("moonshotai/Kimi-K2-Instruct", "Kimi K2"),
+      aiModel("THUDM/GLM-4.1V-9B-Thinking", "GLM-4.1V Thinking", { vision: true, reasoning: true })
+    ]
+  },
+  {
+    id: "sensenova",
+    label: "SenseNova",
+    baseUrl: "https://token.sensenova.cn/v1",
+    iconKey: "sensenova",
+    iconLabel: "SN",
+    protocol: "openai_chat",
+    compatibilityFamily: "openai",
+    models: [
+      aiModel("sensenova-6.7-flash-lite", "SenseNova 6.7 Flash-Lite"),
+      aiModel("deepseek-v4-flash", "DeepSeek V4 Flash")
+    ]
+  },
+  {
+    id: "local",
+    label: "Local gateway",
+    baseUrl: "http://127.0.0.1:11434/v1",
+    iconKey: "local",
+    iconLabel: "LC",
+    protocol: "openai_chat",
+    compatibilityFamily: "local",
+    models: [
+      aiModel("llama3.3", "Llama 3.3", { structuredJson: false }),
+      aiModel("llama3.1", "Llama 3.1", { structuredJson: false }),
+      aiModel("qwen3", "Qwen3", { reasoning: true }),
+      aiModel("qwen2.5", "Qwen 2.5"),
+      aiModel("deepseek-r1", "DeepSeek R1", { structuredJson: false, reasoning: true }),
+      aiModel("mistral", "Mistral", { structuredJson: false }),
+      aiModel("gemma3", "Gemma 3", { structuredJson: false })
+    ]
+  },
+  {
+    id: "volcengine",
+    label: "VolcEngine / Doubao",
+    baseUrl: "https://ark.cn-beijing.volces.com/api/v3",
+    iconKey: "volcengine",
+    iconLabel: "DB",
+    protocol: "openai_chat",
+    compatibilityFamily: "openai",
+    models: [
+      aiModel("doubao-seed-1-6", "Doubao Seed 1.6", { reasoning: true }),
+      aiModel("doubao-1-5-pro-32k", "Doubao 1.5 Pro 32K"),
+      aiModel("doubao-1-5-lite-32k", "Doubao 1.5 Lite 32K"),
+      aiModel("doubao-1-5-vision-pro-32k", "Doubao Vision Pro", { vision: true })
+    ]
+  },
+  {
+    id: "mistral",
+    label: "Mistral",
+    baseUrl: "https://api.mistral.ai/v1",
+    iconKey: "mistral",
+    iconLabel: "MI",
+    protocol: "openai_chat",
+    compatibilityFamily: "openai",
+    models: [
+      aiModel("mistral-large-latest", "Mistral Large"),
+      aiModel("mistral-small-latest", "Mistral Small"),
+      aiModel("pixtral-large-latest", "Pixtral Large", { vision: true }),
+      aiModel("codestral-latest", "Codestral"),
+      aiModel("magistral-medium-latest", "Magistral Medium", { reasoning: true })
+    ]
+  },
+  {
+    id: "perplexity",
+    label: "Perplexity",
+    baseUrl: "https://api.perplexity.ai",
+    iconKey: "perplexity",
+    iconLabel: "PX",
+    protocol: "openai_chat",
+    compatibilityFamily: "openai",
+    models: [
+      aiModel("sonar", "Sonar"),
+      aiModel("sonar-pro", "Sonar Pro"),
+      aiModel("sonar-reasoning", "Sonar Reasoning", { reasoning: true }),
+      aiModel("sonar-deep-research", "Sonar Deep Research", { reasoning: true })
+    ]
+  },
+  {
+    id: "xai",
+    label: "xAI",
+    baseUrl: "https://api.x.ai/v1",
+    iconKey: "xai",
+    iconLabel: "XA",
+    protocol: "openai_chat",
+    compatibilityFamily: "openai",
+    models: [
+      aiModel("grok-4", "Grok 4", { reasoning: true }),
+      aiModel("grok-3", "Grok 3", { reasoning: true }),
+      aiModel("grok-3-mini", "Grok 3 mini", { reasoning: true })
+    ]
+  },
+  {
+    id: "baidu",
+    label: "Baidu Qianfan",
+    baseUrl: "https://qianfan.baidubce.com/v2",
+    iconKey: "baidu",
+    iconLabel: "BD",
+    protocol: "openai_chat",
+    compatibilityFamily: "openai",
+    models: [
+      aiModel("ernie-4.5-turbo-128k", "ERNIE 4.5 Turbo 128K"),
+      aiModel("ernie-4.5-turbo-vl-32k", "ERNIE 4.5 Turbo VL", { vision: true }),
+      aiModel("ernie-x1-turbo-32k", "ERNIE X1 Turbo", { reasoning: true }),
+      aiModel("ernie-speed-128k", "ERNIE Speed 128K")
+    ]
+  },
+  {
+    id: "tencent",
+    label: "Tencent Hunyuan",
+    baseUrl: "https://api.hunyuan.cloud.tencent.com/v1",
+    iconKey: "tencent",
+    iconLabel: "HY",
+    protocol: "openai_chat",
+    compatibilityFamily: "openai",
+    models: [
+      aiModel("hunyuan-turbos-latest", "Hunyuan TurboS"),
+      aiModel("hunyuan-t1-latest", "Hunyuan T1", { reasoning: true }),
+      aiModel("hunyuan-vision", "Hunyuan Vision", { vision: true })
+    ]
+  },
+  {
+    id: "cohere",
+    label: "Cohere",
+    baseUrl: "https://api.cohere.ai/compatibility/v1",
+    iconKey: "cohere",
+    iconLabel: "CO",
+    protocol: "openai_chat",
+    compatibilityFamily: "openai",
+    models: [
+      aiModel("command-a-03-2025", "Command A"),
+      aiModel("command-r-plus", "Command R+"),
+      aiModel("command-r", "Command R")
+    ]
+  },
+  {
+    id: "minimax",
+    label: "MiniMax",
+    baseUrl: "https://api.minimax.chat/v1",
+    iconKey: "minimax",
+    iconLabel: "MM",
+    protocol: "openai_chat",
+    compatibilityFamily: "openai",
+    models: [
+      aiModel("MiniMax-M1", "MiniMax M1", { reasoning: true }),
+      aiModel("MiniMax-Text-01", "MiniMax Text 01"),
+      aiModel("abab6.5s-chat", "abab6.5s Chat")
+    ]
+  },
+  {
+    id: "lingyi",
+    label: "01.AI",
+    baseUrl: "https://api.lingyiwanwu.com/v1",
+    iconKey: "lingyi",
+    iconLabel: "01",
+    protocol: "openai_chat",
+    compatibilityFamily: "openai",
+    models: [
+      aiModel("yi-large", "Yi Large"),
+      aiModel("yi-medium", "Yi Medium"),
+      aiModel("yi-lightning", "Yi Lightning"),
+      aiModel("yi-vision", "Yi Vision", { vision: true })
+    ]
+  },
+  {
+    id: "custom",
+    label: "Custom",
+    baseUrl: "",
+    iconKey: "custom",
+    iconLabel: "..",
+    protocol: "openai_chat",
+    compatibilityFamily: "custom",
+    models: [
+      aiModel("gpt-5", "GPT-5", { vision: true, tools: true, reasoning: true }),
+      aiModel("gpt-4.1-mini", "GPT-4.1 mini", { vision: true, tools: true }),
+      aiModel("claude-sonnet-4-20250514", "Claude Sonnet 4", { vision: true, structuredJson: false }),
+      aiModel("gemini-2.5-pro", "Gemini 2.5 Pro", { vision: true }),
+      aiModel("deepseek-chat", "DeepSeek Chat"),
+      aiModel("deepseek-reasoner", "DeepSeek Reasoner", { reasoning: true }),
+      aiModel("qwen-plus", "Qwen Plus"),
+      aiModel("glm-4-plus", "GLM-4 Plus"),
+      aiModel("moonshot-v1-128k", "Moonshot 128K"),
+      aiModel("mistral-large-latest", "Mistral Large")
+    ]
+  }
+];
+
+function aiModel(id, label = id, capabilities = {}, protocol = "openai_chat") {
+  return {
+    id,
+    label,
+    protocol,
+    capabilities: normalizeCapabilityState(capabilities)
+  };
+}
 const AI_PROGRESS_STEPS = ["Context", "Request", "Local draft", "Parse", "Validate", "Ready"];
 const AI_MODE_LABELS = {
   generate_cards: "Draft cards",
@@ -130,31 +547,100 @@ async function api(path, options = {}) {
   return json;
 }
 
+function formatAiEndpointError(error) {
+  const message = error?.message ?? String(error);
+  if (message.includes("Unknown API route")) {
+    return `${message}. Restart the local dashboard API server so it loads the latest backend routes.`;
+  }
+  return message;
+}
+
 function defaultAiSettings() {
   return {
     baseUrl: "",
     apiKey: "",
-    protocol: "responses",
+    protocol: "openai_chat",
+    endpointPresetId: "custom",
+    endpointIconKey: "custom",
+    modelPresetId: null,
+    compatibilityFamily: "custom",
+    routeMode: "auto",
+    jsonMode: "auto",
     modelId: "",
-    capabilities: {
-      vision: false,
-      structuredJson: true,
-      tools: false,
-      reasoning: false,
-      streaming: false
-    }
+    capabilities: { ...DEFAULT_AI_CAPABILITIES }
   };
+}
+
+function normalizeAiProtocol(value) {
+  const canonical = AI_PROTOCOL_ALIASES[value] ?? value;
+  return AI_PROTOCOLS.some(([id]) => id === canonical) ? canonical : "openai_chat";
+}
+
+function findEndpointPresetByBaseUrl(baseUrl) {
+  const normalized = String(baseUrl ?? "").trim().replace(/\/+$/, "");
+  if (!normalized) return null;
+  return AI_ENDPOINT_PRESETS.find((preset) => preset.baseUrl && preset.baseUrl.replace(/\/+$/, "") === normalized) ?? null;
+}
+
+function getEndpointPreset(id) {
+  return AI_ENDPOINT_PRESETS.find((preset) => preset.id === id) ?? AI_ENDPOINT_PRESETS.find((preset) => preset.id === "custom");
+}
+
+function getModelPresetsForEndpoint(settings) {
+  const preset = getEndpointPreset(settings.endpointPresetId);
+  return preset?.models ?? [];
+}
+
+function findModelPresetByModelId(settings, modelId) {
+  const normalized = String(modelId ?? "").trim();
+  if (!normalized) return null;
+  return getModelPresetsForEndpoint(settings).find((model) => model.id === normalized) ?? null;
+}
+
+function mergeAiModelOptions(...modelGroups) {
+  const seen = new Set();
+  return modelGroups.flatMap((models) => (Array.isArray(models) ? models : []).flatMap((model) => {
+    const id = String(model?.id ?? "").trim();
+    if (!id || seen.has(id)) return [];
+    seen.add(id);
+    return [{
+      id,
+      label: String(model?.label ?? id),
+      capabilities: normalizeCapabilityState(model?.capabilities)
+    }];
+  }));
+}
+
+function normalizeCapabilityState(capabilities = {}) {
+  return { ...DEFAULT_AI_CAPABILITIES, ...capabilities };
 }
 
 function normalizeAiSettings(settings = {}) {
   const defaults = defaultAiSettings();
-  const protocol = AI_PROTOCOLS.some(([id]) => id === settings.protocol) ? settings.protocol : defaults.protocol;
-  const capabilities = { ...defaults.capabilities, ...(settings.capabilities ?? {}) };
+  const baseUrl = typeof settings.baseUrl === "string" ? settings.baseUrl : "";
+  const matchedEndpoint = findEndpointPresetByBaseUrl(baseUrl);
+  const requestedPreset = getEndpointPreset(settings.endpointPresetId);
+  const endpointPreset = matchedEndpoint ?? (baseUrl.trim() ? getEndpointPreset("custom") : requestedPreset);
+  const protocol = normalizeAiProtocol(settings.protocol ?? endpointPreset?.protocol ?? defaults.protocol);
+  const routeMode = AI_ROUTE_MODES.some(([id]) => id === settings.routeMode) ? settings.routeMode : defaults.routeMode;
+  const jsonMode = AI_JSON_MODES.some(([id]) => id === settings.jsonMode) ? settings.jsonMode : defaults.jsonMode;
+  const compatibilityFamily = AI_COMPATIBILITY_FAMILIES.some(([id]) => id === settings.compatibilityFamily)
+    ? settings.compatibilityFamily
+    : endpointPreset?.compatibilityFamily ?? defaults.compatibilityFamily;
+  const capabilities = normalizeCapabilityState(settings.capabilities ?? defaults.capabilities);
+  const modelId = typeof settings.modelId === "string" ? settings.modelId : "";
+  const matchedModel = (endpointPreset?.models ?? []).find((model) => model.id === modelId);
   return {
-    baseUrl: typeof settings.baseUrl === "string" ? settings.baseUrl : "",
+    baseUrl,
     apiKey: typeof settings.apiKey === "string" ? settings.apiKey : "",
     protocol,
-    modelId: typeof settings.modelId === "string" ? settings.modelId : "",
+    endpointPresetId: endpointPreset?.id ?? "custom",
+    endpointIconKey: endpointPreset?.iconKey ?? "custom",
+    modelPresetId: matchedModel?.id ?? null,
+    compatibilityFamily,
+    routeMode,
+    jsonMode,
+    modelId,
     capabilities
   };
 }
@@ -186,9 +672,141 @@ function buildAiConnectorConfig(settings, extra = {}) {
     endpoint: normalized.baseUrl.trim() || null,
     apiKeyRef: normalized.apiKey ? "browser-local" : null,
     modelId: normalized.modelId.trim() || null,
+    endpointPresetId: normalized.endpointPresetId,
+    endpointIconKey: normalized.endpointIconKey,
+    modelPresetId: normalized.modelPresetId,
+    compatibilityFamily: normalized.compatibilityFamily,
+    routeMode: normalized.routeMode,
+    jsonMode: normalized.jsonMode,
     capabilities: enabledAiCapabilities(normalized),
     ...extra
   };
+}
+
+function AiProviderLogo({ preset }) {
+  const sources = AI_LOGO_SOURCES[preset?.iconKey] ?? [];
+  const [sourceIndex, setSourceIndex] = useState(0);
+  useEffect(() => setSourceIndex(0), [preset?.iconKey]);
+  const logoUrl = sources[sourceIndex] ?? "";
+  if (!logoUrl) {
+    return <span className="provider-logo provider-logo--fallback" aria-hidden="true">{preset?.iconLabel ?? ".."}</span>;
+  }
+  return (
+    <span className="provider-logo" aria-hidden="true">
+      <img src={logoUrl} alt="" loading="lazy" referrerPolicy="no-referrer" onError={() => setSourceIndex((index) => index + 1)} />
+    </span>
+  );
+}
+
+function AiProviderDropdown({ value, onChange }) {
+  const [open, setOpen] = useState(false);
+  const selected = getEndpointPreset(value);
+
+  return (
+    <div className="ai-dropdown" onBlur={(event) => {
+      if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
+    }}>
+      <button className="ai-dropdown__button" type="button" onClick={() => setOpen((next) => !next)} aria-expanded={open}>
+        <AiProviderLogo preset={selected} />
+        <span>
+          <strong>{selected.label}</strong>
+          <small>{selected.compatibilityFamily === "anthropic" ? "Anthropic Messages" : selected.baseUrl || "Custom endpoint"}</small>
+        </span>
+        <span className="ai-dropdown__chevron" aria-hidden="true">⌄</span>
+      </button>
+      {open && (
+        <div className="ai-dropdown__menu ai-dropdown__menu--providers" role="listbox">
+          {AI_ENDPOINT_PRESETS.map((preset) => (
+            <button
+              key={preset.id}
+              className={preset.id === selected.id ? "ai-dropdown__option ai-dropdown__option--active" : "ai-dropdown__option"}
+              type="button"
+              role="option"
+              aria-selected={preset.id === selected.id}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => {
+                onChange(preset.id);
+                setOpen(false);
+              }}
+            >
+              <AiProviderLogo preset={preset} />
+              <span>
+                <strong>{preset.label}</strong>
+                <small>{preset.baseUrl || "Custom endpoint"}</small>
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AiModelDropdown({ models, value, providerLabel, onChange }) {
+  const [open, setOpen] = useState(false);
+  const selected = models.find((model) => model.id === value) ?? null;
+
+  return (
+    <div className="ai-dropdown" onBlur={(event) => {
+      if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
+    }}>
+      <button className="ai-dropdown__button" type="button" onClick={() => setOpen((next) => !next)} aria-expanded={open}>
+        <span className="model-dot" aria-hidden="true">{selected ? "M" : ".."}</span>
+        <span>
+          <strong>{selected?.label ?? "Custom model"}</strong>
+          <small>{selected?.id ?? `${providerLabel} model id`}</small>
+        </span>
+        <span className="ai-dropdown__chevron" aria-hidden="true">⌄</span>
+      </button>
+      {open && (
+        <div className="ai-dropdown__menu" role="listbox">
+          {models.length === 0 && (
+            <div className="ai-dropdown__empty">No model suggestions loaded.</div>
+          )}
+          {models.map((model) => (
+            <button
+              key={model.id}
+              className={model.id === value ? "ai-dropdown__option ai-dropdown__option--active" : "ai-dropdown__option"}
+              type="button"
+              role="option"
+              aria-selected={model.id === value}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => {
+                onChange(model.id);
+                setOpen(false);
+              }}
+            >
+              <span className="model-dot" aria-hidden="true">M</span>
+              <span>
+                <strong>{model.label}</strong>
+                <small>{model.id}</small>
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AiOptionGroup({ label, value, options, onChange }) {
+  return (
+    <div className="ai-option-group">
+      <span className="ai-field-label">{label}</span>
+      <div className="ai-option-group__list">
+        {options.map(([id, optionLabel]) => (
+          <button
+            key={id}
+            type="button"
+            className={value === id ? "ai-option-pill ai-option-pill--active" : "ai-option-pill"}
+            onClick={() => onChange(id)}
+          >
+            {optionLabel}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function wait(ms) {
@@ -406,7 +1024,15 @@ function App() {
 
   async function buildAiEditPlan(form) {
     return runAction("Building AI Assist draft", async () => {
-      const result = await api("/api/ai/edit/plan", { method: "POST", body: form });
+      const result = await api("/api/ai/edit/plan", {
+        method: "POST",
+        body: {
+          ...form,
+          credentials: {
+            apiKey: normalizeAiSettings(aiSettings).apiKey
+          }
+        }
+      });
       setStatus(`AI Assist draft ready: ${result.proposals?.length ?? 0} proposals`);
       return result;
     });
@@ -4054,7 +4680,7 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, aiAssistEnabled, aiCon
           <small>
             {aiConfigured
               ? `${aiSettings.protocol} · ${aiSettings.baseUrl}`
-              : "No endpoint configured. Real provider calls are not active in this UX shell."}
+              : "No endpoint configured. Local draft planning remains available."}
           </small>
         </div>
         <button className="btn btn--ghost btn--compact" type="button" onClick={() => onOpen("settings")}>Settings</button>
@@ -4182,9 +4808,16 @@ function SettingsPanel({ editor, aiSettings, onAiSettingsChange, onRefresh, onSt
   const [plan, setPlan] = useState("");
   const [theme, setTheme] = useState("small kingdom");
   const [count, setCount] = useState(8);
-  const [testStatus, setTestStatus] = useState("");
+  const [setupCheck, setSetupCheck] = useState({ state: "idle", message: "" });
+  const [apiKeyVisible, setApiKeyVisible] = useState(false);
+  const [fetchedModels, setFetchedModels] = useState([]);
+  const normalizedAiSettings = normalizeAiSettings(aiSettings);
+  const endpointPreset = getEndpointPreset(normalizedAiSettings.endpointPresetId);
+  const modelPresets = mergeAiModelOptions(getModelPresetsForEndpoint(normalizedAiSettings), fetchedModels);
+  const protocolLabel = AI_PROTOCOLS.find(([id]) => id === normalizedAiSettings.protocol)?.[1] ?? normalizedAiSettings.protocol;
 
   useEffect(() => setTitle(editor?.metadata?.title ?? ""), [editor?.metadata?.title]);
+  useEffect(() => setFetchedModels([]), [normalizedAiSettings.baseUrl, normalizedAiSettings.protocol]);
 
   async function saveTitle() {
     await api("/api/editor/metadata", { method: "PATCH", body: { metadata: { title } } });
@@ -4195,31 +4828,182 @@ function SettingsPanel({ editor, aiSettings, onAiSettingsChange, onRefresh, onSt
   async function buildPlan() {
     const result = await api("/api/connector/plan", {
       method: "POST",
-      body: { config: buildAiConnectorConfig(aiSettings, { theme, cardCount: count }) }
+      body: { config: buildAiConnectorConfig(normalizedAiSettings, { theme, cardCount: count }) }
     });
     setPlan(JSON.stringify(result, null, 2));
   }
 
   function updateAiSetting(key, value) {
-    onAiSettingsChange(normalizeAiSettings({ ...aiSettings, [key]: value }));
+    onAiSettingsChange(normalizeAiSettings({ ...normalizedAiSettings, [key]: value }));
+  }
+
+  function applyEndpointPreset(presetId) {
+    const preset = getEndpointPreset(presetId);
+    const firstModel = preset.models[0] ?? null;
+    onAiSettingsChange(normalizeAiSettings({
+      ...normalizedAiSettings,
+      baseUrl: preset.baseUrl,
+      endpointPresetId: preset.id,
+      endpointIconKey: preset.iconKey,
+      compatibilityFamily: preset.compatibilityFamily,
+      protocol: preset.protocol,
+      routeMode: "auto",
+      modelId: firstModel?.id ?? "",
+      modelPresetId: firstModel?.id ?? null,
+      capabilities: firstModel ? normalizeCapabilityState(firstModel.capabilities) : normalizedAiSettings.capabilities
+    }));
+  }
+
+  function updateEndpointBaseUrl(value) {
+    const matched = findEndpointPresetByBaseUrl(value);
+    if (matched) {
+      onAiSettingsChange(normalizeAiSettings({
+        ...normalizedAiSettings,
+        baseUrl: value,
+        endpointPresetId: matched.id,
+        endpointIconKey: matched.iconKey,
+        compatibilityFamily: matched.compatibilityFamily,
+        protocol: matched.protocol,
+        modelPresetId: null
+      }));
+      return;
+    }
+    onAiSettingsChange(normalizeAiSettings({
+      ...normalizedAiSettings,
+      baseUrl: value,
+      endpointPresetId: "custom",
+      endpointIconKey: "custom",
+      compatibilityFamily: "custom",
+      modelPresetId: null
+    }));
+  }
+
+  function applyModelPreset(modelId) {
+    const model = modelPresets.find((preset) => preset.id === modelId);
+    if (!model) {
+      updateModelId(normalizedAiSettings.modelId);
+      return;
+    }
+    onAiSettingsChange(normalizeAiSettings({
+      ...normalizedAiSettings,
+      modelId: model.id,
+      modelPresetId: model.id,
+      protocol: model.protocol ?? normalizedAiSettings.protocol,
+      capabilities: normalizeCapabilityState(model.capabilities)
+    }));
+  }
+
+  function updateModelId(value) {
+    const matched = findModelPresetByModelId(normalizedAiSettings, value);
+    if (matched) {
+      onAiSettingsChange(normalizeAiSettings({
+        ...normalizedAiSettings,
+        modelId: value,
+        modelPresetId: matched.id,
+        protocol: matched.protocol ?? normalizedAiSettings.protocol,
+        capabilities: normalizeCapabilityState(matched.capabilities)
+      }));
+      return;
+    }
+    onAiSettingsChange(normalizeAiSettings({
+      ...normalizedAiSettings,
+      modelId: value,
+      modelPresetId: null
+    }));
   }
 
   function toggleCapability(key) {
     onAiSettingsChange(normalizeAiSettings({
-      ...aiSettings,
+      ...normalizedAiSettings,
       capabilities: {
-        ...aiSettings.capabilities,
-        [key]: !aiSettings.capabilities?.[key]
+        ...normalizedAiSettings.capabilities,
+        [key]: !normalizedAiSettings.capabilities?.[key]
       }
     }));
   }
 
-  function testEndpoint() {
-    if (!isAiEndpointConfigured(aiSettings)) {
-      setTestStatus("Add a base URL and model id before real provider calls.");
+  async function testEndpoint() {
+    const baseUrl = normalizedAiSettings.baseUrl.trim();
+    const modelId = normalizedAiSettings.modelId.trim();
+    if (!baseUrl || !modelId) {
+      setSetupCheck({ state: "error", message: "Base URL and model id are required before endpoint planning." });
       return;
     }
-    setTestStatus(`Ready to build ${aiSettings.protocol} requests for ${aiSettings.modelId}. Network calls are not enabled in this shell.`);
+    try {
+      new URL(baseUrl);
+    } catch {
+      setSetupCheck({ state: "error", message: "Base URL is not a valid URL." });
+      return;
+    }
+    if (!normalizedAiSettings.apiKey.trim() && normalizedAiSettings.compatibilityFamily !== "local") {
+      setSetupCheck({ state: "warning", message: `${protocolLabel} request shape is valid, but no API key is set.` });
+      return;
+    }
+    setSetupCheck({ state: "checking", message: `Validating ${protocolLabel} endpoint with ${modelId}...` });
+    try {
+      const result = await api("/api/ai/edit/validate", {
+        method: "POST",
+        body: {
+          config: buildAiConnectorConfig(normalizedAiSettings),
+          credentials: {
+            apiKey: normalizedAiSettings.apiKey
+          }
+        }
+      });
+      setSetupCheck({
+        state: "success",
+        message: `${protocolLabel} endpoint validated for ${result.provider?.model ?? modelId}.`
+      });
+      onStatus(`AI endpoint validated: ${result.provider?.protocol ?? normalizedAiSettings.protocol}`);
+    } catch (error) {
+      const message = formatAiEndpointError(error);
+      setSetupCheck({ state: "error", message });
+      onStatus(message);
+    }
+  }
+
+  async function fetchEndpointModels() {
+    const baseUrl = normalizedAiSettings.baseUrl.trim();
+    if (!baseUrl) {
+      setSetupCheck({ state: "error", message: "Base URL is required before fetching models." });
+      return;
+    }
+    try {
+      new URL(baseUrl);
+    } catch {
+      setSetupCheck({ state: "error", message: "Base URL is not a valid URL." });
+      return;
+    }
+    if (!normalizedAiSettings.apiKey.trim() && normalizedAiSettings.compatibilityFamily !== "local") {
+      setSetupCheck({ state: "warning", message: "API key is required before fetching provider models." });
+      return;
+    }
+    setSetupCheck({ state: "checking", message: "Fetching models from /models..." });
+    try {
+      const result = await api("/api/ai/edit/models", {
+        method: "POST",
+        body: {
+          config: buildAiConnectorConfig(normalizedAiSettings),
+          credentials: {
+            apiKey: normalizedAiSettings.apiKey
+          }
+        }
+      });
+      const models = Array.isArray(result.models) ? result.models : [];
+      setFetchedModels(models);
+      if (!normalizedAiSettings.modelId.trim() && models[0]?.id) {
+        updateModelId(models[0].id);
+      }
+      setSetupCheck({
+        state: "success",
+        message: models.length ? `Loaded ${models.length} model${models.length === 1 ? "" : "s"} from /models.` : "The endpoint returned no models."
+      });
+      onStatus(models.length ? `Loaded ${models.length} AI models` : "AI endpoint returned no models");
+    } catch (error) {
+      const message = formatAiEndpointError(error);
+      setSetupCheck({ state: "error", message });
+      onStatus(message);
+    }
   }
 
   return (
@@ -4234,41 +5018,89 @@ function SettingsPanel({ editor, aiSettings, onAiSettingsChange, onRefresh, onSt
       </div>
       <div className="subsection">
         <h3>AI Endpoint</h3>
-        <div className="ai-settings-grid">
-          <label>
-            Base URL
-            <input value={aiSettings.baseUrl} onChange={(event) => updateAiSetting("baseUrl", event.target.value)} placeholder="https://api.example.com/v1" />
-          </label>
-          <label>
-            API key
-            <input type="password" value={aiSettings.apiKey} onChange={(event) => updateAiSetting("apiKey", event.target.value)} placeholder="Stored only in this creator browser" />
-          </label>
-          <label>
-            Protocol
-            <select value={aiSettings.protocol} onChange={(event) => updateAiSetting("protocol", event.target.value)}>
-              {AI_PROTOCOLS.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
-            </select>
-          </label>
-          <label>
-            Model ID
-            <input value={aiSettings.modelId} onChange={(event) => updateAiSetting("modelId", event.target.value)} placeholder="gpt-4.1, claude-sonnet, local-model..." />
-          </label>
+        <div className="ai-channel-form">
+          <div className="ai-form-row">
+            <label className="ai-field-label">Channel Type</label>
+            <AiProviderDropdown value={normalizedAiSettings.endpointPresetId} onChange={applyEndpointPreset} />
+          </div>
+          <div className="ai-form-row">
+            <label className="ai-field-label" htmlFor="ai-base-url">Base URL</label>
+            <input
+              id="ai-base-url"
+              value={normalizedAiSettings.baseUrl}
+              onChange={(event) => updateEndpointBaseUrl(event.target.value)}
+              placeholder="https://api.example.com/v1"
+              aria-label="Endpoint base URL"
+            />
+          </div>
+          <div className="ai-form-row">
+            <label className="ai-field-label" htmlFor="ai-api-key">API Key</label>
+            <div className="secret-input">
+              <input
+                id="ai-api-key"
+                type={apiKeyVisible ? "text" : "password"}
+                value={normalizedAiSettings.apiKey}
+                onChange={(event) => updateAiSetting("apiKey", event.target.value)}
+                placeholder="Stored only in this creator browser"
+              />
+              <button
+                className={apiKeyVisible ? "secret-input__toggle secret-input__toggle--active" : "secret-input__toggle"}
+                type="button"
+                onClick={() => setApiKeyVisible((visible) => !visible)}
+                aria-label={apiKeyVisible ? "Hide API key" : "Show API key"}
+                title={apiKeyVisible ? "Hide API key" : "Show API key"}
+              >
+                <span className="eye-mark" aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+          <div className="ai-form-row">
+            <label className="ai-field-label">Model</label>
+            <div className="ai-model-control">
+              <AiModelDropdown models={modelPresets} value={normalizedAiSettings.modelId} providerLabel={endpointPreset.label} onChange={applyModelPreset} />
+              <input
+                id="ai-model-id"
+                value={normalizedAiSettings.modelId}
+                onChange={(event) => updateModelId(event.target.value)}
+                placeholder="gpt-5, claude-sonnet-4-20250514, deepseek-chat..."
+                aria-label="Model ID"
+              />
+              <button className="btn models-fetch-btn" type="button" onClick={() => void fetchEndpointModels()}>Fetch /models</button>
+            </div>
+          </div>
+          <div className="ai-form-row ai-form-row--stack">
+            <span className="ai-field-label">Capabilities</span>
+            <div className="capability-grid" aria-label="Model capabilities">
+              {AI_CAPABILITIES.map(([id, label]) => (
+                <button
+                  key={id}
+                  className={normalizedAiSettings.capabilities?.[id] ? "capability-chip capability-chip--active" : "capability-chip"}
+                  type="button"
+                  onClick={() => toggleCapability(id)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
-        <div className="capability-grid" aria-label="Model capabilities">
-          {AI_CAPABILITIES.map(([id, label]) => (
-            <button
-              key={id}
-              className={aiSettings.capabilities?.[id] ? "capability-chip capability-chip--active" : "capability-chip"}
-              type="button"
-              onClick={() => toggleCapability(id)}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        <details className="ai-advanced">
+          <summary>
+            <span className="ai-field-label">Advanced</span>
+            <span>Protocol, route, compatibility, and JSON mode</span>
+          </summary>
+          <div className="ai-advanced-grid">
+            <AiOptionGroup label="Protocol" value={normalizedAiSettings.protocol} options={AI_PROTOCOLS} onChange={(value) => updateAiSetting("protocol", value)} />
+            <AiOptionGroup label="Route mode" value={normalizedAiSettings.routeMode} options={AI_ROUTE_MODES} onChange={(value) => updateAiSetting("routeMode", value)} />
+            <AiOptionGroup label="Compatibility" value={normalizedAiSettings.compatibilityFamily} options={AI_COMPATIBILITY_FAMILIES} onChange={(value) => updateAiSetting("compatibilityFamily", value)} />
+            <AiOptionGroup label="JSON mode" value={normalizedAiSettings.jsonMode} options={AI_JSON_MODES} onChange={(value) => updateAiSetting("jsonMode", value)} />
+          </div>
+        </details>
         <div className="action-row">
-          <button className="btn" type="button" onClick={testEndpoint}>Check setup</button>
-          <span className="muted">{testStatus || "Endpoint settings are used for request planning only in this phase."}</span>
+          <button className="btn btn--primary endpoint-validate-btn" type="button" onClick={() => void testEndpoint()}>Validate endpoint</button>
+          <span className={`endpoint-check endpoint-check--${setupCheck.state}`}>
+            {setupCheck.message || "Configured endpoints are used when drafting AI Assist plans."}
+          </span>
         </div>
       </div>
       <div className="subsection">

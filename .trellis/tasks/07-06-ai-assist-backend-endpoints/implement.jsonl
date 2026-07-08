@@ -1,0 +1,3 @@
+{"file":".trellis/spec/frontend/ai-edit-contracts.md","reason":"Implementation contract for Pipeline, Interface, local API, and Creator AI Assist data flow."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Endpoint config fields cross Creator, Interface, Pipeline, and integration tests."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Protocol aliases, route modes, and preset constants required single-owner handling."}

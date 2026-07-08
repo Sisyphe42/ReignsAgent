@@ -22,6 +22,33 @@ const EFFECT_KEYS = new Set(["tags", "variables", "factions", "activateHooks", "
 const AI_EDIT_SCHEMA_VERSION = 1;
 const AI_EDIT_MODES = new Set(["generate_cards", "repair_diagnostics", "generate_asset", "analyze_asset"]);
 const AI_EDIT_PATCH_OPS = new Set(["addCard", "updateCard", "setChoiceLabel", "setChoiceEffects", "setMetadata", "upsertAsset"]);
+const AI_ENDPOINT_ROUTES = {
+  openai_responses: "/responses",
+  openai_chat: "/chat/completions",
+  openai_completions: "/completions",
+  anthropic_messages: "/messages"
+};
+const AI_ENDPOINT_PROTOCOL_ALIASES = {
+  responses: "openai_responses",
+  messages: "openai_chat",
+  completions: "openai_completions"
+};
+const AI_ENDPOINT_ROUTE_MODES = new Set(["auto", "api_root", "full_url"]);
+const AI_ENDPOINT_SYSTEM_PROMPT = [
+  "You are ReignsAgent Creator AI Assist, a specialist editor for Reigns-like card narratives.",
+  "Return only the requested JSON object with explicit patch proposals; never mutate content outside those patches.",
+  "Preserve the pure player loop: card text plus exactly two player choices with ids left and right."
+].join(" ");
+const AI_ENDPOINT_EDITOR_RULES = [
+  "Work as a professional Reigns-like narrative systems editor, not a chat assistant.",
+  "Keep every player-facing card focused on one tense binary decision with clear left/right consequences.",
+  "Use only author-owned story state: tags, variables, requirements, metadata labels, and default gauge effects.",
+  "Do not introduce built-in RPG-style management, collection, economy, progression, or loadout subsystems.",
+  "Prefer small reviewable patches that preserve existing ids, tone, and story intent unless the creator explicitly asks for a rewrite.",
+  "When repairing diagnostics, prioritize reachable story flow, missing tag or variable producers, stalled runs, ending coverage, and gauge pressure.",
+  "For every addCard patch, include exactly left and right choices and keep effects valid for the supplied ReignsAgent schema.",
+  "Summaries should explain the author-facing design intent and the expected narrative or balance effect."
+];
 
 export function createContentBundle({ cards, metadata = {}, assets = [] }) {
   const normalizedCards = normalizeCards(cards);
@@ -559,6 +586,32 @@ export function buildMediaEditRequest({
   };
 }
 
+function buildAiEndpointValidationRequest({ bundle }) {
+  const context = buildAiContext({
+    bundle,
+    instruction: "Endpoint validation only. Return exactly {\"proposals\":[]} and do not propose edits.",
+    targetCardIds: [],
+    diagnostics: null,
+    constraints: {
+      validationOnly: true,
+      expectedResponse: { proposals: [] }
+    },
+    mode: "generate_cards"
+  });
+
+  return {
+    requestId: createRequestId("ai_endpoint_validation", stableStringify(context)),
+    purpose: "ai_endpoint_validation",
+    prompt: "Validate endpoint compatibility. Return exactly {\"proposals\":[]} with no markdown.",
+    responseFormat: "json",
+    schema: aiEditProposalSchema(),
+    context,
+    metadata: {
+      validationOnly: true
+    }
+  };
+}
+
 export function createAiEditSuggestions({
   bundle,
   mode = "generate_cards",
@@ -590,6 +643,200 @@ export function createAiEditSuggestions({
     request,
     ...(feedback ? { feedback } : {}),
     proposals
+  };
+}
+
+export async function createAiEditSuggestionsFromEndpoint({
+  bundle,
+  mode = "generate_cards",
+  config = {},
+  credentials = {},
+  instruction = "",
+  targetCardId = null,
+  assetId = null,
+  diagnostics = null,
+  fetchImpl = globalThis.fetch
+}) {
+  if (!AI_EDIT_MODES.has(mode)) {
+    throw new PipelineError(`Unknown AI edit mode '${mode}'`, "unknown_ai_mode");
+  }
+  if (typeof fetchImpl !== "function") {
+    throw new PipelineError("AI endpoint execution requires fetch", "endpoint_fetch_unavailable");
+  }
+
+  const normalizedBundle = createContentBundle(bundle);
+  const descriptor = redactAiEndpointConfig(config ?? {});
+  const endpoint = normalizeEndpointValue(descriptor.endpoint);
+  const protocol = normalizeAiEndpointProtocol(descriptor.provider);
+  const routeMode = normalizeAiEndpointRouteMode(descriptor.routeMode);
+  const model = normalizeEndpointValue(descriptor.modelId);
+  if (!endpoint || !model) {
+    throw new PipelineError("AI endpoint execution requires endpoint and modelId", "endpoint_config_required");
+  }
+
+  const targetCardIds = isNonEmptyString(targetCardId) ? [targetCardId] : [];
+  const style = isNonEmptyString(descriptor.style) ? descriptor.style : "editorial card art";
+  const request = mode === "generate_asset" || mode === "analyze_asset"
+    ? buildMediaEditRequest({ bundle: normalizedBundle, mode, instruction, targetCardId, assetId, style, diagnostics })
+    : buildCardEditRequest({ bundle: normalizedBundle, instruction, targetCardIds, diagnostics, constraints: descriptor.constraints ?? {} });
+  const feedback = diagnostics ? createDiagnosticFeedback(diagnostics) : null;
+  const endpointResult = await callAiEditEndpoint({
+    endpoint,
+    protocol,
+    routeMode,
+    model,
+    request,
+    config: descriptor,
+    apiKey: normalizeEndpointValue(credentials?.apiKey),
+    fetchImpl
+  });
+  const proposals = normalizeProviderProposals({
+    bundle: normalizedBundle,
+    mode,
+    protocol,
+    provider: descriptor.provider ?? protocol,
+    response: endpointResult.proposals
+  });
+
+  return {
+    schemaVersion: AI_EDIT_SCHEMA_VERSION,
+    baseFingerprint: request.context.bundle.fingerprint,
+    mode,
+    config: descriptor,
+    request,
+    provider: {
+      protocol,
+      routeMode,
+      endpoint: redactEndpointUrl(endpointResult.url),
+      model
+    },
+    ...(feedback ? { feedback } : {}),
+    proposals
+  };
+}
+
+export async function validateAiEditEndpoint({
+  bundle,
+  config = {},
+  credentials = {},
+  fetchImpl = globalThis.fetch
+}) {
+  if (typeof fetchImpl !== "function") {
+    throw new PipelineError("AI endpoint validation requires fetch", "endpoint_fetch_unavailable");
+  }
+
+  const normalizedBundle = createContentBundle(bundle);
+  const descriptor = redactAiEndpointConfig(config ?? {});
+  const endpoint = normalizeEndpointValue(descriptor.endpoint);
+  const protocol = normalizeAiEndpointProtocol(descriptor.provider);
+  const routeMode = normalizeAiEndpointRouteMode(descriptor.routeMode);
+  const model = normalizeEndpointValue(descriptor.modelId);
+  if (!endpoint || !model) {
+    throw new PipelineError("AI endpoint validation requires endpoint and modelId", "endpoint_config_required");
+  }
+
+  const request = buildAiEndpointValidationRequest({ bundle: normalizedBundle });
+  const endpointResult = await callAiEditEndpoint({
+    endpoint,
+    protocol,
+    routeMode,
+    model,
+    request,
+    config: descriptor,
+    apiKey: normalizeEndpointValue(credentials?.apiKey),
+    fetchImpl
+  });
+  const proposals = endpointResult.proposals.length > 0
+    ? normalizeProviderProposals({
+      bundle: normalizedBundle,
+      mode: "generate_cards",
+      protocol,
+      provider: descriptor.provider ?? protocol,
+      response: endpointResult.proposals
+    })
+    : [];
+
+  return {
+    schemaVersion: AI_EDIT_SCHEMA_VERSION,
+    ok: true,
+    baseFingerprint: request.context.bundle.fingerprint,
+    config: descriptor,
+    request: {
+      requestId: request.requestId,
+      purpose: request.purpose,
+      responseFormat: request.responseFormat,
+      context: {
+        fingerprint: request.context.bundle.fingerprint,
+        cardCount: request.context.bundle.cardCount,
+        assetCount: request.context.bundle.assetCount
+      }
+    },
+    provider: {
+      protocol,
+      routeMode,
+      endpoint: redactEndpointUrl(endpointResult.url),
+      model
+    },
+    proposalCount: proposals.length
+  };
+}
+
+export async function listAiEndpointModels({
+  config = {},
+  credentials = {},
+  fetchImpl = globalThis.fetch
+}) {
+  if (typeof fetchImpl !== "function") {
+    throw new PipelineError("AI endpoint model listing requires fetch", "endpoint_fetch_unavailable");
+  }
+
+  const descriptor = redactAiEndpointConfig(config ?? {});
+  const endpoint = normalizeEndpointValue(descriptor.endpoint);
+  const protocol = normalizeAiEndpointProtocol(descriptor.provider);
+  const routeMode = normalizeAiEndpointRouteMode(descriptor.routeMode);
+  if (!endpoint) {
+    throw new PipelineError("AI endpoint model listing requires endpoint", "endpoint_config_required");
+  }
+
+  const url = resolveAiModelsEndpointUrl(endpoint, routeMode);
+  const headers = {
+    accept: "application/json"
+  };
+  const apiKey = normalizeEndpointValue(credentials?.apiKey);
+  if (apiKey) {
+    if (protocol === "anthropic_messages") {
+      headers["x-api-key"] = apiKey;
+      headers["anthropic-version"] = "2023-06-01";
+    } else {
+      headers.authorization = `Bearer ${apiKey}`;
+    }
+  }
+
+  let response;
+  try {
+    response = await fetchImpl(url, {
+      method: "GET",
+      headers
+    });
+  } catch (error) {
+    throw new PipelineError(`AI endpoint model listing failed: ${error.message}`, "endpoint_network_error");
+  }
+
+  const text = typeof response?.text === "function" ? await response.text() : "";
+  if (!response?.ok) {
+    throw new PipelineError(`AI endpoint model listing failed with status ${response?.status ?? "unknown"}`, "endpoint_http_error");
+  }
+
+  return {
+    schemaVersion: AI_EDIT_SCHEMA_VERSION,
+    ok: true,
+    config: descriptor,
+    provider: {
+      protocol,
+      routeMode,
+      endpoint: redactEndpointUrl(url)
+    },
+    models: parseAiEndpointModelsResponse(text)
   };
 }
 
@@ -637,9 +884,10 @@ export function buildCardGenerationPrompt({ theme, count, constraints = {}, diag
 }
 
 export class PipelineError extends Error {
-  constructor(message) {
+  constructor(message, code = "pipeline_error") {
     super(message);
     this.name = "PipelineError";
+    this.code = code;
   }
 }
 
@@ -1086,6 +1334,436 @@ function extractTextPayload(response) {
   }
 
   throw new PipelineError("generateText must return a string or an object with a text field");
+}
+
+async function callAiEditEndpoint({ endpoint, protocol, routeMode = "auto", model, request, config, apiKey, fetchImpl }) {
+  const url = resolveAiEndpointUrl(endpoint, protocol, routeMode);
+  const wantsStructuredJson = shouldUseStructuredJson(config);
+  const headers = {
+    "content-type": "application/json",
+    accept: "application/json"
+  };
+  if (apiKey) {
+    if (protocol === "anthropic_messages") {
+      headers["x-api-key"] = apiKey;
+      headers["anthropic-version"] = "2023-06-01";
+    } else {
+      headers.authorization = `Bearer ${apiKey}`;
+    }
+  }
+
+  const firstAttempt = await postAiEditEndpoint({
+    fetchImpl,
+    url,
+    headers,
+    body: buildAiEndpointBody({ protocol, model, request, config, includeStructuredJson: wantsStructuredJson })
+  });
+  const result = firstAttempt.ok || !wantsStructuredJson || !isStructuredJsonUnsupportedError(firstAttempt.text)
+    ? firstAttempt
+    : await postAiEditEndpoint({
+      fetchImpl,
+      url,
+      headers,
+      body: buildAiEndpointBody({ protocol, model, request, config, includeStructuredJson: false })
+    });
+
+  if (!result.ok) {
+    const status = result.status ?? "unknown";
+    throw new PipelineError(`AI endpoint request failed with status ${status}`, "endpoint_http_error");
+  }
+
+  return {
+    url,
+    proposals: parseAiEndpointProposalResponse(result.text, protocol)
+  };
+}
+
+async function postAiEditEndpoint({ fetchImpl, url, headers, body }) {
+  let response;
+  try {
+    response = await fetchImpl(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body)
+    });
+  } catch (error) {
+    throw new PipelineError(`AI endpoint request failed: ${error.message}`, "endpoint_network_error");
+  }
+
+  const text = typeof response?.text === "function" ? await response.text() : "";
+  return {
+    ok: Boolean(response?.ok),
+    status: response?.status,
+    text
+  };
+}
+
+function resolveAiEndpointUrl(endpoint, protocol, routeMode = "auto") {
+  const route = AI_ENDPOINT_ROUTES[protocol];
+  if (!route) {
+    throw new PipelineError(`Unsupported AI endpoint protocol '${protocol}'`, "endpoint_protocol_unsupported");
+  }
+  const trimmed = String(endpoint ?? "").trim().replace(/\/+$/, "");
+  if (!trimmed) {
+    throw new PipelineError("AI endpoint is required", "endpoint_config_required");
+  }
+  const normalizedRouteMode = normalizeAiEndpointRouteMode(routeMode);
+  if (normalizedRouteMode === "full_url") {
+    return trimmed;
+  }
+  const normalizedRoute = route.replace(/^\/+/, "");
+  if (
+    normalizedRouteMode === "auto" &&
+    Object.values(AI_ENDPOINT_ROUTES).some((candidate) => {
+      const normalizedCandidate = candidate.replace(/^\/+/, "").toLowerCase();
+      return trimmed.toLowerCase().endsWith(`/${normalizedCandidate}`);
+    })
+  ) {
+    return trimmed;
+  }
+  return `${trimmed}/${normalizedRoute}`;
+}
+
+function resolveAiModelsEndpointUrl(endpoint, routeMode = "auto") {
+  const trimmed = String(endpoint ?? "").trim().replace(/\/+$/, "");
+  if (!trimmed) {
+    throw new PipelineError("AI endpoint is required", "endpoint_config_required");
+  }
+  if (trimmed.toLowerCase().endsWith("/models")) {
+    return trimmed;
+  }
+
+  const normalizedRouteMode = normalizeAiEndpointRouteMode(routeMode);
+  let root = trimmed;
+  if (normalizedRouteMode !== "api_root") {
+    for (const route of Object.values(AI_ENDPOINT_ROUTES)) {
+      const suffix = `/${route.replace(/^\/+/, "")}`.toLowerCase();
+      if (root.toLowerCase().endsWith(suffix)) {
+        root = root.slice(0, -suffix.length);
+        break;
+      }
+    }
+  }
+  return `${root.replace(/\/+$/, "")}/models`;
+}
+
+function buildAiEndpointBody({ protocol, model, request, config, includeStructuredJson = shouldUseStructuredJson(config) }) {
+  const prompt = buildAiEndpointPrompt(request);
+
+  if (protocol === "openai_responses") {
+    return {
+      model,
+      input: prompt,
+      ...(includeStructuredJson ? { text: { format: { type: "json_object" } } } : {}),
+      temperature: 0
+    };
+  }
+
+  if (protocol === "openai_chat") {
+    return {
+      model,
+      messages: [
+        {
+          role: "system",
+          content: AI_ENDPOINT_SYSTEM_PROMPT
+        },
+        {
+          role: "user",
+          content: prompt
+        }
+      ],
+      ...(includeStructuredJson ? { response_format: { type: "json_object" } } : {}),
+      temperature: 0
+    };
+  }
+
+  if (protocol === "openai_completions") {
+    return {
+      model,
+      prompt,
+      temperature: 0
+    };
+  }
+
+  if (protocol === "anthropic_messages") {
+    return {
+      model,
+      max_tokens: 4096,
+      system: AI_ENDPOINT_SYSTEM_PROMPT,
+      messages: [{ role: "user", content: prompt }],
+      temperature: 0
+    };
+  }
+
+  throw new PipelineError(`Unsupported AI endpoint protocol '${protocol}'`, "endpoint_protocol_unsupported");
+}
+
+function shouldUseStructuredJson(config = {}) {
+  if (config.jsonMode === "off") return false;
+  if (config.jsonMode === "force") return true;
+  return Array.isArray(config.capabilities)
+    ? config.capabilities.includes("structuredJson")
+    : true;
+}
+
+function isStructuredJsonUnsupportedError(text) {
+  const lower = String(text ?? "").toLowerCase();
+  return (
+    lower.includes("response_format") ||
+    lower.includes("json_object") ||
+    lower.includes("json mode") ||
+    lower.includes("structured json")
+  ) && (
+    lower.includes("unsupported") ||
+    lower.includes("not supported") ||
+    lower.includes("unknown parameter") ||
+    lower.includes("unrecognized") ||
+    lower.includes("invalid")
+  );
+}
+
+function buildAiEndpointPrompt(request) {
+  if (request?.purpose === "ai_endpoint_validation") {
+    return [
+      "Return only valid JSON exactly in this top-level shape:",
+      "{\"proposals\":[]}",
+      "This is a connectivity and protocol validation request. Do not propose edits, patches, markdown, commentary, or external file references.",
+      "Request:",
+      JSON.stringify(request, null, 2)
+    ].join("\n");
+  }
+
+  return [
+    "Return only valid JSON in this exact top-level shape:",
+    "{\"proposals\":[{\"id\":\"proposal-id\",\"title\":\"Title\",\"summary\":\"Summary\",\"source\":{},\"target\":{},\"patches\":[]}]}",
+    "Professional ReignsAgent editing rules:",
+    ...AI_ENDPOINT_EDITOR_RULES.map((rule) => `- ${rule}`),
+    "Use only patch operations declared in the supplied ReignsAgent context.",
+    "Do not include markdown, commentary, external file references, or binary data.",
+    "Request:",
+    JSON.stringify(request, null, 2)
+  ].join("\n");
+}
+
+function parseAiEndpointModelsResponse(text) {
+  let payload;
+  try {
+    payload = text ? JSON.parse(text) : {};
+  } catch (error) {
+    throw new PipelineError(`AI endpoint models response was not valid JSON: ${error.message}`, "endpoint_parse_error");
+  }
+
+  const rawModels = Array.isArray(payload?.data)
+    ? payload.data
+    : Array.isArray(payload?.models)
+      ? payload.models
+      : Array.isArray(payload)
+        ? payload
+        : null;
+  if (!rawModels) {
+    throw new PipelineError("AI endpoint models response must include data or models array", "endpoint_parse_error");
+  }
+
+  const seen = new Set();
+  return rawModels.flatMap((model) => {
+    const id = typeof model === "string"
+      ? model.trim()
+      : normalizeEndpointValue(model?.id ?? model?.name ?? model?.model);
+    if (!id || seen.has(id)) return [];
+    seen.add(id);
+    const label = typeof model === "object" && model
+      ? normalizeEndpointValue(model.label ?? model.display_name ?? model.name) ?? id
+      : id;
+    return [{ id, label }];
+  });
+}
+
+function parseAiEndpointProposalResponse(text, protocol) {
+  const raw = String(text ?? "").trim();
+  if (!raw) {
+    throw new PipelineError("AI endpoint returned an empty response", "endpoint_empty_response");
+  }
+  const parsed = parsePossiblyFencedJson(raw, "AI endpoint response");
+  const proposalDocument = findProposalDocument(parsed) ?? findProposalDocumentFromText(extractProviderText(parsed, protocol));
+  if (!proposalDocument) {
+    throw new PipelineError("AI endpoint response must contain a proposals array", "endpoint_invalid_response");
+  }
+  return proposalDocument.proposals;
+}
+
+function findProposalDocument(value) {
+  if (isPlainRecord(value) && Array.isArray(value.proposals)) {
+    return value;
+  }
+  return null;
+}
+
+function findProposalDocumentFromText(text) {
+  if (!text) {
+    return null;
+  }
+  return findProposalDocument(parsePossiblyFencedJson(text, "AI endpoint text payload"));
+}
+
+function extractProviderText(value, protocol) {
+  if (typeof value === "string") {
+    return value;
+  }
+  if (!isPlainRecord(value)) {
+    return "";
+  }
+  if (typeof value.output_text === "string") {
+    return value.output_text;
+  }
+  if (typeof value.text === "string") {
+    return value.text;
+  }
+  if (Array.isArray(value.output)) {
+    const parts = [];
+    for (const output of value.output) {
+      if (!isPlainRecord(output) || !Array.isArray(output.content)) continue;
+      for (const content of output.content) {
+        if (typeof content?.text === "string") parts.push(content.text);
+      }
+    }
+    if (parts.length > 0) return parts.join("\n");
+  }
+  const choice = Array.isArray(value.choices) ? value.choices[0] : null;
+  if (protocol === "openai_chat" && typeof choice?.message?.content === "string") {
+    return choice.message.content;
+  }
+  if (protocol === "openai_completions" && typeof choice?.text === "string") {
+    return choice.text;
+  }
+  if (protocol === "anthropic_messages" && Array.isArray(value.content)) {
+    const parts = value.content
+      .map((content) => typeof content?.text === "string" ? content.text : "")
+      .filter(Boolean);
+    if (parts.length > 0) return parts.join("\n");
+  }
+  if (typeof choice?.message?.content === "string") {
+    return choice.message.content;
+  }
+  if (typeof choice?.text === "string") {
+    return choice.text;
+  }
+  return "";
+}
+
+function parsePossiblyFencedJson(source, context) {
+  const raw = String(source ?? "").trim();
+  try {
+    return JSON.parse(raw);
+  } catch (error) {
+    const text = extractJsonPayload(raw);
+    try {
+      return JSON.parse(text);
+    } catch {
+      // Try the escaped-quote recovery below before reporting the original parse.
+    }
+    if (text.includes("\\\"")) {
+      try {
+        return JSON.parse(text.replace(/\\"/g, "\""));
+      } catch {
+        // Fall through to the original parse error; it points at the raw provider text.
+      }
+    }
+    throw new PipelineError(`${context} contains invalid JSON: ${error.message}`, "endpoint_parse_error");
+  }
+}
+
+function normalizeProviderProposals({ bundle, mode, protocol, provider, response }) {
+  if (!Array.isArray(response)) {
+    throw new PipelineError("AI endpoint proposals must be an array", "endpoint_invalid_response");
+  }
+
+  return response.map((proposal) => {
+    if (!isPlainRecord(proposal)) {
+      throw new PipelineError("AI endpoint proposal must be an object", "endpoint_invalid_response");
+    }
+    if (!isNonEmptyString(proposal.id)) {
+      throw new PipelineError("AI endpoint proposal requires a non-empty id", "endpoint_invalid_response");
+    }
+    if (!isNonEmptyString(proposal.title)) {
+      throw new PipelineError(`AI endpoint proposal '${proposal.id}' requires a title`, "endpoint_invalid_response");
+    }
+    if (!Array.isArray(proposal.patches)) {
+      throw new PipelineError(`AI endpoint proposal '${proposal.id}' requires patches`, "endpoint_invalid_response");
+    }
+
+    const normalized = {
+      id: proposal.id,
+      title: proposal.title,
+      summary: typeof proposal.summary === "string" ? proposal.summary : "Provider proposal.",
+      source: isPlainRecord(proposal.source)
+        ? cloneJsonValue(proposal.source, `AI endpoint proposal '${proposal.id}' source`)
+        : { mode, provider, protocol },
+      target: isPlainRecord(proposal.target)
+        ? cloneJsonValue(proposal.target, `AI endpoint proposal '${proposal.id}' target`)
+        : {},
+      patches: cloneJsonValue(proposal.patches, `AI endpoint proposal '${proposal.id}' patches`),
+      ...(proposal.preview !== undefined ? { preview: cloneJsonValue(proposal.preview, `AI endpoint proposal '${proposal.id}' preview`) } : {})
+    };
+
+    applyAiEditPatches({ bundle, patches: normalized.patches });
+    return normalized;
+  });
+}
+
+function redactEndpointUrl(url) {
+  try {
+    const parsed = new URL(url);
+    parsed.username = "";
+    parsed.password = "";
+    for (const key of [...parsed.searchParams.keys()]) {
+      if (/key|token|secret|credential/i.test(key)) {
+        parsed.searchParams.set(key, "[redacted]");
+      }
+    }
+    return parsed.toString();
+  } catch {
+    return String(url ?? "").replace(/([?&][^=]*(?:key|token|secret|credential)[^=]*=)[^&]+/gi, "$1[redacted]");
+  }
+}
+
+function redactAiEndpointConfig(config) {
+  const descriptor = cloneJsonValue(config ?? {}, "AI endpoint config");
+  if (isPlainRecord(descriptor)) {
+    delete descriptor.apiKey;
+    delete descriptor.credentials;
+    delete descriptor.secret;
+  }
+  return descriptor;
+}
+
+function normalizeEndpointValue(value) {
+  if (typeof value !== "string") return null;
+  let normalized = value.trim();
+  if (normalized.endsWith(";")) {
+    normalized = normalized.slice(0, -1).trim();
+  }
+  normalized = normalized.replace(/^['"]|['"]$/g, "").trim();
+  return normalized ? normalized : null;
+}
+
+function normalizeAiEndpointProtocol(provider) {
+  const value = normalizeEndpointValue(provider) ?? "openai_chat";
+  if (value === "stub" || value === "local-stub") {
+    return "openai_chat";
+  }
+  const canonical = AI_ENDPOINT_PROTOCOL_ALIASES[value] ?? value;
+  if (!AI_ENDPOINT_ROUTES[canonical]) {
+    throw new PipelineError(`Unsupported AI endpoint protocol '${canonical}'`, "endpoint_protocol_unsupported");
+  }
+  return canonical;
+}
+
+function normalizeAiEndpointRouteMode(value) {
+  const normalized = normalizeEndpointValue(value) ?? "auto";
+  if (!AI_ENDPOINT_ROUTE_MODES.has(normalized)) {
+    throw new PipelineError(`Unsupported AI endpoint route mode '${normalized}'`, "endpoint_route_mode_unsupported");
+  }
+  return normalized;
 }
 
 function addAction(actions, seenActions, action) {

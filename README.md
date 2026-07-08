@@ -31,7 +31,7 @@ npm run content:feedback -- review-report.json
 - **Content** — author cards through a structured card desk: card text, left/right labels, author-readable appearance and choice-outcome summaries, default gauge deltas, tag/variable effects, validation messages, and focused repair entry points. Advanced JSON/state editing should remain available without being the default creator path.
 - **Story** — inspect and edit the narrative structure as a graph: card reachability, L/R transition edges, semantic tag labels, drag-to-connect wiring, explicit disconnect controls, reviewer heat, issue navigation with repair guidance, and chapter/theme/arc grouping.
 - **Review** — run headless narrative QA. Diagnostics include default gauge pressure, graph/coverage warnings, and `metadata.story.groups` coverage for chapters, themes, arcs, and endings instead of treating review as numeric balance only.
-- **AI Assist** — configure user-supplied AI endpoints and use context-rich draft actions for card writing, latest-review repair, story editing, visual generation request previews, and visual analysis request previews. Settings should stay lightweight: base URL, API key, API protocol (`completions`, `responses`, or `messages`), model id, and model capability toggles. AI output is previewed as explicit patch proposals before applying changes through the normal editor validation and undo/draft flow.
+- **AI Assist** — configure user-supplied AI endpoints and use context-rich draft actions for card writing, latest-review repair, story editing, visual generation request previews, and visual analysis request previews. Settings follow a NewAPI-style channel setup: provider channel type with official/brand logo, API key with show/hide control, editable model presets/model id, optional `/models` fetch, editable base URL, and capability toggles, with protocol and route compatibility in Advanced. Validate performs a real backend/provider request without mutating the editor. Text endpoint output is validated as explicit patch proposals before applying changes through the normal editor validation and undo/draft flow.
 - **Preview** — Reigns-style swipe over the headless core via keyboard (← → / A D), pointer drag, touch, or buttons. The end-of-run summary shows turns survived and the losing faction; "Play again" restarts.
 - **Build** — assemble and export a self-contained deployable `.game.json`.
 
@@ -39,7 +39,34 @@ The workbench URL carries panel state (`/workbench/content`) and optional skin s
 
 Story progression remains data-driven. Authors should express narrative evolution through card `requirements`, choice `effects.tags`, choice `effects.variables`, and optional metadata labels. Card requirements can combine tag gates, exact variable gates, and default gauge thresholds through `requirements.factions` (`gauge0`, `gauge1`, `gauge2`, `gauge3` only, with `min`/`max`/`equals`). The Story workspace reads lightweight `metadata.story.groups` entries for chapters/themes/arcs/endings as an authoring organization layer only; these groups filter and explain the graph without changing core scheduling. Presentation metadata may use `metadata.presentation.gauges` to rename, describe, or hide the default four gauge displays without adding new player stats. Legacy `faith`/`people`/`military`/`treasury` keys are accepted on import and normalized to neutral gauge slots.
 
-AI Assist is a creator-only workflow. It may prepare requests for user-configured text, image, or vision endpoints and may show polished loading, progress, retry, and Dev Mode diagnostic states in the dashboard. It must not put API keys, provider SDKs, AI request code, or generated-edit tooling into the deployable player. Optional provider presets, model-list fetch, multi-profile management, MCP, and skill/tool integrations are later developer-mode conveniences rather than required first-pass authoring UX.
+AI Assist is a creator-only workflow. The local creator backend can execute user-configured text endpoints for canonical `openai_chat`, `openai_responses`, and `openai_completions` protocols while keeping legacy `messages`, `responses`, and `completions` as accepted aliases. Generic, unified base URI, and SenseNova presets default to OpenAI-compatible Chat Completions; route mode can auto-detect full protocol URLs or force API-root/full-URL behavior. API keys are passed transiently for the active local request and are not stored or returned in validation results or plans. AI Assist must not put API keys, provider SDKs, AI request code, or generated-edit tooling into the deployable player. Endpoint/model presets are frontend-owned convenience data, not backend provider profiles.
+
+```mermaid
+flowchart LR
+  creator["Creator Web UI<br/>settings, prompt, proposal preview"]
+  localApi["Local Creator API<br/>/api/ai/edit/*"]
+  interface["Interface Package<br/>editor snapshot, config redaction, stale apply guard"]
+  pipeline["Pipeline Package<br/>AI context, endpoint protocol, JSON parsing, patch prevalidation"]
+  provider["User Endpoint<br/>OpenAI-compatible responses/chat/completions"]
+  reviewer["Reviewer Package<br/>headless diagnostics JSON"]
+  core["Core Package<br/>headless rules and validation"]
+  player["Deployable Player<br/>core-only swipe runtime"]
+
+  creator -->|"transient credentials.apiKey only"| localApi
+  localApi --> interface
+  interface -->|"current content bundle + diagnostics"| pipeline
+  reviewer -->|"diagnostic report for repair context"| interface
+  pipeline -->|"redacted fetch, no SDK"| provider
+  provider -->|"{ proposals: [...] }"| pipeline
+  pipeline -->|"validated plan, no mutation"| interface
+  interface -->|"explicit selected patches only"| localApi
+  localApi --> creator
+  interface -->|"apply after baseFingerprint check"| core
+  core -->|"validated bundle"| interface
+  core --> player
+
+  provider -. no provider calls from protected modules .-> player
+```
 
 `npm run build:game -- <bundle.json> <out.dir>` stitches a deployable player (`player.html` + `player-runtime.js`) that imports only the headless core — no pipeline, reviewer, or dashboard code ships to players.
 

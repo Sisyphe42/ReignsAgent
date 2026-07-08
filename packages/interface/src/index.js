@@ -2,6 +2,9 @@ import { FACTIONS, createRuntime, normalizeCards, normalizeFactionKey, restoreSt
 import {
   applyAiEditPatches,
   createAiEditSuggestions,
+  createAiEditSuggestionsFromEndpoint,
+  listAiEndpointModels,
+  validateAiEditEndpoint,
   buildCardGenerationRequest,
   createContentBundle,
   createDiagnosticFeedback,
@@ -28,9 +31,10 @@ const PLAYER_CHOICE_IDS = new Set(["left", "right"]);
  */
 
 export class InterfaceError extends Error {
-  constructor(message) {
+  constructor(message, code = "interface_error") {
     super(message);
     this.name = "InterfaceError";
+    this.code = code;
   }
 }
 
@@ -630,7 +634,17 @@ export function createConnectorConfig(config) {
     cardCount,
     style,
     apiKeyRef: isNonEmptyString(config.apiKeyRef) ? config.apiKeyRef : null,
-    endpoint: isNonEmptyString(config.endpoint) ? config.endpoint : null
+    endpoint: isNonEmptyString(config.endpoint) ? config.endpoint : null,
+    modelId: isNonEmptyString(config.modelId) ? config.modelId : null,
+    endpointPresetId: isNonEmptyString(config.endpointPresetId) ? config.endpointPresetId : null,
+    endpointIconKey: isNonEmptyString(config.endpointIconKey) ? config.endpointIconKey : null,
+    modelPresetId: isNonEmptyString(config.modelPresetId) ? config.modelPresetId : null,
+    compatibilityFamily: isNonEmptyString(config.compatibilityFamily) ? config.compatibilityFamily : null,
+    routeMode: isNonEmptyString(config.routeMode) ? config.routeMode : null,
+    jsonMode: isNonEmptyString(config.jsonMode) ? config.jsonMode : null,
+    capabilities: Array.isArray(config.capabilities)
+      ? config.capabilities.filter((capability) => isNonEmptyString(capability))
+      : []
   };
 
   return descriptor;
@@ -655,16 +669,124 @@ export function buildGenerationPlan({ config, diagnostics = null }) {
   };
 }
 
+function normalizeAiEditConnectorConfig(config) {
+  const source = config && typeof config === "object" && !Array.isArray(config) ? config : {};
+  const descriptor = cloneJsonSafe(source, "AI edit config");
+  delete descriptor.apiKey;
+  delete descriptor.credentials;
+  return {
+    ...descriptor,
+    provider: isNonEmptyString(descriptor.provider) ? descriptor.provider : "stub",
+    endpoint: isNonEmptyString(descriptor.endpoint) ? descriptor.endpoint : null,
+    modelId: isNonEmptyString(descriptor.modelId) ? descriptor.modelId : null,
+    apiKeyRef: isNonEmptyString(descriptor.apiKeyRef) ? descriptor.apiKeyRef : null,
+    endpointPresetId: isNonEmptyString(descriptor.endpointPresetId) ? descriptor.endpointPresetId : null,
+    endpointIconKey: isNonEmptyString(descriptor.endpointIconKey) ? descriptor.endpointIconKey : null,
+    modelPresetId: isNonEmptyString(descriptor.modelPresetId) ? descriptor.modelPresetId : null,
+    compatibilityFamily: isNonEmptyString(descriptor.compatibilityFamily) ? descriptor.compatibilityFamily : null,
+    routeMode: isNonEmptyString(descriptor.routeMode) ? descriptor.routeMode : null,
+    jsonMode: isNonEmptyString(descriptor.jsonMode) ? descriptor.jsonMode : null,
+    capabilities: Array.isArray(descriptor.capabilities)
+      ? descriptor.capabilities.filter((capability) => isNonEmptyString(capability))
+      : []
+  };
+}
+
+function shouldUseAiEndpoint(config) {
+  return (
+    isNonEmptyString(config.endpoint) &&
+    isNonEmptyString(config.modelId) &&
+    config.provider !== "stub" &&
+    config.provider !== "local-stub"
+  );
+}
+
 export function buildAiEditPlan({ editor, config = {}, mode = "generate_cards", instruction = "", targetCardId = null, assetId = null, diagnostics = null }) {
   const bundle = editor?.toBundle ? editor.toBundle() : createContentBundle(editor ?? {});
+  const descriptor = normalizeAiEditConnectorConfig(config);
   return createAiEditSuggestions({
     bundle,
     mode,
-    config,
+    config: descriptor,
     instruction,
     targetCardId,
     assetId,
     diagnostics
+  });
+}
+
+export async function buildAiEditPlanAsync({
+  editor,
+  config = {},
+  credentials = {},
+  mode = "generate_cards",
+  instruction = "",
+  targetCardId = null,
+  assetId = null,
+  diagnostics = null,
+  fetchImpl = globalThis.fetch
+}) {
+  const bundle = editor?.toBundle ? editor.toBundle() : createContentBundle(editor ?? {});
+  const descriptor = normalizeAiEditConnectorConfig(config);
+  if (!shouldUseAiEndpoint(descriptor)) {
+    return createAiEditSuggestions({
+      bundle,
+      mode,
+      config: descriptor,
+      instruction,
+      targetCardId,
+      assetId,
+      diagnostics
+    });
+  }
+
+  return createAiEditSuggestionsFromEndpoint({
+    bundle,
+    mode,
+    config: descriptor,
+    credentials,
+    instruction,
+    targetCardId,
+    assetId,
+    diagnostics,
+    fetchImpl
+  });
+}
+
+export async function validateAiEditEndpointConfig({
+  editor,
+  config = {},
+  credentials = {},
+  fetchImpl = globalThis.fetch
+}) {
+  const bundle = editor?.toBundle ? editor.toBundle() : createContentBundle(editor ?? {});
+  const descriptor = normalizeAiEditConnectorConfig(config);
+  if (!shouldUseAiEndpoint(descriptor)) {
+    throw new InterfaceError("AI endpoint validation requires a configured endpoint and model");
+  }
+
+  return validateAiEditEndpoint({
+    bundle,
+    config: descriptor,
+    credentials,
+    fetchImpl
+  });
+}
+
+export async function listAiEditEndpointModels({
+  config = {},
+  credentials = {},
+  fetchImpl = globalThis.fetch
+}) {
+  const descriptor = normalizeAiEditConnectorConfig(config);
+  if (!descriptor.endpoint) {
+    throw new InterfaceError("AI endpoint model listing requires a configured endpoint");
+  }
+
+  return listAiEndpointModels({
+    config: descriptor,
+    credentials,
+    fetchImpl
   });
 }
 

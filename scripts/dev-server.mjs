@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 
 import {
   applyAiEditPlan,
-  buildAiEditPlan,
+  buildAiEditPlanAsync,
   buildGenerationPlan,
   createCardEditor,
   createConnectorConfig,
@@ -14,6 +14,7 @@ import {
   deriveStoryGroups,
   deriveTagCatalog,
   getCardGraph,
+  listAiEditEndpointModels,
   loadEditorFromContent,
   prepareGameBuild,
   projectFactionGauges,
@@ -21,6 +22,7 @@ import {
   serializeBuild,
   summarizeDiagnostics,
   summarizeFeedback,
+  validateAiEditEndpointConfig,
   validatePlayerCards
 } from "../packages/interface/src/index.js";
 
@@ -75,7 +77,7 @@ const server = createServer(async (req, res) => {
     res.end(JSON.stringify({ error: { message: `Not found: ${path}` } }));
   } catch (error) {
     res.writeHead(500, { "content-type": "application/json" });
-    res.end(JSON.stringify({ error: { name: error.name, message: error.message } }));
+    res.end(JSON.stringify({ error: { name: error.name, message: error.message, code: error.code ?? "internal_error" } }));
   }
 });
 
@@ -222,9 +224,10 @@ async function handleApi(req, res, url) {
         }
       });
     }
-    const plan = buildAiEditPlan({
+    const plan = await buildAiEditPlanAsync({
       editor: store.editor,
       config: body?.config ?? {},
+      credentials: body?.credentials ?? {},
       mode,
       instruction: body?.instruction ?? "",
       targetCardId: body?.targetCardId ?? null,
@@ -232,6 +235,23 @@ async function handleApi(req, res, url) {
       diagnostics
     });
     return sendJson(res, plan);
+  }
+
+  if (path === "/api/ai/edit/validate" && req.method === "POST") {
+    const result = await validateAiEditEndpointConfig({
+      editor: store.editor,
+      config: body?.config ?? {},
+      credentials: body?.credentials ?? {}
+    });
+    return sendJson(res, result);
+  }
+
+  if (path === "/api/ai/edit/models" && req.method === "POST") {
+    const result = await listAiEditEndpointModels({
+      config: body?.config ?? {},
+      credentials: body?.credentials ?? {}
+    });
+    return sendJson(res, result);
   }
 
   if (path === "/api/ai/edit/apply" && req.method === "POST") {

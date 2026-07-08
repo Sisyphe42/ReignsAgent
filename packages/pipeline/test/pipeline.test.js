@@ -16,14 +16,17 @@ import {
   buildMediaEditRequest,
   createContentBundle,
   createAiEditSuggestions,
+  createAiEditSuggestionsFromEndpoint,
   createDiagnosticFeedback,
   generateAssetDrafts,
   generateCardDrafts,
+  listAiEndpointModels,
   parseContentJson,
   parseCardsCsv,
   parseCardsJson,
   stringifyContentJson,
   stringifyCardsCsv,
+  validateAiEditEndpoint,
   validateContentBundle,
   validateCardSet,
   writeCardsCsv,
@@ -362,6 +365,287 @@ describe("ReignsAgent pipeline", () => {
     assert.equal(generateRequest.context.selection.cards[0].id, "opening");
     assert.equal(analyzePlan.proposals[0].patches.length, 0);
     assert.equal(assetPlan.proposals[0].patches[0].op, "upsertAsset");
+  });
+
+  it("builds AI edit proposals from a responses endpoint without echoing secrets", async () => {
+    const calls = [];
+    const bundle = createContentBundle({ cards: binaryCards(), metadata: { title: "Court Test" } });
+    const plan = await createAiEditSuggestionsFromEndpoint({
+      bundle,
+      mode: "generate_cards",
+      config: {
+        provider: "responses",
+        endpoint: "http://endpoint.test/v1",
+        modelId: "draft-model",
+        capabilities: ["structuredJson"],
+        apiKeyRef: "browser-local",
+        apiKey: "must-not-return"
+      },
+      credentials: { apiKey: "secret-key" },
+      instruction: "Rename the first choice.",
+      fetchImpl: async (url, options) => {
+        calls.push({ url, options, body: JSON.parse(options.body) });
+        return {
+          ok: true,
+          status: 200,
+          text: async () => JSON.stringify({
+            output: [{
+              content: [{
+                text: "```json\n{\"proposals\":[{\"id\":\"rename-left\",\"title\":\"Rename left\",\"summary\":\"Tightens the label.\",\"patches\":[{\"op\":\"setChoiceLabel\",\"cardId\":\"opening\",\"choiceId\":\"left\",\"label\":\"Listen\"}]}]}\n```"
+              }]
+            }]
+          })
+        };
+      }
+    });
+
+    assert.equal(calls[0].url, "http://endpoint.test/v1/responses");
+    assert.equal(calls[0].options.headers.authorization, "Bearer secret-key");
+    assert.equal(calls[0].body.model, "draft-model");
+    assert.equal(calls[0].body.text.format.type, "json_object");
+    assert.match(calls[0].body.input, /Professional ReignsAgent editing rules/);
+    assert.match(calls[0].body.input, /one tense binary decision/);
+    assert.match(calls[0].body.input, /Do not introduce built-in RPG-style management/);
+    assert.equal(plan.proposals[0].patches[0].label, "Listen");
+    assert.equal(plan.config.apiKey, undefined);
+    assert.equal(JSON.stringify(plan).includes("secret-key"), false);
+    assert.equal(JSON.stringify(plan).includes("must-not-return"), false);
+  });
+
+  it("validates AI edit endpoints through the real protocol request path", async () => {
+    const calls = [];
+    const bundle = createContentBundle({ cards: binaryCards(), metadata: { title: "Court Test" } });
+    const result = await validateAiEditEndpoint({
+      bundle,
+      config: {
+        provider: "openai_chat",
+        endpoint: "'http://endpoint.test/v1';",
+        modelId: "chat-model",
+        capabilities: ["structuredJson"],
+        apiKeyRef: "browser-local",
+        apiKey: "must-not-return"
+      },
+      credentials: { apiKey: "'secret-key';" },
+      fetchImpl: async (url, options) => {
+        calls.push({ url, options, body: JSON.parse(options.body) });
+        return {
+          ok: true,
+          status: 200,
+          text: async () => JSON.stringify({
+            choices: [{
+              message: {
+                content: JSON.stringify({ proposals: [] })
+              }
+            }]
+          })
+        };
+      }
+    });
+
+    assert.equal(calls[0].url, "http://endpoint.test/v1/chat/completions");
+    assert.equal(calls[0].options.headers.authorization, "Bearer secret-key");
+    assert.equal(calls[0].body.model, "chat-model");
+    assert.equal(calls[0].body.response_format.type, "json_object");
+    assert.match(calls[0].body.messages[1].content, /connectivity and protocol validation request/);
+    assert.equal(result.ok, true);
+    assert.equal(result.proposalCount, 0);
+    assert.equal(result.provider.endpoint, "http://endpoint.test/v1/chat/completions");
+    assert.equal(result.config.apiKey, undefined);
+    assert.equal(JSON.stringify(result).includes("secret-key"), false);
+    assert.equal(JSON.stringify(result).includes("must-not-return"), false);
+  });
+
+  it("lists AI endpoint models through the redacted metadata path", async () => {
+    const calls = [];
+    const result = await listAiEndpointModels({
+      config: {
+        provider: "openai_chat",
+        endpoint: "http://endpoint.test/v1/chat/completions",
+        routeMode: "auto",
+        apiKey: "must-not-return"
+      },
+      credentials: { apiKey: "secret-key" },
+      fetchImpl: async (url, options) => {
+        calls.push({ url, options });
+        return {
+          ok: true,
+          status: 200,
+          text: async () => JSON.stringify({
+            data: [
+              { id: "chat-model", object: "model" },
+              { id: "vision-model", display_name: "Vision Model" },
+              { id: "chat-model" }
+            ]
+          })
+        };
+      }
+    });
+
+    assert.equal(calls[0].url, "http://endpoint.test/v1/models");
+    assert.equal(calls[0].options.method, "GET");
+    assert.equal(calls[0].options.headers.authorization, "Bearer secret-key");
+    assert.deepEqual(result.models, [
+      { id: "chat-model", label: "chat-model" },
+      { id: "vision-model", label: "Vision Model" }
+    ]);
+    assert.equal(result.provider.endpoint, "http://endpoint.test/v1/models");
+    assert.equal(result.config.apiKey, undefined);
+    assert.equal(JSON.stringify(result).includes("secret-key"), false);
+    assert.equal(JSON.stringify(result).includes("must-not-return"), false);
+  });
+
+  it("formats messages and completions endpoint requests", async () => {
+    const bundle = createContentBundle({ cards: binaryCards() });
+    const calls = [];
+    const makeFetch = (payload) => async (url, options) => {
+      calls.push({ url, body: JSON.parse(options.body) });
+      return { ok: true, status: 200, text: async () => JSON.stringify(payload) };
+    };
+
+    const chatPlan = await createAiEditSuggestionsFromEndpoint({
+      bundle,
+      config: { provider: "messages", endpoint: "http://endpoint.test/openai/chat/completions", modelId: "chat-model" },
+      fetchImpl: makeFetch({
+        choices: [{
+          message: {
+            content: JSON.stringify({
+              proposals: [{ id: "chat-label", title: "Chat label", patches: [{ op: "setChoiceLabel", cardId: "opening", choiceId: "left", label: "Hear" }] }]
+            })
+          }
+        }]
+      })
+    });
+    const completionPlan = await createAiEditSuggestionsFromEndpoint({
+      bundle,
+      config: { provider: "completions", endpoint: "http://endpoint.test/v1", modelId: "completion-model" },
+      fetchImpl: makeFetch({
+        choices: [{
+          text: JSON.stringify({
+            proposals: [{ id: "completion-label", title: "Completion label", patches: [{ op: "setChoiceLabel", cardId: "opening", choiceId: "right", label: "Wait" }] }]
+          })
+        }]
+      })
+    });
+
+    assert.equal(calls[0].url, "http://endpoint.test/openai/chat/completions");
+    assert.equal(calls[0].body.messages[0].role, "system");
+    assert.match(calls[0].body.messages[0].content, /specialist editor for Reigns-like card narratives/);
+    assert.match(calls[0].body.messages[1].content, /Professional ReignsAgent editing rules/);
+    assert.equal(calls[0].body.response_format.type, "json_object");
+    assert.equal(chatPlan.proposals[0].patches[0].label, "Hear");
+    assert.equal(calls[1].url, "http://endpoint.test/v1/completions");
+    assert.match(calls[1].body.prompt, /Return only valid JSON/);
+    assert.match(calls[1].body.prompt, /When repairing diagnostics, prioritize reachable story flow/);
+    assert.equal(completionPlan.proposals[0].patches[0].label, "Wait");
+  });
+
+  it("normalizes endpoint protocol aliases and route modes", async () => {
+    const bundle = createContentBundle({ cards: binaryCards() });
+    const calls = [];
+    const fetchImpl = async (url, options) => {
+      calls.push({ url, body: JSON.parse(options.body) });
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({
+          choices: [{
+            message: {
+              content: JSON.stringify({
+                proposals: [{ id: `proposal-${calls.length}`, title: "Route", patches: [{ op: "setChoiceLabel", cardId: "opening", choiceId: "left", label: `Route ${calls.length}` }] }]
+              })
+            }
+          }]
+        })
+      };
+    };
+
+    await createAiEditSuggestionsFromEndpoint({
+      bundle,
+      config: { provider: "openai_chat", endpoint: "http://endpoint.test/v1", modelId: "chat-model" },
+      fetchImpl
+    });
+    await createAiEditSuggestionsFromEndpoint({
+      bundle,
+      config: { provider: "messages", endpoint: "http://endpoint.test/full-url", routeMode: "full_url", modelId: "chat-model" },
+      fetchImpl
+    });
+    await createAiEditSuggestionsFromEndpoint({
+      bundle,
+      config: { provider: "openai_chat", endpoint: "http://endpoint.test/v1/chat/completions", routeMode: "api_root", modelId: "chat-model" },
+      fetchImpl
+    });
+
+    assert.equal(calls[0].url, "http://endpoint.test/v1/chat/completions");
+    assert.equal(calls[1].url, "http://endpoint.test/full-url");
+    assert.equal(calls[2].url, "http://endpoint.test/v1/chat/completions/chat/completions");
+  });
+
+  it("retries OpenAI Chat once without JSON mode when the endpoint rejects response_format", async () => {
+    const bundle = createContentBundle({ cards: binaryCards() });
+    const calls = [];
+    const plan = await createAiEditSuggestionsFromEndpoint({
+      bundle,
+      config: {
+        provider: "openai_chat",
+        endpoint: "http://endpoint.test/v1",
+        modelId: "chat-model",
+        capabilities: ["structuredJson"]
+      },
+      fetchImpl: async (url, options) => {
+        calls.push({ url, body: JSON.parse(options.body) });
+        if (calls.length === 1) {
+          return {
+            ok: false,
+            status: 400,
+            text: async () => JSON.stringify({ error: { message: "response_format is not supported by this model" } })
+          };
+        }
+        return {
+          ok: true,
+          status: 200,
+          text: async () => JSON.stringify({
+            choices: [{
+              message: {
+                content: JSON.stringify({
+                  proposals: [{ id: "retry-label", title: "Retry label", patches: [{ op: "setChoiceLabel", cardId: "opening", choiceId: "right", label: "Retry" }] }]
+                })
+              }
+            }]
+          })
+        };
+      }
+    });
+
+    assert.equal(calls.length, 2);
+    assert.equal(calls[0].body.response_format.type, "json_object");
+    assert.equal(calls[1].body.response_format, undefined);
+    assert.equal(plan.proposals[0].patches[0].label, "Retry");
+  });
+
+  it("rejects malformed endpoint proposals before returning a plan", async () => {
+    const bundle = createContentBundle({ cards: binaryCards() });
+    await assert.rejects(
+      () => createAiEditSuggestionsFromEndpoint({
+        bundle,
+        config: { provider: "responses", endpoint: "http://endpoint.test/v1", modelId: "draft-model" },
+        fetchImpl: async () => ({
+          ok: true,
+          status: 200,
+          text: async () => JSON.stringify({
+            proposals: [{ id: "bad-patch", title: "Bad patch", patches: [{ op: "removeCard", cardId: "opening" }] }]
+          })
+        })
+      }),
+      /Unsupported AI edit patch op/
+    );
+    await assert.rejects(
+      () => createAiEditSuggestionsFromEndpoint({
+        bundle,
+        config: { provider: "responses", endpoint: "http://endpoint.test/v1", modelId: "draft-model" },
+        fetchImpl: async () => ({ ok: true, status: 200, text: async () => JSON.stringify({ nope: [] }) })
+      }),
+      /proposals array/
+    );
   });
 
   it("converts card files through the local content tool", async () => {
