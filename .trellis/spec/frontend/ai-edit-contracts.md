@@ -88,6 +88,7 @@
 - Patch result fails content bundle validation -> error before the server replaces `store.editor`.
 - Configured endpoint HTTP/network failure -> API JSON error with endpoint error code; no local fallback.
 - Configured endpoint malformed JSON, missing `proposals`, unsupported patch, or missing patch target -> `PipelineError`; active editor must remain unchanged.
+- Configured endpoint model-listing HTTP/network failure or malformed model payload -> API JSON error with endpoint error code; active editor must remain unchanged.
 
 ### 5. Good/Base/Bad Cases
 
@@ -110,13 +111,16 @@
   - Patch application validates output and rejects unsupported operations.
   - Visual request modes return preview contracts without provider calls.
   - Endpoint planning covers legacy and canonical OpenAI protocol values, route resolution, JSON-mode fallback, malformed output, patch prevalidation, and secret redaction.
+  - Endpoint validation and model listing cover redacted credentials, `/models` route derivation from API roots or full protocol routes, malformed metadata rejection, and no editor mutation.
 - Interface unit tests:
   - Plan creation includes active bundle context and fingerprint.
   - Async plan creation routes to endpoints when configured and stays local for stub/no endpoint.
+  - Endpoint validation and model listing pass through normalized config plus transient credentials without returning secrets.
   - Apply selected proposals only.
   - Stale fingerprints and invalid patches reject without mutating the editor.
 - Integration tests:
   - `/api/ai/edit/plan` and `/api/ai/edit/apply` cover card generation, endpoint execution, repair routing, visual previews, and stale-plan rejection.
+  - `/api/ai/edit/validate` and `/api/ai/edit/models` cover real local API routes with a mock endpoint, redaction, and no editor mutation.
   - `/api/connector/plan` remains compatible.
 
 ### 7. Wrong vs Correct
