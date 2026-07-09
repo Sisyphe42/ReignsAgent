@@ -18,8 +18,8 @@
     "content:feedback": "node scripts/content-tool.mjs feedback",
     "dev:dashboard": "npm run dev -w @reigns-agent/creator-web --",
     "dev:interface": "node scripts/dev-server.mjs",
-    "test:unit": "node --test \"packages/**/*.test.js\"",
-    "test:integration": "node --test \"test/**/*.test.js\"",
+    "test:unit": "node scripts/run-tests.mjs packages",
+    "test:integration": "node scripts/run-tests.mjs test",
     "test": "npm run test:unit && npm run test:integration",
     "verify": "npm run build && npm test",
     "ci": "npm run verify"
