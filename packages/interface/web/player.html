@@ -98,7 +98,9 @@
       <label class="skin-select">
         Skin
         <select id="skin">
-          <option value="workbench">Workbench</option>
+          <option value="github-light">Github Light</option>
+          <option value="catppuccin-latte">Catppuccin Latte</option>
+          <option value="classic">Classic</option>
           <option value="famicom">Famicom</option>
           <option value="phantom">Phantom</option>
           <option value="arcade">Arcade</option>
@@ -152,8 +154,9 @@
     const setStatus = (msg, kind = "") => { el("status").textContent = msg; el("status").className = `status ${kind ? `status--${kind}` : ""}`; };
     const escapeHtml = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
     const PERSIST_KEY = "reigns-agent.creator-web.skin";
-    const DEFAULT_SKIN = "workbench";
-    const KNOWN_SKINS = new Set(["workbench", "famicom", "phantom", "arcade", "terminal"]);
+    const DEFAULT_SKIN = "github-light";
+    const KNOWN_SKINS = new Set(["github-light", "catppuccin-latte", "classic", "famicom", "phantom", "arcade", "terminal"]);
+    const SKIN_ALIASES = { workbench: "classic" };
     const params = new URLSearchParams(window.location.search);
     const requestedLocale = params.get("locale") || navigator.language || "en";
     const requestedSkin = params.get("skin");
@@ -163,29 +166,28 @@
     let lastResult = null;
     let awaitingRestartConfirm = false;
 
+    function resolveSkinId(value) {
+      const skin = SKIN_ALIASES[value] ?? value;
+      return KNOWN_SKINS.has(skin) ? skin : null;
+    }
+
     function resolveSkin() {
-      if (KNOWN_SKINS.has(requestedSkin)) return requestedSkin;
-      const stored = localStorage.getItem(PERSIST_KEY);
-      return KNOWN_SKINS.has(stored) ? stored : DEFAULT_SKIN;
+      const requested = resolveSkinId(requestedSkin);
+      if (requested) return requested;
+      return DEFAULT_SKIN;
     }
 
     function applySkin(nextSkin, mode = "replace") {
-      const skin = KNOWN_SKINS.has(nextSkin) ? nextSkin : DEFAULT_SKIN;
+      const skin = resolveSkinId(nextSkin) ?? DEFAULT_SKIN;
       document.documentElement.dataset.skin = skin;
       localStorage.setItem(PERSIST_KEY, skin);
       el("skin").value = skin;
       const url = new URL(window.location.href);
-      if (skin === DEFAULT_SKIN) {
-        url.searchParams.delete("skin");
-      } else {
-        url.searchParams.set("skin", skin);
-      }
+      url.searchParams.set("skin", skin);
       window.history[mode === "push" ? "pushState" : "replaceState"](null, "", `${url.pathname}${url.search}${url.hash}`);
 
       const backUrl = new URL("/workbench", window.location.origin);
-      if (skin !== DEFAULT_SKIN) {
-        backUrl.searchParams.set("skin", skin);
-      }
+      backUrl.searchParams.set("skin", skin);
       el("back-link").href = `${backUrl.pathname}${backUrl.search}`;
     }
 
