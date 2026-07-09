@@ -154,20 +154,17 @@ body {
 
 .brand { display: flex; gap: 12px; align-items: center; min-width: 0; }
 .brand__mark {
-  width: 36px;
-  height: 36px;
+  width: 40px;
+  height: 40px;
   display: inline-flex;
   flex: 0 0 auto;
-  overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--panel);
+  overflow: visible;
 }
 .brand__mark img {
   width: 100%;
   height: 100%;
   display: block;
-  object-fit: cover;
+  object-fit: contain;
 }
 .brand h1 { margin: 0; font-size: 18px; letter-spacing: 0.5px; }
 .brand__tag { margin: 0; color: var(--muted); font-size: 12px; }
@@ -179,11 +176,6 @@ body {
   opacity: 0.85;
 }
 .topbar__nav a:hover { color: var(--accent); }
-
-:root[data-skin="phantom"] .brand__mark {
-  border-color: var(--accent);
-  box-shadow: 2px 2px 0 #09090a;
-}
 
 .workspace { display: flex; align-items: stretch; min-height: calc(100vh - 67px); }
 .rail {

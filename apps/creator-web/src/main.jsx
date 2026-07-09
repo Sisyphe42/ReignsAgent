@@ -1197,7 +1197,7 @@ function App() {
       <header className="topbar">
         <div className="brand">
           <span className="brand__mark" aria-hidden="true">
-            <img src="/logo.png" alt="" />
+            <img src="/logo-alpha.png" alt="" />
           </span>
           <div>
             <h1>ReignsAgent Creator</h1>

@@ -118,7 +118,7 @@ function stitchPlayerRuntime(template, coreSource) {
 }
 
 async function copyStaticBuildAssets(outputDir) {
-  const staticAssets = ["assets/logo.png"];
+  const staticAssets = ["assets/logo-alpha.png"];
   for (const assetPath of staticAssets) {
     const source = resolve(WEB_ROOT, assetPath);
     assertWithin(WEB_ROOT, source, `Static asset '${assetPath}'`);

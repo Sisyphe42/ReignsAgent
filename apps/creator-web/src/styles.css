@@ -428,31 +428,19 @@ select {
 .brand__mark {
   position: relative;
   display: inline-flex;
-  width: 44px;
-  height: 54px;
+  width: 52px;
+  height: 52px;
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
-  color: var(--accent);
-  background:
-    linear-gradient(135deg, color-mix(in srgb, var(--surface-3) 84%, #fff), var(--surface));
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.035), 0 10px 24px var(--shadow);
-  overflow: hidden;
+  overflow: visible;
 }
 
 .brand__mark img {
   width: 100%;
   height: 100%;
   display: block;
-  object-fit: cover;
-}
-
-:root[data-skin="famicom"] .brand__mark {
-  background: var(--accent);
-  border-width: 2px;
-  box-shadow: 4px 4px 0 rgba(36, 33, 29, 0.22);
+  object-fit: contain;
 }
 
 :root[data-skin="phantom"] .brand {
@@ -461,12 +449,8 @@ select {
 }
 
 :root[data-skin="phantom"] .brand__mark {
-  width: 58px;
-  height: 44px;
-  background: #d71920;
-  border: 4px solid #09090a;
-  clip-path: polygon(0 18%, 92% 0, 100% 76%, 14% 100%);
-  box-shadow: 7px 7px 0 #09090a;
+  width: 56px;
+  height: 56px;
 }
 
 :root[data-skin="phantom"] .brand h1 {
@@ -6009,8 +5993,8 @@ summary:focus-visible {
   }
 
   .brand__mark {
-    width: 40px;
-    height: 48px;
+    width: 42px;
+    height: 42px;
   }
 
   .topbar__readout {
