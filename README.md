@@ -6,9 +6,14 @@
 
 <p align="center">
   <img alt="Node.js v20+" src="https://img.shields.io/badge/Node.js-v20%2B-339933?logo=node.js&logoColor=white" />
+  <img alt="License MIT" src="https://img.shields.io/badge/license-MIT-blue" />
 </p>
 
-ReignsAgent is a modular authoring, validation, and publishing stack for Reigns-like card narratives. It combines a creator workbench, a deterministic headless runtime, simulation-based diagnostics, content import/export tooling, and a deployable player build path.
+<p align="center">
+  English | <a href="README_zh-CN.md">简体中文</a>
+</p>
+
+ReignsAgent is a modular authoring, validation, and publishing stack for [Reigns](https://www.devolverdigital.com/games/reigns)-like card narratives. It combines a creator workbench, a deterministic headless runtime, simulation-based diagnostics, content import/export tooling, and a deployable player build path.
 
 The project is built for two primary audiences: creators who need a practical workspace for narrative card production, and AI-assisted workflows that need clear contracts for drafting, repairing, validating, and shipping content without crossing runtime boundaries.
 
@@ -24,7 +29,9 @@ The project is built for two primary audiences: creators who need a practical wo
 - [Build Output](#build-output)
 - [Package Examples](#package-examples)
 - [Repository Layout](#repository-layout)
-- [Verification](#verification)
+- [CI And Verification](#ci-and-verification)
+- [Acknowledgements](#acknowledgements)
+- [License](#license)
 
 ## Capabilities
 
@@ -307,16 +314,68 @@ console.log(diagnostics.healthScore, session.factions, build.player.choiceModel)
 | `fixtures` | Sample and validation content. |
 | `test` | Cross-package integration tests. |
 
-## Verification
+## CI And Verification
 
-Before treating a change as ready:
+The repository uses GitHub Actions for continuous verification on push and pull request events. CI currently runs `npm ci` and `npm run verify` on Node.js 20, 22, and 24, then performs a deployable player smoke build on Node.js 22.
+
+### Local Verification
+
+Run the same broad gate used by CI before treating a change as ready:
 
 ```sh
 npm run verify
 ```
 
-For deployable player changes:
+`npm run verify` includes:
+
+| Stage | Command | Purpose |
+| --- | --- | --- |
+| Syntax check | `node scripts/check-syntax.mjs` | Parse implementation JavaScript files before deeper checks. |
+| Export check | `node scripts/verify-exports.mjs` | Confirm workspace package export surfaces stay valid. |
+| Boundary check | `node scripts/verify-boundaries.mjs` | Keep package responsibilities separated. |
+| Anti-RPG drift check | `node scripts/verify-anti-rpg.mjs` | Guard the product boundary around pure card-swipe gameplay. |
+| Fixture verification | `node scripts/verify-fixtures.mjs` | Validate sample content and deployable-player fixture assumptions. |
+| Dashboard build | `npm run build:dashboard` | Compile the Vite/React creator workspace. |
+| Unit tests | `npm run test:unit` | Run package-level Node test suites. |
+| Integration tests | `npm run test:integration` | Run cross-package integration flows. |
+
+### Focused Commands
+
+Use focused commands while iterating, then run the full gate before commit:
+
+```sh
+npm run build
+npm run test:unit
+npm run test:integration
+npm run content:validate -- fixtures/content/minimal.cards.json
+npm run content:review -- fixtures/content/minimal.cards.json --cycles 100 --maxTurns 20
+```
+
+### Deployable Player Smoke Build
+
+For deployable player changes, template changes, content bundle changes, or static player asset changes, also run:
 
 ```sh
 npm run build:game -- fixtures/content/oss-court.cards.json <temporary-output-dir>
 ```
+
+Confirm the output includes `player.html`, `player-runtime.js`, a `*.game.json` content bundle, `assets/logo-alpha.png`, and any local sample assets referenced by the bundle.
+
+### Frontend Smoke Testing
+
+For visible creator or player changes:
+
+1. Start `npm run dev:interface`.
+2. Start `npm run dev:dashboard`.
+3. Open `/workbench` and `/play?skin=<skin>`.
+4. Confirm the expected panel state, skin query behavior, `document.documentElement.dataset.skin`, and visible layout at desktop and mobile widths.
+
+## Acknowledgements
+
+ReignsAgent is inspired by the concise card-swipe decision format popularized by [Reigns](https://www.devolverdigital.com/games/reigns).
+
+ReignsAgent is independent and unaffiliated with Reigns, Nerial, or Devolver Digital.
+
+## License
+
+ReignsAgent is released under the [MIT License](LICENSE).
