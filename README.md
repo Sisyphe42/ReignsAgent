@@ -4,10 +4,24 @@
   <img src="apps/creator-web/public/logo-alpha.png" alt="ReignsAgent logo" width="128" />
 </p>
 
+<p align="center">
+  <img alt="Node.js v20+" src="https://img.shields.io/badge/Node.js-v20%2B-339933?logo=node.js&logoColor=white" />
+  <img alt="Verify with npm run verify" src="https://img.shields.io/badge/verify-npm_run_verify-1A7F37" />
+</p>
+
 ReignsAgent is a production-oriented Reigns-like creator system for generating, testing, editing, previewing, and shipping card-based narrative experiences. It is not only developer middleware: the product goal is a usable frontend where content creators can import content, configure AI generation, edit cards, structure narrative progression, preview gameplay, inspect diagnostics, and prepare deployable game builds.
 
-> [!IMPORTANT]
-> The player-facing game stays intentionally pure: card text, binary left/right choices, four default gauge/faction values, low-level variables/tags, endings, loops, and clean swipe interaction. ReignsAgent must not ship built-in equipment, pets, inventory, shop, rarity, crafting, classes, skill trees, loot, or resource-management gameplay.
+## Who This Is For
+
+- **Content creators** who want a structured workspace for building Reigns-like card narratives.
+- **Game developers** who want headless runtime, reviewer, pipeline, and deployable-player packages.
+- **AI-assisted users** who want an AI system to understand the project boundaries before proposing content, code, or build changes.
+
+## Product Constraints
+
+The player-facing game stays intentionally pure: card text, binary left/right choices, four default gauge/faction values, low-level variables/tags, endings, loops, and clean swipe interaction.
+
+ReignsAgent does not ship built-in equipment, pets, inventory, shop, rarity, crafting, classes, skill trees, loot, or resource-management gameplay. Narrative progression belongs in author-owned data, not in predefined RPG feature systems.
 
 ## Product Direction
 
@@ -18,8 +32,7 @@ ReignsAgent is designed around a self-improving authoring loop:
 - **Pipeline** handles local content exchange, AI request contracts, import/export, and reviewer feedback actions.
 - **Interface / Creator Web** provides the creator workflow: editing, AI Assist, preview, diagnostics, and deployment preparation.
 
-> [!NOTE]
-> Narrative progression is allowed through author-owned data: tags, variables, metadata, chapters, themes, arcs, endings, and configurable gauge presentation. These are organization and authoring concepts, not built-in RPG systems.
+Narrative progression is allowed through author-owned data: tags, variables, metadata, chapters, themes, arcs, endings, and configurable gauge presentation. These are organization and authoring concepts, not built-in RPG systems.
 
 ## Current Capabilities
 
@@ -55,8 +68,13 @@ flowchart LR
   core --> player
 ```
 
-> [!WARNING]
-> **Zero-pollution rule:** `packages/core` must not depend on UI, file IO, AI, Pipeline, or Reviewer. AI Assist is a creator-side workflow only and must not enter deployable player builds.
+Architecture boundaries:
+
+- `packages/core` is the stable headless rules layer. It has no UI, file IO, AI, Pipeline, Reviewer, or deployment responsibilities.
+- `packages/reviewer` consumes headless card data and emits diagnostics. It does not own editor or player UI.
+- `packages/pipeline` owns import/export and AI request/proposal contracts. It does not run player gameplay.
+- `packages/interface` coordinates creator workflows without moving game rules into the frontend.
+- Deployable player builds must stay player-only and must not include creator-side AI Assist tooling.
 
 ## Quick Start
 
@@ -85,8 +103,7 @@ Development entry points:
 - Preview Player: `http://127.0.0.1:5173/play`
 - Local API: `http://localhost:4321/api/editor`
 
-> [!TIP]
-> For local development, start `npm run dev:interface` first, then `npm run dev:dashboard`. Vite owns `/workbench`, `/classic`, `/play`, and local static assets during development. The local API server serves creator data routes.
+For local development, start `npm run dev:interface` first, then `npm run dev:dashboard`. Vite owns `/workbench`, `/classic`, `/play`, and local static assets during development. The local API server serves creator data routes.
 
 ## Creator Workbench
 
@@ -119,8 +136,7 @@ Authors express narrative state and progression through data:
 - `metadata.presentation.gauges` renames, describes, or hides default gauge displays.
 - `metadata.i18n` and card-level `i18n` provide localized card text and choice labels.
 
-> [!CAUTION]
-> `metadata.presentation.gauges` can only describe the default four gauges. Unknown gauge keys are rejected so presentation metadata does not become an arbitrary RPG attribute system.
+`metadata.presentation.gauges` can only describe the default four gauges. Unknown gauge keys are rejected so presentation metadata does not become an arbitrary RPG attribute system.
 
 Legacy `faith`, `people`, `military`, and `treasury` keys are accepted on import and normalized to neutral `gauge0` through `gauge3` slots.
 
@@ -133,6 +149,24 @@ AI Assist is a creator workflow, not player gameplay.
 - API keys are passed transiently for the current local request and are not stored, echoed in validation results, or written into builds.
 - Endpoint output must become explicit proposals and validated patches before it can become authored content.
 - Deployable player builds must not contain provider SDKs, API keys, network AI calls, generated-edit tooling, or AI-specific gameplay behavior.
+
+## Using ReignsAgent With AI
+
+When using an AI system to help create content or modify the project, give it this README plus the relevant files for the task. The most useful AI behavior is proposal-oriented: draft content, explain tradeoffs, validate card contracts, repair reviewer warnings, or suggest code changes that respect package boundaries.
+
+For content work, AI output should preserve these rules:
+
+- Keep each playable card binary: one left choice and one right choice.
+- Use tags, variables, story groups, endings, and metadata for narrative progression.
+- Use only the default four gauge slots for built-in player balance.
+- Return explicit, reviewable changes rather than silently mutating content.
+
+For code work, AI output should preserve these boundaries:
+
+- Keep Core headless and deterministic.
+- Keep AI endpoint calls in creator-side workflows.
+- Keep deployable player output free of provider credentials, SDKs, network AI calls, and editor-only tooling.
+- Run `npm run verify` before treating a change as ready.
 
 ```mermaid
 sequenceDiagram
@@ -170,8 +204,7 @@ The build emits:
 - `assets/logo-alpha.png` - transparent product logo.
 - Local content assets referenced by the bundle, such as `assets/sample/*.svg`.
 
-> [!IMPORTANT]
-> `player-runtime.js` must remain self-contained and core-only. Pipeline, Reviewer, Creator UI, and AI Assist code should not ship to players.
+`player-runtime.js` should remain self-contained and core-only. Pipeline, Reviewer, Creator UI, and AI Assist code should not ship to players.
 
 ## Repository Map
 
@@ -270,9 +303,9 @@ const build = prepareGameBuild({ editor, buildId: "small-court-preview" });
 console.log(diagnostics.healthScore, session.factions, build.player.choiceModel);
 ```
 
-## Quality Gates
+## Development Checks
 
-Before commit, run:
+Before treating a change as ready, run:
 
 ```sh
 npm run verify
