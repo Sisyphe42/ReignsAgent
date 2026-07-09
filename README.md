@@ -372,7 +372,7 @@ For visible creator or player changes:
 
 ## Acknowledgements
 
-ReignsAgent is inspired by the concise card-swipe decision format popularized by [Reigns](https://www.devolverdigital.com/games/reigns).
+ReignsAgent is partly inspired by [Reigns](https://www.devolverdigital.com/games/reigns)' use of numerical balance as gameplay.
 
 ReignsAgent is independent and unaffiliated with Reigns, Nerial, or Devolver Digital.
 

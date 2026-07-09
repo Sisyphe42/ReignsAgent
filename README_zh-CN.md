@@ -372,7 +372,7 @@ npm run build:game -- fixtures/content/oss-court.cards.json <temporary-output-di
 
 ## 致谢
 
-ReignsAgent 的核心交互方向受到 [Reigns](https://www.devolverdigital.com/games/reigns) 所推广的简洁卡牌滑动决策形式启发。
+ReignsAgent 部分受到 [Reigns](https://www.devolverdigital.com/games/reigns) 将数值平衡作为玩法的启发。
 
 ReignsAgent 是独立项目，与 Reigns、Nerial 或 Devolver Digital 无关。
 
