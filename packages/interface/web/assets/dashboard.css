@@ -130,8 +130,10 @@ body {
 
 .topbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
+  gap: 12px 18px;
   padding: 14px 22px;
   background: linear-gradient(180deg, var(--panel), var(--panel-2));
   border-bottom: 1px solid var(--border);
@@ -150,8 +152,23 @@ body {
   background: linear-gradient(180deg, #0f1d16, #0a130f);
 }
 
-.brand { display: flex; gap: 12px; align-items: center; }
-.brand__mark { font-size: 26px; color: var(--accent); }
+.brand { display: flex; gap: 12px; align-items: center; min-width: 0; }
+.brand__mark {
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  flex: 0 0 auto;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+.brand__mark img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
 .brand h1 { margin: 0; font-size: 18px; letter-spacing: 0.5px; }
 .brand__tag { margin: 0; color: var(--muted); font-size: 12px; }
 .topbar__nav a {
@@ -164,8 +181,8 @@ body {
 .topbar__nav a:hover { color: var(--accent); }
 
 :root[data-skin="phantom"] .brand__mark {
-  color: var(--accent);
-  text-shadow: 2px 2px 0 #09090a;
+  border-color: var(--accent);
+  box-shadow: 2px 2px 0 #09090a;
 }
 
 .workspace { display: flex; align-items: stretch; min-height: calc(100vh - 67px); }

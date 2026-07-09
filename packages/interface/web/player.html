@@ -3,13 +3,15 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="icon" href="data:," />
+  <link rel="icon" type="image/png" href="/assets/logo.png" />
   <title>ReignsAgent Player</title>
   <link rel="stylesheet" href="/assets/dashboard.css" />
   <style>
     .topbar__controls {
       display: flex;
+      flex-wrap: wrap;
       align-items: center;
+      justify-content: flex-end;
       gap: 12px;
     }
     .skin-select {
@@ -88,7 +90,9 @@
 <body>
   <header class="topbar">
     <div class="brand">
-      <span class="brand__mark">RA</span>
+      <span class="brand__mark" aria-hidden="true">
+        <img src="/assets/logo.png" alt="" />
+      </span>
       <div>
         <h1>ReignsAgent Player</h1>
         <p class="brand__tag">Preview</p>

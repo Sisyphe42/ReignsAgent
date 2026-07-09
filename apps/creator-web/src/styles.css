@@ -439,30 +439,20 @@ select {
   background:
     linear-gradient(135deg, color-mix(in srgb, var(--surface-3) 84%, #fff), var(--surface));
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.035), 0 10px 24px var(--shadow);
-  font-family: var(--font-data);
-  font-size: 0.86rem;
-  font-weight: 800;
+  overflow: hidden;
 }
 
-.brand__mark::after {
-  position: absolute;
-  right: 7px;
-  bottom: 7px;
-  width: 7px;
-  height: 7px;
-  border: 1px solid currentColor;
-  content: "";
+.brand__mark img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
 }
 
 :root[data-skin="famicom"] .brand__mark {
-  color: #fff8e8;
   background: var(--accent);
   border-width: 2px;
   box-shadow: 4px 4px 0 rgba(36, 33, 29, 0.22);
-}
-
-:root[data-skin="famicom"] .brand__mark::after {
-  background: var(--accent-2);
 }
 
 :root[data-skin="phantom"] .brand {
@@ -473,15 +463,10 @@ select {
 :root[data-skin="phantom"] .brand__mark {
   width: 58px;
   height: 44px;
-  color: #f7f2e9;
   background: #d71920;
   border: 4px solid #09090a;
   clip-path: polygon(0 18%, 92% 0, 100% 76%, 14% 100%);
   box-shadow: 7px 7px 0 #09090a;
-}
-
-:root[data-skin="phantom"] .brand__mark::after {
-  display: none;
 }
 
 :root[data-skin="phantom"] .brand h1 {

@@ -1196,7 +1196,9 @@ function App() {
       )}
       <header className="topbar">
         <div className="brand">
-          <span className="brand__mark">RA</span>
+          <span className="brand__mark" aria-hidden="true">
+            <img src="/logo.png" alt="" />
+          </span>
           <div>
             <h1>ReignsAgent Creator</h1>
             <p>{editor?.metadata?.title ?? "Project workspace"}</p>

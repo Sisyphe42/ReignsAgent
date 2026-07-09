@@ -71,6 +71,7 @@ try {
 
   const playerHtml = await readFile(join(ROOT, "packages/interface/web/standalone-player.html"), "utf8");
   await writeFile(join(outputPath, "player.html"), playerHtml, "utf8");
+  const staticAssets = await copyStaticBuildAssets(outputPath);
   const copiedAssets = await copyLocalBuildAssets(build.content.assets ?? [], outputPath);
 
   console.log(JSON.stringify({
@@ -78,6 +79,7 @@ try {
     buildId: build.buildId,
     buildFile,
     playerRuntime: standalonePlayer,
+    staticAssets,
     copiedAssets,
     cardCount: build.content.cards.length,
     playerChoiceModel: build.player.choiceModel
@@ -113,6 +115,21 @@ function stitchPlayerRuntime(template, coreSource) {
   const inlinedCore = `${coreWithoutExport}\nconst createCoreRuntime = createRuntime;`;
 
   return template.replace("/* CORE_IMPORT_MARKER */", inlinedCore);
+}
+
+async function copyStaticBuildAssets(outputDir) {
+  const staticAssets = ["assets/logo.png"];
+  for (const assetPath of staticAssets) {
+    const source = resolve(WEB_ROOT, assetPath);
+    assertWithin(WEB_ROOT, source, `Static asset '${assetPath}'`);
+
+    const target = resolve(outputDir, assetPath);
+    assertWithin(outputDir, target, `Static asset output '${assetPath}'`);
+
+    await mkdir(dirname(target), { recursive: true });
+    await copyFile(source, target);
+  }
+  return staticAssets;
 }
 
 async function copyLocalBuildAssets(assets, outputDir) {
