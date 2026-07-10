@@ -29,6 +29,7 @@ Narrative progression and Anti-RPG boundary: the system may support data-driven 
 - **AI Endpoint UX**: The default creator UX should prefer lightweight user-supplied endpoint configuration (base URL, API key, protocol, model id, and capability flags) over heavy provider-profile management. Multiple profiles, provider presets, model discovery, MCP, skills, and arbitrary agent tools are optional developer-mode enhancements unless a later reviewed plan promotes them.
 - **Desktop Host Boundary**: Electron is an optional outer host only. `apps/desktop-electron` may start the shared Creator Server and load the compiled WebUI, but Core, Pipeline, Reviewer, Interface, Creator Web, and Creator Server must not import Electron or depend on desktop-only APIs.
 - **Desktop Packaging Boundary**: Electron utility-process entry code and the shared Creator runtime must be unpacked from ASAR and launched with a real filesystem working directory. Desktop release checks must run the packaged executable, not only the source-mode Electron host.
+- **Desktop Portability Boundary**: Desktop releases are ZIP-only on every platform. Electron profile/session data and game builds must stay beside the extracted application under `ReignsAgentData`; do not add installers or redirect desktop state to platform user-data folders without a reviewed product decision.
 
 ## 3. Maintenance Protocols
 - **Documentation Duty**: When a new feature, module, or hook changes product behavior, architecture, or roadmap direction, update the relevant project documentation (`README.md`, `ROADMAP.md`, or package docs). Keep this file focused on durable agent rules and constraints.
@@ -48,7 +49,7 @@ Narrative progression and Anti-RPG boundary: the system may support data-driven 
 ## 4. Repository Map
 - `apps/creator-web`: Vite/React creator dashboard workspace. It consumes the existing local API and keeps visual skins isolated from core product logic.
 - `apps/creator-server`: Shared local HTTP API and static Creator host used by development, the Node ZIP, and desktop runtime staging.
-- `apps/desktop-electron`: Optional Electron lifecycle, security, and installer shell. It contains no game, generation, review, or editor business logic.
+- `apps/desktop-electron`: Optional Electron lifecycle, security, and portable ZIP shell. It contains no game, generation, review, or editor business logic.
 - `packages/core`: Pure headless game runtime. No UI, IO, AI generation, or deployment logic.
 - `packages/reviewer`: Headless Monte Carlo simulation, graph diagnostics, and balance reports.
 - `packages/pipeline`: Local import/export, content bundle handling, generation request contracts, and reviewer feedback actions.

@@ -1,14 +1,12 @@
 import assert from "node:assert/strict";
-import { EventEmitter } from "node:events";
 import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { CREATOR_RUNTIME_ENTRIES } from "../../scripts/runtime-files.mjs";
-import { desktopRuntimePaths } from "../../apps/desktop-electron/src/runtime-paths.mjs";
-import { desktopBuildOutputDir, isAllowedAppUrl } from "../../apps/desktop-electron/src/security.mjs";
-import { handleSquirrelStartup } from "../../apps/desktop-electron/src/squirrel-startup.mjs";
+import { desktopPortablePaths, desktopRuntimePaths } from "../../apps/desktop-electron/src/runtime-paths.mjs";
+import { isAllowedAppUrl } from "../../apps/desktop-electron/src/security.mjs";
 
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
 
@@ -22,11 +20,35 @@ describe("Electron desktop boundaries", () => {
     assert.equal(isAllowedAppUrl("not a URL", origin), false);
   });
 
-  it("uses a user-writable desktop build directory", () => {
-    assert.equal(
-      desktopBuildOutputDir(join("home", "Documents")),
-      join("home", "Documents", "ReignsAgent", "Builds")
-    );
+  it("keeps portable data beside the extracted application on every platform", () => {
+    assert.deepEqual(desktopPortablePaths({
+      appPath: join("repo", "apps", "desktop-electron"),
+      execPath: join("tools", "electron"),
+      isPackaged: false,
+      platform: "win32"
+    }), {
+      dataRoot: join("repo", "apps", "desktop-electron", "ReignsAgentData"),
+      sessionData: join("repo", "apps", "desktop-electron", "ReignsAgentData", "SessionData"),
+      builds: join("repo", "apps", "desktop-electron", "ReignsAgentData", "Builds")
+    });
+    assert.equal(desktopPortablePaths({
+      appPath: "ignored",
+      execPath: join("portable", "ReignsAgent.exe"),
+      isPackaged: true,
+      platform: "win32"
+    }).dataRoot, join("portable", "ReignsAgentData"));
+    assert.equal(desktopPortablePaths({
+      appPath: "ignored",
+      execPath: join("portable", "ReignsAgent"),
+      isPackaged: true,
+      platform: "linux"
+    }).dataRoot, join("portable", "ReignsAgentData"));
+    assert.equal(desktopPortablePaths({
+      appPath: "ignored",
+      execPath: join("portable", "ReignsAgent.app", "Contents", "MacOS", "ReignsAgent"),
+      isPackaged: true,
+      platform: "darwin"
+    }).dataRoot, resolve("portable", "ReignsAgentData"));
   });
 
   it("runs the utility process from unpacked production resources", () => {
@@ -50,39 +72,21 @@ describe("Electron desktop boundaries", () => {
     assert.doesNotMatch(creatorSource, /window\.reignsDesktop/);
   });
 
-  it("handles Squirrel lifecycle events without a packaged node_modules dependency", async () => {
+  it("builds only portable ZIP artifacts with canonical product metadata", async () => {
     const desktopPackage = JSON.parse(await readFile(join(ROOT, "apps/desktop-electron/package.json"), "utf8"));
     const mainSource = await readFile(join(ROOT, "apps/desktop-electron/src/main.mjs"), "utf8");
     const forgeConfig = await import("../../apps/desktop-electron/forge.config.mjs");
     assert.deepEqual(desktopPackage.dependencies, {});
+    assert.equal(desktopPackage.productName, "ReignsAgent");
+    assert.equal(desktopPackage.author, "Sisyphe42");
     assert.equal(forgeConfig.default.packagerConfig.prune, false);
     assert.equal(forgeConfig.default.packagerConfig.asar.unpack, "**/server-child.mjs");
     assert.equal(forgeConfig.default.packagerConfig.asar.unpackDir, "runtime");
-    assert.doesNotMatch(mainSource, /electron-squirrel-startup/);
+    assert.equal(forgeConfig.default.packagerConfig.win32metadata.CompanyName, "Sisyphe42");
+    assert.equal(forgeConfig.default.packagerConfig.win32metadata.ProductName, "ReignsAgent");
+    assert.deepEqual(forgeConfig.default.makers, []);
+    assert.equal(Object.keys(desktopPackage.devDependencies).some((name) => name.includes("maker-")), false);
+    assert.doesNotMatch(mainSource, /Squirrel|documents/);
     assert.match(mainSource, /!smokeTest && !app\.requestSingleInstanceLock\(\)/);
-
-    const spawned = [];
-    let quitCount = 0;
-    const spawnProcess = (executable, args, options) => {
-      const child = new EventEmitter();
-      spawned.push({ executable, args, options, child });
-      return child;
-    };
-    const handled = handleSquirrelStartup({
-      platform: "win32",
-      argv: ["ReignsAgent.exe", "--squirrel-install"],
-      execPath: "C:\\Users\\creator\\AppData\\Local\\ReignsAgent\\app-0.1.1\\ReignsAgent.exe",
-      quit: () => { quitCount += 1; },
-      spawnProcess
-    });
-
-    assert.equal(handled, true);
-    assert.equal(spawned.length, 1);
-    assert.equal(spawned[0].executable, "C:\\Users\\creator\\AppData\\Local\\ReignsAgent\\Update.exe");
-    assert.deepEqual(spawned[0].args, ["--createShortcut=ReignsAgent.exe"]);
-    assert.deepEqual(spawned[0].options, { detached: true });
-    spawned[0].child.emit("close", 0);
-    spawned[0].child.emit("error", new Error("ignored after close"));
-    assert.equal(quitCount, 1);
   });
 });

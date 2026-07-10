@@ -47,8 +47,9 @@ Story and Content work should now optimize for non-technical content authors: th
 - Keep Browser/Vite development, the Node ZIP, and Electron as parallel hosts over the same WebUI and local API.
 - Keep Electron isolated in `apps/desktop-electron`; no package or Creator Web code may import desktop APIs.
 - Use an Electron utility process for the Creator Server so diagnostics and connector work do not block the desktop main process.
-- Build unsigned native artifacts on Windows x64, macOS x64/arm64, and Linux x64 before promoting signing, notarization, publishing, or automatic updates.
-- Treat native file dialogs, menus, notifications, and protocol handlers as later opt-in bridges; v1 is a secure lifecycle and installer shell only.
+- Build unsigned portable ZIP artifacts on Windows x64, macOS x64/arm64, and Linux x64 before promoting signing, notarization, publishing, or automatic updates.
+- Keep Electron profile data and game builds beside the extracted application in `ReignsAgentData`; v1 does not install files or use platform user-data directories.
+- Treat native file dialogs, menus, notifications, and protocol handlers as later opt-in bridges; v1 is a secure portable lifecycle shell only.
 
 ## Non-Goals For The Current Phase
 - No full engine migration to Unity, Godot, or another game editor.

@@ -36,7 +36,7 @@ for (const [source, target] of releaseEntries) {
 }
 
 const releasePackage = {
-  name: "reigns-agent-creator-distribution",
+  name: "reigns-agent-distribution",
   version: rootPackage.version,
   private: true,
   type: "module",

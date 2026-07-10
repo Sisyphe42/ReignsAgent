@@ -272,15 +272,17 @@ npm run dev:desktop
 # Run boundary tests plus a real utility-process/API smoke test
 npm run test:desktop
 
-# Run the full repository gate and make the current platform's installers
+# Run the full repository gate and make the current platform's portable ZIP
 npm run build:desktop
 ```
 
-The desktop app is named `ReignsAgent` with application ID `io.reignsagent.app`. It starts the Creator Server in an Electron utility process on a random loopback port, loads `/workbench` in a sandboxed BrowserWindow, and writes default exports to `Documents/ReignsAgent/Builds`.
+The desktop app, window, executable, and metadata all use the product name `ReignsAgent`; package author metadata is `Sisyphe42`, matching the GitHub repository owner. It uses application ID `io.reignsagent.app`, starts the Creator Server in an Electron utility process on a random loopback port, and loads `/workbench` in a sandboxed BrowserWindow.
 
-Native artifact targets are Windows x64 Squirrel Setup, macOS x64/arm64 DMG plus ZIP, and Linux x64 DEB plus RPM. `.github/workflows/desktop.yml` builds them only for manual runs and `v*` tags, then uploads workflow artifacts without publishing a release. The v1 artifacts are unsigned and may trigger SmartScreen or Gatekeeper warnings.
+All desktop targets are portable ZIP archives: Windows x64, macOS x64/arm64, and Linux x64. Extract the archive and run `ReignsAgent` directly; no installer or system Node.js is required. Electron profile/session data and game exports stay beside the extracted app under `ReignsAgentData/`, with builds in `ReignsAgentData/Builds`. On macOS, that directory is created beside `ReignsAgent.app`. Moving the app and its data together preserves the portable workspace.
 
-`test:desktop:packaged` runs after Forge packaging and verifies both the unpacked Creator Server runtime and the packaged executable handshake. Builders with an existing Electron ZIP may set `ELECTRON_ZIP_DIR` to its containing directory to avoid downloading the runtime again.
+`.github/workflows/desktop.yml` builds portable archives only for manual runs and `v*` tags, then uploads workflow artifacts without publishing a release. The archives are unsigned and may still trigger SmartScreen or Gatekeeper warnings.
+
+`test:desktop:packaged` runs after Forge packaging and verifies both the unpacked Creator Server runtime and the packaged executable handshake. `verify-desktop-artifacts` rejects installer formats and requires a ZIP on every platform. Builders with an existing Electron ZIP may set `ELECTRON_ZIP_DIR` to its containing directory to avoid downloading the runtime again.
 
 Electron v1 intentionally has no preload bridge, native file dialogs, automatic updates, signing, notarization, store publishing, or persisted Creator database. API keys remain transient request data and are not written into desktop runtime files or configuration.
 

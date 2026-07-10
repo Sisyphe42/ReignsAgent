@@ -1,20 +1,28 @@
+import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { app, BrowserWindow, session, utilityProcess } from "electron";
 
-import { desktopRuntimePaths } from "./runtime-paths.mjs";
-import { desktopBuildOutputDir, isAllowedAppUrl } from "./security.mjs";
-import { handleSquirrelStartup } from "./squirrel-startup.mjs";
+import { desktopPortablePaths, desktopRuntimePaths } from "./runtime-paths.mjs";
+import { isAllowedAppUrl } from "./security.mjs";
 
 const smokeTest = process.argv.includes("--smoke-test");
 let mainWindow = null;
 let serverProcess = null;
 let serverOrigin = null;
 let quitting = false;
+const portablePaths = desktopPortablePaths({
+  appPath: app.getAppPath(),
+  execPath: process.execPath,
+  isPackaged: app.isPackaged,
+  platform: process.platform
+});
+mkdirSync(portablePaths.sessionData, { recursive: true });
+mkdirSync(portablePaths.builds, { recursive: true });
+app.setPath("userData", portablePaths.dataRoot);
+app.setPath("sessionData", portablePaths.sessionData);
 
-if (handleSquirrelStartup({ quit: () => app.quit() })) {
-  app.quit();
-} else if (!smokeTest && !app.requestSingleInstanceLock()) {
+if (!smokeTest && !app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.on("second-instance", () => {
@@ -92,15 +100,14 @@ function createMainWindow(origin) {
 
 function startCreatorServer() {
   const { childEntry, runtimeRoot } = desktopRuntimePaths(app.getAppPath());
-  const buildOutputDir = desktopBuildOutputDir(app.getPath("documents"));
   serverProcess = utilityProcess.fork(childEntry, [], {
     cwd: runtimeRoot,
     env: {
       ...process.env,
       REIGNS_AGENT_RUNTIME_ROOT: runtimeRoot,
-      REIGNS_AGENT_BUILD_OUTPUT_DIR: buildOutputDir
+      REIGNS_AGENT_BUILD_OUTPUT_DIR: portablePaths.builds
     },
-    serviceName: "ReignsAgent Creator Server",
+    serviceName: "ReignsAgent Server",
     stdio: "pipe"
   });
   serverProcess.stdout?.on("data", (chunk) => process.stdout.write(chunk));

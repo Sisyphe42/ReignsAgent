@@ -1,6 +1,6 @@
-# ReignsAgent Creator Distribution
+# ReignsAgent Distribution
 
-This archive contains the local ReignsAgent Creator, its local API, player preview, and the deployable player builder.
+This archive contains ReignsAgent, its local API, player preview, and the deployable player builder.
 
 ## Requirements
 

@@ -35,7 +35,7 @@ const AI_ENDPOINT_PROTOCOL_ALIASES = {
 };
 const AI_ENDPOINT_ROUTE_MODES = new Set(["auto", "api_root", "full_url"]);
 const AI_ENDPOINT_SYSTEM_PROMPT = [
-  "You are ReignsAgent Creator AI Assist, a specialist editor for Reigns-like card narratives.",
+  "You are ReignsAgent AI Assist, a specialist editor for Reigns-like card narratives.",
   "Return only the requested JSON object with explicit patch proposals; never mutate content outside those patches.",
   "Preserve the pure player loop: card text plus exactly two player choices with ids left and right."
 ].join(" ");
@@ -476,7 +476,7 @@ export function buildAiContext({
   return {
     schemaVersion: AI_EDIT_SCHEMA_VERSION,
     project: {
-      product: "ReignsAgent Creator",
+      product: "ReignsAgent",
       usage: "Assist creators with card drafting, review repair, and future visual request workflows while preserving the authored content model.",
       gameplayRule: "The visible player loop is card text plus exactly two choices: left and right.",
       boundaryRule: "Use tags, variables, metadata, and creator-owned labels for story state. Do not invent built-in management loops or extra player-facing systems.",

@@ -582,7 +582,7 @@ function start({ host = "127.0.0.1", port = 4321 } = {}) {
       const origin = formatOrigin(host, actualPort);
       console.log(`ReignsAgent backend API: ${origin}/api/editor`);
       if (resolvedStaticRoot) {
-        console.log(`ReignsAgent Creator: ${origin}/workbench`);
+        console.log(`ReignsAgent: ${origin}/workbench`);
       }
       resolveStart({ host, port: actualPort, origin });
     });

@@ -1200,7 +1200,7 @@ function App() {
             <img src="/logo-alpha.png" alt="" />
           </span>
           <div>
-            <h1>ReignsAgent Creator</h1>
+            <h1>ReignsAgent</h1>
             <p>{editor?.metadata?.title ?? "Project workspace"}</p>
           </div>
         </div>

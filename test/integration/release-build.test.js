@@ -57,8 +57,8 @@ describe("creator release distribution", () => {
         env: { ...process.env, HOST: "127.0.0.1", PORT: "0" },
         stdio: ["ignore", "pipe", "pipe"]
       });
-      const output = await waitForOutput(server, /Creator: http:\/\/127\.0\.0\.1:(\d+)\/workbench/);
-      const port = Number(output.match(/Creator: http:\/\/127\.0\.0\.1:(\d+)\/workbench/)[1]);
+      const output = await waitForOutput(server, /ReignsAgent: http:\/\/127\.0\.0\.1:(\d+)\/workbench/);
+      const port = Number(output.match(/ReignsAgent: http:\/\/127\.0\.0\.1:(\d+)\/workbench/)[1]);
       const baseUrl = `http://127.0.0.1:${port}`;
 
       const [workbench, play, editor] = await Promise.all([

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { mkdir, rm, stat } from "node:fs/promises";
+import { mkdir, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -17,4 +17,9 @@ try {
 await rm(targetDir, { recursive: true, force: true });
 await mkdir(targetDir, { recursive: true });
 const files = await assembleCreatorRuntime({ rootDir: ROOT, targetDir });
-console.log(JSON.stringify({ prepared: true, targetDir, fileCount: files.length }, null, 2));
+await writeFile(join(targetDir, "package.json"), `${JSON.stringify({
+  name: "reigns-agent-runtime",
+  private: true,
+  type: "module"
+}, null, 2)}\n`, "utf8");
+console.log(JSON.stringify({ prepared: true, targetDir, fileCount: files.length + 1 }, null, 2));

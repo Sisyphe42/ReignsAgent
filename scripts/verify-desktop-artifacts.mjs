@@ -6,18 +6,22 @@ const args = parseArgs(process.argv.slice(2));
 const root = resolve(args.root);
 if (!(await stat(root)).isDirectory()) throw new Error(`Desktop artifact root is not a directory: ${root}`);
 
-const requiredExtensions = {
-  win32: [".exe", ".nupkg"],
-  darwin: [".dmg", ".zip"],
-  linux: [".deb", ".rpm"]
-}[args.platform];
-if (!requiredExtensions) throw new Error(`Unsupported desktop platform '${args.platform}'.`);
+if (!["win32", "darwin", "linux"].includes(args.platform)) {
+  throw new Error(`Unsupported desktop platform '${args.platform}'.`);
+}
 
 const files = await collectFiles(root);
-for (const extension of requiredExtensions) {
-  if (!files.some((file) => extname(file).toLowerCase() === extension)) {
-    throw new Error(`Desktop artifacts for ${args.platform} are missing a '${extension}' file.`);
-  }
+const zipFiles = files.filter((file) => extname(file).toLowerCase() === ".zip");
+if (zipFiles.length !== 1) {
+  throw new Error(`Portable desktop artifacts for ${args.platform} require exactly one ZIP file; found ${zipFiles.length}.`);
+}
+if (!zipFiles[0].toLowerCase().includes(`-${args.platform.toLowerCase()}-`)) {
+  throw new Error(`Portable ZIP filename does not identify platform '${args.platform}': ${zipFiles[0]}`);
+}
+const installerExtensions = new Set([".deb", ".dmg", ".exe", ".nupkg", ".rpm"]);
+const installer = files.find((file) => installerExtensions.has(extname(file).toLowerCase()));
+if (installer) {
+  throw new Error(`Portable desktop artifacts contain installer '${installer}'.`);
 }
 
 console.log(JSON.stringify({ verified: true, platform: args.platform, root, files }, null, 2));
