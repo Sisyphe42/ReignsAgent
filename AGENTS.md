@@ -27,6 +27,7 @@ Narrative progression and Anti-RPG boundary: the system may support data-driven 
 - **Lifecycle Hooks**: Variable/tag hooks may implement `on_acquire`, `on_tick`, and `on_dismiss` to modify card pool weights and faction scales dynamically. These hooks are engine-level extension points only, not a mandate to build item systems or UI.
 - **AI Assist Boundary**: AI Assist is a creator-side workflow for request planning, contextual draft generation, review repair, visual request preview, and patch proposal application. Core and deployable player builds must not contain provider SDKs, API keys, network AI calls, generated-edit tooling, or AI-specific gameplay behavior. AI output must flow through explicit proposals, editor validation, player validation where relevant, and undo/draft history before it becomes authored content.
 - **AI Endpoint UX**: The default creator UX should prefer lightweight user-supplied endpoint configuration (base URL, API key, protocol, model id, and capability flags) over heavy provider-profile management. Multiple profiles, provider presets, model discovery, MCP, skills, and arbitrary agent tools are optional developer-mode enhancements unless a later reviewed plan promotes them.
+- **Desktop Host Boundary**: Electron is an optional outer host only. `apps/desktop-electron` may start the shared Creator Server and load the compiled WebUI, but Core, Pipeline, Reviewer, Interface, Creator Web, and Creator Server must not import Electron or depend on desktop-only APIs.
 
 ## 3. Maintenance Protocols
 - **Documentation Duty**: When a new feature, module, or hook changes product behavior, architecture, or roadmap direction, update the relevant project documentation (`README.md`, `ROADMAP.md`, or package docs). Keep this file focused on durable agent rules and constraints.
@@ -45,11 +46,13 @@ Narrative progression and Anti-RPG boundary: the system may support data-driven 
 
 ## 4. Repository Map
 - `apps/creator-web`: Vite/React creator dashboard workspace. It consumes the existing local API and keeps visual skins isolated from core product logic.
+- `apps/creator-server`: Shared local HTTP API and static Creator host used by development, the Node ZIP, and desktop runtime staging.
+- `apps/desktop-electron`: Optional Electron lifecycle, security, and installer shell. It contains no game, generation, review, or editor business logic.
 - `packages/core`: Pure headless game runtime. No UI, IO, AI generation, or deployment logic.
 - `packages/reviewer`: Headless Monte Carlo simulation, graph diagnostics, and balance reports.
 - `packages/pipeline`: Local import/export, content bundle handling, generation request contracts, and reviewer feedback actions.
 - `packages/interface`: Creator workflow orchestration plus legacy web dashboard/player surfaces and deployable player templates.
-- `scripts`: Local tools including the dev server, content CLI, build-game assembler, and verification gates.
+- `scripts`: Local tools including thin server launchers, runtime assemblers, content CLI, build-game assembler, and verification gates.
 - `fixtures`: Sample and validation content used by tests and local demos.
 - `test`: Cross-package integration tests.
 

@@ -7,3 +7,5 @@ output/
 test-results/
 *.log
 temp/
+apps/desktop-electron/runtime/
+apps/desktop-electron/out/

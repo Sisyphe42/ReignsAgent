@@ -83,6 +83,8 @@ npm test
 npm run build:dashboard
 npm run build:game -- fixtures/content/oss-court.cards.json dist/player
 npm run build:release
+npm run test:desktop
+npm run build:desktop
 npm run content:validate -- fixtures/content/minimal.cards.json
 npm run content:review -- fixtures/content/minimal.cards.json --cycles 100 --maxTurns 20
 npm run content:convert -- fixtures/content/minimal.cards.json tmp.cards.csv
@@ -257,6 +259,27 @@ The package intentionally excludes tests, frontend source, caches, `.env`, `node
 ```sh
 node scripts/build-game.mjs fixtures/content/oss-court.cards.json output/player
 ```
+
+## Electron Desktop Host
+
+Electron is an optional outer host over the same compiled Creator and local API used by the Node ZIP. The WebUI, API routes, Core, Pipeline, Reviewer, Interface, player builder, and transient credential behavior remain shared; no product logic is implemented in Electron.
+
+```sh
+# Build Creator, stage the shared runtime, and launch Electron
+npm run dev:desktop
+
+# Run boundary tests plus a real utility-process/API smoke test
+npm run test:desktop
+
+# Run the full repository gate and make the current platform's installers
+npm run build:desktop
+```
+
+The desktop app is named `ReignsAgent` with application ID `io.reignsagent.app`. It starts the Creator Server in an Electron utility process on a random loopback port, loads `/workbench` in a sandboxed BrowserWindow, and writes default exports to `Documents/ReignsAgent/Builds`.
+
+Native artifact targets are Windows x64 Squirrel Setup, macOS x64/arm64 DMG plus ZIP, and Linux x64 DEB plus RPM. `.github/workflows/desktop.yml` builds them only for manual runs and `v*` tags, then uploads workflow artifacts without publishing a release. The v1 artifacts are unsigned and may trigger SmartScreen or Gatekeeper warnings.
+
+Electron v1 intentionally has no preload bridge, native file dialogs, automatic updates, signing, notarization, store publishing, or persisted Creator database. API keys remain transient request data and are not written into desktop runtime files or configuration.
 
 ## Package Examples
 

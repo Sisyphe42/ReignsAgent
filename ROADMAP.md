@@ -3,7 +3,7 @@
 ## Current Direction
 ReignsAgent is moving from a functional prototype toward a creator-focused workspace for building, reviewing, previewing, and shipping Reigns-like card narratives.
 
-The current priority is the dashboard experience. Backend and package boundaries should remain stable while the creator UI becomes easier to navigate and reason about. The backend dev server should stay API-only; the creator UI should live on the Vite dashboard.
+The current priority is the dashboard experience. Backend and package boundaries should remain stable while the creator UI becomes easier to navigate and reason about. Development keeps the backend API-only and the Creator on Vite; Node ZIP and Electron hosts reuse the same Creator Server factory for packaged delivery.
 
 Story and Content work should now optimize for non-technical content authors: the creator surface should explain what each card does, when it appears, how it moves the story, what is broken, and what the next repair action should be.
 
@@ -39,9 +39,16 @@ Story and Content work should now optimize for non-technical content authors: th
 
 ## Later Architecture Options
 - `packages/contracts`: Shared schemas for cards, content bundles, diagnostics reports, connector requests, and build manifests.
-- `apps/creator-server`: A future Fastify-based creator API if the local dev server outgrows the current script.
+- Fastify remains an optional future transport upgrade if the shared `apps/creator-server` HTTP implementation outgrows Node's built-in server.
 - Reviewer workers: Worker-thread or job-backed diagnostics for large Monte Carlo runs.
 - Production player shell: A dedicated deployable player surface with animation, settings, language switching, interaction preferences, about/attribution, and polished runtime UX.
+
+## Desktop Distribution Direction
+- Keep Browser/Vite development, the Node ZIP, and Electron as parallel hosts over the same WebUI and local API.
+- Keep Electron isolated in `apps/desktop-electron`; no package or Creator Web code may import desktop APIs.
+- Use an Electron utility process for the Creator Server so diagnostics and connector work do not block the desktop main process.
+- Build unsigned native artifacts on Windows x64, macOS x64/arm64, and Linux x64 before promoting signing, notarization, publishing, or automatic updates.
+- Treat native file dialogs, menus, notifications, and protocol handlers as later opt-in bridges; v1 is a secure lifecycle and installer shell only.
 
 ## Non-Goals For The Current Phase
 - No full engine migration to Unity, Godot, or another game editor.

@@ -38,3 +38,17 @@ jobs:
           test -f "$RUNNER_TEMP/reigns-agent-player/player-runtime.js"
           test -f "$RUNNER_TEMP/reigns-agent-player/assets/logo-alpha.png"
           find "$RUNNER_TEMP/reigns-agent-player" -maxdepth 1 -name "*.game.json" -print -quit | grep -q .
+
+  desktop-smoke:
+    runs-on: ubuntu-latest
+    needs: verify
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: sudo apt-get update && sudo apt-get install -y xvfb
+      - run: npm ci
+      - run: npm run build:dashboard
+      - run: xvfb-run -a npm run test:desktop
