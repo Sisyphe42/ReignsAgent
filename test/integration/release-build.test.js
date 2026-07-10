@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
+import { once } from "node:events";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
@@ -103,7 +104,7 @@ describe("creator release distribution", () => {
       assert.match(await readFile(join(playerOutput, "player.html"), "utf8"), /ReignsAgent/);
       assert.match(await readFile(join(playerOutput, "player-runtime.js"), "utf8"), /createCoreRuntime/);
     } finally {
-      if (server && !server.killed) server.kill();
+      await stopChild(server);
       await rm(tempRoot, { recursive: true, force: true });
     }
   });
@@ -117,6 +118,15 @@ function ensureCreatorBuild() {
     { cwd: join(ROOT, "apps/creator-web") }
   );
   return creatorBuildPromise;
+}
+
+async function stopChild(child) {
+  if (!child || child.exitCode !== null) return;
+  child.kill();
+  await Promise.race([
+    once(child, "exit"),
+    new Promise((resolve) => setTimeout(resolve, 5_000))
+  ]);
 }
 
 async function extractZip(archivePath, outputRoot) {

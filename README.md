@@ -246,7 +246,7 @@ The distribution contains:
 | Path | Purpose |
 | --- | --- |
 | `creator/` | Compiled Vite/React Creator application. |
-| `scripts/dev-server.mjs` | Unified local API and static application server. |
+| `apps/creator-server` | Shared local API and static application server used by CLI and packaged hosts. |
 | `scripts/build-game.mjs` | Deployable standalone player builder. |
 | `packages/*/src` | Runtime modules required by the local API and player builder. |
 | `packages/interface/web` | Player preview and standalone player templates. |

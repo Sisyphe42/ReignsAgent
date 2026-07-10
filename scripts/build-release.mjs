@@ -1,9 +1,10 @@
 #!/usr/bin/env node
-import { copyFile, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { copyFile, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { zipSync } from "fflate";
+import { assembleCreatorRuntime, collectFiles } from "./runtime-files.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const args = parseArgs(process.argv.slice(2));
@@ -21,24 +22,17 @@ await rm(releaseRoot, { recursive: true, force: true });
 await rm(archivePath, { force: true });
 await mkdir(releaseRoot, { recursive: true });
 
-const copyEntries = [
-  ["apps/creator-web/dist", "creator"],
-  ["scripts/dev-server.mjs", "scripts/dev-server.mjs"],
-  ["scripts/build-game.mjs", "scripts/build-game.mjs"],
-  ["packages/core/src", "packages/core/src"],
-  ["packages/pipeline/src", "packages/pipeline/src"],
-  ["packages/reviewer/src", "packages/reviewer/src"],
-  ["packages/interface/src", "packages/interface/src"],
-  ["packages/interface/web", "packages/interface/web"],
-  ["fixtures/content", "fixtures/content"],
+await assembleCreatorRuntime({ rootDir: ROOT, targetDir: releaseRoot });
+
+const releaseEntries = [
   ["scripts/release/start.mjs", "start.mjs"],
   ["scripts/release/start.cmd", "start.cmd"],
   ["scripts/release/start.sh", "start.sh"],
   ["scripts/release/README.md", "README.md"]
 ];
 
-for (const [source, target] of copyEntries) {
-  await copyTree(join(ROOT, source), join(releaseRoot, target));
+for (const [source, target] of releaseEntries) {
+  await copyFile(join(ROOT, source), join(releaseRoot, target));
 }
 
 const releasePackage = {
@@ -71,39 +65,11 @@ console.log(JSON.stringify({
   fileCount: files.length
 }, null, 2));
 
-async function copyTree(source, target) {
-  const sourceStat = await stat(source);
-  if (sourceStat.isDirectory()) {
-    await mkdir(target, { recursive: true });
-    const entries = await readdir(source, { withFileTypes: true });
-    for (const entry of entries) {
-      await copyTree(join(source, entry.name), join(target, entry.name));
-    }
-    return;
-  }
-  await mkdir(dirname(target), { recursive: true });
-  await copyFile(source, target);
-}
-
-async function collectFiles(root) {
-  const files = [];
-  const entries = await readdir(root, { withFileTypes: true });
-  for (const entry of entries) {
-    const path = join(root, entry.name);
-    if (entry.isDirectory()) {
-      files.push(...await collectFiles(path));
-    } else if (entry.isFile()) {
-      files.push(path);
-    }
-  }
-  return files.sort();
-}
-
 function validateReleaseFiles(files) {
   const names = files.map((file) => toPosix(relative(releaseRoot, file)));
   const required = [
     "creator/index.html",
-    "scripts/dev-server.mjs",
+    "apps/creator-server/src/server.mjs",
     "scripts/build-game.mjs",
     "packages/core/src/index.js",
     "packages/pipeline/src/index.js",

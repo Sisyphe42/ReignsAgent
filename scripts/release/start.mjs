@@ -14,8 +14,9 @@ if (!Number.isInteger(requestedPort) || requestedPort < 0 || requestedPort > 655
 }
 
 process.env.REIGNS_AGENT_STATIC_ROOT = join(ROOT, "creator");
-const { startServer } = await import("./scripts/dev-server.mjs");
-const address = await startServer({ host, port: requestedPort });
+const { createCreatorServer } = await import("./apps/creator-server/src/server.mjs");
+const creatorServer = await createCreatorServer({ rootDir: ROOT, staticRoot: process.env.REIGNS_AGENT_STATIC_ROOT });
+const address = await creatorServer.start({ host, port: requestedPort });
 const url = `http://${displayHost(address.host)}:${address.port}/workbench`;
 
 if (shouldOpen) {
