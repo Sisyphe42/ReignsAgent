@@ -84,6 +84,7 @@ npm run build:dashboard
 npm run build:game -- fixtures/content/oss-court.cards.json dist/player
 npm run build:release
 npm run test:desktop
+npm run test:desktop:packaged
 npm run build:desktop
 npm run content:validate -- fixtures/content/minimal.cards.json
 npm run content:review -- fixtures/content/minimal.cards.json --cycles 100 --maxTurns 20
@@ -278,6 +279,8 @@ npm run build:desktop
 The desktop app is named `ReignsAgent` with application ID `io.reignsagent.app`. It starts the Creator Server in an Electron utility process on a random loopback port, loads `/workbench` in a sandboxed BrowserWindow, and writes default exports to `Documents/ReignsAgent/Builds`.
 
 Native artifact targets are Windows x64 Squirrel Setup, macOS x64/arm64 DMG plus ZIP, and Linux x64 DEB plus RPM. `.github/workflows/desktop.yml` builds them only for manual runs and `v*` tags, then uploads workflow artifacts without publishing a release. The v1 artifacts are unsigned and may trigger SmartScreen or Gatekeeper warnings.
+
+`test:desktop:packaged` runs after Forge packaging and verifies both the unpacked Creator Server runtime and the packaged executable handshake. Builders with an existing Electron ZIP may set `ELECTRON_ZIP_DIR` to its containing directory to avoid downloading the runtime again.
 
 Electron v1 intentionally has no preload bridge, native file dialogs, automatic updates, signing, notarization, store publishing, or persisted Creator database. API keys remain transient request data and are not written into desktop runtime files or configuration.
 

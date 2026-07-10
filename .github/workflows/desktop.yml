@@ -49,6 +49,12 @@ jobs:
         if: matrix.platform != 'linux'
         run: npm exec -- electron apps/desktop-electron --smoke-test
       - run: npm run make -w @reigns-agent/desktop-electron -- --arch=${{ matrix.arch }}
+      - name: Smoke test packaged desktop runtime
+        if: matrix.platform != 'linux'
+        run: npm run test:desktop:packaged -- ${{ matrix.platform }} ${{ matrix.arch }}
+      - name: Smoke test packaged desktop runtime on Linux
+        if: matrix.platform == 'linux'
+        run: xvfb-run -a npm run test:desktop:packaged -- ${{ matrix.platform }} ${{ matrix.arch }}
       - run: node scripts/verify-desktop-artifacts.mjs --platform ${{ matrix.platform }} --root apps/desktop-electron/out/make
       - uses: actions/upload-artifact@v4
         with:

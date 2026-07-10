@@ -1,21 +1,20 @@
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 
 import { app, BrowserWindow, session, utilityProcess } from "electron";
-import squirrelStartup from "electron-squirrel-startup";
 
+import { desktopRuntimePaths } from "./runtime-paths.mjs";
 import { desktopBuildOutputDir, isAllowedAppUrl } from "./security.mjs";
+import { handleSquirrelStartup } from "./squirrel-startup.mjs";
 
 const smokeTest = process.argv.includes("--smoke-test");
-const childEntry = fileURLToPath(new URL("./server-child.mjs", import.meta.url));
 let mainWindow = null;
 let serverProcess = null;
 let serverOrigin = null;
 let quitting = false;
 
-if (squirrelStartup) {
+if (handleSquirrelStartup({ quit: () => app.quit() })) {
   app.quit();
-} else if (!app.requestSingleInstanceLock()) {
+} else if (!smokeTest && !app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.on("second-instance", () => {
@@ -26,8 +25,7 @@ if (squirrelStartup) {
 
   app.whenReady().then(startDesktop).catch((error) => {
     console.error(error);
-    process.exitCode = 1;
-    app.quit();
+    app.exit(1);
   });
 
   app.on("activate", () => {
@@ -93,10 +91,10 @@ function createMainWindow(origin) {
 }
 
 function startCreatorServer() {
-  const runtimeRoot = join(app.getAppPath(), "runtime");
+  const { childEntry, runtimeRoot } = desktopRuntimePaths(app.getAppPath());
   const buildOutputDir = desktopBuildOutputDir(app.getPath("documents"));
   serverProcess = utilityProcess.fork(childEntry, [], {
-    cwd: app.getAppPath(),
+    cwd: runtimeRoot,
     env: {
       ...process.env,
       REIGNS_AGENT_RUNTIME_ROOT: runtimeRoot,
@@ -116,10 +114,21 @@ function startCreatorServer() {
     };
     serverProcess.once("exit", onExit);
     serverProcess.on("message", (message) => {
-      if (message?.type !== "ready") return;
-      clearTimeout(timeout);
-      serverProcess?.off("exit", onExit);
-      resolveStart(message.address.origin);
+      if (message?.type === "status") {
+        console.log(`Creator Server startup: ${message.stage}`);
+        return;
+      }
+      if (message?.type === "error") {
+        clearTimeout(timeout);
+        serverProcess?.off("exit", onExit);
+        rejectStart(new Error(`Creator Server failed during ${message.stage}: ${message.error?.message ?? "unknown error"}`));
+        return;
+      }
+      if (message?.type === "ready") {
+        clearTimeout(timeout);
+        serverProcess?.off("exit", onExit);
+        resolveStart(message.address.origin);
+      }
     });
   });
 }

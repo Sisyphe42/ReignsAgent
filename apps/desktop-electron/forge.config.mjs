@@ -2,10 +2,16 @@ import { fileURLToPath } from "node:url";
 
 const iconBase = fileURLToPath(new URL("./assets/icon", import.meta.url));
 const pngIcon = fileURLToPath(new URL("./assets/icon.png", import.meta.url));
+const electronZipDir = process.env.ELECTRON_ZIP_DIR;
 
 export default {
   packagerConfig: {
-    asar: true,
+    asar: {
+      unpack: "**/server-child.mjs",
+      unpackDir: "runtime"
+    },
+    prune: false,
+    ...(electronZipDir ? { electronZipDir } : {}),
     appBundleId: "io.reignsagent.app",
     executableName: "ReignsAgent",
     icon: iconBase
