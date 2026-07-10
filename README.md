@@ -82,6 +82,7 @@ Common project commands:
 npm test
 npm run build:dashboard
 npm run build:game -- fixtures/content/oss-court.cards.json dist/player
+npm run build:release
 npm run content:validate -- fixtures/content/minimal.cards.json
 npm run content:review -- fixtures/content/minimal.cards.json --cycles 100 --maxTurns 20
 npm run content:convert -- fixtures/content/minimal.cards.json tmp.cards.csv
@@ -214,6 +215,48 @@ The build emits:
 | `player-runtime.js` | Player runtime with stitched core logic. |
 | `assets/logo-alpha.png` | Transparent product logo. |
 | Local content assets | Assets referenced by the bundle, such as `assets/sample/*.svg`. |
+
+## Creator Distribution
+
+Build the complete local Creator distribution:
+
+```sh
+npm run build:release
+```
+
+This command runs the full verification gate, compiles the Creator, and emits both `dist/reigns-agent-<version>/` and `dist/reigns-agent-<version>.zip`. The ZIP is cross-platform and requires Node.js 20 or newer on the target machine; it does not bundle Node.js or `node_modules`.
+
+After extracting the ZIP, start the Creator with one of these commands:
+
+```sh
+# All platforms
+node start.mjs
+
+# Windows convenience launcher
+start.cmd
+
+# macOS/Linux convenience launcher
+sh start.sh
+```
+
+The launcher serves the compiled Creator, local API, and player preview from one process at `http://127.0.0.1:4321/workbench`, then opens the browser. Use `--no-open` to suppress browser launch, or set `HOST` and `PORT` to override the listener.
+
+The distribution contains:
+
+| Path | Purpose |
+| --- | --- |
+| `creator/` | Compiled Vite/React Creator application. |
+| `scripts/dev-server.mjs` | Unified local API and static application server. |
+| `scripts/build-game.mjs` | Deployable standalone player builder. |
+| `packages/*/src` | Runtime modules required by the local API and player builder. |
+| `packages/interface/web` | Player preview and standalone player templates. |
+| `fixtures/content` | Example content for evaluation and player builds. |
+
+The package intentionally excludes tests, frontend source, caches, `.env`, `node_modules`, provider credentials, and AI-specific player behavior. Creator state remains process-local. To generate a player site from the extracted package, run:
+
+```sh
+node scripts/build-game.mjs fixtures/content/oss-court.cards.json output/player
+```
 
 ## Package Examples
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { readFile, writeFile, mkdir, stat } from "node:fs/promises";
 import { createServer } from "node:http";
-import { join } from "node:path";
+import { extname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -27,8 +27,27 @@ import {
 } from "../packages/interface/src/index.js";
 
 const PORT = Number(process.env.PORT ?? 4321);
+const HOST = process.env.HOST ?? "127.0.0.1";
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const OSS_SAMPLE_PATH = join(ROOT, "fixtures/content/oss-court.cards.json");
+const CREATOR_STATIC_ROOT = process.env.REIGNS_AGENT_STATIC_ROOT
+  ? resolve(process.env.REIGNS_AGENT_STATIC_ROOT)
+  : null;
+const INTERFACE_WEB_ROOT = join(ROOT, "packages/interface/web");
+const MIME_TYPES = {
+  ".css": "text/css; charset=utf-8",
+  ".html": "text/html; charset=utf-8",
+  ".ico": "image/x-icon",
+  ".jpeg": "image/jpeg",
+  ".jpg": "image/jpeg",
+  ".js": "text/javascript; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".mjs": "text/javascript; charset=utf-8",
+  ".png": "image/png",
+  ".svg": "image/svg+xml",
+  ".txt": "text/plain; charset=utf-8",
+  ".webp": "image/webp"
+};
 
 /**
  * SessionState keeps an editor and an optional active play session for the local
@@ -64,13 +83,18 @@ class SessionState {
 
 const store = new SessionState(await readDefaultSample());
 
-const server = createServer(async (req, res) => {
+export const server = createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const path = url.pathname;
 
   try {
     if (path.startsWith("/api/")) {
       return await handleApi(req, res, url);
+    }
+
+    if (CREATOR_STATIC_ROOT && (req.method === "GET" || req.method === "HEAD")) {
+      const served = await handleReleaseAsset(req, res, url);
+      if (served) return;
     }
 
     res.writeHead(404, { "content-type": "application/json" });
@@ -483,6 +507,80 @@ async function readDefaultSample() {
   }
 }
 
-server.listen(PORT, () => {
-  console.log(`ReignsAgent backend API: http://localhost:${PORT}/api/editor`);
-});
+async function handleReleaseAsset(req, res, url) {
+  const pathname = decodeURIComponent(url.pathname);
+  if (pathname.includes("\0")) {
+    return false;
+  }
+
+  if (pathname === "/") {
+    res.writeHead(302, { location: "/workbench" });
+    res.end();
+    return true;
+  }
+
+  if (pathname === "/play") {
+    return sendFile(req, res, INTERFACE_WEB_ROOT, "player.html");
+  }
+
+  const creatorRelativePath = pathname === "/workbench" || pathname.startsWith("/workbench/")
+    ? "index.html"
+    : pathname.replace(/^\/+/, "");
+  if (await sendFile(req, res, CREATOR_STATIC_ROOT, creatorRelativePath)) {
+    return true;
+  }
+
+  if (pathname.startsWith("/assets/")) {
+    return sendFile(req, res, INTERFACE_WEB_ROOT, pathname.replace(/^\/+/, ""));
+  }
+
+  return false;
+}
+
+async function sendFile(req, res, root, relativePath) {
+  const filePath = resolve(root, relativePath);
+  const relativeFile = relative(resolve(root), filePath);
+  if (relativeFile.startsWith("..") || relativeFile === "" || filePath.includes("\0")) {
+    return false;
+  }
+
+  try {
+    const fileStat = await stat(filePath);
+    if (!fileStat.isFile()) return false;
+    const body = req.method === "HEAD" ? null : await readFile(filePath);
+    res.writeHead(200, {
+      "content-type": MIME_TYPES[extname(filePath).toLowerCase()] ?? "application/octet-stream",
+      "content-length": fileStat.size,
+      "cache-control": extname(filePath) === ".html" ? "no-cache" : "public, max-age=3600"
+    });
+    res.end(body);
+    return true;
+  } catch (error) {
+    if (error?.code === "ENOENT" || error?.code === "ENOTDIR") {
+      return false;
+    }
+    throw error;
+  }
+}
+
+export function startServer({ host = HOST, port = PORT } = {}) {
+  return new Promise((resolveStart, rejectStart) => {
+    const onError = (error) => rejectStart(error);
+    server.once("error", onError);
+    server.listen(port, host, () => {
+      server.off("error", onError);
+      const address = server.address();
+      const actualPort = typeof address === "object" && address ? address.port : port;
+      console.log(`ReignsAgent backend API: http://${host}:${actualPort}/api/editor`);
+      if (CREATOR_STATIC_ROOT) {
+        console.log(`ReignsAgent Creator: http://${host}:${actualPort}/workbench`);
+      }
+      resolveStart({ host, port: actualPort });
+    });
+  });
+}
+
+const isMain = process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (isMain) {
+  await startServer();
+}

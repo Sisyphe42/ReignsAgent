@@ -12,6 +12,7 @@
     "build": "node scripts/check-syntax.mjs && node scripts/verify-exports.mjs && node scripts/verify-boundaries.mjs && node scripts/verify-anti-rpg.mjs && node scripts/verify-fixtures.mjs && npm run build:dashboard",
     "build:dashboard": "npm run build -w @reigns-agent/creator-web",
     "build:game": "node scripts/build-game.mjs",
+    "build:release": "npm run verify && node scripts/build-release.mjs",
     "content:validate": "node scripts/content-tool.mjs validate",
     "content:review": "node scripts/content-tool.mjs review",
     "content:convert": "node scripts/content-tool.mjs convert",
@@ -26,5 +27,8 @@
   },
   "engines": {
     "node": ">=20"
+  },
+  "devDependencies": {
+    "fflate": "^0.8.2"
   }
 }
