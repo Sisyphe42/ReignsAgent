@@ -1,6 +1,7 @@
 #!/usr/bin/env node
-import { readFile, writeFile, mkdir, stat } from "node:fs/promises";
+import { readFile, writeFile, mkdir, mkdtemp, rm, stat } from "node:fs/promises";
 import { createServer } from "node:http";
+import { tmpdir } from "node:os";
 import { dirname, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -25,6 +26,7 @@ import {
   validateAiEditEndpointConfig,
   validatePlayerCards
 } from "../../../packages/interface/src/index.js";
+import { createWorkspaceStore } from "../../../packages/workspace/src/index.js";
 
 const DEFAULT_ROOT = fileURLToPath(new URL("../../..", import.meta.url));
 const MIME_TYPES = {
@@ -80,11 +82,17 @@ export async function createCreatorServer({
   samplePath = join(rootDir, "fixtures/content/oss-court.cards.json"),
   interfaceWebRoot = join(rootDir, "packages/interface/web"),
   defaultBuildOutputDir = join(process.cwd(), "dist"),
+  dataRoot = null,
   initialBundle
 } = {}) {
 const resolvedStaticRoot = staticRoot ? resolve(staticRoot) : null;
 const resolvedInterfaceWebRoot = resolve(interfaceWebRoot);
-const store = new SessionState(initialBundle ?? await readDefaultSample());
+const temporaryDataRoot = dataRoot ? null : await mkdtemp(join(tmpdir(), "reigns-creator-"));
+const workspace = await createWorkspaceStore({
+  dataRoot: dataRoot ?? temporaryDataRoot,
+  initialBundle: initialBundle ?? await readDefaultSample()
+});
+const store = new SessionState(await workspace.readActiveBundle());
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
@@ -112,6 +120,55 @@ async function handleApi(req, res, url) {
   const path = url.pathname;
   const body = await readJsonBody(req);
 
+  if (path === "/api/config" && req.method === "GET") {
+    return sendJson(res, await workspace.getConfig());
+  }
+
+  if (path === "/api/config" && req.method === "PATCH") {
+    return sendJson(res, await workspace.updateConfig(body ?? {}));
+  }
+
+  if (path === "/api/workspace" && req.method === "GET") {
+    return sendJson(res, await workspace.getWorkspaceState());
+  }
+
+  if (path === "/api/workspace" && req.method === "PATCH") {
+    return sendJson(res, await workspace.updateWorkspaceState(body ?? {}));
+  }
+
+  if (path === "/api/projects" && req.method === "GET") {
+    return sendJson(res, { projects: await workspace.listProjects() });
+  }
+
+  if (path === "/api/projects" && req.method === "POST") {
+    const source = body?.source === "sample" ? "sample" : "blank";
+    const bundle = body?.bundle ?? (source === "sample" ? await readDefaultSample() : undefined);
+    const project = await workspace.createProject({ bundle, source });
+    store.loadEditor(await workspace.readActiveBundle());
+    return sendJson(res, { project, projects: await workspace.listProjects() });
+  }
+
+  const projectRoute = matchProjectPath(path);
+  if (projectRoute?.action === "open" && req.method === "POST") {
+    const project = await workspace.openProject(projectRoute.id);
+    store.loadEditor(await workspace.readActiveBundle());
+    return sendJson(res, { project });
+  }
+
+  if (projectRoute?.action === null && req.method === "PATCH") {
+    await workspace.openProject(projectRoute.id);
+    store.loadEditor(await workspace.readActiveBundle());
+    if (typeof body?.title === "string") store.editor.setMetadata({ title: body.title });
+    await persistEditor();
+    return sendJson(res, { project: (await workspace.listProjects()).find((entry) => entry.id === projectRoute.id) });
+  }
+
+  if (projectRoute?.action === null && req.method === "DELETE") {
+    const result = await workspace.deleteProject(projectRoute.id);
+    store.loadEditor(await workspace.readActiveBundle());
+    return sendJson(res, { ...result, projects: await workspace.listProjects() });
+  }
+
   if (path === "/api/editor" && req.method === "GET") {
     return sendJson(res, {
       metadata: store.editor.metadata,
@@ -128,6 +185,7 @@ async function handleApi(req, res, url) {
 
   if (path === "/api/editor/import" && req.method === "POST") {
     const editor = store.loadEditor(body?.bundle ?? body?.content ?? body);
+    await persistEditor();
     return sendJson(res, {
       imported: true,
       cardCount: editor.cardCount(),
@@ -141,6 +199,7 @@ async function handleApi(req, res, url) {
       throw new Error("upload requires a 'content' string field");
     }
     const editor = store.loadEditor(text);
+    await persistEditor();
     return sendJson(res, {
       imported: true,
       cardCount: editor.cardCount(),
@@ -151,6 +210,7 @@ async function handleApi(req, res, url) {
   if (path === "/api/editor/cards" && req.method === "POST") {
     const card = store.editor.addCard(body.card);
     store.markEdited();
+    await persistEditor();
     return sendJson(res, { card, validation: store.editor.validate() });
   }
 
@@ -158,6 +218,7 @@ async function handleApi(req, res, url) {
     const cardId = decodeURIComponent(path.slice("/api/editor/cards/".length));
     const card = store.editor.updateCard(cardId, body.changes ?? {});
     store.markEdited();
+    await persistEditor();
     return sendJson(res, { card, validation: store.editor.validate() });
   }
 
@@ -165,12 +226,14 @@ async function handleApi(req, res, url) {
     const cardId = decodeURIComponent(path.slice("/api/editor/cards/".length));
     const removed = store.editor.removeCard(cardId);
     store.markEdited();
+    await persistEditor();
     return sendJson(res, { removed, validation: store.editor.validate() });
   }
 
   if (path === "/api/editor/metadata" && req.method === "PATCH") {
     const metadata = store.editor.setMetadata(body.metadata ?? {});
     store.markEdited();
+    await persistEditor();
     return sendJson(res, { metadata });
   }
 
@@ -180,6 +243,7 @@ async function handleApi(req, res, url) {
 
   if (path === "/api/editor/restore" && req.method === "POST") {
     const editor = store.loadEditor(body?.bundle ?? body);
+    await persistEditor();
     return sendJson(res, {
       restored: true,
       cardCount: editor.cardCount(),
@@ -254,7 +318,7 @@ async function handleApi(req, res, url) {
     const plan = await buildAiEditPlanAsync({
       editor: store.editor,
       config: body?.config ?? {},
-      credentials: body?.credentials ?? {},
+      credentials: await resolveCredentials(body?.credentials),
       mode,
       instruction: body?.instruction ?? "",
       targetCardId: body?.targetCardId ?? null,
@@ -268,7 +332,7 @@ async function handleApi(req, res, url) {
     const result = await validateAiEditEndpointConfig({
       editor: store.editor,
       config: body?.config ?? {},
-      credentials: body?.credentials ?? {}
+      credentials: await resolveCredentials(body?.credentials)
     });
     return sendJson(res, result);
   }
@@ -276,7 +340,7 @@ async function handleApi(req, res, url) {
   if (path === "/api/ai/edit/models" && req.method === "POST") {
     const result = await listAiEditEndpointModels({
       config: body?.config ?? {},
-      credentials: body?.credentials ?? {}
+      credentials: await resolveCredentials(body?.credentials)
     });
     return sendJson(res, result);
   }
@@ -288,6 +352,7 @@ async function handleApi(req, res, url) {
       proposalIds: body?.proposalIds ?? []
     });
     store.replaceEditor(result.editor);
+    await persistEditor();
     return sendJson(res, {
       applied: result.applied,
       proposalIds: result.proposalIds,
@@ -416,7 +481,7 @@ function matchChoicePath(path) {
   return { route: "effect", cardId, choiceId, kind, target };
 }
 
-function handleChoiceRoute(req, res, match, body) {
+async function handleChoiceRoute(req, res, match, body) {
   if (match.route === "choice") {
     if (req.method !== "PATCH") {
       throw new Error(`Choice route requires PATCH, got ${req.method}`);
@@ -429,6 +494,7 @@ function handleChoiceRoute(req, res, match, body) {
       card = store.editor.setChoiceEffects(match.cardId, match.choiceId, body.effects);
     }
     store.markEdited();
+    await persistEditor();
     return sendJson(res, { card, validation: store.editor.validate() });
   }
 
@@ -471,6 +537,7 @@ function handleChoiceRoute(req, res, match, body) {
 
   const updated = store.editor.setChoiceEffects(match.cardId, match.choiceId, effects);
   store.markEdited();
+  await persistEditor();
   return sendJson(res, { card: updated, validation: store.editor.validate() });
 }
 
@@ -508,6 +575,21 @@ async function readDefaultSample() {
   } catch {
     return { cards: [] };
   }
+}
+
+function matchProjectPath(path) {
+  const match = path.match(/^\/api\/projects\/([^/]+)(?:\/(open))?$/);
+  return match ? { id: decodeURIComponent(match[1]), action: match[2] ?? null } : null;
+}
+
+async function persistEditor() {
+  return workspace.saveActiveBundle(store.editor.toBundle());
+}
+
+async function resolveCredentials(credentials) {
+  if (typeof credentials?.apiKey === "string" && credentials.apiKey.trim()) return credentials;
+  const storedApiKey = await workspace.getStoredApiKey();
+  return storedApiKey ? { ...(credentials ?? {}), apiKey: storedApiKey } : (credentials ?? {});
 }
 
 async function handleReleaseAsset(req, res, url) {
@@ -590,10 +672,17 @@ function start({ host = "127.0.0.1", port = 4321 } = {}) {
 }
 
 function close() {
-  if (!server.listening) return Promise.resolve();
+  if (!server.listening) return cleanupTemporaryRoot();
   return new Promise((resolveClose, rejectClose) => {
-    server.close((error) => error ? rejectClose(error) : resolveClose());
+    server.close((error) => {
+      if (error) rejectClose(error);
+      else cleanupTemporaryRoot().then(resolveClose, rejectClose);
+    });
   });
+}
+
+function cleanupTemporaryRoot() {
+  return temporaryDataRoot ? rm(temporaryDataRoot, { recursive: true, force: true }) : Promise.resolve();
 }
 
 return { server, start, close };

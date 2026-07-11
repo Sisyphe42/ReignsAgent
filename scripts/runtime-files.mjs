@@ -9,6 +9,7 @@ export const CREATOR_RUNTIME_ENTRIES = Object.freeze([
   ["packages/pipeline/src", "packages/pipeline/src"],
   ["packages/reviewer/src", "packages/reviewer/src"],
   ["packages/interface/src", "packages/interface/src"],
+  ["packages/workspace/src", "packages/workspace/src"],
   ["packages/interface/web", "packages/interface/web"],
   ["fixtures/content", "fixtures/content"]
 ]);
@@ -46,6 +47,7 @@ export function validateCreatorRuntime(files, runtimeRoot) {
     "packages/pipeline/src/index.js",
     "packages/reviewer/src/index.js",
     "packages/interface/src/index.js",
+    "packages/workspace/src/index.js",
     "packages/interface/web/player.html",
     "fixtures/content/oss-court.cards.json"
   ];

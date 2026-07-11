@@ -4,8 +4,5 @@
   "type": "module",
   "exports": {
     ".": "./src/index.js"
-  },
-  "dependencies": {
-    "smol-toml": "1.7.0"
   }
 }

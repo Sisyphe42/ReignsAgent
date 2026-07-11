@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { access, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 
-import { parse, stringify } from "smol-toml";
+import { parse, stringify } from "./toml.js";
 
 const CONFIG_SCHEMA_VERSION = 1;
 const PROJECT_SCHEMA_VERSION = 1;
@@ -279,17 +279,21 @@ class WorkspaceStore {
 function defaultConfig() {
   return {
     schemaVersion: CONFIG_SCHEMA_VERSION,
-    theme: "parchment",
+    theme: "github-light",
     locale: "en",
+    aiAssistEnabled: false,
     activeProjectId: "",
     recentProjectIds: [],
     build: { defaultOutputDir: "Builds" },
     ai: {
       endpoint: "",
       protocol: "openai_chat",
+      endpointPresetId: "custom",
+      compatibilityFamily: "custom",
       modelId: "",
       routeMode: "auto",
-      jsonMode: true,
+      jsonMode: "auto",
+      capabilities: ["structuredJson"],
       apiKey: ""
     }
   };
@@ -307,15 +311,19 @@ function normalizeConfig(value) {
     schemaVersion: CONFIG_SCHEMA_VERSION,
     theme: normalizeString(value.theme, defaults.theme),
     locale: normalizeString(value.locale, defaults.locale),
+    aiAssistEnabled: typeof value.aiAssistEnabled === "boolean" ? value.aiAssistEnabled : defaults.aiAssistEnabled,
     activeProjectId: normalizeString(value.activeProjectId, ""),
     recentProjectIds: normalizeStringArray(value.recentProjectIds),
     build: { defaultOutputDir: normalizeString(build.defaultOutputDir, defaults.build.defaultOutputDir) },
     ai: {
       endpoint: normalizeString(ai.endpoint, ""),
       protocol: normalizeString(ai.protocol, defaults.ai.protocol),
+      endpointPresetId: normalizeString(ai.endpointPresetId, defaults.ai.endpointPresetId),
+      compatibilityFamily: normalizeString(ai.compatibilityFamily, defaults.ai.compatibilityFamily),
       modelId: normalizeString(ai.modelId, ""),
       routeMode: normalizeString(ai.routeMode, defaults.ai.routeMode),
-      jsonMode: typeof ai.jsonMode === "boolean" ? ai.jsonMode : defaults.ai.jsonMode,
+      jsonMode: normalizeString(ai.jsonMode, defaults.ai.jsonMode),
+      capabilities: Array.isArray(ai.capabilities) ? ai.capabilities.filter((entry) => typeof entry === "string") : defaults.ai.capabilities,
       apiKey: typeof ai.apiKey === "string" ? ai.apiKey : ""
     }
   };
@@ -340,15 +348,19 @@ function projectConfig(config) {
     schemaVersion: config.schemaVersion,
     theme: config.theme,
     locale: config.locale,
+    aiAssistEnabled: config.aiAssistEnabled,
     activeProjectId: config.activeProjectId || null,
     recentProjectIds: [...config.recentProjectIds],
     build: cloneJson(config.build, "Build config"),
     ai: {
       endpoint: config.ai.endpoint,
       protocol: config.ai.protocol,
+      endpointPresetId: config.ai.endpointPresetId,
+      compatibilityFamily: config.ai.compatibilityFamily,
       modelId: config.ai.modelId,
       routeMode: config.ai.routeMode,
       jsonMode: config.ai.jsonMode,
+      capabilities: [...config.ai.capabilities],
       hasApiKey: Boolean(config.ai.apiKey)
     }
   };

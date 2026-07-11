@@ -17,7 +17,7 @@ for (const file of sourceFiles.filter((path) => path.includes(`${separator()}src
       continue;
     }
 
-    if (!specifier.startsWith(".") && !(packageName === "workspace" && specifier === "smol-toml")) {
+    if (!specifier.startsWith(".")) {
       violations.push(`${file}: package imports are not allowed in source yet: '${specifier}'`);
       continue;
     }

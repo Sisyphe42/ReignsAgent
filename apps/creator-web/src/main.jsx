@@ -24,12 +24,9 @@ const SKINS = [
   ["terminal", "Terminal"]
 ];
 
-const PERSIST_KEY = "reigns-agent.creator-web.skin";
-const DRAFT_KEY = "reigns-agent.creator-web.editor-draft";
-const AI_SETTINGS_KEY = "reigns-agent.creator-web.ai-settings";
-const AI_ASSIST_KEY = "reigns-agent.creator-web.ai-assist";
 const DEFAULT_PANEL = "overview";
 const DEFAULT_SKIN = "github-light";
+const LEGACY_DRAFT_KEY = "reigns-agent.creator-web.editor-draft";
 const SKIN_ALIASES = {
   workbench: "classic"
 };
@@ -649,14 +646,17 @@ function normalizeAiSettings(settings = {}) {
   };
 }
 
-function readAiSettings() {
-  if (typeof localStorage === "undefined") return defaultAiSettings();
-  try {
-    const raw = localStorage.getItem(AI_SETTINGS_KEY);
-    return raw ? normalizeAiSettings(JSON.parse(raw)) : defaultAiSettings();
-  } catch {
-    return defaultAiSettings();
-  }
+function aiSettingsFromConfig(config = {}) {
+  return normalizeAiSettings({
+    baseUrl: config.endpoint ?? "",
+    protocol: config.protocol,
+    endpointPresetId: config.endpointPresetId,
+    compatibilityFamily: config.compatibilityFamily,
+    modelId: config.modelId ?? "",
+    routeMode: config.routeMode,
+    jsonMode: config.jsonMode,
+    capabilities: Object.fromEntries(AI_CAPABILITIES.map(([id]) => [id, (config.capabilities ?? []).includes(id)]))
+  });
 }
 
 function isAiEndpointConfigured(settings) {
@@ -823,16 +823,20 @@ function App() {
   const [editor, setEditor] = useState(null);
   const [status, setStatus] = useState("Loading project...");
   const [skin, setSkin] = useState(() => initialUrlState.skin ?? DEFAULT_SKIN);
-  const [aiAssistEnabled, setAiAssistEnabled] = useState(() => initialUrlState.aiAssist ?? localStorage.getItem(AI_ASSIST_KEY) === "1");
-  const [aiSettings, setAiSettings] = useState(() => readAiSettings());
+  const [aiAssistEnabled, setAiAssistEnabled] = useState(() => initialUrlState.aiAssist ?? false);
+  const [aiSettings, setAiSettings] = useState(() => defaultAiSettings());
   const [aiApiKey, setAiApiKey] = useState("");
+  const [hasSavedApiKey, setHasSavedApiKey] = useState(false);
+  const [projects, setProjects] = useState([]);
+  const [activeProjectId, setActiveProjectId] = useState(null);
+  const [configReady, setConfigReady] = useState(false);
   const [aiDraftRequest, setAiDraftRequest] = useState(null);
   const [aiPreflight, setAiPreflight] = useState(null);
   const [diagnostics, setDiagnostics] = useState(null);
   const [play, setPlay] = useState({ sessionId: null, state: null });
   const [build, setBuild] = useState(null);
   const [busy, setBusy] = useState("");
-  const [draftInfo, setDraftInfo] = useState(() => readDraftInfo());
+  const [draftInfo, setDraftInfo] = useState(null);
   const [focusCardId, setFocusCardId] = useState(null);
   const [aiGraphSelection, setAiGraphSelection] = useState(null);
   const historyRef = useRef([]);
@@ -875,33 +879,74 @@ function App() {
 
   useEffect(() => {
     document.documentElement.dataset.skin = skin;
-    localStorage.setItem(PERSIST_KEY, skin);
     syncWorkbenchUrl(activePanel, skin, "replace");
-  }, [activePanel, skin]);
+    if (configReady) {
+      void api("/api/config", { method: "PATCH", body: { theme: skin } });
+      void api("/api/workspace", { method: "PATCH", body: { activePanel } });
+    }
+  }, [activePanel, skin, configReady]);
 
   useEffect(() => {
-    localStorage.setItem(AI_SETTINGS_KEY, JSON.stringify(normalizeAiSettings(aiSettings)));
-  }, [aiSettings]);
+    if (!configReady) return;
+    const normalized = normalizeAiSettings(aiSettings);
+    void api("/api/config", {
+      method: "PATCH",
+      body: {
+        ai: {
+          endpoint: normalized.baseUrl,
+          protocol: normalized.protocol,
+          endpointPresetId: normalized.endpointPresetId,
+          compatibilityFamily: normalized.compatibilityFamily,
+          modelId: normalized.modelId,
+          routeMode: normalized.routeMode,
+          jsonMode: normalized.jsonMode,
+          capabilities: enabledAiCapabilities(normalized),
+          ...(aiApiKey.trim() ? { apiKey: aiApiKey } : {})
+        }
+      }
+    }).then((config) => setHasSavedApiKey(config.ai.hasApiKey));
+  }, [aiSettings, aiApiKey, configReady]);
 
   useEffect(() => {
-    localStorage.setItem(AI_ASSIST_KEY, aiAssistEnabled ? "1" : "0");
     syncAiAssistUrl(aiAssistEnabled, "replace");
-  }, [aiAssistEnabled]);
+    if (configReady) void api("/api/config", { method: "PATCH", body: { aiAssistEnabled } });
+  }, [aiAssistEnabled, configReady]);
 
   useEffect(() => {
     function onPopState() {
       const next = readUrlState();
       setActivePanel(next.panel);
       setSkin(next.skin ?? DEFAULT_SKIN);
-      setAiAssistEnabled(next.aiAssist ?? localStorage.getItem(AI_ASSIST_KEY) === "1");
+      if (next.aiAssist !== null) setAiAssistEnabled(next.aiAssist);
     }
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
 
   useEffect(() => {
-    void refreshEditor();
+    void loadCreatorState();
   }, []);
+
+  async function loadCreatorState() {
+    const [nextEditor, config, projectResult, workspaceState] = await Promise.all([
+      api("/api/editor"),
+      api("/api/config"),
+      api("/api/projects"),
+      api("/api/workspace")
+    ]);
+    setEditor(nextEditor);
+    setProjects(projectResult.projects ?? []);
+    setActiveProjectId(config.activeProjectId);
+    setHasSavedApiKey(Boolean(config.ai?.hasApiKey));
+    setAiSettings(aiSettingsFromConfig(config.ai));
+    if (!initialUrlState.skin) setSkin(resolveSkinId(config.theme) ?? DEFAULT_SKIN);
+    if (!new URLSearchParams(window.location.search).has("panel") && isKnownPanel(workspaceState.activePanel)) {
+      setActivePanel(workspaceState.activePanel);
+    }
+    if (initialUrlState.aiAssist === null) setAiAssistEnabled(Boolean(config.aiAssistEnabled));
+    setStatus(`${nextEditor.cards.length} cards loaded`);
+    setConfigReady(true);
+  }
 
   useEffect(() => {
     function onKeyDown(event) {
@@ -959,14 +1004,7 @@ function App() {
   }
 
   async function saveDraftSnapshot() {
-    const snapshot = await api("/api/editor/snapshot");
-    const entry = {
-      savedAt: new Date().toISOString(),
-      cardCount: snapshot.bundle?.cards?.length ?? 0,
-      bundle: snapshot.bundle
-    };
-    localStorage.setItem(DRAFT_KEY, JSON.stringify(entry));
-    setDraftInfo({ savedAt: entry.savedAt, cardCount: entry.cardCount });
+    setDraftInfo(null);
   }
 
   async function importBundle(bundle) {
@@ -997,6 +1035,49 @@ function App() {
     clearStoredDraft();
     setDraftInfo(null);
     setStatus("Local draft discarded");
+  }
+
+  async function refreshProjects() {
+    const result = await api("/api/projects");
+    setProjects(result.projects ?? []);
+    const config = await api("/api/config");
+    setActiveProjectId(config.activeProjectId);
+  }
+
+  async function createProject(source) {
+    await runAction("Creating project", async () => {
+      await api("/api/projects", { method: "POST", body: { source } });
+      historyRef.current = [];
+      setHistoryDepth(0);
+      await Promise.all([refreshEditor({ statusMessage: "Project created" }), refreshProjects()]);
+    });
+  }
+
+  async function openProject(projectId) {
+    if (!projectId || projectId === activeProjectId) return;
+    await runAction("Opening project", async () => {
+      await api(`/api/projects/${encodeURIComponent(projectId)}/open`, { method: "POST", body: {} });
+      historyRef.current = [];
+      setHistoryDepth(0);
+      setDiagnostics(null);
+      setPlay({ sessionId: null, state: null });
+      await Promise.all([refreshEditor({ statusMessage: "Project opened" }), refreshProjects()]);
+    });
+  }
+
+  async function deleteActiveProject() {
+    if (!activeProjectId || !window.confirm("Delete the active project from this workspace?")) return;
+    await runAction("Deleting project", async () => {
+      await api(`/api/projects/${encodeURIComponent(activeProjectId)}`, { method: "DELETE" });
+      await Promise.all([refreshEditor({ statusMessage: "Project deleted" }), refreshProjects()]);
+    });
+  }
+
+  async function clearSavedApiKey() {
+    const config = await api("/api/config", { method: "PATCH", body: { clearApiKey: true } });
+    setAiApiKey("");
+    setHasSavedApiKey(Boolean(config.ai.hasApiKey));
+    setStatus("Saved API key cleared");
   }
 
   async function startPreview() {
@@ -1210,6 +1291,15 @@ function App() {
           <span>{playerReady ? "player ready" : "player blocked"}</span>
         </div>
         <div className="topbar__tools">
+          <label className="skin-select">
+            Project
+            <select value={activeProjectId ?? ""} onChange={(event) => void openProject(event.target.value)}>
+              {projects.map((project) => <option key={project.id} value={project.id}>{project.title}</option>)}
+            </select>
+          </label>
+          <button className="link-button" type="button" onClick={() => void createProject("blank")}>New</button>
+          <button className="link-button" type="button" onClick={() => void createProject("sample")}>Sample</button>
+          <button className="link-button" type="button" onClick={() => void deleteActiveProject()}>Delete</button>
           <button
             className={`ai-presence ai-presence--${aiPresenceState}`}
             type="button"
@@ -1331,7 +1421,7 @@ function App() {
               editor={editor}
               diagnostics={diagnostics}
               aiSettings={aiSettings}
-              apiKeyAvailable={Boolean(aiApiKey.trim())}
+              apiKeyAvailable={Boolean(aiApiKey.trim()) || hasSavedApiKey}
               aiAssistEnabled={aiAssistEnabled}
               aiConfigured={aiConfigured}
               draftRequest={aiDraftRequest}
@@ -1355,8 +1445,10 @@ function App() {
               editor={editor}
               aiSettings={aiSettings}
               apiKey={aiApiKey}
+              apiKeySaved={hasSavedApiKey}
               onAiSettingsChange={setAiSettings}
               onApiKeyChange={setAiApiKey}
+              onApiKeyClear={clearSavedApiKey}
               onRefresh={refreshEditor}
               onStatus={setStatus}
             />
@@ -4817,7 +4909,7 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
   );
 }
 
-function SettingsPanel({ editor, aiSettings, apiKey, onAiSettingsChange, onApiKeyChange, onRefresh, onStatus }) {
+function SettingsPanel({ editor, aiSettings, apiKey, apiKeySaved, onAiSettingsChange, onApiKeyChange, onApiKeyClear, onRefresh, onStatus }) {
   const [title, setTitle] = useState(editor?.metadata?.title ?? "");
   const [plan, setPlan] = useState("");
   const [theme, setTheme] = useState("small kingdom");
@@ -4828,6 +4920,7 @@ function SettingsPanel({ editor, aiSettings, apiKey, onAiSettingsChange, onApiKe
   const normalizedAiSettings = normalizeAiSettings(aiSettings);
   const transientApiKey = typeof apiKey === "string" ? apiKey : "";
   const hasTransientApiKey = Boolean(transientApiKey.trim());
+  const hasUsableApiKey = hasTransientApiKey || apiKeySaved;
   const endpointPreset = getEndpointPreset(normalizedAiSettings.endpointPresetId);
   const modelPresets = mergeAiModelOptions(getModelPresetsForEndpoint(normalizedAiSettings), fetchedModels);
   const protocolLabel = AI_PROTOCOLS.find(([id]) => id === normalizedAiSettings.protocol)?.[1] ?? normalizedAiSettings.protocol;
@@ -4848,7 +4941,7 @@ function SettingsPanel({ editor, aiSettings, apiKey, onAiSettingsChange, onApiKe
         config: buildAiConnectorConfig(
           normalizedAiSettings,
           { theme, cardCount: count },
-          { hasApiKey: hasTransientApiKey }
+          { hasApiKey: hasUsableApiKey }
         )
       }
     });
@@ -4957,7 +5050,7 @@ function SettingsPanel({ editor, aiSettings, apiKey, onAiSettingsChange, onApiKe
       setSetupCheck({ state: "error", message: "Base URL is not a valid URL." });
       return;
     }
-    if (!hasTransientApiKey && normalizedAiSettings.compatibilityFamily !== "local") {
+    if (!hasUsableApiKey && normalizedAiSettings.compatibilityFamily !== "local") {
       setSetupCheck({ state: "warning", message: `${protocolLabel} request shape is valid, but no API key is set.` });
       return;
     }
@@ -4966,7 +5059,7 @@ function SettingsPanel({ editor, aiSettings, apiKey, onAiSettingsChange, onApiKe
       const result = await api("/api/ai/edit/validate", {
         method: "POST",
         body: {
-          config: buildAiConnectorConfig(normalizedAiSettings, {}, { hasApiKey: hasTransientApiKey }),
+          config: buildAiConnectorConfig(normalizedAiSettings, {}, { hasApiKey: hasUsableApiKey }),
           credentials: {
             apiKey: transientApiKey
           }
@@ -4996,7 +5089,7 @@ function SettingsPanel({ editor, aiSettings, apiKey, onAiSettingsChange, onApiKe
       setSetupCheck({ state: "error", message: "Base URL is not a valid URL." });
       return;
     }
-    if (!hasTransientApiKey && normalizedAiSettings.compatibilityFamily !== "local") {
+    if (!hasUsableApiKey && normalizedAiSettings.compatibilityFamily !== "local") {
       setSetupCheck({ state: "warning", message: "API key is required before fetching provider models." });
       return;
     }
@@ -5005,7 +5098,7 @@ function SettingsPanel({ editor, aiSettings, apiKey, onAiSettingsChange, onApiKe
       const result = await api("/api/ai/edit/models", {
         method: "POST",
         body: {
-          config: buildAiConnectorConfig(normalizedAiSettings, {}, { hasApiKey: hasTransientApiKey }),
+          config: buildAiConnectorConfig(normalizedAiSettings, {}, { hasApiKey: hasUsableApiKey }),
           credentials: {
             apiKey: transientApiKey
           }
@@ -5063,7 +5156,7 @@ function SettingsPanel({ editor, aiSettings, apiKey, onAiSettingsChange, onApiKe
                 type={apiKeyVisible ? "text" : "password"}
                 value={transientApiKey}
                 onChange={(event) => onApiKeyChange(event.target.value)}
-                placeholder="Kept only until this dashboard tab reloads"
+                placeholder={apiKeySaved ? "Saved in config.toml; type to replace" : "Saved in local config.toml"}
               />
               <button
                 className={apiKeyVisible ? "secret-input__toggle secret-input__toggle--active" : "secret-input__toggle"}
@@ -5074,6 +5167,7 @@ function SettingsPanel({ editor, aiSettings, apiKey, onAiSettingsChange, onApiKe
               >
                 <span className="eye-mark" aria-hidden="true" />
               </button>
+              {apiKeySaved && <button className="btn btn--ghost btn--compact" type="button" onClick={() => void onApiKeyClear()}>Clear</button>}
             </div>
           </div>
           <div className="ai-form-row">
@@ -5871,7 +5965,7 @@ function effectPath(cardId, choiceId, kind, target) {
 function readStoredDraft() {
   if (typeof localStorage === "undefined") return null;
   try {
-    const raw = localStorage.getItem(DRAFT_KEY);
+    const raw = localStorage.getItem(LEGACY_DRAFT_KEY);
     if (!raw) return null;
     const entry = JSON.parse(raw);
     if (!entry?.bundle || !Array.isArray(entry.bundle.cards)) return null;
@@ -5892,7 +5986,7 @@ function readDraftInfo() {
 
 function clearStoredDraft() {
   if (typeof localStorage !== "undefined") {
-    localStorage.removeItem(DRAFT_KEY);
+    localStorage.removeItem(LEGACY_DRAFT_KEY);
   }
 }
 

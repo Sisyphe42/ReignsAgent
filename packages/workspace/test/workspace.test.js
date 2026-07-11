@@ -62,11 +62,11 @@ describe("workspace storage", () => {
   it("serializes concurrent writes in invocation order without temporary files", async () => {
     const root = await temporaryRoot();
     const store = await createWorkspaceStore({ dataRoot: root });
-    const writes = ["One", "Two", "Three"].map(async (title) => {
-      const bundle = await store.readActiveBundle();
-      bundle.metadata.title = title;
-      return store.saveActiveBundle(bundle);
-    });
+    const base = await store.readActiveBundle();
+    const writes = ["One", "Two", "Three"].map((title) => store.saveActiveBundle({
+      ...base,
+      metadata: { ...base.metadata, title }
+    }));
     await Promise.all(writes);
     assert.equal((await store.readActiveBundle()).metadata.title, "Three");
     const projectRoot = join(root, "projects", (await store.getConfig()).activeProjectId);
