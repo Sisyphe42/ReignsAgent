@@ -47,6 +47,33 @@ jobs:
           test -f "$RUNNER_TEMP/reigns-agent-player/assets/logo-alpha.png"
           find "$RUNNER_TEMP/reigns-agent-player" -maxdepth 1 -name "*.game.json" -print -quit | grep -q .
 
+  hosted-creator-smoke:
+    runs-on: ubuntu-latest
+    needs: verify
+    env:
+      REIGNS_AGENT_BASE_PATH: /reignsagent/
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run build:hosted
+      - run: npm run test:hosted
+      - name: Verify scoped PWA output
+        shell: bash
+        run: |
+          set -euo pipefail
+          root=apps/creator-web/dist-hosted
+          test -f "$root/index.html"
+          test -f "$root/manifest.webmanifest"
+          test -f "$root/sw.js"
+          grep -q '"scope": "/reignsagent/"' "$root/manifest.webmanifest"
+          grep -q '/reignsagent/index.html' "$root/sw.js"
+          ! grep -R -E 'apiKey|credentials' "$root/sw.js" "$root/manifest.webmanifest"
+
   desktop-smoke:
     runs-on: ubuntu-latest
     needs: verify

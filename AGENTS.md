@@ -47,7 +47,7 @@ Narrative progression and Anti-RPG boundary: the system may support data-driven 
 - **Cleanup**: After merged PRs, delete temporary branches locally and remotely, update `master`, and create/update milestone tags when a phase is complete.
 
 ## 4. Repository Map
-- `apps/creator-web`: Vite/React creator dashboard workspace. It consumes the existing local API and keeps visual skins isolated from core product logic.
+- `apps/creator-web`: Vite/React creator dashboard workspace. It uses an HTTP backend locally and an OPFS browser backend in hosted builds while keeping visual skins isolated from core product logic.
 - `apps/creator-server`: Shared local HTTP API and static Creator host used by development, the Node ZIP, and desktop runtime staging.
 - `apps/desktop-electron`: Optional Electron lifecycle, security, and portable ZIP shell. It contains no game, generation, review, or editor business logic.
 - `packages/core`: Pure headless game runtime. No UI, IO, AI generation, or deployment logic.

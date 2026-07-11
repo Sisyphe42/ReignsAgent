@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <img alt="Node.js v20+" src="https://img.shields.io/badge/Node.js-v20%2B-339933?logo=node.js&logoColor=white" />
+  <img alt="Node.js v22+" src="https://img.shields.io/badge/Node.js-v22%2B-339933?logo=node.js&logoColor=white" />
   <img alt="License MIT" src="https://img.shields.io/badge/license-MIT-blue" />
 </p>
 
@@ -81,6 +81,8 @@ Common project commands:
 ```sh
 npm test
 npm run build:dashboard
+npm run dev:hosted
+npm run build:hosted
 npm run build:game -- fixtures/content/oss-court.cards.json dist/player
 npm run build:release
 npm run test:desktop
@@ -122,7 +124,9 @@ flowchart LR
   player["Deployable Player<br/>core-only runtime"]
   provider["User AI Endpoint"]
 
+  browserBackend["Hosted browser backend<br/>OPFS + Web Worker"]
   creator --> api
+  creator --> browserBackend
   api --> interface
   interface --> core
   interface --> reviewer
@@ -132,6 +136,8 @@ flowchart LR
   pipeline -->|"validated proposals"| interface
   core --> player
 ```
+
+The Creator UI has two host adapters. Local Web, Node ZIP, and Electron use `HttpCreatorBackend` over the shared Creator Server. The hosted PWA uses `BrowserCreatorBackend`, stores equivalent documents in OPFS, runs diagnostics in a Web Worker, and calls user AI endpoints directly. Neither adapter changes Core, content, proposal, or player contracts.
 
 | Layer | Responsibility |
 | --- | --- |
@@ -220,6 +226,23 @@ The build emits:
 | Local content assets | Assets referenced by the bundle, such as `assets/sample/*.svg`. |
 
 ## Creator Distribution
+
+### Hosted PWA
+
+Run the Creator without the local API:
+
+```sh
+npm run dev:hosted
+npm run build:hosted
+```
+
+The output is `apps/creator-web/dist-hosted/`. Set `REIGNS_AGENT_BASE_PATH=/reignsagent/` when building for a reverse-proxy or static-host subpath; application URLs, manifest scope, Service Worker, and offline navigation use that prefix.
+
+Hosted projects and `config.toml` live in origin-scoped OPFS. Chrome and Edge are the supported v1 browsers. After the first successful load the PWA can reopen offline. Clearing site data destroys the workspace, and changing scheme, host, or port selects a different workspace, so Settings exposes persistence status and backup export/import. Backups exclude the plaintext AI key by default; including it requires an explicit checkbox and confirmation.
+
+AI calls go directly to the configured endpoint. An HTTPS Creator requires an HTTPS endpoint, except localhost, and the endpoint must allow the Creator origin plus `Authorization` and `Content-Type` through CORS. ReignsAgent operates no relay. Browser player export downloads a locally assembled ZIP and excludes AI settings and credentials.
+
+### Local Node ZIP
 
 Build the complete local Creator distribution:
 
@@ -393,19 +416,19 @@ console.log(diagnostics.healthScore, session.factions, build.player.choiceModel)
 
 | Path | Purpose |
 | --- | --- |
-| `apps/creator-web` | Creator dashboard workspace. |
+| `apps/creator-web` | Creator dashboard with HTTP and hosted OPFS backend adapters. |
 | `packages/core` | Headless game runtime. |
 | `packages/reviewer` | Simulation and diagnostic engine. |
 | `packages/pipeline` | Content exchange and AI proposal contracts. |
 | `packages/interface` | Creator orchestration and player build assembly. |
-| `packages/workspace` | TOML config, multi-project layout, atomic persistence, and host-neutral workspace contracts. |
+| `packages/workspace` | Host-neutral TOML/project contracts plus Node filesystem and browser OPFS adapters. |
 | `scripts` | Dev server, content CLI, build-game assembler, and verification gates. |
 | `fixtures` | Sample and validation content. |
 | `test` | Cross-package integration tests. |
 
 ## CI And Verification
 
-The repository uses GitHub Actions for pull requests and `master` pushes, with duplicate runs cancelled per ref. CI runs `npm ci` and `npm run verify` on Node.js 22 and 24, then performs deployable-player and Electron source smoke tests on Node.js 22. Native desktop artifacts remain manual or `v*` tag builds.
+The repository uses GitHub Actions for pull requests and `master` pushes, with duplicate runs cancelled per ref. CI runs `npm ci` and `npm run verify` on Node.js 22 and 24, then performs hosted-PWA/subpath, deployable-player, and Electron source smoke tests on Node.js 22. Native desktop artifacts remain manual or `v*` tag builds.
 
 ### Local Verification
 

@@ -196,3 +196,34 @@ Use the repository-supported `ELECTRON_ZIP_DIR` override when a verified matchin
 - **Notes**: Reused the cached Electron 43.1.0 ZIP, then completed portable packaging, double-launch persistence smoke, and artifact verification.
 
 ---
+
+## [ERR-20260711-001] package-manifest-patch
+
+**Logged**: 2026-07-11T16:39:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: config
+
+### Summary
+A structural patch left package.json with a trailing comma and missing closing brace.
+
+### Resolution
+Validated the manifest with JSON.parse before regenerating the lockfile.
+
+---
+
+## [ERR-20260711-002] playwright-local-install
+
+**Logged**: 2026-07-11T16:42:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+A lockfile-only install did not place the newly added Playwright test dependency in node_modules.
+
+### Resolution
+Installed workspace dependencies before running the Hosted Chromium smoke.
+
+---
+
