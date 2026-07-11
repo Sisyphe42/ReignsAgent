@@ -1,6 +1,5 @@
-import { readFile, writeFile } from "node:fs/promises";
-
 const CONTENT_SCHEMA_VERSION = 1;
+const NODE_FS_MODULE = "node:fs/" + "promises";
 const CSV_COLUMNS = [
   "cardId",
   "text",
@@ -67,11 +66,13 @@ export function createContentBundle({ cards, metadata = {}, assets = [] }) {
 }
 
 export async function readCardsJson(path) {
+  const { readFile } = await import(/* @vite-ignore */ NODE_FS_MODULE);
   const contents = await readFile(path, "utf8");
   return parseCardsJson(contents);
 }
 
 export async function writeCardsJson(path, cards) {
+  const { writeFile } = await import(/* @vite-ignore */ NODE_FS_MODULE);
   await writeFile(path, stringifyCardsJson(cards), "utf8");
 }
 
@@ -91,11 +92,13 @@ export function stringifyCardsJson(cards) {
 }
 
 export async function readContentJson(path) {
+  const { readFile } = await import(/* @vite-ignore */ NODE_FS_MODULE);
   const contents = await readFile(path, "utf8");
   return parseContentJson(contents);
 }
 
 export async function writeContentJson(path, bundle) {
+  const { writeFile } = await import(/* @vite-ignore */ NODE_FS_MODULE);
   await writeFile(path, stringifyContentJson(bundle), "utf8");
 }
 
@@ -117,11 +120,13 @@ export function stringifyContentJson(bundle) {
 }
 
 export async function readCardsCsv(path) {
+  const { readFile } = await import(/* @vite-ignore */ NODE_FS_MODULE);
   const contents = await readFile(path, "utf8");
   return parseCardsCsv(contents);
 }
 
 export async function writeCardsCsv(path, cards) {
+  const { writeFile } = await import(/* @vite-ignore */ NODE_FS_MODULE);
   await writeFile(path, stringifyCardsCsv(cards), "utf8");
 }
 

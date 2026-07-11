@@ -3,11 +3,11 @@ import { access, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs
 import { dirname, join, resolve } from "node:path";
 
 import { parse, stringify } from "./toml.js";
-
-const CONFIG_SCHEMA_VERSION = 1;
-const PROJECT_SCHEMA_VERSION = 1;
-const WORKSPACE_SCHEMA_VERSION = 1;
-const PROJECT_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9-]{0,63}$/;
+import {
+  PROJECT_SCHEMA_VERSION, PROJECT_ID_PATTERN, assertProjectId, blankBundle, defaultConfig,
+  defaultWorkspaceState, mergeConfig, normalizeConfig, normalizeWorkspaceState, parseBundle,
+  projectConfig, serializeBundle
+} from "./contracts.js";
 
 export class WorkspaceError extends Error {
   constructor(message, code = "workspace_error") {
@@ -276,136 +276,6 @@ class WorkspaceStore {
   }
 }
 
-function defaultConfig() {
-  return {
-    schemaVersion: CONFIG_SCHEMA_VERSION,
-    theme: "github-light",
-    locale: "en",
-    aiAssistEnabled: false,
-    activeProjectId: "",
-    recentProjectIds: [],
-    build: { defaultOutputDir: "Builds" },
-    ai: {
-      endpoint: "",
-      protocol: "openai_chat",
-      endpointPresetId: "custom",
-      compatibilityFamily: "custom",
-      modelId: "",
-      routeMode: "auto",
-      jsonMode: "auto",
-      capabilities: ["structuredJson"],
-      apiKey: ""
-    }
-  };
-}
-
-function normalizeConfig(value) {
-  if (!isRecord(value)) throw new WorkspaceError("Config must be a TOML table", "config_invalid");
-  if (value.schemaVersion !== undefined && value.schemaVersion !== CONFIG_SCHEMA_VERSION) {
-    throw new WorkspaceError(`Unsupported config schemaVersion '${value.schemaVersion}'`, "config_schema_unsupported");
-  }
-  const defaults = defaultConfig();
-  const build = isRecord(value.build) ? value.build : {};
-  const ai = isRecord(value.ai) ? value.ai : {};
-  return {
-    schemaVersion: CONFIG_SCHEMA_VERSION,
-    theme: normalizeString(value.theme, defaults.theme),
-    locale: normalizeString(value.locale, defaults.locale),
-    aiAssistEnabled: typeof value.aiAssistEnabled === "boolean" ? value.aiAssistEnabled : defaults.aiAssistEnabled,
-    activeProjectId: normalizeString(value.activeProjectId, ""),
-    recentProjectIds: normalizeStringArray(value.recentProjectIds),
-    build: { defaultOutputDir: normalizeString(build.defaultOutputDir, defaults.build.defaultOutputDir) },
-    ai: {
-      endpoint: normalizeString(ai.endpoint, ""),
-      protocol: normalizeString(ai.protocol, defaults.ai.protocol),
-      endpointPresetId: normalizeString(ai.endpointPresetId, defaults.ai.endpointPresetId),
-      compatibilityFamily: normalizeString(ai.compatibilityFamily, defaults.ai.compatibilityFamily),
-      modelId: normalizeString(ai.modelId, ""),
-      routeMode: normalizeString(ai.routeMode, defaults.ai.routeMode),
-      jsonMode: normalizeString(ai.jsonMode, defaults.ai.jsonMode),
-      capabilities: Array.isArray(ai.capabilities) ? ai.capabilities.filter((entry) => typeof entry === "string") : defaults.ai.capabilities,
-      apiKey: typeof ai.apiKey === "string" ? ai.apiKey : ""
-    }
-  };
-}
-
-function mergeConfig(current, patch) {
-  if (!isRecord(patch)) throw new WorkspaceError("Config patch must be an object", "config_patch_invalid");
-  const aiPatch = isRecord(patch.ai) ? patch.ai : {};
-  const buildPatch = isRecord(patch.build) ? patch.build : {};
-  const next = normalizeConfig({
-    ...current,
-    ...patch,
-    build: { ...current.build, ...buildPatch },
-    ai: { ...current.ai, ...aiPatch }
-  });
-  if (patch.clearApiKey === true) next.ai.apiKey = "";
-  return next;
-}
-
-function projectConfig(config) {
-  return {
-    schemaVersion: config.schemaVersion,
-    theme: config.theme,
-    locale: config.locale,
-    aiAssistEnabled: config.aiAssistEnabled,
-    activeProjectId: config.activeProjectId || null,
-    recentProjectIds: [...config.recentProjectIds],
-    build: cloneJson(config.build, "Build config"),
-    ai: {
-      endpoint: config.ai.endpoint,
-      protocol: config.ai.protocol,
-      endpointPresetId: config.ai.endpointPresetId,
-      compatibilityFamily: config.ai.compatibilityFamily,
-      modelId: config.ai.modelId,
-      routeMode: config.ai.routeMode,
-      jsonMode: config.ai.jsonMode,
-      capabilities: [...config.ai.capabilities],
-      hasApiKey: Boolean(config.ai.apiKey)
-    }
-  };
-}
-
-function defaultWorkspaceState() {
-  return {
-    schemaVersion: WORKSPACE_SCHEMA_VERSION,
-    activePanel: "overview",
-    selectedCardId: "",
-    previewSkin: ""
-  };
-}
-
-function normalizeWorkspaceState(value) {
-  if (!isRecord(value)) throw new WorkspaceError("Workspace state must be a TOML table", "workspace_state_invalid");
-  if (value.schemaVersion !== undefined && value.schemaVersion !== WORKSPACE_SCHEMA_VERSION) {
-    throw new WorkspaceError(`Unsupported workspace schemaVersion '${value.schemaVersion}'`, "workspace_schema_unsupported");
-  }
-  return {
-    schemaVersion: WORKSPACE_SCHEMA_VERSION,
-    activePanel: normalizeString(value.activePanel, "overview"),
-    selectedCardId: normalizeString(value.selectedCardId, ""),
-    previewSkin: normalizeString(value.previewSkin, "")
-  };
-}
-
-function blankBundle() {
-  return { schemaVersion: 1, metadata: { title: "Untitled" }, cards: [], assets: [] };
-}
-
-function serializeBundle(bundle) {
-  return `${JSON.stringify(cloneJson(bundle, "Content bundle"), null, 2)}\n`;
-}
-
-function parseBundle(source, id) {
-  try {
-    const bundle = JSON.parse(source);
-    if (!isRecord(bundle) || !Array.isArray(bundle.cards)) throw new Error("cards must be an array");
-    return cloneJson(bundle, `Project '${id}' content`);
-  } catch (error) {
-    throw new WorkspaceError(`Invalid content for project '${id}': ${error.message}`, "project_content_invalid");
-  }
-}
-
 async function readToml(path, label) {
   try {
     return parse(await readFile(path, "utf8"));
@@ -438,20 +308,10 @@ async function exists(path) {
   }
 }
 
-function assertProjectId(id) {
-  if (typeof id !== "string" || !PROJECT_ID_PATTERN.test(id)) {
-    throw new WorkspaceError(`Invalid project id '${id}'`, "project_id_invalid");
-  }
-}
-
 function normalizeString(value, fallback) {
   return typeof value === "string" ? value : fallback;
 }
 
-function normalizeStringArray(value) {
-  if (!Array.isArray(value)) return [];
-  return [...new Set(value.filter((entry) => typeof entry === "string" && PROJECT_ID_PATTERN.test(entry)))];
-}
 
 function cloneJson(value, label) {
   try {
