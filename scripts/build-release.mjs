@@ -44,7 +44,7 @@ const releasePackage = {
     start: "node start.mjs",
     "build:game": "node scripts/build-game.mjs"
   },
-  engines: { node: ">=20" }
+  engines: { node: ">=22" }
 };
 await writeFile(join(releaseRoot, "package.json"), `${JSON.stringify(releasePackage, null, 2)}\n`, "utf8");
 
@@ -75,6 +75,7 @@ function validateReleaseFiles(files) {
     "packages/pipeline/src/index.js",
     "packages/reviewer/src/index.js",
     "packages/interface/src/index.js",
+    "packages/workspace/src/index.js",
     "packages/interface/web/player.html",
     "fixtures/content/oss-court.cards.json",
     "start.mjs",

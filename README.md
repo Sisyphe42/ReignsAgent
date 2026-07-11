@@ -227,7 +227,7 @@ Build the complete local Creator distribution:
 npm run build:release
 ```
 
-This command runs the full verification gate, compiles the Creator, and emits both `dist/reigns-agent-<version>/` and `dist/reigns-agent-<version>.zip`. The ZIP is cross-platform and requires Node.js 20 or newer on the target machine; it does not bundle Node.js or `node_modules`.
+This command runs the full verification gate, compiles the Creator, and emits both `dist/reigns-agent-<version>/` and `dist/reigns-agent-<version>.zip`. The ZIP is cross-platform and requires Node.js 22 or newer on the target machine; it does not bundle Node.js or `node_modules`.
 
 After extracting the ZIP, start the Creator with one of these commands:
 
@@ -255,7 +255,7 @@ The distribution contains:
 | `packages/interface/web` | Player preview and standalone player templates. |
 | `fixtures/content` | Example content for evaluation and player builds. |
 
-The package intentionally excludes tests, frontend source, caches, `.env`, `node_modules`, provider credentials, and AI-specific player behavior. Creator state remains process-local. To generate a player site from the extracted package, run:
+The package intentionally excludes tests, frontend source, caches, `.env`, `node_modules`, and AI-specific player behavior. Creator state is stored beside the extracted package under `ReignsAgentData`; set `REIGNS_AGENT_DATA_ROOT` to override that location. To generate a player site from the extracted package, run:
 
 ```sh
 node scripts/build-game.mjs fixtures/content/oss-court.cards.json output/player
@@ -263,7 +263,7 @@ node scripts/build-game.mjs fixtures/content/oss-court.cards.json output/player
 
 ## Electron Desktop Host
 
-Electron is an optional outer host over the same compiled Creator and local API used by the Node ZIP. The WebUI, API routes, Core, Pipeline, Reviewer, Interface, player builder, and transient credential behavior remain shared; no product logic is implemented in Electron.
+Electron is an optional outer host over the same compiled Creator and local API used by the Node ZIP. The WebUI, API routes, Core, Pipeline, Reviewer, Interface, Workspace, and player builder remain shared; no product logic is implemented in Electron.
 
 ```sh
 # Build Creator, stage the shared runtime, and launch Electron
@@ -278,13 +278,30 @@ npm run build:desktop
 
 The desktop app, window, executable, and metadata all use the product name `ReignsAgent`; package author metadata is `Sisyphe42`, matching the GitHub repository owner. It uses application ID `io.reignsagent.app`, starts the Creator Server in an Electron utility process on a random loopback port, and loads `/workbench` in a sandboxed BrowserWindow.
 
-All desktop targets are portable ZIP archives: Windows x64, macOS x64/arm64, and Linux x64. Extract the archive and run `ReignsAgent` directly; no installer or system Node.js is required. Electron profile/session data and game exports stay beside the extracted app under `ReignsAgentData/`, with builds in `ReignsAgentData/Builds`. On macOS, that directory is created beside `ReignsAgent.app`. Moving the app and its data together preserves the portable workspace.
+All desktop targets are portable ZIP archives: Windows x64, macOS x64/arm64, and Linux x64. Extract the archive and run `ReignsAgent` directly; no installer or system Node.js is required. Electron profile data, `config.toml`, projects, and game exports stay beside the extracted app under `ReignsAgentData/`. On macOS, that directory is created beside `ReignsAgent.app`. Moving the app and its data together preserves the portable workspace.
+
+The durable workspace layout is shared by Electron and the Node ZIP:
+
+```text
+ReignsAgentData/
+  config.toml
+  projects/<project-id>/
+    project.toml
+    content.json
+    workspace.toml
+    assets/
+    reviews/
+    builds/
+  Builds/
+```
+
+`content.json.metadata.title` is the canonical project name. The bundled sample is immutable; choosing **Sample** clones it into an ordinary project. Global theme and AI endpoint settings live in `config.toml`; project-local panel/selection state lives in `workspace.toml`. API keys are stored as plaintext in the local config by product choice, masked in the UI, and excluded from project/player exports and logs.
 
 `.github/workflows/desktop.yml` builds portable archives only for manual runs and `v*` tags, then uploads workflow artifacts without publishing a release. The archives are unsigned and may still trigger SmartScreen or Gatekeeper warnings.
 
 `test:desktop:packaged` runs after Forge packaging and verifies both the unpacked Creator Server runtime and the packaged executable handshake. `verify-desktop-artifacts` rejects installer formats and requires a ZIP on every platform. Builders with an existing Electron ZIP may set `ELECTRON_ZIP_DIR` to its containing directory to avoid downloading the runtime again.
 
-Electron v1 intentionally has no preload bridge, native file dialogs, automatic updates, signing, notarization, store publishing, or persisted Creator database. API keys remain transient request data and are not written into desktop runtime files or configuration.
+Electron v1 intentionally has no preload bridge, native file dialogs, automatic updates, signing, notarization, store publishing, or database. Its persistence is the shared file workspace rather than an Electron-only store.
 
 ## Package Examples
 
@@ -381,13 +398,14 @@ console.log(diagnostics.healthScore, session.factions, build.player.choiceModel)
 | `packages/reviewer` | Simulation and diagnostic engine. |
 | `packages/pipeline` | Content exchange and AI proposal contracts. |
 | `packages/interface` | Creator orchestration and player build assembly. |
+| `packages/workspace` | TOML config, multi-project layout, atomic persistence, and host-neutral workspace contracts. |
 | `scripts` | Dev server, content CLI, build-game assembler, and verification gates. |
 | `fixtures` | Sample and validation content. |
 | `test` | Cross-package integration tests. |
 
 ## CI And Verification
 
-The repository uses GitHub Actions for continuous verification on push and pull request events. CI currently runs `npm ci` and `npm run verify` on Node.js 20, 22, and 24, then performs a deployable player smoke build on Node.js 22.
+The repository uses GitHub Actions for pull requests and `master` pushes, with duplicate runs cancelled per ref. CI runs `npm ci` and `npm run verify` on Node.js 22 and 24, then performs deployable-player and Electron source smoke tests on Node.js 22. Native desktop artifacts remain manual or `v*` tag builds.
 
 ### Local Verification
 

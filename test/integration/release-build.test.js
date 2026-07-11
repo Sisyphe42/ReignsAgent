@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
@@ -94,6 +94,18 @@ describe("creator release distribution", () => {
       });
       assert.equal(edited.status, 200);
       assert.equal((await edited.json()).metadata.title, "Release smoke test");
+
+      await stopChild(server);
+      server = spawn(process.execPath, ["start.mjs", "--no-open"], {
+        cwd: releaseRoot,
+        env: { ...process.env, HOST: "127.0.0.1", PORT: "0" },
+        stdio: ["ignore", "pipe", "pipe"]
+      });
+      const restartedOutput = await waitForOutput(server, /ReignsAgent: http:\/\/127\.0\.0\.1:(\d+)\/workbench/);
+      const restartedPort = Number(restartedOutput.match(/ReignsAgent: http:\/\/127\.0\.0\.1:(\d+)\/workbench/)[1]);
+      const restoredEditor = await fetch(`http://127.0.0.1:${restartedPort}/api/editor`).then((response) => response.json());
+      assert.equal(restoredEditor.metadata.title, "Release smoke test");
+      await access(join(releaseRoot, "ReignsAgentData", "config.toml"));
 
       const playerOutput = join(tempRoot, "player-output");
       await execFileAsync(process.execPath, [

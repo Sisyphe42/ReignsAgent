@@ -49,6 +49,8 @@ Story and Content work should now optimize for non-technical content authors: th
 - Use an Electron utility process for the Creator Server so diagnostics and connector work do not block the desktop main process.
 - Build unsigned portable ZIP artifacts on Windows x64, macOS x64/arm64, and Linux x64 before promoting signing, notarization, publishing, or automatic updates.
 - Keep Electron profile data and game builds beside the extracted application in `ReignsAgentData`; v1 does not install files or use platform user-data directories.
+- Use the shared TOML/file Workspace contract for Electron, the Node ZIP, and local Web: global `config.toml`, multiple ordinary projects, and project-local workspace state.
+- Treat a future static hosted Creator as a separate OPFS adapter over the same logical Workspace contract; its first AI release supports direct CORS endpoints only and does not operate a public relay.
 - Treat native file dialogs, menus, notifications, and protocol handlers as later opt-in bridges; v1 is a secure portable lifecycle shell only.
 
 ## Non-Goals For The Current Phase

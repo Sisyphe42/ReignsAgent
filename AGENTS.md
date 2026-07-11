@@ -54,6 +54,7 @@ Narrative progression and Anti-RPG boundary: the system may support data-driven 
 - `packages/reviewer`: Headless Monte Carlo simulation, graph diagnostics, and balance reports.
 - `packages/pipeline`: Local import/export, content bundle handling, generation request contracts, and reviewer feedback actions.
 - `packages/interface`: Creator workflow orchestration plus legacy web dashboard/player surfaces and deployable player templates.
+- `packages/workspace`: Host-neutral TOML configuration, multi-project filesystem layout, atomic persistence, and workspace projections. It must not depend on Electron or browser APIs.
 - `scripts`: Local tools including thin server launchers, runtime assemblers, content CLI, build-game assembler, and verification gates.
 - `fixtures`: Sample and validation content used by tests and local demos.
 - `test`: Cross-package integration tests.

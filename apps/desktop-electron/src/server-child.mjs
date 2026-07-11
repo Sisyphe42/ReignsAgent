@@ -4,9 +4,10 @@ import { pathToFileURL } from "node:url";
 
 const runtimeRoot = process.env.REIGNS_AGENT_RUNTIME_ROOT;
 const buildOutputDir = process.env.REIGNS_AGENT_BUILD_OUTPUT_DIR;
+const dataRoot = process.env.REIGNS_AGENT_DATA_ROOT;
 
-if (!runtimeRoot || !buildOutputDir || !process.parentPort) {
-  throw new Error("Desktop Creator Server requires runtime, build output, and an Electron parent port.");
+if (!runtimeRoot || !buildOutputDir || !dataRoot || !process.parentPort) {
+  throw new Error("Desktop Creator Server requires runtime, data, build output, and an Electron parent port.");
 }
 
 let startupStage = "loading-runtime";
@@ -22,6 +23,7 @@ try {
   creatorServer = await createCreatorServer({
     rootDir: runtimeRoot,
     staticRoot: join(runtimeRoot, "creator"),
+    dataRoot,
     defaultBuildOutputDir: buildOutputDir
   });
 

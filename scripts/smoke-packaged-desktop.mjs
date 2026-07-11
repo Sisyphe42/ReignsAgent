@@ -27,8 +27,14 @@ try {
   }
 
   const smokeArgs = ["--smoke-test"];
-  if (targetPlatform === "linux" && process.env.CI) smokeArgs.push("--no-sandbox");
+  if (platform === "linux" && process.env.CI) smokeArgs.push("--no-sandbox");
   await run(executable, smokeArgs, { cwd: packageDirectory, env: process.env });
+  await run(executable, smokeArgs, {
+    cwd: packageDirectory,
+    env: { ...process.env, REIGNS_AGENT_SMOKE_EXPECT_PERSISTENCE: "1" }
+  });
+  await access(join(portableData, "config.toml"));
+  await access(join(portableData, "projects"));
   await access(join(portableData, "Builds"));
   await access(join(portableData, "SessionData"));
   console.log(`Packaged Electron smoke passed: ${executable}`);

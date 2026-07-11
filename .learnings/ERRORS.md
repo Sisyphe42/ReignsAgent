@@ -156,9 +156,43 @@ Validate packaging from a clean temporary workspace with `npm ci`; avoid deletin
 ### Metadata
 - Reproducible: yes
 - Related Files: package-lock.json
+- Recurrence-Count: 2
+- Last-Seen: 2026-07-11
 
 ### Resolution
 - **Resolved**: 2026-07-10T22:15:00+08:00
-- **Notes**: Completed clean-room packaging with a verified local Electron ZIP cache and left active workspace dependencies untouched.
+- **Notes**: Completed clean-room packaging previously. On recurrence, a lockfile-driven `npm ci` restored the incomplete nested package and allowed Forge to reach native packaging.
+
+---
+
+## [ERR-20260711-001] electron-zip-download-tls
+
+**Logged**: 2026-07-11T13:05:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: infra
+
+### Summary
+Electron Forge packaging was interrupted while downloading the Electron ZIP by a transient TLS disconnect.
+
+### Error
+```text
+Client network socket disconnected before secure TLS connection was established
+```
+
+### Context
+- Source, integration, release, and Electron utility-process tests were already green.
+- The required Electron 43.1.0 Windows x64 ZIP already existed in Electron's content-addressed local cache.
+
+### Suggested Fix
+Use the repository-supported `ELECTRON_ZIP_DIR` override when a verified matching ZIP is cached; otherwise retry the external download without changing product code.
+
+### Metadata
+- Reproducible: no
+- Related Files: apps/desktop-electron/forge.config.mjs, README.md
+
+### Resolution
+- **Resolved**: 2026-07-11T13:07:00+08:00
+- **Notes**: Reused the cached Electron 43.1.0 ZIP, then completed portable packaging, double-launch persistence smoke, and artifact verification.
 
 ---

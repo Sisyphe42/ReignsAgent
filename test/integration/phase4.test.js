@@ -1,13 +1,17 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, it } from "node:test";
 
 describe("Phase 4 interface integration", () => {
   it("runs the local creator API from ingest through preview, diagnostics, and build preparation", async () => {
     const port = await reservePort();
+    const dataRoot = await mkdtemp(join(tmpdir(), "reigns-phase4-"));
     const server = spawn(process.execPath, ["scripts/dev-server.mjs"], {
-      env: { ...process.env, PORT: String(port) },
+      env: { ...process.env, PORT: String(port), REIGNS_AGENT_DATA_ROOT: dataRoot },
       stdio: ["ignore", "pipe", "pipe"]
     });
 
@@ -235,6 +239,7 @@ describe("Phase 4 interface integration", () => {
       assert.equal(restored.playerValidation.valid, true);
     } finally {
       await stopServer(server);
+      await rm(dataRoot, { recursive: true, force: true });
     }
 
     assert.equal(server.exitCode === null || server.exitCode === 0 || server.signalCode === "SIGTERM", true, stderr);
@@ -242,20 +247,26 @@ describe("Phase 4 interface integration", () => {
 
   it("builds AI Assist plans through configured text endpoints", async () => {
     const port = await reservePort();
+    const dataRoot = await mkdtemp(join(tmpdir(), "reigns-phase4-ai-"));
     const mock = await startMockAiEndpoint();
     const server = spawn(process.execPath, ["scripts/dev-server.mjs"], {
-      env: { ...process.env, PORT: String(port) },
+      env: { ...process.env, PORT: String(port), REIGNS_AGENT_DATA_ROOT: dataRoot },
       stdio: ["ignore", "pipe", "pipe"]
     });
 
     try {
       await waitForServer(port, server);
       const endpoint = `http://127.0.0.1:${mock.port}/v1`;
+      const storedConfig = await api(port, "/api/config", {
+        method: "PATCH",
+        body: { ai: { apiKey: "stored-integration-key" } }
+      });
+      assert.equal(storedConfig.ai.hasApiKey, true);
+      assert.equal(JSON.stringify(storedConfig).includes("stored-integration-key"), false);
       const models = await api(port, "/api/ai/edit/models", {
         method: "POST",
         body: {
-          config: { provider: "openai_chat", endpoint: `${endpoint}/chat/completions`, apiKeyRef: "browser-local" },
-          credentials: { apiKey: "secret-integration-key" }
+          config: { provider: "openai_chat", endpoint: `${endpoint}/chat/completions`, apiKeyRef: "config.toml" }
         }
       });
       assert.deepEqual(models.models.map((model) => model.id), ["mock-chat", "mock-vision"]);
@@ -291,7 +302,8 @@ describe("Phase 4 interface integration", () => {
       }
 
       assert.deepEqual(mock.requests.map((request) => request.path), ["/v1/models", "/v1/chat/completions", "/v1/responses", "/v1/chat/completions", "/v1/chat/completions", "/v1/completions"]);
-      assert.equal(mock.requests.every((request) => request.authorization === "Bearer secret-integration-key"), true);
+      assert.equal(mock.requests[0].authorization, "Bearer stored-integration-key");
+      assert.equal(mock.requests.slice(1).every((request) => request.authorization === "Bearer secret-integration-key"), true);
       assert.equal(mock.requests[0].body, null);
       assert.equal(mock.requests[1].body.model, "validation-model");
       assert.match(mock.requests[1].body.messages[1].content, /connectivity and protocol validation request/);
@@ -329,6 +341,7 @@ describe("Phase 4 interface integration", () => {
     } finally {
       await stopServer(server);
       await mock.close();
+      await rm(dataRoot, { recursive: true, force: true });
     }
   });
 });

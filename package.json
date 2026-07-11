@@ -34,7 +34,7 @@
     "ci": "npm run verify"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "devDependencies": {
     "fflate": "^0.8.2"

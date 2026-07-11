@@ -57,10 +57,27 @@ async function startDesktop() {
   serverOrigin = await startCreatorServer();
 
   if (smokeTest) {
-    const response = await fetch(`${serverOrigin}/api/editor`);
-    const payload = await response.json();
-    if (!response.ok || !Array.isArray(payload.cards)) {
+    const editorResponse = await fetch(`${serverOrigin}/api/editor`);
+    const editor = await editorResponse.json();
+    if (!editorResponse.ok || !Array.isArray(editor.cards)) {
       throw new Error("Electron smoke test could not read the Creator API.");
+    }
+    if (process.env.REIGNS_AGENT_SMOKE_EXPECT_PERSISTENCE === "1") {
+      const config = await fetch(`${serverOrigin}/api/config`).then((response) => response.json());
+      if (editor.metadata?.title !== "Desktop persistence smoke" || config.theme !== "phantom") {
+        throw new Error("Electron smoke test could not restore portable Creator state.");
+      }
+    } else {
+      await fetch(`${serverOrigin}/api/editor/metadata`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ metadata: { title: "Desktop persistence smoke" } })
+      });
+      await fetch(`${serverOrigin}/api/config`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ theme: "phantom" })
+      });
     }
     console.log(`ReignsAgent desktop smoke passed: ${serverOrigin}`);
     quitting = true;
@@ -105,6 +122,7 @@ function startCreatorServer() {
     env: {
       ...process.env,
       REIGNS_AGENT_RUNTIME_ROOT: runtimeRoot,
+      REIGNS_AGENT_DATA_ROOT: portablePaths.dataRoot,
       REIGNS_AGENT_BUILD_OUTPUT_DIR: portablePaths.builds
     },
     serviceName: "ReignsAgent Server",

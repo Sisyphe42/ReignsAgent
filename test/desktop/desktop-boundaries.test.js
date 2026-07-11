@@ -66,6 +66,7 @@ describe("Electron desktop boundaries", () => {
     assert.deepEqual(CREATOR_RUNTIME_ENTRIES[0], ["apps/creator-web/dist", "creator"]);
     assert.equal(CREATOR_RUNTIME_ENTRIES.some(([source]) => source.includes("node_modules")), false);
     assert.equal(CREATOR_RUNTIME_ENTRIES.some(([source]) => source.includes("test")), false);
+    assert.equal(CREATOR_RUNTIME_ENTRIES.some(([source]) => source === "packages/workspace/src"), true);
 
     const creatorSource = await readFile(join(ROOT, "apps/creator-web/src/main.jsx"), "utf8");
     assert.doesNotMatch(creatorSource, /from\s+["']electron(?:\/|["'])/);
