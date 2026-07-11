@@ -27,6 +27,7 @@
     "test:unit": "node scripts/run-tests.mjs packages",
     "test:integration": "node scripts/run-tests.mjs test",
     "test:desktop": "node scripts/run-tests.mjs test/desktop && npm run desktop:prepare && npm exec -- electron apps/desktop-electron --smoke-test",
+    "test:desktop:ci": "node scripts/run-tests.mjs test/desktop && npm run desktop:prepare && npm exec -- electron apps/desktop-electron --smoke-test --no-sandbox",
     "test:desktop:packaged": "node scripts/smoke-packaged-desktop.mjs",
     "test": "npm run test:unit && npm run test:integration",
     "verify": "npm run build && npm test",

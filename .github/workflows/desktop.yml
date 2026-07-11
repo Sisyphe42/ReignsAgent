@@ -6,6 +6,13 @@ on:
     tags:
       - "v*"
 
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   make-desktop:
     name: ${{ matrix.artifact }}
@@ -31,8 +38,8 @@ jobs:
             arch: x64
             artifact: ReignsAgent-linux-x64
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
@@ -44,7 +51,7 @@ jobs:
       - run: npm run desktop:prepare
       - name: Smoke test Electron host on Linux
         if: matrix.platform == 'linux'
-        run: xvfb-run -a npm exec -- electron apps/desktop-electron --smoke-test
+        run: xvfb-run -a npm exec -- electron apps/desktop-electron --smoke-test --no-sandbox
       - name: Smoke test Electron host
         if: matrix.platform != 'linux'
         run: npm exec -- electron apps/desktop-electron --smoke-test
@@ -58,7 +65,8 @@ jobs:
         run: xvfb-run -a npm run test:desktop:packaged -- ${{ matrix.platform }} ${{ matrix.arch }} apps/desktop-electron/out/make
       - run: node scripts/verify-desktop-artifacts.mjs --platform ${{ matrix.platform }} --root apps/desktop-electron/out/make
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: ${{ matrix.artifact }}
           path: apps/desktop-electron/out/make/**/*
-          if-no-files-found: error
+          if-no-files-found: ${{ job.status == 'success' && 'error' || 'warn' }}

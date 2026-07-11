@@ -26,7 +26,9 @@ try {
     throw new Error("Portable archive must not contain pre-existing ReignsAgentData.");
   }
 
-  await run(executable, ["--smoke-test"], { cwd: packageDirectory, env: process.env });
+  const smokeArgs = ["--smoke-test"];
+  if (targetPlatform === "linux" && process.env.CI) smokeArgs.push("--no-sandbox");
+  await run(executable, smokeArgs, { cwd: packageDirectory, env: process.env });
   await access(join(portableData, "Builds"));
   await access(join(portableData, "SessionData"));
   console.log(`Packaged Electron smoke passed: ${executable}`);
