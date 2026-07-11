@@ -3,7 +3,7 @@ import { dirname, join, resolve } from "node:path";
 
 const sourceFiles = await collectJavaScriptFiles("packages");
 const importPattern = /(?:import|export)\s+(?:[^'"]*?\s+from\s+)?["']([^"']+)["']/g;
-const packageRoots = new Map(["core", "reviewer", "pipeline", "interface"].map((name) => [name, resolve("packages", name)]));
+const packageRoots = new Map(["core", "reviewer", "pipeline", "interface", "workspace"].map((name) => [name, resolve("packages", name)]));
 const violations = [];
 
 for (const file of sourceFiles.filter((path) => path.includes(`${separator()}src${separator()}`))) {
@@ -17,7 +17,7 @@ for (const file of sourceFiles.filter((path) => path.includes(`${separator()}src
       continue;
     }
 
-    if (!specifier.startsWith(".")) {
+    if (!specifier.startsWith(".") && !(packageName === "workspace" && specifier === "smol-toml")) {
       violations.push(`${file}: package imports are not allowed in source yet: '${specifier}'`);
       continue;
     }
@@ -52,6 +52,10 @@ function isAllowed(packageName, targetPackage) {
 
   if (packageName === "interface") {
     return targetPackage === "interface" || targetPackage === "core" || targetPackage === "pipeline" || targetPackage === "reviewer";
+  }
+
+  if (packageName === "workspace") {
+    return targetPackage === "workspace";
   }
 
   return false;

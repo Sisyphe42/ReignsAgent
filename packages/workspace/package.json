@@ -1,0 +1,11 @@
+{
+  "name": "@reigns-agent/workspace",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "dependencies": {
+    "smol-toml": "1.7.0"
+  }
+}

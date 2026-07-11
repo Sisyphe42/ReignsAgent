@@ -87,6 +87,10 @@ const modules = [
       "validateAiEditEndpointConfig",
       "validatePlayerCards"
     ]
+  },
+  {
+    path: "packages/workspace/src/index.js",
+    exports: ["WorkspaceError", "createWorkspaceStore"]
   }
 ];
 
