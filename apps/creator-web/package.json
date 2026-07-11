@@ -5,11 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
+    "dev:hosted": "vite --mode hosted --host 127.0.0.1",
     "build": "vite build",
+    "build:hosted": "vite build --mode hosted",
     "preview": "vite preview --host 127.0.0.1"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^6.0.2",
+    "fflate": "0.8.2",
     "vite": "^8.0.16",
     "react": "^19.2.7",
     "react-dom": "^19.2.7"

@@ -1,6 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { createCreatorBackend } from "./backend.js";
 import "./styles.css";
+
+const creatorBackendPromise = createCreatorBackend();
+if (import.meta.env.VITE_CREATOR_HOST === "browser") void registerHostedServiceWorker();
 
 const PANELS = [
   { id: "overview", label: "Overview", group: "Project" },
@@ -492,8 +496,9 @@ function readUrlState() {
   }
 
   const url = new URL(window.location.href);
-  const directPanel = url.pathname.startsWith("/workbench/")
-    ? url.pathname.slice("/workbench/".length).split("/")[0]
+  const appPath = stripBasePath(url.pathname);
+  const directPanel = appPath.startsWith("/workbench/")
+    ? appPath.slice("/workbench/".length).split("/")[0]
     : null;
   const queryPanel = url.searchParams.get("panel");
   const panel = [directPanel, queryPanel].find(isKnownPanel) ?? DEFAULT_PANEL;
@@ -510,7 +515,7 @@ function readUrlState() {
 
 function buildWorkbenchUrl(panel, skin) {
   const url = new URL(window.location.href);
-  url.pathname = panel === DEFAULT_PANEL ? "/workbench" : `/workbench/${panel}`;
+  url.pathname = withBasePath(panel === DEFAULT_PANEL ? "/workbench" : `/workbench/${panel}`);
   url.searchParams.set("skin", resolveSkinId(skin) ?? DEFAULT_SKIN);
   url.searchParams.delete("panel");
   return `${url.pathname}${url.search}${url.hash}`;
@@ -537,17 +542,31 @@ function syncAiAssistUrl(enabled, mode = "replace") {
 }
 
 async function api(path, options = {}) {
-  const response = await fetch(path, {
-    method: options.method ?? "GET",
-    headers: { "content-type": "application/json" },
-    body: options.body !== undefined ? JSON.stringify(options.body) : undefined
+  return (await creatorBackendPromise).request(path, options);
+}
+
+function stripBasePath(pathname) {
+  const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+  return base && pathname.startsWith(base) ? pathname.slice(base.length) || "/" : pathname;
+}
+
+function withBasePath(pathname) {
+  return `${import.meta.env.BASE_URL.replace(/\/$/, "")}${pathname}` || "/";
+}
+
+async function registerHostedServiceWorker() {
+  if (!("serviceWorker" in navigator)) return;
+  const manifest = document.createElement("link");
+  manifest.rel = "manifest";
+  manifest.href = `${import.meta.env.BASE_URL}manifest.webmanifest`;
+  document.head.append(manifest);
+  const registration = await navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`, { scope: import.meta.env.BASE_URL });
+  const offerUpdate = (worker) => worker?.addEventListener("statechange", () => {
+    if (worker.state === "installed" && navigator.serviceWorker.controller && window.confirm("A new ReignsAgent version is ready. Reload now?")) worker.postMessage({ type: "SKIP_WAITING" });
   });
-  const text = await response.text();
-  const json = text ? JSON.parse(text) : null;
-  if (!response.ok || json?.error) {
-    throw new Error(json?.error?.message ?? `Request failed: ${response.status}`);
-  }
-  return json;
+  offerUpdate(registration.installing);
+  registration.addEventListener("updatefound", () => offerUpdate(registration.installing));
+  navigator.serviceWorker.addEventListener("controllerchange", () => window.location.reload());
 }
 
 function formatAiEndpointError(error) {
@@ -1263,7 +1282,9 @@ function App() {
   const playerHref = useMemo(() => {
     const params = new URLSearchParams();
     params.set("skin", resolveSkinId(skin) ?? DEFAULT_SKIN);
-    return `/play?${params.toString()}`;
+    return import.meta.env.VITE_CREATOR_HOST === "browser"
+      ? `${withBasePath("/workbench/preview")}?${params.toString()}`
+      : `/play?${params.toString()}`;
   }, [skin]);
 
   return (
@@ -1278,7 +1299,7 @@ function App() {
       <header className="topbar">
         <div className="brand">
           <span className="brand__mark" aria-hidden="true">
-            <img src="/logo-alpha.png" alt="" />
+            <img src={`${import.meta.env.BASE_URL}logo-alpha.png`} alt="" />
           </span>
           <div>
             <h1>ReignsAgent</h1>
@@ -1352,7 +1373,7 @@ function App() {
 
         <main className="stage">
           <div className="stage__status" role="status">
-            <span>Local session</span>
+            <span>{import.meta.env.VITE_CREATOR_HOST === "browser" ? "Browser workspace" : "Local session"}</span>
             <strong>{busy || status}</strong>
           </div>
           {draftInfo && (
@@ -4909,6 +4930,50 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
   );
 }
 
+function HostedWorkspaceTools({ onRefresh, onStatus }) {
+  const [storage, setStorage] = useState(null);
+  const [includeApiKey, setIncludeApiKey] = useState(false);
+  const fileRef = useRef(null);
+  useEffect(() => { void api("/api/workspace/storage").then(setStorage).catch(() => {}); }, []);
+
+  async function persist() {
+    const result = await api("/api/workspace/persist", { method: "POST", body: {} });
+    setStorage(result);
+    onStatus(result.persisted ? "Browser storage is persistent" : "Persistent storage was not granted; keep backups");
+  }
+  async function exportWorkspace() {
+    if (includeApiKey && !window.confirm("This backup will contain your API key in plaintext. Continue?")) return;
+    const snapshot = await api("/api/workspace/export", { method: "POST", body: { includeApiKey } });
+    const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    try { const anchor = document.createElement("a"); anchor.href = url; anchor.download = `ReignsAgent-workspace-${new Date().toISOString().slice(0, 10)}.json`; anchor.click(); }
+    finally { URL.revokeObjectURL(url); }
+  }
+  async function importWorkspace(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try { const snapshot = JSON.parse(await file.text()); await api("/api/workspace/import", { method: "POST", body: { snapshot, replace: false } }); await onRefresh(); onStatus("Workspace backup imported"); }
+    finally { event.target.value = ""; }
+  }
+  const usage = storage?.usage != null && storage?.quota ? `${Math.round(storage.usage / 1048576)} MB of ${Math.round(storage.quota / 1048576)} MB` : "Capacity unavailable";
+  return (
+    <div className="subsection hosted-workspace-tools">
+      <h3>Browser workspace</h3>
+      <p className="muted">Projects live in this site's private storage. Clearing site data deletes them, so keep regular backups.</p>
+      <div className="action-row">
+        <span className={`endpoint-check endpoint-check--${storage?.persisted ? "ok" : "idle"}`}>{storage?.persisted ? "Persistent storage granted" : "Storage may be reclaimed"} · {usage}</span>
+        {!storage?.persisted && <button className="btn" type="button" onClick={() => void persist()}>Request persistence</button>}
+      </div>
+      <div className="action-row">
+        <label><input type="checkbox" checked={includeApiKey} onChange={(event) => setIncludeApiKey(event.target.checked)} /> Include plaintext API key</label>
+        <button className="btn" type="button" onClick={() => void exportWorkspace()}>Export workspace backup</button>
+        <button className="btn" type="button" onClick={() => fileRef.current?.click()}>Import and merge</button>
+        <input ref={fileRef} type="file" accept="application/json,.json" hidden onChange={(event) => void importWorkspace(event)} />
+      </div>
+    </div>
+  );
+}
+
 function SettingsPanel({ editor, aiSettings, apiKey, apiKeySaved, onAiSettingsChange, onApiKeyChange, onApiKeyClear, onRefresh, onStatus }) {
   const [title, setTitle] = useState(editor?.metadata?.title ?? "");
   const [plan, setPlan] = useState("");
@@ -5123,6 +5188,7 @@ function SettingsPanel({ editor, aiSettings, apiKey, apiKeySaved, onAiSettingsCh
 
   return (
     <section className="panel">
+      {import.meta.env.VITE_CREATOR_HOST === "browser" && <HostedWorkspaceTools onRefresh={onRefresh} onStatus={onStatus} />}
       <PanelHead title="Settings / Pipeline" note="Project metadata, AI endpoint posture, locale hooks, and connector planning." />
       <div className="subsection">
         <h3>Project</h3>

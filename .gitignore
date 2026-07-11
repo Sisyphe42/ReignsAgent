@@ -10,4 +10,5 @@ temp/
 apps/desktop-electron/runtime/
 apps/desktop-electron/out/
 apps/desktop-electron/ReignsAgentData/
+apps/creator-web/dist-hosted/
 .reigns-agent-data/
