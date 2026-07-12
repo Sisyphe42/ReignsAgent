@@ -5,7 +5,7 @@
 ### 1. Scope / Trigger
 
 - Trigger: changes to Creator configuration, project lifecycle, editor mutation routes, host data roots, or runtime staging.
-- Scope: local Web, Node ZIP, and Electron use one Creator Server and one filesystem Workspace contract. Browser OPFS is a future adapter, not a fallback inside this contract.
+- Scope: local Web, Node ZIP, and Electron use one Creator Server and one filesystem Workspace adapter. Hosted Web uses the OPFS adapter over the same host-neutral schema and projections; it is selected explicitly at build time, never as a runtime fallback.
 
 ### 2. Signatures
 

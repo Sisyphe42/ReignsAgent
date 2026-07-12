@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <img alt="Node.js v20+" src="https://img.shields.io/badge/Node.js-v20%2B-339933?logo=node.js&logoColor=white" />
+  <img alt="Node.js v22+" src="https://img.shields.io/badge/Node.js-v22%2B-339933?logo=node.js&logoColor=white" />
   <img alt="License MIT" src="https://img.shields.io/badge/license-MIT-blue" />
 </p>
 
@@ -27,6 +27,7 @@ ReignsAgent 是一个面向 [Reigns](https://www.devolverdigital.com/games/reign
 - [内容模型](#内容模型)
 - [AI 辅助工作流](#ai-辅助工作流)
 - [构建输出](#构建输出)
+- [Creator 发行模式](#creator-发行模式)
 - [Package 示例](#package-示例)
 - [仓库结构](#仓库结构)
 - [CI 与验证](#ci-与验证)
@@ -81,7 +82,12 @@ npm run dev:dashboard
 ```sh
 npm test
 npm run build:dashboard
+npm run dev:hosted
+npm run build:hosted
 npm run build:game -- fixtures/content/oss-court.cards.json dist/player
+npm run build:release
+npm run test:desktop
+npm run build:desktop
 npm run content:validate -- fixtures/content/minimal.cards.json
 npm run content:review -- fixtures/content/minimal.cards.json --cycles 100 --maxTurns 20
 npm run content:convert -- fixtures/content/minimal.cards.json tmp.cards.csv
@@ -117,8 +123,10 @@ flowchart LR
   core["Core<br/>headless runtime"]
   player["Deployable Player<br/>core-only runtime"]
   provider["User AI Endpoint"]
+  browserBackend["Hosted Browser Backend<br/>OPFS + Web Worker"]
 
   creator --> api
+  creator --> browserBackend
   api --> interface
   interface --> core
   interface --> reviewer
@@ -129,13 +137,56 @@ flowchart LR
   core --> player
 ```
 
+Creator UI 有两种宿主适配器。本地 Web、Node ZIP 和 Electron 通过 `HttpCreatorBackend` 使用共享 Creator Server；Hosted PWA 使用 `BrowserCreatorBackend`，将等价的 TOML/content 文档保存在 OPFS 中，通过 Web Worker 执行诊断，并从浏览器直接调用用户的 AI endpoint。两种适配器不会改变 Core、内容、提案或玩家构建契约。
+
 | 层 | 职责 |
 | --- | --- |
 | `packages/core` | 确定性的无头运行时。不包含 UI、IO、AI、reviewer、pipeline 或部署逻辑。 |
 | `packages/reviewer` | 模拟、图诊断、叙事覆盖率、结局分析和平衡报告。 |
 | `packages/pipeline` | 内容交换、AI 请求契约、endpoint normalization、补丁预校验和反馈动作。 |
 | `packages/interface` | 创作者工作流编排、本地 web surfaces、play-session helpers、诊断投影和构建组装。 |
-| `apps/creator-web` | Vite/React 创作者工作区。 |
+| `apps/creator-web` | 使用 HTTP 或 Hosted OPFS backend adapter 的 Vite/React 创作者工作区。 |
+
+## Creator 发行模式
+
+### Hosted PWA
+
+无需本地 API 即可启动或构建 Hosted Creator：
+
+```sh
+npm run dev:hosted
+npm run build:hosted
+```
+
+生产产物位于 `apps/creator-web/dist-hosted/`。反向代理或静态站点部署在子路径时，构建前设置 `REIGNS_AGENT_BASE_PATH=/reignsagent/`；应用 URL、Manifest scope、Service Worker 和离线导航都会使用该前缀。
+
+Hosted 项目和 `config.toml` 保存在当前 Origin 的 OPFS 中。v1 正式支持桌面 Chrome/Edge；首次成功加载后可以断网重新打开。清除站点数据会删除 Workspace，更换协议、域名或端口也会进入另一个 Workspace，因此 Settings 提供持久存储状态和 Workspace 备份导入/导出。备份默认排除明文 API Key，只有用户显式勾选并确认后才包含。
+
+AI 请求从浏览器直接发送到用户配置的 endpoint。HTTPS Creator 只能连接 HTTPS endpoint，localhost 除外；endpoint 必须通过 CORS 允许 Creator Origin、`Authorization` 和 `Content-Type`。项目数据不会经过维护者服务器，也不提供公共 Relay。浏览器玩家导出会在本地组装 ZIP，并排除 AI 设置和凭据。
+
+服务端 `.env` 或进程环境变量读取只属于本地 Creator Server 和自托管服务端。纯静态 Hosted 构建无法读取私有的服务器 `.env`，也绝不能用 `VITE_*` 注入密钥——这些值会编译进所有访客都能下载的前端资源。Hosted 模式由每位用户在自己的浏览器 Workspace 中配置 endpoint 和 Key。
+
+### 本地 Node ZIP
+
+构建完整的本地 Creator 发行包：
+
+```sh
+npm run build:release
+```
+
+该命令生成 `dist/reigns-agent-<version>/` 和跨平台 ZIP。目标机器需要 Node.js 22 或更高版本；解压后运行 `node start.mjs`，也可使用 Windows 的 `start.cmd` 或 macOS/Linux 的 `sh start.sh`。Creator、API 和玩家预览由同一个 loopback 服务提供，数据默认保存在解压目录旁的 `ReignsAgentData`。
+
+### Electron 便携版
+
+Electron 只是共享 Creator Server 与 WebUI 的可选桌面宿主，不包含独立业务逻辑：
+
+```sh
+npm run dev:desktop
+npm run test:desktop
+npm run build:desktop
+```
+
+Windows x64、macOS x64/arm64 和 Linux x64 均只生成便携 ZIP。程序名统一为 ReignsAgent；Electron profile、项目、配置和游戏构建都位于应用旁的 `ReignsAgentData/`。当前产物未签名，可能触发 SmartScreen 或 Gatekeeper 警告。
 
 ## 内容模型
 
@@ -305,18 +356,23 @@ console.log(diagnostics.healthScore, session.factions, build.player.choiceModel)
 
 | 路径 | 用途 |
 | --- | --- |
-| `apps/creator-web` | 创作者 dashboard workspace。 |
+| `apps/creator-web` | 使用 HTTP 或 Hosted OPFS backend adapter 的 Creator dashboard。 |
+| `apps/creator-server` | 本地 Web、Node ZIP 与 Electron 共享的 HTTP API 和静态宿主。 |
+| `apps/desktop-electron` | 可选 Electron 生命周期、安全策略和便携 ZIP 外壳。 |
 | `packages/core` | 无头游戏运行时。 |
 | `packages/reviewer` | 模拟和诊断引擎。 |
 | `packages/pipeline` | 内容交换和 AI proposal contracts。 |
 | `packages/interface` | 创作者编排和玩家构建组装。 |
+| `packages/workspace` | Host-neutral TOML/project 契约，以及 Node filesystem 与浏览器 OPFS adapter。 |
 | `scripts` | Dev server、content CLI、build-game assembler 和 verification gates。 |
 | `fixtures` | 示例和验证内容。 |
 | `test` | 跨 package integration tests。 |
 
 ## CI 与验证
 
-仓库使用 GitHub Actions 在 push 和 pull request 时持续验证。CI 当前在 Node.js 20、22、24 上运行 `npm ci` 和 `npm run verify`，并在 Node.js 22 上额外执行 deployable player smoke build。
+仓库在 pull request 和 `master` push 时运行 GitHub Actions，并通过 concurrency 取消同一 ref 的重复任务。CI 在 Node.js 22、24 上执行 `npm ci` 和 `npm run verify`，随后在 Node.js 22 上运行 Hosted PWA/subpath、deployable player 和 Electron smoke。
+
+`hosted-creator-smoke` 声明了 `needs: verify`：每次 Hosted Chromium 测试都必须先通过共享 Pipeline、Interface、Creator Server、AI endpoint 协议和集成测试，而不是在 Hosted job 内重复执行同一套 Node 测试。之后它再验证 `/reignsagent/` scope、PWA 文件、Chromium OPFS 持久化和断网重启。
 
 ### 本地验证
 
@@ -336,6 +392,7 @@ npm run verify
 | Anti-RPG drift check | `node scripts/verify-anti-rpg.mjs` | 保护纯卡牌滑动玩法边界。 |
 | Fixture verification | `node scripts/verify-fixtures.mjs` | 验证示例内容和 deployable-player fixture 假设。 |
 | Dashboard build | `npm run build:dashboard` | 编译 Vite/React 创作者工作区。 |
+| Hosted build | `npm run build:hosted` | 编译 OPFS/CORS-only PWA 与离线资源。 |
 | Unit tests | `npm run test:unit` | 运行 package-level Node test suites。 |
 | Integration tests | `npm run test:integration` | 运行跨 package integration flows。 |
 
@@ -347,6 +404,7 @@ npm run verify
 npm run build
 npm run test:unit
 npm run test:integration
+npm run test:hosted
 npm run content:validate -- fixtures/content/minimal.cards.json
 npm run content:review -- fixtures/content/minimal.cards.json --cycles 100 --maxTurns 20
 ```
