@@ -142,3 +142,49 @@ Added TOML-backed multi-project Creator persistence shared by local Web, Node ZI
 ### Next Steps
 
 - None - task complete
+
+
+## Session 5: Ship portable local and Hosted Creator
+
+**Date**: 2026-07-13
+**Task**: Ship portable local and Hosted Creator
+**Branch**: `master`
+
+### Summary
+
+Delivered Node ZIP, portable Electron, durable workspaces, and Hosted OPFS/CORS PWA; completed pre-merge boundary, backup, asset, security, browser, CI, and documentation audit; merged PR #21.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `0a54929` | (see git log) |
+| `06162d9` | (see git log) |
+| `be74e12` | (see git log) |
+| `98d0d0a` | (see git log) |
+| `39839c2` | (see git log) |
+| `2024f8d` | (see git log) |
+| `f65147d` | (see git log) |
+| `aa2b577` | (see git log) |
+| `8c290c4` | (see git log) |
+| `49ad163` | (see git log) |
+| `4e73e7d` | (see git log) |
+| `32911fb` | (see git log) |
+| `e6264cf` | (see git log) |
+| `1bb4e27` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
