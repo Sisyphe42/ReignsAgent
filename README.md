@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <img alt="Node.js v20+" src="https://img.shields.io/badge/Node.js-v20%2B-339933?logo=node.js&logoColor=white" />
+  <img alt="Node.js v22+" src="https://img.shields.io/badge/Node.js-v22%2B-339933?logo=node.js&logoColor=white" />
   <img alt="License MIT" src="https://img.shields.io/badge/license-MIT-blue" />
 </p>
 
@@ -81,7 +81,13 @@ Common project commands:
 ```sh
 npm test
 npm run build:dashboard
+npm run dev:hosted
+npm run build:hosted
 npm run build:game -- fixtures/content/oss-court.cards.json dist/player
+npm run build:release
+npm run test:desktop
+npm run test:desktop:packaged
+npm run build:desktop
 npm run content:validate -- fixtures/content/minimal.cards.json
 npm run content:review -- fixtures/content/minimal.cards.json --cycles 100 --maxTurns 20
 npm run content:convert -- fixtures/content/minimal.cards.json tmp.cards.csv
@@ -118,7 +124,9 @@ flowchart LR
   player["Deployable Player<br/>core-only runtime"]
   provider["User AI Endpoint"]
 
+  browserBackend["Hosted browser backend<br/>OPFS + Web Worker"]
   creator --> api
+  creator --> browserBackend
   api --> interface
   interface --> core
   interface --> reviewer
@@ -128,6 +136,8 @@ flowchart LR
   pipeline -->|"validated proposals"| interface
   core --> player
 ```
+
+The Creator UI has two host adapters. Local Web, Node ZIP, and Electron use `HttpCreatorBackend` over the shared Creator Server. The hosted PWA uses `BrowserCreatorBackend`, stores equivalent documents in OPFS, runs diagnostics in a Web Worker, and calls user AI endpoints directly. Neither adapter changes Core, content, proposal, or player contracts.
 
 | Layer | Responsibility |
 | --- | --- |
@@ -214,6 +224,109 @@ The build emits:
 | `player-runtime.js` | Player runtime with stitched core logic. |
 | `assets/logo-alpha.png` | Transparent product logo. |
 | Local content assets | Assets referenced by the bundle, such as `assets/sample/*.svg`. |
+
+## Creator Distribution
+
+### Hosted PWA
+
+Run the Creator without the local API:
+
+```sh
+npm run dev:hosted
+npm run build:hosted
+```
+
+The output is `apps/creator-web/dist-hosted/`. Set `REIGNS_AGENT_BASE_PATH=/reignsagent/` when building for a reverse-proxy or static-host subpath; application URLs, manifest scope, Service Worker, and offline navigation use that prefix.
+
+Hosted projects and `config.toml` live in origin-scoped OPFS. Chrome and Edge are the supported v1 browsers. After the first successful load the PWA can reopen offline. Clearing site data destroys the workspace, and changing scheme, host, or port selects a different workspace, so Settings exposes persistence status plus Workspace ZIP and active-project ZIP export/import. Backups exclude the plaintext AI key by default; including it requires an explicit checkbox and confirmation.
+
+AI calls go directly to the configured endpoint. An HTTPS Creator requires an HTTPS endpoint, except localhost, and the endpoint must allow the Creator origin plus `Authorization` and `Content-Type` through CORS. ReignsAgent operates no relay. Browser player export downloads a locally assembled ZIP and excludes AI settings and credentials.
+
+Server-side `.env` or process-environment credential loading belongs only to the local Creator Server and self-hosted server deployments. A hosted static build cannot read a private server `.env`; never expose secrets through `VITE_*` variables because those values are compiled into public browser assets. Each hosted user supplies their own endpoint and key in the browser workspace.
+
+### Local Node ZIP
+
+Build the complete local Creator distribution:
+
+```sh
+npm run build:release
+```
+
+This command runs the full verification gate, compiles the Creator, and emits both `dist/reigns-agent-<version>/` and `dist/reigns-agent-<version>.zip`. The ZIP is cross-platform and requires Node.js 22 or newer on the target machine; it does not bundle Node.js or `node_modules`.
+
+After extracting the ZIP, start the Creator with one of these commands:
+
+```sh
+# All platforms
+node start.mjs
+
+# Windows convenience launcher
+start.cmd
+
+# macOS/Linux convenience launcher
+sh start.sh
+```
+
+The launcher serves the compiled Creator, local API, and player preview from one process at `http://127.0.0.1:4321/workbench`, then opens the browser. Use `--no-open` to suppress browser launch, or set `HOST` and `PORT` to override the listener.
+
+The distribution contains:
+
+| Path | Purpose |
+| --- | --- |
+| `creator/` | Compiled Vite/React Creator application. |
+| `apps/creator-server` | Shared local API and static application server used by CLI and packaged hosts. |
+| `scripts/build-game.mjs` | Deployable standalone player builder. |
+| `packages/*/src` | Runtime modules required by the local API and player builder. |
+| `packages/interface/web` | Player preview and standalone player templates. |
+| `fixtures/content` | Example content for evaluation and player builds. |
+
+The package intentionally excludes tests, frontend source, caches, `.env`, `node_modules`, and AI-specific player behavior. Creator state is stored beside the extracted package under `ReignsAgentData`; set `REIGNS_AGENT_DATA_ROOT` to override that location. To generate a player site from the extracted package, run:
+
+```sh
+node scripts/build-game.mjs fixtures/content/oss-court.cards.json output/player
+```
+
+## Electron Desktop Host
+
+Electron is an optional outer host over the same compiled Creator and local API used by the Node ZIP. The WebUI, API routes, Core, Pipeline, Reviewer, Interface, Workspace, and player builder remain shared; no product logic is implemented in Electron.
+
+```sh
+# Build Creator, stage the shared runtime, and launch Electron
+npm run dev:desktop
+
+# Run boundary tests plus a real utility-process/API smoke test
+npm run test:desktop
+
+# Run the full repository gate and make the current platform's portable ZIP
+npm run build:desktop
+```
+
+The desktop app, window, executable, and metadata all use the product name `ReignsAgent`; package author metadata is `Sisyphe42`, matching the GitHub repository owner. It uses application ID `io.reignsagent.app`, starts the Creator Server in an Electron utility process on a random loopback port, and loads `/workbench` in a sandboxed BrowserWindow.
+
+All desktop targets are portable ZIP archives: Windows x64, macOS x64/arm64, and Linux x64. Extract the archive and run `ReignsAgent` directly; no installer or system Node.js is required. Electron profile data, `config.toml`, projects, and game exports stay beside the extracted app under `ReignsAgentData/`. On macOS, that directory is created beside `ReignsAgent.app`. Moving the app and its data together preserves the portable workspace.
+
+The durable workspace layout is shared by Electron and the Node ZIP:
+
+```text
+ReignsAgentData/
+  config.toml
+  projects/<project-id>/
+    project.toml
+    content.json
+    workspace.toml
+    assets/
+    reviews/
+    builds/
+  Builds/
+```
+
+`content.json.metadata.title` is the canonical project name. The bundled sample is immutable; choosing **Sample** clones it into an ordinary project. Global theme and AI endpoint settings live in `config.toml`; project-local panel/selection state lives in `workspace.toml`. API keys are stored as plaintext in the local config by product choice, masked in the UI, and excluded from project/player exports and logs.
+
+`.github/workflows/desktop.yml` builds portable archives only for manual runs and `v*` tags, then uploads workflow artifacts without publishing a release. The archives are unsigned and may still trigger SmartScreen or Gatekeeper warnings.
+
+`test:desktop:packaged` runs after Forge packaging and verifies both the unpacked Creator Server runtime and the packaged executable handshake. `verify-desktop-artifacts` rejects installer formats and requires a ZIP on every platform. Builders with an existing Electron ZIP may set `ELECTRON_ZIP_DIR` to its containing directory to avoid downloading the runtime again.
+
+Electron v1 intentionally has no preload bridge, native file dialogs, automatic updates, signing, notarization, store publishing, or database. Its persistence is the shared file workspace rather than an Electron-only store.
 
 ## Package Examples
 
@@ -305,18 +418,19 @@ console.log(diagnostics.healthScore, session.factions, build.player.choiceModel)
 
 | Path | Purpose |
 | --- | --- |
-| `apps/creator-web` | Creator dashboard workspace. |
+| `apps/creator-web` | Creator dashboard with HTTP and hosted OPFS backend adapters. |
 | `packages/core` | Headless game runtime. |
 | `packages/reviewer` | Simulation and diagnostic engine. |
 | `packages/pipeline` | Content exchange and AI proposal contracts. |
 | `packages/interface` | Creator orchestration and player build assembly. |
+| `packages/workspace` | Host-neutral TOML/project contracts plus Node filesystem and browser OPFS adapters. |
 | `scripts` | Dev server, content CLI, build-game assembler, and verification gates. |
 | `fixtures` | Sample and validation content. |
 | `test` | Cross-package integration tests. |
 
 ## CI And Verification
 
-The repository uses GitHub Actions for continuous verification on push and pull request events. CI currently runs `npm ci` and `npm run verify` on Node.js 20, 22, and 24, then performs a deployable player smoke build on Node.js 22.
+The repository uses GitHub Actions for pull requests and `master` pushes, with duplicate runs cancelled per ref. CI runs `npm ci` and `npm run verify` on Node.js 22 and 24, then performs hosted-PWA/subpath, deployable-player, and Electron source smoke tests on Node.js 22. The Hosted job declares `needs: verify`, so every browser smoke run is gated by the shared Pipeline, Interface, Creator Server, endpoint-protocol, and integration tests rather than duplicating them inside the browser job. Native desktop artifacts remain manual or `v*` tag builds.
 
 ### Local Verification
 

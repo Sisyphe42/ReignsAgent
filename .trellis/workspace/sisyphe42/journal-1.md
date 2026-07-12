@@ -106,3 +106,39 @@ Added Github Light as the default creator workbench skin label/palette, added Ca
 ### Next Steps
 
 - None - task complete
+
+
+## Session 4: Desktop persistence and CI
+
+**Date**: 2026-07-11
+**Task**: Desktop persistence and CI
+**Branch**: `feature/cross-platform-release`
+
+### Summary
+
+Added TOML-backed multi-project Creator persistence shared by local Web, Node ZIP, and portable Electron; fixed duplicate CI and Ubuntu smoke; verified browser, release, player, and packaged Windows persistence flows.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `2024f8d` | (see git log) |
+| `f65147d` | (see git log) |
+| `aa2b577` | (see git log) |
+| `8c290c4` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

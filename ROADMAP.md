@@ -1,9 +1,9 @@
 # ReignsAgent Roadmap
 
 ## Current Direction
-ReignsAgent is moving from a functional prototype toward a creator-focused workspace for building, reviewing, previewing, and shipping Reigns-like card narratives.
+ReignsAgent is moving from a functional prototype toward a creator-focused workspace for building, reviewing, previewing, and shipping Reigns-like card narratives. Local Web, Node ZIP, and Electron share the Creator Server; the hosted PWA uses OPFS and a browser backend over the same domain contracts.
 
-The current priority is the dashboard experience. Backend and package boundaries should remain stable while the creator UI becomes easier to navigate and reason about. The backend dev server should stay API-only; the creator UI should live on the Vite dashboard.
+The current priority is the dashboard experience. Backend and package boundaries should remain stable while the creator UI becomes easier to navigate and reason about. Development keeps the backend API-only and the Creator on Vite; Node ZIP and Electron hosts reuse the same Creator Server factory for packaged delivery.
 
 Story and Content work should now optimize for non-technical content authors: the creator surface should explain what each card does, when it appears, how it moves the story, what is broken, and what the next repair action should be.
 
@@ -39,9 +39,19 @@ Story and Content work should now optimize for non-technical content authors: th
 
 ## Later Architecture Options
 - `packages/contracts`: Shared schemas for cards, content bundles, diagnostics reports, connector requests, and build manifests.
-- `apps/creator-server`: A future Fastify-based creator API if the local dev server outgrows the current script.
-- Reviewer workers: Worker-thread or job-backed diagnostics for large Monte Carlo runs.
+- Fastify remains an optional future transport upgrade if the shared `apps/creator-server` HTTP implementation outgrows Node's built-in server.
+- Extend the hosted Reviewer Worker with richer incremental progress and resumable runs beyond the bounded v1 workload.
 - Production player shell: A dedicated deployable player surface with animation, settings, language switching, interaction preferences, about/attribution, and polished runtime UX.
+
+## Desktop Distribution Direction
+- Keep Browser/Vite development, the Node ZIP, and Electron as parallel hosts over the same WebUI and local API.
+- Keep Electron isolated in `apps/desktop-electron`; no package or Creator Web code may import desktop APIs.
+- Use an Electron utility process for the Creator Server so diagnostics and connector work do not block the desktop main process.
+- Build unsigned portable ZIP artifacts on Windows x64, macOS x64/arm64, and Linux x64 before promoting signing, notarization, publishing, or automatic updates.
+- Keep Electron profile data and game builds beside the extracted application in `ReignsAgentData`; v1 does not install files or use platform user-data directories.
+- Use the shared TOML/file Workspace contract for Electron, the Node ZIP, and local Web: global `config.toml`, multiple ordinary projects, and project-local workspace state.
+- Maintain the static hosted Creator as an OPFS adapter over the same logical Workspace contract; AI remains direct-CORS only and does not operate a public relay.
+- Treat native file dialogs, menus, notifications, and protocol handlers as later opt-in bridges; v1 is a secure portable lifecycle shell only.
 
 ## Non-Goals For The Current Phase
 - No full engine migration to Unity, Godot, or another game editor.

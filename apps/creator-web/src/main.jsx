@@ -1,6 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { createCreatorBackend } from "./backend.js";
 import "./styles.css";
+
+const creatorBackendPromise = createCreatorBackend();
+if (import.meta.env.VITE_CREATOR_HOST === "browser") void registerHostedServiceWorker();
 
 const PANELS = [
   { id: "overview", label: "Overview", group: "Project" },
@@ -24,12 +28,9 @@ const SKINS = [
   ["terminal", "Terminal"]
 ];
 
-const PERSIST_KEY = "reigns-agent.creator-web.skin";
-const DRAFT_KEY = "reigns-agent.creator-web.editor-draft";
-const AI_SETTINGS_KEY = "reigns-agent.creator-web.ai-settings";
-const AI_ASSIST_KEY = "reigns-agent.creator-web.ai-assist";
 const DEFAULT_PANEL = "overview";
 const DEFAULT_SKIN = "github-light";
+const LEGACY_DRAFT_KEY = "reigns-agent.creator-web.editor-draft";
 const SKIN_ALIASES = {
   workbench: "classic"
 };
@@ -495,8 +496,9 @@ function readUrlState() {
   }
 
   const url = new URL(window.location.href);
-  const directPanel = url.pathname.startsWith("/workbench/")
-    ? url.pathname.slice("/workbench/".length).split("/")[0]
+  const appPath = stripBasePath(url.pathname);
+  const directPanel = appPath.startsWith("/workbench/")
+    ? appPath.slice("/workbench/".length).split("/")[0]
     : null;
   const queryPanel = url.searchParams.get("panel");
   const panel = [directPanel, queryPanel].find(isKnownPanel) ?? DEFAULT_PANEL;
@@ -513,7 +515,7 @@ function readUrlState() {
 
 function buildWorkbenchUrl(panel, skin) {
   const url = new URL(window.location.href);
-  url.pathname = panel === DEFAULT_PANEL ? "/workbench" : `/workbench/${panel}`;
+  url.pathname = withBasePath(panel === DEFAULT_PANEL ? "/workbench" : `/workbench/${panel}`);
   url.searchParams.set("skin", resolveSkinId(skin) ?? DEFAULT_SKIN);
   url.searchParams.delete("panel");
   return `${url.pathname}${url.search}${url.hash}`;
@@ -540,17 +542,31 @@ function syncAiAssistUrl(enabled, mode = "replace") {
 }
 
 async function api(path, options = {}) {
-  const response = await fetch(path, {
-    method: options.method ?? "GET",
-    headers: { "content-type": "application/json" },
-    body: options.body !== undefined ? JSON.stringify(options.body) : undefined
+  return (await creatorBackendPromise).request(path, options);
+}
+
+function stripBasePath(pathname) {
+  const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+  return base && pathname.startsWith(base) ? pathname.slice(base.length) || "/" : pathname;
+}
+
+function withBasePath(pathname) {
+  return `${import.meta.env.BASE_URL.replace(/\/$/, "")}${pathname}` || "/";
+}
+
+async function registerHostedServiceWorker() {
+  if (!("serviceWorker" in navigator)) return;
+  const manifest = document.createElement("link");
+  manifest.rel = "manifest";
+  manifest.href = `${import.meta.env.BASE_URL}manifest.webmanifest`;
+  document.head.append(manifest);
+  const registration = await navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`, { scope: import.meta.env.BASE_URL });
+  const offerUpdate = (worker) => worker?.addEventListener("statechange", () => {
+    if (worker.state === "installed" && navigator.serviceWorker.controller && window.confirm("A new ReignsAgent version is ready. Reload now?")) worker.postMessage({ type: "SKIP_WAITING" });
   });
-  const text = await response.text();
-  const json = text ? JSON.parse(text) : null;
-  if (!response.ok || json?.error) {
-    throw new Error(json?.error?.message ?? `Request failed: ${response.status}`);
-  }
-  return json;
+  offerUpdate(registration.installing);
+  registration.addEventListener("updatefound", () => offerUpdate(registration.installing));
+  navigator.serviceWorker.addEventListener("controllerchange", () => window.location.reload());
 }
 
 function formatAiEndpointError(error) {
@@ -649,14 +665,17 @@ function normalizeAiSettings(settings = {}) {
   };
 }
 
-function readAiSettings() {
-  if (typeof localStorage === "undefined") return defaultAiSettings();
-  try {
-    const raw = localStorage.getItem(AI_SETTINGS_KEY);
-    return raw ? normalizeAiSettings(JSON.parse(raw)) : defaultAiSettings();
-  } catch {
-    return defaultAiSettings();
-  }
+function aiSettingsFromConfig(config = {}) {
+  return normalizeAiSettings({
+    baseUrl: config.endpoint ?? "",
+    protocol: config.protocol,
+    endpointPresetId: config.endpointPresetId,
+    compatibilityFamily: config.compatibilityFamily,
+    modelId: config.modelId ?? "",
+    routeMode: config.routeMode,
+    jsonMode: config.jsonMode,
+    capabilities: Object.fromEntries(AI_CAPABILITIES.map(([id]) => [id, (config.capabilities ?? []).includes(id)]))
+  });
 }
 
 function isAiEndpointConfigured(settings) {
@@ -823,16 +842,20 @@ function App() {
   const [editor, setEditor] = useState(null);
   const [status, setStatus] = useState("Loading project...");
   const [skin, setSkin] = useState(() => initialUrlState.skin ?? DEFAULT_SKIN);
-  const [aiAssistEnabled, setAiAssistEnabled] = useState(() => initialUrlState.aiAssist ?? localStorage.getItem(AI_ASSIST_KEY) === "1");
-  const [aiSettings, setAiSettings] = useState(() => readAiSettings());
+  const [aiAssistEnabled, setAiAssistEnabled] = useState(() => initialUrlState.aiAssist ?? false);
+  const [aiSettings, setAiSettings] = useState(() => defaultAiSettings());
   const [aiApiKey, setAiApiKey] = useState("");
+  const [hasSavedApiKey, setHasSavedApiKey] = useState(false);
+  const [projects, setProjects] = useState([]);
+  const [activeProjectId, setActiveProjectId] = useState(null);
+  const [configReady, setConfigReady] = useState(false);
   const [aiDraftRequest, setAiDraftRequest] = useState(null);
   const [aiPreflight, setAiPreflight] = useState(null);
   const [diagnostics, setDiagnostics] = useState(null);
   const [play, setPlay] = useState({ sessionId: null, state: null });
   const [build, setBuild] = useState(null);
   const [busy, setBusy] = useState("");
-  const [draftInfo, setDraftInfo] = useState(() => readDraftInfo());
+  const [draftInfo, setDraftInfo] = useState(null);
   const [focusCardId, setFocusCardId] = useState(null);
   const [aiGraphSelection, setAiGraphSelection] = useState(null);
   const historyRef = useRef([]);
@@ -875,33 +898,74 @@ function App() {
 
   useEffect(() => {
     document.documentElement.dataset.skin = skin;
-    localStorage.setItem(PERSIST_KEY, skin);
     syncWorkbenchUrl(activePanel, skin, "replace");
-  }, [activePanel, skin]);
+    if (configReady) {
+      void api("/api/config", { method: "PATCH", body: { theme: skin } });
+      void api("/api/workspace", { method: "PATCH", body: { activePanel } });
+    }
+  }, [activePanel, skin, configReady]);
 
   useEffect(() => {
-    localStorage.setItem(AI_SETTINGS_KEY, JSON.stringify(normalizeAiSettings(aiSettings)));
-  }, [aiSettings]);
+    if (!configReady) return;
+    const normalized = normalizeAiSettings(aiSettings);
+    void api("/api/config", {
+      method: "PATCH",
+      body: {
+        ai: {
+          endpoint: normalized.baseUrl,
+          protocol: normalized.protocol,
+          endpointPresetId: normalized.endpointPresetId,
+          compatibilityFamily: normalized.compatibilityFamily,
+          modelId: normalized.modelId,
+          routeMode: normalized.routeMode,
+          jsonMode: normalized.jsonMode,
+          capabilities: enabledAiCapabilities(normalized),
+          ...(aiApiKey.trim() ? { apiKey: aiApiKey } : {})
+        }
+      }
+    }).then((config) => setHasSavedApiKey(config.ai.hasApiKey));
+  }, [aiSettings, aiApiKey, configReady]);
 
   useEffect(() => {
-    localStorage.setItem(AI_ASSIST_KEY, aiAssistEnabled ? "1" : "0");
     syncAiAssistUrl(aiAssistEnabled, "replace");
-  }, [aiAssistEnabled]);
+    if (configReady) void api("/api/config", { method: "PATCH", body: { aiAssistEnabled } });
+  }, [aiAssistEnabled, configReady]);
 
   useEffect(() => {
     function onPopState() {
       const next = readUrlState();
       setActivePanel(next.panel);
       setSkin(next.skin ?? DEFAULT_SKIN);
-      setAiAssistEnabled(next.aiAssist ?? localStorage.getItem(AI_ASSIST_KEY) === "1");
+      if (next.aiAssist !== null) setAiAssistEnabled(next.aiAssist);
     }
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
 
   useEffect(() => {
-    void refreshEditor();
+    void loadCreatorState();
   }, []);
+
+  async function loadCreatorState() {
+    const [nextEditor, config, projectResult, workspaceState] = await Promise.all([
+      api("/api/editor"),
+      api("/api/config"),
+      api("/api/projects"),
+      api("/api/workspace")
+    ]);
+    setEditor(nextEditor);
+    setProjects(projectResult.projects ?? []);
+    setActiveProjectId(config.activeProjectId);
+    setHasSavedApiKey(Boolean(config.ai?.hasApiKey));
+    setAiSettings(aiSettingsFromConfig(config.ai));
+    if (!initialUrlState.skin) setSkin(resolveSkinId(config.theme) ?? DEFAULT_SKIN);
+    if (!new URLSearchParams(window.location.search).has("panel") && isKnownPanel(workspaceState.activePanel)) {
+      setActivePanel(workspaceState.activePanel);
+    }
+    if (initialUrlState.aiAssist === null) setAiAssistEnabled(Boolean(config.aiAssistEnabled));
+    setStatus(`${nextEditor.cards.length} cards loaded`);
+    setConfigReady(true);
+  }
 
   useEffect(() => {
     function onKeyDown(event) {
@@ -959,14 +1023,7 @@ function App() {
   }
 
   async function saveDraftSnapshot() {
-    const snapshot = await api("/api/editor/snapshot");
-    const entry = {
-      savedAt: new Date().toISOString(),
-      cardCount: snapshot.bundle?.cards?.length ?? 0,
-      bundle: snapshot.bundle
-    };
-    localStorage.setItem(DRAFT_KEY, JSON.stringify(entry));
-    setDraftInfo({ savedAt: entry.savedAt, cardCount: entry.cardCount });
+    setDraftInfo(null);
   }
 
   async function importBundle(bundle) {
@@ -997,6 +1054,49 @@ function App() {
     clearStoredDraft();
     setDraftInfo(null);
     setStatus("Local draft discarded");
+  }
+
+  async function refreshProjects() {
+    const result = await api("/api/projects");
+    setProjects(result.projects ?? []);
+    const config = await api("/api/config");
+    setActiveProjectId(config.activeProjectId);
+  }
+
+  async function createProject(source) {
+    await runAction("Creating project", async () => {
+      await api("/api/projects", { method: "POST", body: { source } });
+      historyRef.current = [];
+      setHistoryDepth(0);
+      await Promise.all([refreshEditor({ statusMessage: "Project created" }), refreshProjects()]);
+    });
+  }
+
+  async function openProject(projectId) {
+    if (!projectId || projectId === activeProjectId) return;
+    await runAction("Opening project", async () => {
+      await api(`/api/projects/${encodeURIComponent(projectId)}/open`, { method: "POST", body: {} });
+      historyRef.current = [];
+      setHistoryDepth(0);
+      setDiagnostics(null);
+      setPlay({ sessionId: null, state: null });
+      await Promise.all([refreshEditor({ statusMessage: "Project opened" }), refreshProjects()]);
+    });
+  }
+
+  async function deleteActiveProject() {
+    if (!activeProjectId || !window.confirm("Delete the active project from this workspace?")) return;
+    await runAction("Deleting project", async () => {
+      await api(`/api/projects/${encodeURIComponent(activeProjectId)}`, { method: "DELETE" });
+      await Promise.all([refreshEditor({ statusMessage: "Project deleted" }), refreshProjects()]);
+    });
+  }
+
+  async function clearSavedApiKey() {
+    const config = await api("/api/config", { method: "PATCH", body: { clearApiKey: true } });
+    setAiApiKey("");
+    setHasSavedApiKey(Boolean(config.ai.hasApiKey));
+    setStatus("Saved API key cleared");
   }
 
   async function startPreview() {
@@ -1182,7 +1282,9 @@ function App() {
   const playerHref = useMemo(() => {
     const params = new URLSearchParams();
     params.set("skin", resolveSkinId(skin) ?? DEFAULT_SKIN);
-    return `/play?${params.toString()}`;
+    return import.meta.env.VITE_CREATOR_HOST === "browser"
+      ? `${withBasePath("/workbench/preview")}?${params.toString()}`
+      : `/play?${params.toString()}`;
   }, [skin]);
 
   return (
@@ -1197,10 +1299,10 @@ function App() {
       <header className="topbar">
         <div className="brand">
           <span className="brand__mark" aria-hidden="true">
-            <img src="/logo-alpha.png" alt="" />
+            <img src={`${import.meta.env.BASE_URL}logo-alpha.png`} alt="" />
           </span>
           <div>
-            <h1>ReignsAgent Creator</h1>
+            <h1>ReignsAgent</h1>
             <p>{editor?.metadata?.title ?? "Project workspace"}</p>
           </div>
         </div>
@@ -1210,6 +1312,15 @@ function App() {
           <span>{playerReady ? "player ready" : "player blocked"}</span>
         </div>
         <div className="topbar__tools">
+          <label className="skin-select">
+            Project
+            <select value={activeProjectId ?? ""} onChange={(event) => void openProject(event.target.value)}>
+              {projects.map((project) => <option key={project.id} value={project.id}>{project.title}</option>)}
+            </select>
+          </label>
+          <button className="link-button" type="button" onClick={() => void createProject("blank")}>New</button>
+          <button className="link-button" type="button" onClick={() => void createProject("sample")}>Sample</button>
+          <button className="link-button" type="button" onClick={() => void deleteActiveProject()}>Delete</button>
           <button
             className={`ai-presence ai-presence--${aiPresenceState}`}
             type="button"
@@ -1262,7 +1373,7 @@ function App() {
 
         <main className="stage">
           <div className="stage__status" role="status">
-            <span>Local session</span>
+            <span>{import.meta.env.VITE_CREATOR_HOST === "browser" ? "Browser workspace" : "Local session"}</span>
             <strong>{busy || status}</strong>
           </div>
           {draftInfo && (
@@ -1331,7 +1442,7 @@ function App() {
               editor={editor}
               diagnostics={diagnostics}
               aiSettings={aiSettings}
-              apiKeyAvailable={Boolean(aiApiKey.trim())}
+              apiKeyAvailable={Boolean(aiApiKey.trim()) || hasSavedApiKey}
               aiAssistEnabled={aiAssistEnabled}
               aiConfigured={aiConfigured}
               draftRequest={aiDraftRequest}
@@ -1355,8 +1466,10 @@ function App() {
               editor={editor}
               aiSettings={aiSettings}
               apiKey={aiApiKey}
+              apiKeySaved={hasSavedApiKey}
               onAiSettingsChange={setAiSettings}
               onApiKeyChange={setAiApiKey}
+              onApiKeyClear={clearSavedApiKey}
               onRefresh={refreshEditor}
               onStatus={setStatus}
             />
@@ -1528,8 +1641,7 @@ function ContentPanel({ editor, assetsByCard, onImport, onMutate, onStatus, focu
   async function importFile(file) {
     if (!file) return;
     try {
-      const text = await file.text();
-      await onImport(JSON.parse(text));
+      await onImport(await readJsonFile(file, ["content.json"]));
     } catch (error) {
       onStatus(error.message);
     }
@@ -1546,8 +1658,8 @@ function ContentPanel({ editor, assetsByCard, onImport, onMutate, onStatus, focu
       <PanelHead title="Content / Cards" note="Card text, left/right choices, faction effects, tags, variables, and art bindings." />
       <div className="tool-strip">
         <label className="file-button">
-          <input type="file" accept=".json,application/json" onChange={(event) => void importFile(event.target.files?.[0])} />
-          Import JSON
+          <input type="file" accept=".json,.zip,application/json,application/zip" onChange={(event) => void importFile(event.target.files?.[0])} />
+          Import project
         </label>
         <button className="btn" onClick={() => void loadSample()}>Load sample deck</button>
         <span className="muted">{editor?.cards?.length ?? 0} cards</span>
@@ -4472,7 +4584,7 @@ function BuildPanel({ build, onPrepare }) {
       <PanelHead title="Build / Deploy" note="Prepare and export the deployable player bundle." />
       <div className="action-row">
         <button className="btn" onClick={() => void onPrepare(false)}>Preview build</button>
-        <button className="btn btn--primary" onClick={() => void onPrepare(true)}>Export .game.json</button>
+        <button className="btn btn--primary" onClick={() => void onPrepare(true)}>{import.meta.env.VITE_CREATOR_HOST === "browser" ? "Export player ZIP" : "Export .game.json"}</button>
       </div>
       <pre className="output">{build ? JSON.stringify(build.build ?? build, null, 2) : "No build prepared."}</pre>
     </section>
@@ -4817,7 +4929,70 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
   );
 }
 
-function SettingsPanel({ editor, aiSettings, apiKey, onAiSettingsChange, onApiKeyChange, onRefresh, onStatus }) {
+async function downloadJsonZip(entries, fileName) {
+  const { strToU8, zipSync } = await import("fflate");
+  const files = Object.fromEntries(Object.entries(entries).map(([name, value]) => [name, strToU8(`${JSON.stringify(value, null, 2)}\n`)]));
+  const url = URL.createObjectURL(new Blob([zipSync(files, { level: 6 })], { type: "application/zip" }));
+  try { const anchor = document.createElement("a"); anchor.href = url; anchor.download = fileName; anchor.click(); }
+  finally { URL.revokeObjectURL(url); }
+}
+
+async function readJsonFile(file, preferredEntries = []) {
+  if (!file.name.toLowerCase().endsWith(".zip")) return JSON.parse(await file.text());
+  const { strFromU8, unzipSync } = await import("fflate");
+  const entries = unzipSync(new Uint8Array(await file.arrayBuffer()));
+  const name = preferredEntries.find((entry) => entries[entry]) ?? Object.keys(entries).find((entry) => entry.endsWith(".json"));
+  if (!name) throw new Error("ZIP does not contain a JSON project or workspace document");
+  return JSON.parse(strFromU8(entries[name]));
+}
+
+function HostedWorkspaceTools({ onRefresh, onStatus }) {
+  const [storage, setStorage] = useState(null);
+  const [includeApiKey, setIncludeApiKey] = useState(false);
+  const fileRef = useRef(null);
+  useEffect(() => { void api("/api/workspace/storage").then(setStorage).catch(() => {}); }, []);
+
+  async function persist() {
+    const result = await api("/api/workspace/persist", { method: "POST", body: {} });
+    setStorage(result);
+    onStatus(result.persisted ? "Browser storage is persistent" : "Persistent storage was not granted; keep backups");
+  }
+  async function exportWorkspace() {
+    if (includeApiKey && !window.confirm("This backup will contain your API key in plaintext. Continue?")) return;
+    const snapshot = await api("/api/workspace/export", { method: "POST", body: { includeApiKey } });
+    await downloadJsonZip({ "workspace.json": snapshot }, `ReignsAgent-workspace-${new Date().toISOString().slice(0, 10)}.zip`);
+  }
+  async function exportProject() {
+    const snapshot = await api("/api/editor/snapshot");
+    await downloadJsonZip({ "content.json": snapshot.bundle }, `ReignsAgent-project-${new Date().toISOString().slice(0, 10)}.zip`);
+  }
+  async function importWorkspace(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try { const snapshot = await readJsonFile(file, ["workspace.json"]); await api("/api/workspace/import", { method: "POST", body: { snapshot, replace: false } }); window.location.reload(); }
+    finally { event.target.value = ""; }
+  }
+  const usage = storage?.usage != null && storage?.quota ? `${Math.round(storage.usage / 1048576)} MB of ${Math.round(storage.quota / 1048576)} MB` : "Capacity unavailable";
+  return (
+    <div className="subsection hosted-workspace-tools">
+      <h3>Browser workspace</h3>
+      <p className="muted">Projects live in this site's private storage. Clearing site data deletes them, so keep regular backups.</p>
+      <div className="action-row">
+        <span className={`endpoint-check endpoint-check--${storage?.persisted ? "ok" : "idle"}`}>{storage?.persisted ? "Persistent storage granted" : "Storage may be reclaimed"} · {usage}</span>
+        {!storage?.persisted && <button className="btn" type="button" onClick={() => void persist()}>Request persistence</button>}
+      </div>
+      <div className="action-row">
+        <label><input type="checkbox" checked={includeApiKey} onChange={(event) => setIncludeApiKey(event.target.checked)} /> Include plaintext API key</label>
+        <button className="btn" type="button" onClick={() => void exportWorkspace()}>Export workspace backup</button>
+        <button className="btn" type="button" onClick={() => void exportProject()}>Export active project</button>
+        <button className="btn" type="button" onClick={() => fileRef.current?.click()}>Import and merge</button>
+        <input ref={fileRef} type="file" accept="application/json,application/zip,.json,.zip" hidden onChange={(event) => void importWorkspace(event)} />
+      </div>
+    </div>
+  );
+}
+
+function SettingsPanel({ editor, aiSettings, apiKey, apiKeySaved, onAiSettingsChange, onApiKeyChange, onApiKeyClear, onRefresh, onStatus }) {
   const [title, setTitle] = useState(editor?.metadata?.title ?? "");
   const [plan, setPlan] = useState("");
   const [theme, setTheme] = useState("small kingdom");
@@ -4828,6 +5003,7 @@ function SettingsPanel({ editor, aiSettings, apiKey, onAiSettingsChange, onApiKe
   const normalizedAiSettings = normalizeAiSettings(aiSettings);
   const transientApiKey = typeof apiKey === "string" ? apiKey : "";
   const hasTransientApiKey = Boolean(transientApiKey.trim());
+  const hasUsableApiKey = hasTransientApiKey || apiKeySaved;
   const endpointPreset = getEndpointPreset(normalizedAiSettings.endpointPresetId);
   const modelPresets = mergeAiModelOptions(getModelPresetsForEndpoint(normalizedAiSettings), fetchedModels);
   const protocolLabel = AI_PROTOCOLS.find(([id]) => id === normalizedAiSettings.protocol)?.[1] ?? normalizedAiSettings.protocol;
@@ -4848,7 +5024,7 @@ function SettingsPanel({ editor, aiSettings, apiKey, onAiSettingsChange, onApiKe
         config: buildAiConnectorConfig(
           normalizedAiSettings,
           { theme, cardCount: count },
-          { hasApiKey: hasTransientApiKey }
+          { hasApiKey: hasUsableApiKey }
         )
       }
     });
@@ -4957,7 +5133,7 @@ function SettingsPanel({ editor, aiSettings, apiKey, onAiSettingsChange, onApiKe
       setSetupCheck({ state: "error", message: "Base URL is not a valid URL." });
       return;
     }
-    if (!hasTransientApiKey && normalizedAiSettings.compatibilityFamily !== "local") {
+    if (!hasUsableApiKey && normalizedAiSettings.compatibilityFamily !== "local") {
       setSetupCheck({ state: "warning", message: `${protocolLabel} request shape is valid, but no API key is set.` });
       return;
     }
@@ -4966,7 +5142,7 @@ function SettingsPanel({ editor, aiSettings, apiKey, onAiSettingsChange, onApiKe
       const result = await api("/api/ai/edit/validate", {
         method: "POST",
         body: {
-          config: buildAiConnectorConfig(normalizedAiSettings, {}, { hasApiKey: hasTransientApiKey }),
+          config: buildAiConnectorConfig(normalizedAiSettings, {}, { hasApiKey: hasUsableApiKey }),
           credentials: {
             apiKey: transientApiKey
           }
@@ -4996,7 +5172,7 @@ function SettingsPanel({ editor, aiSettings, apiKey, onAiSettingsChange, onApiKe
       setSetupCheck({ state: "error", message: "Base URL is not a valid URL." });
       return;
     }
-    if (!hasTransientApiKey && normalizedAiSettings.compatibilityFamily !== "local") {
+    if (!hasUsableApiKey && normalizedAiSettings.compatibilityFamily !== "local") {
       setSetupCheck({ state: "warning", message: "API key is required before fetching provider models." });
       return;
     }
@@ -5005,7 +5181,7 @@ function SettingsPanel({ editor, aiSettings, apiKey, onAiSettingsChange, onApiKe
       const result = await api("/api/ai/edit/models", {
         method: "POST",
         body: {
-          config: buildAiConnectorConfig(normalizedAiSettings, {}, { hasApiKey: hasTransientApiKey }),
+          config: buildAiConnectorConfig(normalizedAiSettings, {}, { hasApiKey: hasUsableApiKey }),
           credentials: {
             apiKey: transientApiKey
           }
@@ -5030,6 +5206,7 @@ function SettingsPanel({ editor, aiSettings, apiKey, onAiSettingsChange, onApiKe
 
   return (
     <section className="panel">
+      {import.meta.env.VITE_CREATOR_HOST === "browser" && <HostedWorkspaceTools onRefresh={onRefresh} onStatus={onStatus} />}
       <PanelHead title="Settings / Pipeline" note="Project metadata, AI endpoint posture, locale hooks, and connector planning." />
       <div className="subsection">
         <h3>Project</h3>
@@ -5063,7 +5240,7 @@ function SettingsPanel({ editor, aiSettings, apiKey, onAiSettingsChange, onApiKe
                 type={apiKeyVisible ? "text" : "password"}
                 value={transientApiKey}
                 onChange={(event) => onApiKeyChange(event.target.value)}
-                placeholder="Kept only until this dashboard tab reloads"
+                placeholder={apiKeySaved ? "Saved in config.toml; type to replace" : "Saved in local config.toml"}
               />
               <button
                 className={apiKeyVisible ? "secret-input__toggle secret-input__toggle--active" : "secret-input__toggle"}
@@ -5074,6 +5251,7 @@ function SettingsPanel({ editor, aiSettings, apiKey, onAiSettingsChange, onApiKe
               >
                 <span className="eye-mark" aria-hidden="true" />
               </button>
+              {apiKeySaved && <button className="btn btn--ghost btn--compact" type="button" onClick={() => void onApiKeyClear()}>Clear</button>}
             </div>
           </div>
           <div className="ai-form-row">
@@ -5871,7 +6049,7 @@ function effectPath(cardId, choiceId, kind, target) {
 function readStoredDraft() {
   if (typeof localStorage === "undefined") return null;
   try {
-    const raw = localStorage.getItem(DRAFT_KEY);
+    const raw = localStorage.getItem(LEGACY_DRAFT_KEY);
     if (!raw) return null;
     const entry = JSON.parse(raw);
     if (!entry?.bundle || !Array.isArray(entry.bundle.cards)) return null;
@@ -5892,7 +6070,7 @@ function readDraftInfo() {
 
 function clearStoredDraft() {
   if (typeof localStorage !== "undefined") {
-    localStorage.removeItem(DRAFT_KEY);
+    localStorage.removeItem(LEGACY_DRAFT_KEY);
   }
 }
 

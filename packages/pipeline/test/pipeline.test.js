@@ -262,7 +262,7 @@ describe("ReignsAgent pipeline", () => {
       targetCardIds: ["opening"]
     });
 
-    assert.equal(context.project.product, "ReignsAgent Creator");
+    assert.equal(context.project.product, "ReignsAgent");
     assert.match(context.project.gameplayRule, /left and right/);
     assert.equal(context.selection.cards[0].id, "opening");
     assert.equal(request.purpose, "card_edit");

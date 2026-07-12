@@ -1,0 +1,72 @@
+name: Desktop Artifacts
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  make-desktop:
+    name: ${{ matrix.artifact }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-latest
+            platform: win32
+            arch: x64
+            artifact: ReignsAgent-windows-x64
+          - runner: macos-15-intel
+            platform: darwin
+            arch: x64
+            artifact: ReignsAgent-macos-x64
+          - runner: macos-15
+            platform: darwin
+            arch: arm64
+            artifact: ReignsAgent-macos-arm64
+          - runner: ubuntu-latest
+            platform: linux
+            arch: x64
+            artifact: ReignsAgent-linux-x64
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install Linux packaging tools
+        if: matrix.platform == 'linux'
+        run: sudo apt-get update && sudo apt-get install -y xvfb
+      - run: npm ci
+      - run: npm run build:dashboard
+      - run: npm run desktop:prepare
+      - name: Smoke test Electron host on Linux
+        if: matrix.platform == 'linux'
+        run: xvfb-run -a npm exec -- electron apps/desktop-electron --smoke-test --no-sandbox
+      - name: Smoke test Electron host
+        if: matrix.platform != 'linux'
+        run: npm exec -- electron apps/desktop-electron --smoke-test
+      - run: npm run package -w @reigns-agent/desktop-electron -- --arch=${{ matrix.arch }}
+      - run: node scripts/build-portable-desktop.mjs --platform ${{ matrix.platform }} --arch ${{ matrix.arch }}
+      - name: Smoke test packaged desktop runtime
+        if: matrix.platform != 'linux'
+        run: npm run test:desktop:packaged -- ${{ matrix.platform }} ${{ matrix.arch }} apps/desktop-electron/out/make
+      - name: Smoke test packaged desktop runtime on Linux
+        if: matrix.platform == 'linux'
+        run: xvfb-run -a npm run test:desktop:packaged -- ${{ matrix.platform }} ${{ matrix.arch }} apps/desktop-electron/out/make
+      - run: node scripts/verify-desktop-artifacts.mjs --platform ${{ matrix.platform }} --root apps/desktop-electron/out/make
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ${{ matrix.artifact }}
+          path: apps/desktop-electron/out/make/**/*
+          if-no-files-found: ${{ job.status == 'success' && 'error' || 'warn' }}

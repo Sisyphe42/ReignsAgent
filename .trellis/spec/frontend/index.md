@@ -21,6 +21,7 @@ This directory contains guidelines for frontend development. Fill in each file w
 | [Quality Guidelines](./quality-guidelines.md) | Code standards, forbidden patterns | To fill |
 | [Type Safety](./type-safety.md) | Type patterns, validation | To fill |
 | [AI Edit Contracts](./ai-edit-contracts.md) | Cross-layer AI Edit request, proposal, patch, and API contracts | Active |
+| [Workspace Persistence Contracts](./workspace-persistence-contracts.md) | Shared config, project, host-path, and runtime-staging contracts | Active |
 
 ---
 
@@ -40,6 +41,7 @@ The goal is to help AI assistants and new team members understand how YOUR proje
 ## Pre-Development Checklist
 
 - Read [AI Edit Contracts](./ai-edit-contracts.md) before changing Pipeline AI requests, Interface editor orchestration, local creator API routes, or the Creator AI Edit panel.
+- Read [Workspace Persistence Contracts](./workspace-persistence-contracts.md) before changing Creator state, project APIs, host data paths, or release runtime entries.
 - Read [Quality Guidelines](./quality-guidelines.md) before visible Creator UI changes.
 - Read [Component Guidelines](./component-guidelines.md) before adding or reshaping Creator React components.
 

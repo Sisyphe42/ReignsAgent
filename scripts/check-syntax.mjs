@@ -4,7 +4,8 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
-const roots = ["packages", "scripts", "test"];
+const roots = ["packages", "scripts", "test", "apps/creator-server", "apps/desktop-electron"];
+const ignoredDirectories = new Set(["dist", "node_modules", "out", "runtime"]);
 const files = [];
 
 for (const root of roots) {
@@ -25,6 +26,7 @@ async function collectJavaScriptFiles(directory) {
     const path = join(directory, entry.name);
 
     if (entry.isDirectory()) {
+      if (ignoredDirectories.has(entry.name)) continue;
       result.push(...(await collectJavaScriptFiles(path)));
       continue;
     }
@@ -36,4 +38,3 @@ async function collectJavaScriptFiles(directory) {
 
   return result;
 }
-
