@@ -15,6 +15,10 @@ describe("hosted Creator build", () => {
     const serviceWorker = await readFile(join(ROOT, "sw.js"), "utf8");
     assert.match(serviceWorker, /index\.html/);
     assert.doesNotMatch(serviceWorker, /apiKey|credentials/);
+    const browserBuild = files.find((file) => /^assets\/browser-build-.*\.js$/.test(file));
+    assert.ok(browserBuild, "missing browser player builder");
+    const browserBuildSource = await readFile(join(ROOT, browserBuild), "utf8");
+    for (const asset of ["castle.svg", "coins.svg", "ATTRIBUTION.md"]) assert.match(browserBuildSource, new RegExp(asset.replace(".", "\\.")));
   });
 });
 

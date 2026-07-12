@@ -4,7 +4,6 @@
   "type": "module",
   "exports": {
     ".": "./src/index.js",
-    "./contracts": "./src/contracts.js",
-    "./opfs": "./src/opfs.js"
+    "./contracts": "./src/contracts.js"
   }
 }

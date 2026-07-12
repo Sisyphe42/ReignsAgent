@@ -5,7 +5,7 @@ import {
   prepareGameBuild, projectFactionGauges, summarizeDiagnostics, summarizeFeedback,
   validateAiEditEndpointConfig, validatePlayerCards
 } from "../../../packages/interface/src/index.js";
-import { createOpfsWorkspaceStore } from "../../../packages/workspace/src/opfs.js";
+import { createOpfsWorkspaceStore } from "./opfs-workspace.js";
 import { backendError } from "./backend.js";
 
 export class BrowserCreatorBackend {

@@ -1641,8 +1641,7 @@ function ContentPanel({ editor, assetsByCard, onImport, onMutate, onStatus, focu
   async function importFile(file) {
     if (!file) return;
     try {
-      const text = await file.text();
-      await onImport(JSON.parse(text));
+      await onImport(await readJsonFile(file, ["content.json"]));
     } catch (error) {
       onStatus(error.message);
     }
@@ -1659,8 +1658,8 @@ function ContentPanel({ editor, assetsByCard, onImport, onMutate, onStatus, focu
       <PanelHead title="Content / Cards" note="Card text, left/right choices, faction effects, tags, variables, and art bindings." />
       <div className="tool-strip">
         <label className="file-button">
-          <input type="file" accept=".json,application/json" onChange={(event) => void importFile(event.target.files?.[0])} />
-          Import JSON
+          <input type="file" accept=".json,.zip,application/json,application/zip" onChange={(event) => void importFile(event.target.files?.[0])} />
+          Import project
         </label>
         <button className="btn" onClick={() => void loadSample()}>Load sample deck</button>
         <span className="muted">{editor?.cards?.length ?? 0} cards</span>
@@ -4585,7 +4584,7 @@ function BuildPanel({ build, onPrepare }) {
       <PanelHead title="Build / Deploy" note="Prepare and export the deployable player bundle." />
       <div className="action-row">
         <button className="btn" onClick={() => void onPrepare(false)}>Preview build</button>
-        <button className="btn btn--primary" onClick={() => void onPrepare(true)}>Export .game.json</button>
+        <button className="btn btn--primary" onClick={() => void onPrepare(true)}>{import.meta.env.VITE_CREATOR_HOST === "browser" ? "Export player ZIP" : "Export .game.json"}</button>
       </div>
       <pre className="output">{build ? JSON.stringify(build.build ?? build, null, 2) : "No build prepared."}</pre>
     </section>
@@ -4930,6 +4929,23 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
   );
 }
 
+async function downloadJsonZip(entries, fileName) {
+  const { strToU8, zipSync } = await import("fflate");
+  const files = Object.fromEntries(Object.entries(entries).map(([name, value]) => [name, strToU8(`${JSON.stringify(value, null, 2)}\n`)]));
+  const url = URL.createObjectURL(new Blob([zipSync(files, { level: 6 })], { type: "application/zip" }));
+  try { const anchor = document.createElement("a"); anchor.href = url; anchor.download = fileName; anchor.click(); }
+  finally { URL.revokeObjectURL(url); }
+}
+
+async function readJsonFile(file, preferredEntries = []) {
+  if (!file.name.toLowerCase().endsWith(".zip")) return JSON.parse(await file.text());
+  const { strFromU8, unzipSync } = await import("fflate");
+  const entries = unzipSync(new Uint8Array(await file.arrayBuffer()));
+  const name = preferredEntries.find((entry) => entries[entry]) ?? Object.keys(entries).find((entry) => entry.endsWith(".json"));
+  if (!name) throw new Error("ZIP does not contain a JSON project or workspace document");
+  return JSON.parse(strFromU8(entries[name]));
+}
+
 function HostedWorkspaceTools({ onRefresh, onStatus }) {
   const [storage, setStorage] = useState(null);
   const [includeApiKey, setIncludeApiKey] = useState(false);
@@ -4944,15 +4960,16 @@ function HostedWorkspaceTools({ onRefresh, onStatus }) {
   async function exportWorkspace() {
     if (includeApiKey && !window.confirm("This backup will contain your API key in plaintext. Continue?")) return;
     const snapshot = await api("/api/workspace/export", { method: "POST", body: { includeApiKey } });
-    const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    try { const anchor = document.createElement("a"); anchor.href = url; anchor.download = `ReignsAgent-workspace-${new Date().toISOString().slice(0, 10)}.json`; anchor.click(); }
-    finally { URL.revokeObjectURL(url); }
+    await downloadJsonZip({ "workspace.json": snapshot }, `ReignsAgent-workspace-${new Date().toISOString().slice(0, 10)}.zip`);
+  }
+  async function exportProject() {
+    const snapshot = await api("/api/editor/snapshot");
+    await downloadJsonZip({ "content.json": snapshot.bundle }, `ReignsAgent-project-${new Date().toISOString().slice(0, 10)}.zip`);
   }
   async function importWorkspace(event) {
     const file = event.target.files?.[0];
     if (!file) return;
-    try { const snapshot = JSON.parse(await file.text()); await api("/api/workspace/import", { method: "POST", body: { snapshot, replace: false } }); await onRefresh(); onStatus("Workspace backup imported"); }
+    try { const snapshot = await readJsonFile(file, ["workspace.json"]); await api("/api/workspace/import", { method: "POST", body: { snapshot, replace: false } }); window.location.reload(); }
     finally { event.target.value = ""; }
   }
   const usage = storage?.usage != null && storage?.quota ? `${Math.round(storage.usage / 1048576)} MB of ${Math.round(storage.quota / 1048576)} MB` : "Capacity unavailable";
@@ -4967,8 +4984,9 @@ function HostedWorkspaceTools({ onRefresh, onStatus }) {
       <div className="action-row">
         <label><input type="checkbox" checked={includeApiKey} onChange={(event) => setIncludeApiKey(event.target.checked)} /> Include plaintext API key</label>
         <button className="btn" type="button" onClick={() => void exportWorkspace()}>Export workspace backup</button>
+        <button className="btn" type="button" onClick={() => void exportProject()}>Export active project</button>
         <button className="btn" type="button" onClick={() => fileRef.current?.click()}>Import and merge</button>
-        <input ref={fileRef} type="file" accept="application/json,.json" hidden onChange={(event) => void importWorkspace(event)} />
+        <input ref={fileRef} type="file" accept="application/json,application/zip,.json,.zip" hidden onChange={(event) => void importWorkspace(event)} />
       </div>
     </div>
   );

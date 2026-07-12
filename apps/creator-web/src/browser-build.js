@@ -4,6 +4,8 @@ import coreSource from "../../../packages/core/src/index.js?raw";
 import playerRuntimeTemplate from "../../../packages/interface/web/player-runtime.js?raw";
 import playerHtml from "../../../packages/interface/web/standalone-player.html?raw";
 
+const bundledTextAssets = import.meta.glob("../../../packages/interface/web/assets/sample/*", { eager: true, query: "?raw", import: "default" });
+
 export function assemblePlayerFiles({ editor, config = null, buildId = null, logoBytes = null }) {
   const validation = validatePlayerCards(editor.toCards());
   if (!validation.valid) throw new Error(`Cannot build: ${validation.errors.join("; ")}`);
@@ -16,6 +18,9 @@ export function assemblePlayerFiles({ editor, config = null, buildId = null, log
     "player.html": strToU8(playerHtml)
   };
   if (logoBytes) files["assets/logo-alpha.png"] = logoBytes;
+  for (const [sourcePath, contents] of Object.entries(bundledTextAssets)) {
+    files[`assets/sample/${sourcePath.split("/").at(-1)}`] = strToU8(contents);
+  }
   return { build, files };
 }
 

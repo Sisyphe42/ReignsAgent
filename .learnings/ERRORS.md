@@ -33,6 +33,25 @@ Keep the desktop main process dependency-free where practical and run smoke test
 
 ---
 
+## [ERR-20260713-001] playwright-status-selector
+
+**Logged**: 2026-07-13T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+Hosted CORS smoke selectors must account for shared status classes and React form-node replacement during persisted setting updates.
+
+### Resolution
+Assert the endpoint-specific success modifier class and dispatch the three controlled input events in one browser task so React batches the update before replacing form nodes.
+
+### Metadata
+- Pattern-Key: hosted.playwright.stable-selectors
+- Recurrence-Count: 3
+
+---
+
 ## [ERR-20260710-005] powershell-command-path-passing
 
 **Logged**: 2026-07-10T23:20:00+08:00
@@ -226,4 +245,3 @@ A lockfile-only install did not place the newly added Playwright test dependency
 Installed workspace dependencies before running the Hosted Chromium smoke.
 
 ---
-

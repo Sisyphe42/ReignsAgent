@@ -26,6 +26,8 @@
 - Every successful editor mutation persists the complete active bundle through the Workspace write queue.
 - Environment roots: `REIGNS_AGENT_DATA_ROOT` overrides Node/local data; Electron always passes its beside-app `ReignsAgentData` path to the utility process.
 - New runtime modules must be registered once in `CREATOR_RUNTIME_ENTRIES`, which feeds both Node ZIP and Electron staging.
+- Browser APIs stay in `apps/creator-web/src/opfs-workspace.js`; `packages/workspace` exports only host-neutral contracts and the Node filesystem adapter.
+- Hosted Workspace imports validate the full snapshot before mutation, map imported project ids into active/recent config state, restore project-local workspace state, and omit `ai.apiKey` entirely unless explicitly included.
 
 ### 4. Validation & Error Matrix
 

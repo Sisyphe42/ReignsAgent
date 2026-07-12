@@ -30,13 +30,13 @@ Provide a publicly reachable, browser-first ReignsAgent Creator that one maintai
 
 ## Acceptance Criteria
 
-- [ ] A visitor can create, rename, close, reopen, export, and import multiple projects after refreshing the hosted site.
-- [ ] Theme, endpoint settings, and other app configuration persist for the same browser origin.
-- [ ] Core preview, content validation, and a bounded Reviewer run work with the network disabled after initial app load.
-- [ ] A deployable player ZIP can be generated and downloaded entirely in the browser.
-- [ ] Browser AI direct mode clearly detects and reports CORS-incompatible endpoints without sending project data through the maintainer's server.
-- [ ] Clearing site data is documented as destructive and exported project bundles restore into desktop/local/browser hosts.
-- [ ] Browser, local server, CLI, and Electron adapters pass shared content and build conformance fixtures.
+- [x] A visitor can create, rename, close, reopen, export, and import multiple projects after refreshing the hosted site.
+- [x] Theme, endpoint settings, and other app configuration persist for the same browser origin.
+- [x] Core preview, content validation, and a bounded Reviewer run work with the network disabled after initial app load.
+- [x] A deployable player ZIP can be generated and downloaded entirely in the browser.
+- [x] Browser AI direct mode clearly detects and reports CORS-incompatible endpoints without sending project data through the maintainer's server.
+- [x] Clearing site data is documented as destructive and exported project bundles restore into desktop/local/browser hosts.
+- [x] Browser, local server, CLI, and Electron adapters pass shared content and build conformance fixtures.
 
 ## Technical Notes
 
