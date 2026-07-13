@@ -7,7 +7,7 @@ export const PROJECT_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9-]{0,63}$/;
 
 export function defaultConfig() {
   return {
-    schemaVersion: CONFIG_SCHEMA_VERSION, theme: "github-light", locale: "en", aiAssistEnabled: false,
+    schemaVersion: CONFIG_SCHEMA_VERSION, theme: "github-light", locale: "system", aiAssistEnabled: false,
     activeProjectId: "", recentProjectIds: [], build: { defaultOutputDir: "Builds" },
     ai: { endpoint: "", protocol: "openai_chat", endpointPresetId: "custom", compatibilityFamily: "custom", modelId: "", routeMode: "auto", jsonMode: "auto", capabilities: ["structuredJson"], apiKey: "" }
   };

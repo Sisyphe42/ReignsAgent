@@ -245,3 +245,99 @@ A lockfile-only install did not place the newly added Playwright test dependency
 Installed workspace dependencies before running the Hosted Chromium smoke.
 
 ---
+
+## [ERR-20260714-001] playwright-theme-style-timing
+
+**Logged**: 2026-07-14T01:13:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+A hosted UI assertion read theme-dependent computed styles before React updated the root `data-skin` attribute.
+
+### Error
+```text
+Expected Latte project and skin-select backgrounds to match, but the project trigger still reported the previous Github Light color.
+```
+
+### Context
+- The test selected `catppuccin-latte` and immediately read both computed styles.
+- The native select surface updated before the root theme selector finished rendering.
+
+### Suggested Fix
+Wait for `html[data-skin="catppuccin-latte"]`, then poll until both theme-dependent computed styles agree.
+
+### Metadata
+- Reproducible: yes
+- Related Files: test/browser/hosted.spec.js
+
+### Resolution
+- **Resolved**: 2026-07-14T01:16:00+08:00
+- **Notes**: Added a root-theme wait plus computed-style polling; the hosted suite passed 6/6.
+
+---
+
+## [ERR-20260713-001] playwright-stale-reference
+
+**Logged**: 2026-07-13T22:24:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+A Playwright CLI click reused an element reference after switching the Creator skin.
+
+### Error
+```text
+Error: Ref e97 not found in the current page snapshot. Try capturing new snapshot.
+```
+
+### Context
+- The skin selection substantially changed the page state.
+- The next click incorrectly reused a reference from the previous snapshot.
+
+### Suggested Fix
+Capture a fresh snapshot after theme changes before using element references.
+
+### Metadata
+- Reproducible: yes
+- Related Files: apps/creator-web/src/styles.css
+
+### Resolution
+- **Resolved**: 2026-07-13T22:26:00+08:00
+- **Notes**: Opened a fresh browser session, captured a new Phantom snapshot, and completed the compact-state visual check without console errors.
+
+---
+
+## [ERR-20260714-002] github-actions-api-eof
+
+**Logged**: 2026-07-14T02:01:42+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: infra
+
+### Summary
+GitHub CLI intermittently returned an unexpected EOF while reading an Actions job.
+
+### Error
+```text
+failed to get job: Get "https://api.github.com/repos/Sisyphe42/ReignsAgent/actions/jobs/86890271965": unexpected EOF
+```
+
+### Context
+- `gh run view 29271532082 --job 86890271965 --log-failed` failed during CI diagnosis.
+- GitHub's public job page exposed only the failing step, not the detailed test output.
+
+### Suggested Fix
+Retry through the REST job logs endpoint: `gh api repos/<owner>/<repo>/actions/jobs/<job-id>/logs`.
+
+### Metadata
+- Reproducible: no
+- Related Files: .github/workflows/ci.yml
+
+### Resolution
+- **Resolved**: 2026-07-14T02:01:42+08:00
+- **Notes**: The REST logs endpoint returned the complete job log and exact Playwright assertion.
+
+---

@@ -112,7 +112,9 @@ function createMainWindow(origin) {
     if (!isAllowedAppUrl(targetUrl, origin)) event.preventDefault();
   });
   mainWindow.webContents.on("will-attach-webview", (event) => event.preventDefault());
-  void mainWindow.loadURL(`${origin}/workbench`);
+  // The query flag exposes desktop-only affordances without leaking Electron APIs
+  // into the shared Creator Web bundle. Browser and hosted clients ignore them.
+  void mainWindow.loadURL(`${origin}/workbench?client=desktop`);
 }
 
 function startCreatorServer() {

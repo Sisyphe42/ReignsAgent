@@ -76,6 +76,7 @@ describe("Electron desktop boundaries", () => {
   it("builds only portable ZIP artifacts with canonical product metadata", async () => {
     const desktopPackage = JSON.parse(await readFile(join(ROOT, "apps/desktop-electron/package.json"), "utf8"));
     const mainSource = await readFile(join(ROOT, "apps/desktop-electron/src/main.mjs"), "utf8");
+    const playerSource = await readFile(join(ROOT, "packages/interface/web/player.html"), "utf8");
     const forgeConfig = await import("../../apps/desktop-electron/forge.config.mjs");
     assert.deepEqual(desktopPackage.dependencies, {});
     assert.equal(desktopPackage.productName, "ReignsAgent");
@@ -85,6 +86,9 @@ describe("Electron desktop boundaries", () => {
     assert.equal(forgeConfig.default.packagerConfig.asar.unpackDir, "runtime");
     assert.equal(forgeConfig.default.packagerConfig.win32metadata.CompanyName, "Sisyphe42");
     assert.equal(forgeConfig.default.packagerConfig.win32metadata.ProductName, "ReignsAgent");
+    assert.match(mainSource, /\/workbench\?client=desktop/);
+    assert.match(playerSource, /backUrl\.searchParams\.set\("client", requestedClient\)/);
+    assert.match(playerSource, /backUrl\.searchParams\.set\("locale", requestedLocale\)/);
     assert.deepEqual(forgeConfig.default.makers, []);
     assert.equal(Object.keys(desktopPackage.devDependencies).some((name) => name.includes("maker-")), false);
     assert.doesNotMatch(mainSource, /Squirrel|documents/);
