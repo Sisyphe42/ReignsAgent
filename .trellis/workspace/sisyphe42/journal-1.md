@@ -255,3 +255,36 @@ Completed cross-client navigation modes, locale behavior, project and skin heade
 ### Next Steps
 
 - None - task complete
+
+
+## Session 8: Stabilize Phantom hosted smoke
+
+**Date**: 2026-07-14
+**Task**: Stabilize Phantom hosted smoke
+**Branch**: `feature/creator-navigation-polish`
+
+### Summary
+
+Fixed the Linux-only Phantom rail geometry smoke failure by establishing a true compact baseline and waiting for scroll stability; all local verification gates passed.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c077cb8` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
