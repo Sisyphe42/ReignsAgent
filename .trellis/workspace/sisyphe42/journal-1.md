@@ -188,3 +188,36 @@ Delivered Node ZIP, portable Electron, durable workspaces, and Hosted OPFS/CORS 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 6: Fix release review regressions
+
+**Date**: 2026-07-13
+**Task**: Fix release review regressions
+**Branch**: `master`
+
+### Summary
+
+Fixed all three post-merge PR #21 review findings with regression coverage for direct workbench routes, portable Node ZIP export paths, and Hosted Service Worker navigation 404 fallback; verified and merged PR #22.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `cc05e79` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
