@@ -492,7 +492,7 @@ function resolveSkinId(value) {
 
 function readUrlState() {
   if (typeof window === "undefined") {
-    return { panel: DEFAULT_PANEL, skin: null, aiAssist: null };
+    return { panel: DEFAULT_PANEL, hasExplicitPanel: false, skin: null, aiAssist: null };
   }
 
   const url = new URL(window.location.href);
@@ -501,13 +501,15 @@ function readUrlState() {
     ? appPath.slice("/workbench/".length).split("/")[0]
     : null;
   const queryPanel = url.searchParams.get("panel");
-  const panel = [directPanel, queryPanel].find(isKnownPanel) ?? DEFAULT_PANEL;
+  const explicitPanel = [directPanel, queryPanel].find(isKnownPanel) ?? null;
+  const panel = explicitPanel ?? DEFAULT_PANEL;
   const skin = url.searchParams.get("skin");
   const ai = url.searchParams.get("ai");
   const aiAssist = ai === null ? null : ["1", "true", "on"].includes(ai.toLowerCase());
 
   return {
     panel,
+    hasExplicitPanel: explicitPanel !== null,
     skin: resolveSkinId(skin),
     aiAssist
   };
@@ -959,7 +961,7 @@ function App() {
     setHasSavedApiKey(Boolean(config.ai?.hasApiKey));
     setAiSettings(aiSettingsFromConfig(config.ai));
     if (!initialUrlState.skin) setSkin(resolveSkinId(config.theme) ?? DEFAULT_SKIN);
-    if (!new URLSearchParams(window.location.search).has("panel") && isKnownPanel(workspaceState.activePanel)) {
+    if (!initialUrlState.hasExplicitPanel && isKnownPanel(workspaceState.activePanel)) {
       setActivePanel(workspaceState.activePanel);
     }
     if (initialUrlState.aiAssist === null) setAiAssistEnabled(Boolean(config.aiAssistEnabled));

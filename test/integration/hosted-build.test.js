@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, it } from "node:test";
+import { runInNewContext } from "node:vm";
 
 const ROOT = join(process.cwd(), "apps", "creator-web", "dist-hosted");
 
@@ -19,6 +20,36 @@ describe("hosted Creator build", () => {
     assert.ok(browserBuild, "missing browser player builder");
     const browserBuildSource = await readFile(join(ROOT, browserBuild), "utf8");
     for (const asset of ["castle.svg", "coins.svg", "ATTRIBUTION.md"]) assert.match(browserBuildSource, new RegExp(asset.replace(".", "\\.")));
+  });
+
+  it("falls back to the cached app shell when an online navigation returns 404", async () => {
+    const source = await readFile(join(ROOT, "sw.js"), "utf8");
+    const listeners = new Map();
+    const shell = { ok: true, source: "cached-shell" };
+    const caches = {
+      open: async () => ({ addAll: async () => {}, put: async () => {} }),
+      keys: async () => [],
+      delete: async () => true,
+      match: async (request) => String(request).endsWith("index.html") ? shell : undefined
+    };
+    const self = {
+      addEventListener(type, listener) { listeners.set(type, listener); },
+      skipWaiting() {}
+    };
+    runInNewContext(source, {
+      self,
+      caches,
+      fetch: async () => ({ ok: false, status: 404 }),
+      URL,
+      location: { origin: "https://creator.example", pathname: "/" }
+    });
+
+    let responsePromise;
+    listeners.get("fetch")({
+      request: { method: "GET", mode: "navigate", url: "https://creator.example/workbench/content" },
+      respondWith(value) { responsePromise = value; }
+    });
+    assert.equal(await responsePromise, shell);
   });
 });
 

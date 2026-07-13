@@ -38,6 +38,18 @@ test("persists an OPFS project and reopens the PWA offline", async ({ page, cont
   await expect(page.locator(".brand p")).toHaveText("Hosted persistence smoke");
 });
 
+test("honors a direct panel URL over the persisted workspace panel", async ({ page }) => {
+  await openHosted(page);
+  await page.getByRole("button", { name: /Review/ }).click();
+  await expect(page).toHaveURL(/\/workbench\/review(?:\?|$)/);
+  await expect.poll(() => workspaceContains(page, 'activePanel = "review"')).toBe(true);
+
+  await page.goto("workbench/content");
+  await expect(page.locator(".stage__status strong")).toContainText("cards loaded");
+  await expect(page.getByRole("button", { name: /Content/ })).toHaveClass(/rail__item--active/);
+  await expect(page).toHaveURL(/\/workbench\/content(?:\?|$)/);
+});
+
 test("exports a key-free workspace and restores mapped projects", async ({ page }) => {
   await openHosted(page);
   await page.getByRole("button", { name: /Settings/ }).click();
@@ -93,4 +105,22 @@ async function openHosted(page) {
   await page.waitForFunction(() => Boolean(navigator.serviceWorker.controller));
   await page.waitForLoadState("load");
   await expect(page.locator(".stage__status strong")).toContainText("cards loaded");
+}
+
+async function workspaceContains(page, expected) {
+  return page.evaluate(async (text) => {
+    const root = await navigator.storage.getDirectory();
+    const dataRoot = await root.getDirectoryHandle("ReignsAgentData");
+    const projects = await dataRoot.getDirectoryHandle("projects");
+    for await (const [, project] of projects.entries()) {
+      if (project.kind !== "directory") continue;
+      try {
+        const handle = await project.getFileHandle("workspace.toml");
+        if ((await (await handle.getFile()).text()).includes(text)) return true;
+      } catch (error) {
+        if (error?.name !== "NotFoundError") throw error;
+      }
+    }
+    return false;
+  }, expected);
 }
