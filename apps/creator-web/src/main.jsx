@@ -33,6 +33,7 @@ const DEFAULT_SKIN = "github-light";
 const LEGACY_DRAFT_KEY = "reigns-agent.creator-web.editor-draft";
 const RAIL_COLLAPSED_KEY = "reigns-agent.creator-web.rail-collapsed";
 const UI_LOCALES = [
+  ["system", "Follow browser / device"],
   ["en", "English"],
   ["zh-Hans", "简体中文"]
 ];
@@ -44,6 +45,8 @@ const ZH_HANS_COPY = {
   Delete: "删除", cards: "张卡牌", "player ready": "玩家端就绪", "player blocked": "玩家端受阻",
   "Browser workspace": "浏览器工作区", "Local session": "本地会话", "Desktop session": "桌面会话",
   "Collapse navigation": "收起导航", "Expand navigation": "展开导航", "Open player preview": "打开玩家端预览",
+  "Manage project": "管理项目", "New blank project": "新建空白项目", "New from sample": "从示例新建", "Delete project": "删除项目",
+  "Follow browser / device": "跟随浏览器 / 设备",
   "Project Overview": "项目概览", "Workspace health, content readiness, and next actions.": "工作区健康度、内容就绪情况与后续操作。",
   "Content / Cards": "内容 / 卡牌", "Card text, left/right choices, faction effects, tags, variables, and art bindings.": "编辑卡牌文本、左右选择、阵营影响、标签、变量与美术绑定。",
   "Story / Graph": "叙事 / 图谱", "Card-to-card transitions driven by tags. Click a node to edit it; rename tags for clarity.": "查看由标签驱动的卡牌流转；点击节点编辑，并可重命名标签。",
@@ -519,12 +522,38 @@ function normalizeUiLocale(value) {
   return "en";
 }
 
+function normalizeUiLocalePreference(value) {
+  if (value === "system") return "system";
+  return normalizeUiLocale(value);
+}
+
+function readDeviceUiLocale() {
+  if (typeof navigator === "undefined") return "en";
+  return normalizeUiLocale(navigator.languages?.[0] ?? navigator.language);
+}
+
 function tr(locale, source) {
   return normalizeUiLocale(locale) === "zh-Hans" ? (ZH_HANS_COPY[source] ?? source) : source;
 }
 
 function useUiLocale() {
   return useContext(LocaleContext);
+}
+
+function PanelIcon({ id }) {
+  const common = { fill: "none", stroke: "currentColor", strokeWidth: "1.7", strokeLinecap: "round", strokeLinejoin: "round" };
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" {...common}>
+      {id === "overview" && <path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z" />}
+      {id === "content" && <><path d="M6 3.5h9l3 3V20.5H6z" /><path d="M15 3.5v3h3M9 11h6M9 15h6" /></>}
+      {id === "story" && <><circle cx="6" cy="6" r="2" /><circle cx="18" cy="8" r="2" /><circle cx="10" cy="18" r="2" /><path d="M8 6.3l8 1.3M7 8l2 8M16.5 9.5l-5 6.8" /></>}
+      {id === "review" && <><path d="M5 4h14v16H5z" /><path d="M8 9l1.5 1.5L12 8M8 15h8" /></>}
+      {id === "ai-edit" && <><path d="M12 3l1.2 4.1L17 8.5l-3.8 1.4L12 14l-1.2-4.1L7 8.5l3.8-1.4z" /><path d="M18.5 14l.7 2.3 2.3.7-2.3.8-.7 2.2-.8-2.2-2.2-.8 2.2-.7z" /></>}
+      {id === "preview" && <><path d="M3.5 12s3-5 8.5-5 8.5 5 8.5 5-3 5-8.5 5-8.5-5-8.5-5z" /><circle cx="12" cy="12" r="2.3" /></>}
+      {id === "build" && <><path d="M4 8l8-4 8 4-8 4zM4 8v8l8 4 8-4V8M12 12v8" /></>}
+      {id === "settings" && <><circle cx="12" cy="12" r="3" /><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6L7 7M17 17l1.4 1.4M18.4 5.6L17 7M7 17l-1.4 1.4" /></>}
+    </svg>
+  );
 }
 
 function readRailCollapsed() {
@@ -896,7 +925,8 @@ function App() {
   const [editor, setEditor] = useState(null);
   const [status, setStatus] = useState("Loading project...");
   const [skin, setSkin] = useState(() => initialUrlState.skin ?? DEFAULT_SKIN);
-  const [locale, setLocale] = useState("en");
+  const [localePreference, setLocalePreference] = useState("system");
+  const [deviceLocale, setDeviceLocale] = useState(readDeviceUiLocale);
   const [railCollapsed, setRailCollapsed] = useState(readRailCollapsed);
   const [aiAssistEnabled, setAiAssistEnabled] = useState(() => initialUrlState.aiAssist ?? false);
   const [aiSettings, setAiSettings] = useState(() => defaultAiSettings());
@@ -952,6 +982,7 @@ function App() {
   const desktopClient = initialUrlState.client === "desktop";
   const aiPresenceState = aiAssistEnabled ? (aiConfigured ? "ready" : "setup") : "off";
   const aiPresenceLabel = aiPresenceState === "ready" ? "Ready" : aiPresenceState === "setup" ? "Setup" : "Off";
+  const locale = localePreference === "system" ? deviceLocale : localePreference;
 
   useEffect(() => {
     document.documentElement.dataset.skin = skin;
@@ -964,8 +995,15 @@ function App() {
 
   useEffect(() => {
     document.documentElement.lang = locale;
-    if (configReady) void api("/api/config", { method: "PATCH", body: { locale } });
-  }, [locale, configReady]);
+    document.documentElement.dataset.localePreference = localePreference;
+    if (configReady) void api("/api/config", { method: "PATCH", body: { locale: localePreference } });
+  }, [locale, localePreference, configReady]);
+
+  useEffect(() => {
+    const syncDeviceLocale = () => setDeviceLocale(readDeviceUiLocale());
+    window.addEventListener("languagechange", syncDeviceLocale);
+    return () => window.removeEventListener("languagechange", syncDeviceLocale);
+  }, []);
 
   useEffect(() => {
     localStorage.setItem(RAIL_COLLAPSED_KEY, String(railCollapsed));
@@ -1024,7 +1062,7 @@ function App() {
     setActiveProjectId(config.activeProjectId);
     setHasSavedApiKey(Boolean(config.ai?.hasApiKey));
     setAiSettings(aiSettingsFromConfig(config.ai));
-    setLocale(normalizeUiLocale(config.locale));
+    setLocalePreference(normalizeUiLocalePreference(config.locale));
     if (!initialUrlState.skin) setSkin(resolveSkinId(config.theme) ?? DEFAULT_SKIN);
     if (!initialUrlState.hasExplicitPanel && isKnownPanel(workspaceState.activePanel)) {
       setActivePanel(workspaceState.activePanel);
@@ -1367,7 +1405,7 @@ function App() {
   }
 
   function changeLocale(nextLocale) {
-    setLocale(normalizeUiLocale(nextLocale));
+    setLocalePreference(normalizeUiLocalePreference(nextLocale));
   }
 
   const playerHref = useMemo(() => {
@@ -1412,9 +1450,14 @@ function App() {
               {projects.map((project) => <option key={project.id} value={project.id}>{project.title}</option>)}
             </select>
           </label>
-          <button className="link-button" type="button" onClick={() => void createProject("blank")}>{tr(locale, "New")}</button>
-          <button className="link-button" type="button" onClick={() => void createProject("sample")}>{tr(locale, "Sample")}</button>
-          <button className="link-button" type="button" onClick={() => void deleteActiveProject()}>{tr(locale, "Delete")}</button>
+          <details className="project-actions" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.removeAttribute("open"); }}>
+            <summary className="link-button" aria-label={tr(locale, "Manage project")} title={tr(locale, "Manage project")}><span aria-hidden="true">•••</span></summary>
+            <div className="project-actions__menu">
+              <button type="button" onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); void createProject("blank"); }}>{tr(locale, "New blank project")}</button>
+              <button type="button" onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); void createProject("sample"); }}>{tr(locale, "New from sample")}</button>
+              <button className="project-actions__danger" type="button" onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); void deleteActiveProject(); }}>{tr(locale, "Delete project")}</button>
+            </div>
+          </details>
           <button
             className={`ai-presence ai-presence--${aiPresenceState}`}
             type="button"
@@ -1442,7 +1485,7 @@ function App() {
             </select>
           </label>
           <a className="link-button player-launch" href={playerHref} aria-label={tr(locale, "Open player preview")}>
-            <span>{tr(locale, "Player")}</span><span className="player-launch__arrow" aria-hidden="true">↗</span>
+            <span>{tr(locale, "Player")}</span>
           </a>
         </div>
       </header>
@@ -1462,6 +1505,7 @@ function App() {
                 <span className="phantom-shape phantom-shape--red phantom-jelly" />
                 <span className="phantom-shape phantom-shape--cyan phantom-jelly" />
               </span>
+              <span className="rail__icon"><PanelIcon id={id} /></span>
               <span className="rail__meta"><span className="rail__index">{String(index + 1).padStart(2, "0")}</span><span className="rail__group"> / {tr(locale, group)}</span></span>
               <span className="rail__label">{tr(locale, label)}</span>
               <small>{tr(locale, panelStatus(id, { editor, playerReady, diagnostics, build }))}</small>
@@ -1476,7 +1520,6 @@ function App() {
             title={tr(locale, railCollapsed ? "Expand navigation" : "Collapse navigation")}
           >
             <span aria-hidden="true">{railCollapsed ? "»" : "«"}</span>
-            <span className="rail__toggle-label">{tr(locale, railCollapsed ? "Expand navigation" : "Collapse navigation")}</span>
           </button>
         </nav>
 
@@ -1577,6 +1620,7 @@ function App() {
               apiKey={aiApiKey}
               apiKeySaved={hasSavedApiKey}
               locale={locale}
+              localePreference={localePreference}
               onLocaleChange={changeLocale}
               onAiSettingsChange={setAiSettings}
               onApiKeyChange={setAiApiKey}
@@ -5104,7 +5148,7 @@ function HostedWorkspaceTools({ onRefresh, onStatus }) {
   );
 }
 
-function SettingsPanel({ editor, aiSettings, apiKey, apiKeySaved, locale, onLocaleChange, onAiSettingsChange, onApiKeyChange, onApiKeyClear, onRefresh, onStatus }) {
+function SettingsPanel({ editor, aiSettings, apiKey, apiKeySaved, locale, localePreference, onLocaleChange, onAiSettingsChange, onApiKeyChange, onApiKeyClear, onRefresh, onStatus }) {
   const [title, setTitle] = useState(editor?.metadata?.title ?? "");
   const [plan, setPlan] = useState("");
   const [theme, setTheme] = useState("small kingdom");
@@ -5327,8 +5371,8 @@ function SettingsPanel({ editor, aiSettings, apiKey, apiKeySaved, locale, onLoca
         </div>
         <label className="interface-settings__language">
           <span>{tr(locale, "Language")}</span>
-          <select value={locale} onChange={(event) => onLocaleChange(event.target.value)}>
-            {UI_LOCALES.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+          <select value={localePreference} onChange={(event) => onLocaleChange(event.target.value)}>
+            {UI_LOCALES.map(([id, label]) => <option key={id} value={id}>{tr(locale, label)}</option>)}
           </select>
         </label>
       </div>

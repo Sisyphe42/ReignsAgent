@@ -245,3 +245,35 @@ A lockfile-only install did not place the newly added Playwright test dependency
 Installed workspace dependencies before running the Hosted Chromium smoke.
 
 ---
+
+## [ERR-20260713-001] playwright-cli-wrapper
+
+**Logged**: 2026-07-13T16:10:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+The Playwright CLI Bash wrapper stayed running without output when launched from the Windows PowerShell tool host.
+
+### Error
+```
+The wrapper produced no output for 40 seconds and required termination.
+```
+
+### Context
+- Command: `bash "$HOME/.codex/skills/playwright/scripts/playwright_cli.sh" open http://127.0.0.1:5173/workbench`
+- `npx` was available and the repository Playwright dependency was already installed.
+
+### Suggested Fix
+Use the repository Playwright runner on Windows when the Bash wrapper cannot establish its persistent CLI session.
+
+### Metadata
+- Reproducible: unknown
+- Related Files: playwright.hosted.config.js, test/browser/hosted.spec.js
+
+### Resolution
+- **Resolved**: 2026-07-13T16:10:00+08:00
+- **Notes**: Continued with the repository-installed Playwright runner and existing local services.
+
+---

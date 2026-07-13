@@ -55,12 +55,21 @@ test("persists navigation density and shared interface language", async ({ page 
 
   await page.getByRole("button", { name: "Collapse navigation" }).click();
   await expect(page.locator(".workspace")).toHaveClass(/workspace--rail-collapsed/);
+  await expect(page.locator(".rail__toggle")).toHaveText("»");
+  await expect(page.locator(".rail__icon")).toHaveCount(8);
+  await page.mouse.move(600, 400);
+  await expect(page.locator(".rail")).toHaveCSS("width", "76px");
   await page.reload();
   await expect(page.locator(".workspace")).toHaveClass(/workspace--rail-collapsed/);
   await expect(page.locator(".stage__status strong")).toContainText("cards loaded");
 
+  await page.locator(".rail").hover();
+  await expect(page.locator(".rail")).toHaveCSS("width", "236px");
+  await expect(page.locator('.rail__item[aria-label="Settings"] .rail__label')).toBeVisible();
+
   await page.locator('.rail__item[aria-label="Settings"]').click();
   await expect(page.getByRole("heading", { name: "Settings / Pipeline" })).toBeVisible();
+  await expect(page.getByLabel("Language")).toHaveValue("system");
   await page.getByPlaceholder("Deck title").fill("Ready");
   await page.getByRole("button", { name: "Save title" }).click();
   await page.getByLabel("Language").selectOption("zh-Hans");
@@ -107,7 +116,8 @@ test("exports a key-free workspace and restores mapped projects", async ({ page 
   expect(project.metadata.title).toBe("Backup source");
   expect(JSON.stringify(project)).not.toContain("apiKey");
 
-  await page.getByRole("button", { name: "New", exact: true }).click();
+  await page.locator(".project-actions > summary").click();
+  await page.getByRole("button", { name: "New blank project" }).click();
   await expect(page.locator(".brand p")).toHaveText("Untitled");
   await page.getByRole("button", { name: /Settings/ }).click();
   await page.locator('input[type="file"]').setInputFiles({ name: "workspace.zip", mimeType: "application/zip", buffer: await readFile(backupPath) });
