@@ -1373,10 +1373,12 @@ function App() {
   const playerHref = useMemo(() => {
     const params = new URLSearchParams();
     params.set("skin", resolveSkinId(skin) ?? DEFAULT_SKIN);
+    params.set("locale", locale);
+    if (desktopClient) params.set("client", "desktop");
     return import.meta.env.VITE_CREATOR_HOST === "browser"
       ? `${withBasePath("/workbench/preview")}?${params.toString()}`
       : `/play?${params.toString()}`;
-  }, [skin]);
+  }, [skin, locale, desktopClient]);
 
   return (
     <LocaleContext.Provider value={locale}>
@@ -1613,10 +1615,10 @@ function Overview({ editor, playerReady, diagnostics, build, aiAssistEnabled, ai
       <div className="metric-grid">
         <Metric label="Project" value={title} />
         <Metric label="Cards" value={String(cardCount)} />
-        <Metric label="Validation" value={editor?.validation?.valid ? "Valid" : "Needs work"} tone={editor?.validation?.valid ? "good" : "bad"} />
-        <Metric label="Player-ready" value={playerReady ? "Ready" : "Blocked"} tone={playerReady ? "good" : "bad"} />
-        <Metric label="Review" value={diagnostics ? `${diagnostics.healthScore}/100` : "Not run"} />
-        <Metric label="Build" value={build ? "Prepared" : "Not prepared"} />
+        <Metric label="Validation" value={editor?.validation?.valid ? "Valid" : "Needs work"} tone={editor?.validation?.valid ? "good" : "bad"} localizeValue />
+        <Metric label="Player-ready" value={playerReady ? "Ready" : "Blocked"} tone={playerReady ? "good" : "bad"} localizeValue />
+        <Metric label="Review" value={diagnostics ? `${diagnostics.healthScore}/100` : "Not run"} localizeValue={!diagnostics} />
+        <Metric label="Build" value={build ? "Prepared" : "Not prepared"} localizeValue />
       </div>
       <div className={`overview-ai ${aiAssistEnabled ? "overview-ai--active" : ""}`}>
         <div className="overview-ai__head">
@@ -6140,12 +6142,12 @@ function PanelHead({ title, note }) {
   );
 }
 
-function Metric({ label, value, tone = "" }) {
+function Metric({ label, value, tone = "", localizeValue = false }) {
   const locale = useUiLocale();
   return (
     <div className={`metric ${tone ? `metric--${tone}` : ""}`} data-ai-target="metric" data-ai-label={label} data-ai-context={label}>
       <span>{tr(locale, label)}</span>
-      <strong>{tr(locale, value)}</strong>
+      <strong>{localizeValue ? tr(locale, value) : value}</strong>
     </div>
   );
 }

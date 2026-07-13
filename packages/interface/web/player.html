@@ -163,6 +163,7 @@
     const SKIN_ALIASES = { workbench: "classic" };
     const params = new URLSearchParams(window.location.search);
     const requestedLocale = params.get("locale") || navigator.language || "en";
+    const requestedClient = params.get("client") === "desktop" ? "desktop" : null;
     const requestedSkin = params.get("skin");
 
     let session = null;
@@ -192,6 +193,8 @@
 
       const backUrl = new URL("/workbench", window.location.origin);
       backUrl.searchParams.set("skin", skin);
+      backUrl.searchParams.set("locale", requestedLocale);
+      if (requestedClient) backUrl.searchParams.set("client", requestedClient);
       el("back-link").href = `${backUrl.pathname}${backUrl.search}`;
     }
 

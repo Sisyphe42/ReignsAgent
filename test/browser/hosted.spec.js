@@ -57,14 +57,21 @@ test("persists navigation density and shared interface language", async ({ page 
   await expect(page.locator(".workspace")).toHaveClass(/workspace--rail-collapsed/);
   await page.reload();
   await expect(page.locator(".workspace")).toHaveClass(/workspace--rail-collapsed/);
+  await expect(page.locator(".stage__status strong")).toContainText("cards loaded");
 
-  await page.getByRole("button", { name: /Settings/ }).click();
+  await page.locator('.rail__item[aria-label="Settings"]').click();
+  await expect(page.getByRole("heading", { name: "Settings / Pipeline" })).toBeVisible();
+  await page.getByPlaceholder("Deck title").fill("Ready");
+  await page.getByRole("button", { name: "Save title" }).click();
   await page.getByLabel("Language").selectOption("zh-Hans");
   await expect(page.locator("html")).toHaveAttribute("lang", "zh-Hans");
   await expect(page.getByRole("heading", { name: "设置 / 流水线" })).toBeVisible();
   await expect(page.getByRole("link", { name: "打开玩家端预览" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "打开玩家端预览" })).toHaveAttribute("href", /locale=zh-Hans/);
+  await page.getByRole("button", { name: "概览" }).click();
+  await expect(page.locator('.metric[data-ai-label="Project"] strong')).toHaveText("Ready");
   await page.reload();
-  await expect(page.getByRole("heading", { name: "设置 / 流水线" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "项目概览" })).toBeVisible();
 });
 
 test("cycles panels only when the host marks the client as desktop", async ({ page }) => {
@@ -74,6 +81,7 @@ test("cycles panels only when the host marks the client as desktop", async ({ pa
 
   await page.goto("workbench?client=desktop");
   await expect(page.locator(".stage__status strong")).toContainText("cards loaded");
+  await expect(page.getByRole("link", { name: "Open player preview" })).toHaveAttribute("href", /client=desktop/);
   await page.dispatchEvent("body", "keydown", { key: "Tab", ctrlKey: true });
   await expect(page.locator(".rail__item", { hasText: "Content" })).toHaveClass(/rail__item--active/);
 });
