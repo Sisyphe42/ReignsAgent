@@ -51,9 +51,11 @@ describe("creator release distribution", () => {
       const extractRoot = join(tempRoot, "extracted");
       await extractZip(join(tempRoot, "reigns-agent-0.1.0.zip"), extractRoot);
       const releaseRoot = join(extractRoot, "reigns-agent-0.1.0");
+      const launcherCwd = join(tempRoot, "launcher-cwd");
+      await mkdir(launcherCwd, { recursive: true });
 
-      server = spawn(process.execPath, ["start.mjs", "--no-open"], {
-        cwd: releaseRoot,
+      server = spawn(process.execPath, [join(releaseRoot, "start.mjs"), "--no-open"], {
+        cwd: launcherCwd,
         env: { ...process.env, HOST: "127.0.0.1", PORT: "0" },
         stdio: ["ignore", "pipe", "pipe"]
       });
@@ -78,6 +80,16 @@ describe("creator release distribution", () => {
       assert.equal(editor.status, 200);
       assert.equal((await editor.json()).cards.length > 0, true);
 
+      const exportedResponse = await fetch(`${baseUrl}/api/build/export`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{}"
+      });
+      assert.equal(exportedResponse.status, 200);
+      const exported = await exportedResponse.json();
+      assert.equal(exported.outputPath, join(releaseRoot, "ReignsAgentData", "Builds", `${exported.buildId}.game.json`));
+      await access(exported.outputPath);
+
       const sample = JSON.parse(await readFile(join(releaseRoot, "fixtures/content/minimal.cards.json"), "utf8"));
       const imported = await fetch(`${baseUrl}/api/editor/import`, {
         method: "POST",
@@ -96,8 +108,8 @@ describe("creator release distribution", () => {
       assert.equal((await edited.json()).metadata.title, "Release smoke test");
 
       await stopChild(server);
-      server = spawn(process.execPath, ["start.mjs", "--no-open"], {
-        cwd: releaseRoot,
+      server = spawn(process.execPath, [join(releaseRoot, "start.mjs"), "--no-open"], {
+        cwd: launcherCwd,
         env: { ...process.env, HOST: "127.0.0.1", PORT: "0" },
         stdio: ["ignore", "pipe", "pipe"]
       });

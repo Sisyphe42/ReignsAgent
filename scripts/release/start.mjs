@@ -18,7 +18,12 @@ const dataRoot = process.env.REIGNS_AGENT_DATA_ROOT
   ? process.env.REIGNS_AGENT_DATA_ROOT
   : join(ROOT, "ReignsAgentData");
 const { createCreatorServer } = await import("./apps/creator-server/src/server.mjs");
-const creatorServer = await createCreatorServer({ rootDir: ROOT, staticRoot: process.env.REIGNS_AGENT_STATIC_ROOT, dataRoot });
+const creatorServer = await createCreatorServer({
+  rootDir: ROOT,
+  staticRoot: process.env.REIGNS_AGENT_STATIC_ROOT,
+  dataRoot,
+  defaultBuildOutputDir: join(dataRoot, "Builds")
+});
 const address = await creatorServer.start({ host, port: requestedPort });
 const url = `http://${displayHost(address.host)}:${address.port}/workbench`;
 
