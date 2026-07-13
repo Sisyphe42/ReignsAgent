@@ -309,3 +309,35 @@ Capture a fresh snapshot after theme changes before using element references.
 - **Notes**: Opened a fresh browser session, captured a new Phantom snapshot, and completed the compact-state visual check without console errors.
 
 ---
+
+## [ERR-20260714-002] github-actions-api-eof
+
+**Logged**: 2026-07-14T02:01:42+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: infra
+
+### Summary
+GitHub CLI intermittently returned an unexpected EOF while reading an Actions job.
+
+### Error
+```text
+failed to get job: Get "https://api.github.com/repos/Sisyphe42/ReignsAgent/actions/jobs/86890271965": unexpected EOF
+```
+
+### Context
+- `gh run view 29271532082 --job 86890271965 --log-failed` failed during CI diagnosis.
+- GitHub's public job page exposed only the failing step, not the detailed test output.
+
+### Suggested Fix
+Retry through the REST job logs endpoint: `gh api repos/<owner>/<repo>/actions/jobs/<job-id>/logs`.
+
+### Metadata
+- Reproducible: no
+- Related Files: .github/workflows/ci.yml
+
+### Resolution
+- **Resolved**: 2026-07-14T02:01:42+08:00
+- **Notes**: The REST logs endpoint returned the complete job log and exact Playwright assertion.
+
+---

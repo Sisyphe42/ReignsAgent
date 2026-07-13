@@ -105,3 +105,32 @@ Use screenshots of the full icon column to compare occupied area, closure, strok
 - **Notes**: Tuned the gear geometry and stroke independently after expanded and compact screenshot comparison.
 
 ---
+
+## [LRN-20260714-002] best_practice
+
+**Logged**: 2026-07-14T02:01:42+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: tests
+
+### Summary
+Geometry assertions for hover-reveal UI must establish the non-hover baseline and wait for scroll stability before measuring.
+
+### Details
+The Phantom floating-rail smoke clicked Unpin while the pointer remained over the rail footer, so its supposed collapsed baseline was still hover-expanded. Moving directly to a navigation item then sampled Linux Chromium during the hover interaction and produced a transient 2px vertical delta that did not appear on Windows.
+
+### Suggested Action
+Move the pointer outside the hover target, assert the compact width, reset scroll position, then trigger reveal and wait for both final width and scroll position before comparing bounding boxes.
+
+### Metadata
+- Source: error
+- Related Files: test/browser/hosted.spec.js
+- Tags: playwright, hover, animation, geometry, cross-platform
+- See Also: ERR-20260714-001
+
+### Resolution
+- **Resolved**: 2026-07-14T02:01:42+08:00
+- **Commit/PR**: uncommitted by user request, PR #24
+- **Notes**: Corrected the Phantom test sequence; the target test passed 5 repeated runs, the hosted suite passed 6/6, and npm run verify passed.
+
+---

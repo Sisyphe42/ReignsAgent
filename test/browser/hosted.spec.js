@@ -188,15 +188,17 @@ test("persists navigation density and shared interface language", async ({ page 
   expect(phantomCenterDeltas.every(({ x, y }) => Math.abs(x) < 0.5 && Math.abs(y) < 0.5)).toBe(true);
   await page.getByRole("button", { name: "Expand navigation" }).click();
   await page.getByRole("button", { name: "Unpin navigation" }).click();
+  await page.mouse.move(600, 400);
+  await expect(page.locator(".rail")).toHaveCSS("width", "91px");
   await page.locator(".rail").evaluate((rail) => { rail.scrollTop = 0; });
   const phantomIconCollapsed = await firstItem.locator(".rail__icon").boundingBox();
   const phantomHoverIcon = await hoverItem.locator(".rail__icon").boundingBox();
   await page.mouse.move(phantomHoverIcon.x + phantomHoverIcon.width / 2, phantomHoverIcon.y + phantomHoverIcon.height / 2);
   await expect(page.locator(".rail")).toHaveCSS("width", "236px");
+  await expect.poll(() => page.locator(".rail").evaluate((rail) => rail.scrollTop)).toBe(0);
   const phantomIconRevealed = await firstItem.locator(".rail__icon").boundingBox();
   expect(Math.abs(phantomIconRevealed.x - phantomIconCollapsed.x)).toBeLessThan(1);
   expect(Math.abs(phantomIconRevealed.y - phantomIconCollapsed.y)).toBeLessThan(1);
-  await expect.poll(() => page.locator(".rail").evaluate((rail) => rail.scrollTop)).toBe(0);
   await page.getByRole("button", { name: "Pin navigation" }).click();
   await page.getByRole("button", { name: "Collapse navigation" }).click();
   await page.locator(".skin-select select").selectOption("github-light");
