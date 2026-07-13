@@ -32,7 +32,9 @@ const DEFAULT_PANEL = "overview";
 const DEFAULT_SKIN = "github-light";
 const LEGACY_DRAFT_KEY = "reigns-agent.creator-web.editor-draft";
 const RAIL_COLLAPSED_KEY = "reigns-agent.creator-web.rail-collapsed";
+const RAIL_PINNED_KEY = "reigns-agent.creator-web.rail-pinned";
 const UI_LOCALES = [
+  ["system", null],
   ["en", "English"],
   ["zh-Hans", "简体中文"]
 ];
@@ -44,6 +46,9 @@ const ZH_HANS_COPY = {
   Delete: "删除", cards: "张卡牌", "player ready": "玩家端就绪", "player blocked": "玩家端受阻",
   "Browser workspace": "浏览器工作区", "Local session": "本地会话", "Desktop session": "桌面会话",
   "Collapse navigation": "收起导航", "Expand navigation": "展开导航", "Open player preview": "打开玩家端预览",
+  "Manage project": "管理项目", "New blank project": "新建空白项目", "New from sample": "从示例新建", "Delete project": "删除项目",
+  "Choose project": "选择项目", "Projects": "项目列表", "Follow browser": "跟随浏览器", "Follow device": "跟随设备",
+  "Pin navigation": "固定导航", "Unpin navigation": "取消固定导航",
   "Project Overview": "项目概览", "Workspace health, content readiness, and next actions.": "工作区健康度、内容就绪情况与后续操作。",
   "Content / Cards": "内容 / 卡牌", "Card text, left/right choices, faction effects, tags, variables, and art bindings.": "编辑卡牌文本、左右选择、阵营影响、标签、变量与美术绑定。",
   "Story / Graph": "叙事 / 图谱", "Card-to-card transitions driven by tags. Click a node to edit it; rename tags for clarity.": "查看由标签驱动的卡牌流转；点击节点编辑，并可重命名标签。",
@@ -519,6 +524,16 @@ function normalizeUiLocale(value) {
   return "en";
 }
 
+function normalizeUiLocalePreference(value) {
+  if (value === "system") return "system";
+  return normalizeUiLocale(value);
+}
+
+function readDeviceUiLocale() {
+  if (typeof navigator === "undefined") return "en";
+  return normalizeUiLocale(navigator.languages?.[0] ?? navigator.language);
+}
+
 function tr(locale, source) {
   return normalizeUiLocale(locale) === "zh-Hans" ? (ZH_HANS_COPY[source] ?? source) : source;
 }
@@ -527,9 +542,84 @@ function useUiLocale() {
   return useContext(LocaleContext);
 }
 
+function PanelIcon({ id }) {
+  const common = { fill: "none", stroke: "currentColor", strokeWidth: "1.7", strokeLinecap: "round", strokeLinejoin: "round" };
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" {...common}>
+      {id === "overview" && <path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z" />}
+      {id === "content" && <><path d="M6 3.5h9l3 3V20.5H6z" /><path d="M15 3.5v3h3M9 11h6M9 15h6" /></>}
+      {id === "story" && <><circle cx="6" cy="6" r="2" /><circle cx="18" cy="8" r="2" /><circle cx="10" cy="18" r="2" /><path d="M8 6.3l8 1.3M7 8l2 8M16.5 9.5l-5 6.8" /></>}
+      {id === "review" && <><path d="M5 4h14v16H5z" /><path d="M8 9l1.5 1.5L12 8M8 15h8" /></>}
+      {id === "ai-edit" && <><path d="M12 3l1.2 4.1L17 8.5l-3.8 1.4L12 14l-1.2-4.1L7 8.5l3.8-1.4z" /><path d="M18.5 14l.7 2.3 2.3.7-2.3.8-.7 2.2-.8-2.2-2.2-.8 2.2-.7z" /></>}
+      {id === "preview" && <><path d="M3.5 12s3-5 8.5-5 8.5 5 8.5 5-3 5-8.5 5-8.5-5-8.5-5z" /><circle cx="12" cy="12" r="2.3" /></>}
+      {id === "build" && <><path d="M4 8l8-4 8 4-8 4zM4 8v8l8 4 8-4V8M12 12v8" /></>}
+      {id === "settings" && <g transform="translate(1.2 1.2) scale(.9)" strokeWidth="1.55"><path d="M9.4 3.5h5.2l.5 2.1 1.4.8 2-.6 2.6 4.4-1.5 1.5v1.6l1.5 1.5-2.6 4.4-2-.6-1.4.8-.5 2.1H9.4l-.5-2.1-1.4-.8-2 .6-2.6-4.4 1.5-1.5v-1.6l-1.5-1.5 2.6-4.4 2 .6 1.4-.8z" /><circle cx="12" cy="12" r="2.5" /></g>}
+    </svg>
+  );
+}
+
+function NavigationPinIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M8.5 4.5h7l-1 5 3 3v1.5h-5V20l-.5.8-.5-.8v-6H6.5v-1.5l3-3z" />
+    </svg>
+  );
+}
+
+function SelectChevronIcon({ className = "" }) {
+  return (
+    <svg className={className} viewBox="0 0 12 8" aria-hidden="true" focusable="false">
+      <path d="m2 2 4 4 4-4" />
+    </svg>
+  );
+}
+
+function ProjectMenu({ locale, projects, activeProjectId, onOpen, onCreate, onDelete }) {
+  const activeProject = projects.find((project) => project.id === activeProjectId) ?? null;
+  const closeMenu = (element) => element.closest("details")?.removeAttribute("open");
+  return (
+    <div className="project-menu-field">
+      <span className="project-menu__label">{tr(locale, "Project")}</span>
+      <details className="project-menu" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.removeAttribute("open"); }}>
+        <summary className="project-menu__trigger" aria-label={tr(locale, "Manage project")}>
+          <strong>{activeProject?.title ?? tr(locale, "Choose project")}</strong>
+          <SelectChevronIcon className="select-chevron project-menu__chevron" />
+        </summary>
+        <div className="project-menu__popover">
+          <div className="project-menu__list" role="group" aria-label={tr(locale, "Projects")}>
+            {projects.map((project) => (
+              <button
+                key={project.id}
+                type="button"
+                className={project.id === activeProjectId ? "project-menu__project project-menu__project--active" : "project-menu__project"}
+                aria-current={project.id === activeProjectId ? "true" : undefined}
+                onClick={(event) => { closeMenu(event.currentTarget); void onOpen(project.id); }}
+              >
+                <span>{project.title}</span><span aria-hidden="true">{project.id === activeProjectId ? "✓" : ""}</span>
+              </button>
+            ))}
+          </div>
+          <div className="project-menu__actions">
+            <button type="button" onClick={(event) => { closeMenu(event.currentTarget); void onCreate("blank"); }}>{tr(locale, "New blank project")}</button>
+            <button type="button" onClick={(event) => { closeMenu(event.currentTarget); void onCreate("sample"); }}>{tr(locale, "New from sample")}</button>
+            <button className="project-menu__danger" type="button" onClick={(event) => { closeMenu(event.currentTarget); void onDelete(); }}>{tr(locale, "Delete project")}</button>
+          </div>
+        </div>
+      </details>
+    </div>
+  );
+}
+
 function readRailCollapsed() {
   if (typeof localStorage === "undefined") return false;
   return localStorage.getItem(RAIL_COLLAPSED_KEY) === "true";
+}
+
+function readRailPinned() {
+  if (typeof localStorage === "undefined") return true;
+  const stored = localStorage.getItem(RAIL_PINNED_KEY);
+  if (stored !== null) return stored === "true";
+  return !readRailCollapsed();
 }
 
 function isKnownSkin(value) {
@@ -896,8 +986,10 @@ function App() {
   const [editor, setEditor] = useState(null);
   const [status, setStatus] = useState("Loading project...");
   const [skin, setSkin] = useState(() => initialUrlState.skin ?? DEFAULT_SKIN);
-  const [locale, setLocale] = useState("en");
+  const [localePreference, setLocalePreference] = useState("system");
+  const [deviceLocale, setDeviceLocale] = useState(readDeviceUiLocale);
   const [railCollapsed, setRailCollapsed] = useState(readRailCollapsed);
+  const [railPinned, setRailPinned] = useState(readRailPinned);
   const [aiAssistEnabled, setAiAssistEnabled] = useState(() => initialUrlState.aiAssist ?? false);
   const [aiSettings, setAiSettings] = useState(() => defaultAiSettings());
   const [aiApiKey, setAiApiKey] = useState("");
@@ -952,6 +1044,8 @@ function App() {
   const desktopClient = initialUrlState.client === "desktop";
   const aiPresenceState = aiAssistEnabled ? (aiConfigured ? "ready" : "setup") : "off";
   const aiPresenceLabel = aiPresenceState === "ready" ? "Ready" : aiPresenceState === "setup" ? "Setup" : "Off";
+  const locale = localePreference === "system" ? deviceLocale : localePreference;
+  const followLocaleLabel = desktopClient ? "Follow device" : "Follow browser";
 
   useEffect(() => {
     document.documentElement.dataset.skin = skin;
@@ -964,12 +1058,23 @@ function App() {
 
   useEffect(() => {
     document.documentElement.lang = locale;
-    if (configReady) void api("/api/config", { method: "PATCH", body: { locale } });
-  }, [locale, configReady]);
+    document.documentElement.dataset.localePreference = localePreference;
+    if (configReady) void api("/api/config", { method: "PATCH", body: { locale: localePreference } });
+  }, [locale, localePreference, configReady]);
+
+  useEffect(() => {
+    const syncDeviceLocale = () => setDeviceLocale(readDeviceUiLocale());
+    window.addEventListener("languagechange", syncDeviceLocale);
+    return () => window.removeEventListener("languagechange", syncDeviceLocale);
+  }, []);
 
   useEffect(() => {
     localStorage.setItem(RAIL_COLLAPSED_KEY, String(railCollapsed));
   }, [railCollapsed]);
+
+  useEffect(() => {
+    localStorage.setItem(RAIL_PINNED_KEY, String(railPinned));
+  }, [railPinned]);
 
   useEffect(() => {
     if (!configReady) return;
@@ -1024,7 +1129,7 @@ function App() {
     setActiveProjectId(config.activeProjectId);
     setHasSavedApiKey(Boolean(config.ai?.hasApiKey));
     setAiSettings(aiSettingsFromConfig(config.ai));
-    setLocale(normalizeUiLocale(config.locale));
+    setLocalePreference(normalizeUiLocalePreference(config.locale));
     if (!initialUrlState.skin) setSkin(resolveSkinId(config.theme) ?? DEFAULT_SKIN);
     if (!initialUrlState.hasExplicitPanel && isKnownPanel(workspaceState.activePanel)) {
       setActivePanel(workspaceState.activePanel);
@@ -1367,7 +1472,7 @@ function App() {
   }
 
   function changeLocale(nextLocale) {
-    setLocale(normalizeUiLocale(nextLocale));
+    setLocalePreference(normalizeUiLocalePreference(nextLocale));
   }
 
   const playerHref = useMemo(() => {
@@ -1400,21 +1505,20 @@ function App() {
             <p>{editor?.metadata?.title ?? "Project workspace"}</p>
           </div>
         </div>
+        <ProjectMenu
+          locale={locale}
+          projects={projects}
+          activeProjectId={activeProjectId}
+          onOpen={openProject}
+          onCreate={createProject}
+          onDelete={deleteActiveProject}
+        />
         <div className="topbar__readout" aria-label="Current workspace state">
           <span>{tr(locale, activePanelLabel)}</span>
           <span>{editor?.cards?.length ?? 0} {tr(locale, "cards")}</span>
           <span>{tr(locale, playerReady ? "player ready" : "player blocked")}</span>
         </div>
         <div className="topbar__tools">
-          <label className="skin-select">
-            {tr(locale, "Project")}
-            <select value={activeProjectId ?? ""} onChange={(event) => void openProject(event.target.value)}>
-              {projects.map((project) => <option key={project.id} value={project.id}>{project.title}</option>)}
-            </select>
-          </label>
-          <button className="link-button" type="button" onClick={() => void createProject("blank")}>{tr(locale, "New")}</button>
-          <button className="link-button" type="button" onClick={() => void createProject("sample")}>{tr(locale, "Sample")}</button>
-          <button className="link-button" type="button" onClick={() => void deleteActiveProject()}>{tr(locale, "Delete")}</button>
           <button
             className={`ai-presence ai-presence--${aiPresenceState}`}
             type="button"
@@ -1437,19 +1541,22 @@ function App() {
           </button>
           <label className="skin-select">
             {tr(locale, "Skin")}
-            <select value={skin} onChange={(event) => changeSkin(event.target.value)}>
-              {SKINS.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
-            </select>
+            <span className="skin-select__control">
+              <select value={skin} onChange={(event) => changeSkin(event.target.value)}>
+                {SKINS.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+              </select>
+              <SelectChevronIcon className="select-chevron skin-select__chevron" />
+            </span>
           </label>
           <a className="link-button player-launch" href={playerHref} aria-label={tr(locale, "Open player preview")}>
-            <span>{tr(locale, "Player")}</span><span className="player-launch__arrow" aria-hidden="true">↗</span>
+            <span>{tr(locale, "Player")}</span>
           </a>
         </div>
       </header>
 
-      <div className={railCollapsed ? "workspace workspace--rail-collapsed" : "workspace"}>
+      <div className={`workspace ${railPinned ? "workspace--rail-pinned" : "workspace--rail-floating"} ${railCollapsed ? "workspace--rail-collapsed" : "workspace--rail-expanded"}`}>
         <nav className="rail" aria-label="Creator panels">
-          {PANELS.map(({ id, label, group }, index) => (
+          {PANELS.map(({ id, label }, index) => (
             <button
               key={id}
               className={activePanel === id ? "rail__item rail__item--active" : "rail__item"}
@@ -1462,22 +1569,40 @@ function App() {
                 <span className="phantom-shape phantom-shape--red phantom-jelly" />
                 <span className="phantom-shape phantom-shape--cyan phantom-jelly" />
               </span>
-              <span className="rail__meta"><span className="rail__index">{String(index + 1).padStart(2, "0")}</span><span className="rail__group"> / {tr(locale, group)}</span></span>
+              <span className="rail__icon"><PanelIcon id={id} /></span>
+              <span className="rail__meta"><span className="rail__index">{String(index + 1).padStart(2, "0")}</span></span>
               <span className="rail__label">{tr(locale, label)}</span>
               <small>{tr(locale, panelStatus(id, { editor, playerReady, diagnostics, build }))}</small>
             </button>
           ))}
-          <button
-            className="rail__toggle"
-            type="button"
-            onClick={() => setRailCollapsed((collapsed) => !collapsed)}
-            aria-expanded={!railCollapsed}
-            aria-label={tr(locale, railCollapsed ? "Expand navigation" : "Collapse navigation")}
-            title={tr(locale, railCollapsed ? "Expand navigation" : "Collapse navigation")}
-          >
-            <span aria-hidden="true">{railCollapsed ? "»" : "«"}</span>
-            <span className="rail__toggle-label">{tr(locale, railCollapsed ? "Expand navigation" : "Collapse navigation")}</span>
-          </button>
+          <div className="rail__footer">
+            <button
+              className="rail__toggle"
+              type="button"
+              onClick={() => setRailCollapsed((collapsed) => !collapsed)}
+              aria-expanded={!railCollapsed}
+              aria-label={tr(locale, railCollapsed ? "Expand navigation" : "Collapse navigation")}
+              title={tr(locale, railCollapsed ? "Expand navigation" : "Collapse navigation")}
+            >
+              <span aria-hidden="true">{railCollapsed ? "»" : "«"}</span>
+            </button>
+            <button
+              className={railPinned ? "rail__pin rail__pin--active" : "rail__pin"}
+              type="button"
+              onClick={() => {
+                if (railPinned) setRailPinned(false);
+                else {
+                  setRailCollapsed(false);
+                  setRailPinned(true);
+                }
+              }}
+              aria-pressed={railPinned}
+              aria-label={tr(locale, railPinned ? "Unpin navigation" : "Pin navigation")}
+              title={tr(locale, railPinned ? "Unpin navigation" : "Pin navigation")}
+            >
+              <NavigationPinIcon />
+            </button>
+          </div>
         </nav>
 
         <main className="stage">
@@ -1577,6 +1702,8 @@ function App() {
               apiKey={aiApiKey}
               apiKeySaved={hasSavedApiKey}
               locale={locale}
+              localePreference={localePreference}
+              followLocaleLabel={followLocaleLabel}
               onLocaleChange={changeLocale}
               onAiSettingsChange={setAiSettings}
               onApiKeyChange={setAiApiKey}
@@ -5104,7 +5231,7 @@ function HostedWorkspaceTools({ onRefresh, onStatus }) {
   );
 }
 
-function SettingsPanel({ editor, aiSettings, apiKey, apiKeySaved, locale, onLocaleChange, onAiSettingsChange, onApiKeyChange, onApiKeyClear, onRefresh, onStatus }) {
+function SettingsPanel({ editor, aiSettings, apiKey, apiKeySaved, locale, localePreference, followLocaleLabel, onLocaleChange, onAiSettingsChange, onApiKeyChange, onApiKeyClear, onRefresh, onStatus }) {
   const [title, setTitle] = useState(editor?.metadata?.title ?? "");
   const [plan, setPlan] = useState("");
   const [theme, setTheme] = useState("small kingdom");
@@ -5327,8 +5454,8 @@ function SettingsPanel({ editor, aiSettings, apiKey, apiKeySaved, locale, onLoca
         </div>
         <label className="interface-settings__language">
           <span>{tr(locale, "Language")}</span>
-          <select value={locale} onChange={(event) => onLocaleChange(event.target.value)}>
-            {UI_LOCALES.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+          <select value={localePreference} onChange={(event) => onLocaleChange(event.target.value)}>
+            {UI_LOCALES.map(([id, label]) => <option key={id} value={id}>{tr(locale, label ?? followLocaleLabel)}</option>)}
           </select>
         </label>
       </div>
