@@ -50,6 +50,34 @@ test("honors a direct panel URL over the persisted workspace panel", async ({ pa
   await expect(page).toHaveURL(/\/workbench\/content(?:\?|$)/);
 });
 
+test("persists navigation density and shared interface language", async ({ page }) => {
+  await openHosted(page);
+
+  await page.getByRole("button", { name: "Collapse navigation" }).click();
+  await expect(page.locator(".workspace")).toHaveClass(/workspace--rail-collapsed/);
+  await page.reload();
+  await expect(page.locator(".workspace")).toHaveClass(/workspace--rail-collapsed/);
+
+  await page.getByRole("button", { name: /Settings/ }).click();
+  await page.getByLabel("Language").selectOption("zh-Hans");
+  await expect(page.locator("html")).toHaveAttribute("lang", "zh-Hans");
+  await expect(page.getByRole("heading", { name: "设置 / 流水线" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "打开玩家端预览" })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "设置 / 流水线" })).toBeVisible();
+});
+
+test("cycles panels only when the host marks the client as desktop", async ({ page }) => {
+  await openHosted(page);
+  await page.dispatchEvent("body", "keydown", { key: "Tab", ctrlKey: true });
+  await expect(page.locator(".rail__item", { hasText: "Overview" })).toHaveClass(/rail__item--active/);
+
+  await page.goto("workbench?client=desktop");
+  await expect(page.locator(".stage__status strong")).toContainText("cards loaded");
+  await page.dispatchEvent("body", "keydown", { key: "Tab", ctrlKey: true });
+  await expect(page.locator(".rail__item", { hasText: "Content" })).toHaveClass(/rail__item--active/);
+});
+
 test("exports a key-free workspace and restores mapped projects", async ({ page }) => {
   await openHosted(page);
   await page.getByRole("button", { name: /Settings/ }).click();

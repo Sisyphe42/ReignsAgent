@@ -85,6 +85,7 @@ describe("Electron desktop boundaries", () => {
     assert.equal(forgeConfig.default.packagerConfig.asar.unpackDir, "runtime");
     assert.equal(forgeConfig.default.packagerConfig.win32metadata.CompanyName, "Sisyphe42");
     assert.equal(forgeConfig.default.packagerConfig.win32metadata.ProductName, "ReignsAgent");
+    assert.match(mainSource, /\/workbench\?client=desktop/);
     assert.deepEqual(forgeConfig.default.makers, []);
     assert.equal(Object.keys(desktopPackage.devDependencies).some((name) => name.includes("maker-")), false);
     assert.doesNotMatch(mainSource, /Squirrel|documents/);

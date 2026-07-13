@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { createCreatorBackend } from "./backend.js";
 import "./styles.css";
@@ -31,6 +31,39 @@ const SKINS = [
 const DEFAULT_PANEL = "overview";
 const DEFAULT_SKIN = "github-light";
 const LEGACY_DRAFT_KEY = "reigns-agent.creator-web.editor-draft";
+const RAIL_COLLAPSED_KEY = "reigns-agent.creator-web.rail-collapsed";
+const UI_LOCALES = [
+  ["en", "English"],
+  ["zh-Hans", "简体中文"]
+];
+const LocaleContext = createContext("en");
+const ZH_HANS_COPY = {
+  Overview: "概览", Project: "项目", Content: "内容", Authoring: "创作", Story: "叙事",
+  Review: "审查", Quality: "质量", "AI Assist": "AI 辅助", Preview: "预览", Build: "构建",
+  Release: "发布", Settings: "设置", Player: "玩家端", Skin: "皮肤", New: "新建", Sample: "示例",
+  Delete: "删除", cards: "张卡牌", "player ready": "玩家端就绪", "player blocked": "玩家端受阻",
+  "Browser workspace": "浏览器工作区", "Local session": "本地会话", "Desktop session": "桌面会话",
+  "Collapse navigation": "收起导航", "Expand navigation": "展开导航", "Open player preview": "打开玩家端预览",
+  "Project Overview": "项目概览", "Workspace health, content readiness, and next actions.": "工作区健康度、内容就绪情况与后续操作。",
+  "Content / Cards": "内容 / 卡牌", "Card text, left/right choices, faction effects, tags, variables, and art bindings.": "编辑卡牌文本、左右选择、阵营影响、标签、变量与美术绑定。",
+  "Story / Graph": "叙事 / 图谱", "Card-to-card transitions driven by tags. Click a node to edit it; rename tags for clarity.": "查看由标签驱动的卡牌流转；点击节点编辑，并可重命名标签。",
+  "Review Diagnostics": "审查诊断", "Creator-facing Monte Carlo review with reproducible seed inputs.": "面向创作者、支持可复现种子的蒙特卡洛审查。",
+  "Developer Preview": "开发预览", "Debuggable preview over the same headless runtime used by player builds.": "使用与玩家构建相同的无头运行时进行可调试预览。",
+  "Build / Deploy": "构建 / 部署", "Prepare and export the deployable player bundle.": "准备并导出可部署的玩家端包。",
+  "Contextual draft planning, review repair, and visual request previews.": "基于上下文规划草稿、修复审查问题并预览视觉请求。",
+  "Settings / Pipeline": "设置 / 流水线", "Project metadata, AI endpoint posture, locale hooks, and connector planning.": "管理项目元数据、界面语言、AI 端点与连接器规划。",
+  Interface: "界面", Language: "语言", "Interface language is shared by browser, local, and desktop clients.": "界面语言设置在浏览器、本地与桌面客户端间共用。",
+  "AI Endpoint": "AI 端点", "Connector Request Preview": "连接器请求预览", "Save title": "保存标题",
+  "Deck title": "卡组标题", "Channel Type": "渠道类型", "Base URL": "基础 URL", "API Key": "API 密钥",
+  Model: "模型", Capabilities: "能力", Advanced: "高级", "Protocol, route, compatibility, and JSON mode": "协议、路由、兼容性与 JSON 模式",
+  Protocol: "协议", "Route mode": "路由模式", Compatibility: "兼容性", "JSON mode": "JSON 模式",
+  "Fetch /models": "获取 /models", "Validate endpoint": "验证端点", "Build plan": "生成计划",
+  "No connector plan generated.": "尚未生成连接器计划。", "Configured endpoints are used when drafting AI Assist plans.": "配置的端点将用于生成 AI 辅助草稿。",
+  Setup: "设置", Off: "关闭",
+  "Project title saved": "项目标题已保存", ready: "就绪", loading: "加载中", new: "新增", draft: "草稿",
+  blocked: "受阻", set: "已设置", Valid: "有效", "Needs work": "需要处理", Ready: "就绪", Blocked: "受阻",
+  Cards: "卡牌", Validation: "验证", "Player-ready": "玩家端就绪", "Not run": "未运行", Prepared: "已准备", "Not prepared": "未准备"
+};
 const SKIN_ALIASES = {
   workbench: "classic"
 };
@@ -481,6 +514,24 @@ function isKnownPanel(value) {
   return PANELS.some((panel) => panel.id === value);
 }
 
+function normalizeUiLocale(value) {
+  if (value === "zh-Hans" || String(value ?? "").toLowerCase().startsWith("zh")) return "zh-Hans";
+  return "en";
+}
+
+function tr(locale, source) {
+  return normalizeUiLocale(locale) === "zh-Hans" ? (ZH_HANS_COPY[source] ?? source) : source;
+}
+
+function useUiLocale() {
+  return useContext(LocaleContext);
+}
+
+function readRailCollapsed() {
+  if (typeof localStorage === "undefined") return false;
+  return localStorage.getItem(RAIL_COLLAPSED_KEY) === "true";
+}
+
 function isKnownSkin(value) {
   return SKINS.some(([id]) => id === value);
 }
@@ -492,7 +543,7 @@ function resolveSkinId(value) {
 
 function readUrlState() {
   if (typeof window === "undefined") {
-    return { panel: DEFAULT_PANEL, hasExplicitPanel: false, skin: null, aiAssist: null };
+    return { panel: DEFAULT_PANEL, hasExplicitPanel: false, skin: null, aiAssist: null, client: "web" };
   }
 
   const url = new URL(window.location.href);
@@ -511,7 +562,8 @@ function readUrlState() {
     panel,
     hasExplicitPanel: explicitPanel !== null,
     skin: resolveSkinId(skin),
-    aiAssist
+    aiAssist,
+    client: url.searchParams.get("client") === "desktop" ? "desktop" : "web"
   };
 }
 
@@ -844,6 +896,8 @@ function App() {
   const [editor, setEditor] = useState(null);
   const [status, setStatus] = useState("Loading project...");
   const [skin, setSkin] = useState(() => initialUrlState.skin ?? DEFAULT_SKIN);
+  const [locale, setLocale] = useState("en");
+  const [railCollapsed, setRailCollapsed] = useState(readRailCollapsed);
   const [aiAssistEnabled, setAiAssistEnabled] = useState(() => initialUrlState.aiAssist ?? false);
   const [aiSettings, setAiSettings] = useState(() => defaultAiSettings());
   const [aiApiKey, setAiApiKey] = useState("");
@@ -895,6 +949,7 @@ function App() {
   const playerReady = editor?.playerValidation?.valid === true;
   const aiConfigured = isAiEndpointConfigured(aiSettings);
   const activePanelLabel = PANELS.find((panel) => panel.id === activePanel)?.label ?? "Workspace";
+  const desktopClient = initialUrlState.client === "desktop";
   const aiPresenceState = aiAssistEnabled ? (aiConfigured ? "ready" : "setup") : "off";
   const aiPresenceLabel = aiPresenceState === "ready" ? "Ready" : aiPresenceState === "setup" ? "Setup" : "Off";
 
@@ -906,6 +961,15 @@ function App() {
       void api("/api/workspace", { method: "PATCH", body: { activePanel } });
     }
   }, [activePanel, skin, configReady]);
+
+  useEffect(() => {
+    document.documentElement.lang = locale;
+    if (configReady) void api("/api/config", { method: "PATCH", body: { locale } });
+  }, [locale, configReady]);
+
+  useEffect(() => {
+    localStorage.setItem(RAIL_COLLAPSED_KEY, String(railCollapsed));
+  }, [railCollapsed]);
 
   useEffect(() => {
     if (!configReady) return;
@@ -960,6 +1024,7 @@ function App() {
     setActiveProjectId(config.activeProjectId);
     setHasSavedApiKey(Boolean(config.ai?.hasApiKey));
     setAiSettings(aiSettingsFromConfig(config.ai));
+    setLocale(normalizeUiLocale(config.locale));
     if (!initialUrlState.skin) setSkin(resolveSkinId(config.theme) ?? DEFAULT_SKIN);
     if (!initialUrlState.hasExplicitPanel && isKnownPanel(workspaceState.activePanel)) {
       setActivePanel(workspaceState.activePanel);
@@ -992,6 +1057,26 @@ function App() {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [activePanel, play.sessionId, play.state]);
+
+  useEffect(() => {
+    if (!desktopClient) return undefined;
+    function onDesktopShortcut(event) {
+      if (!event.ctrlKey || event.metaKey || event.altKey) return;
+      const key = event.key.toLowerCase();
+      let nextIndex = null;
+      if (key === "tab") {
+        const currentIndex = PANELS.findIndex(({ id }) => id === activePanel);
+        nextIndex = (currentIndex + (event.shiftKey ? -1 : 1) + PANELS.length) % PANELS.length;
+      } else if (/^[1-8]$/.test(key)) {
+        nextIndex = Number(key) - 1;
+      }
+      if (nextIndex === null) return;
+      event.preventDefault();
+      openPanel(PANELS[nextIndex].id);
+    }
+    window.addEventListener("keydown", onDesktopShortcut);
+    return () => window.removeEventListener("keydown", onDesktopShortcut);
+  }, [activePanel, desktopClient, skin]);
 
   async function refreshEditor(options = {}) {
     const next = await api("/api/editor");
@@ -1105,7 +1190,7 @@ function App() {
     await runAction("Starting preview", async () => {
       const state = await api("/api/play/start", {
         method: "POST",
-        body: { locale: navigator.language || "en" }
+        body: { locale }
       });
       setPlay({ sessionId: state.sessionId, state });
       setStatus("Preview session started");
@@ -1197,7 +1282,7 @@ function App() {
   function openAmbientAiAction(actionId, selection, prompt = "") {
     if (!selection) return;
     const targetCardId = selection.targetCardId ?? null;
-    const locale = navigator.language || "current UI locale";
+    const targetLocale = locale;
     const promptSuffix = prompt.trim() ? `\n\nCreator direction: ${prompt.trim()}` : "";
     const selectedText = selection.text ? ` Selected text: "${selection.text}".` : "";
     const baseContext = `${selection.label}${selection.context ? ` · ${selection.context}` : ""}`;
@@ -1212,7 +1297,7 @@ function App() {
         actionLabel: "Translate selection",
         mode: "generate_cards",
         cardCount: 1,
-        instruction: `Translate the selected creator context to ${locale}. Context: ${baseContext}.${selectedText} Preserve ids, tags, variables, and left/right meaning unless the creator direction says otherwise.`
+        instruction: `Translate the selected creator context to ${targetLocale}. Context: ${baseContext}.${selectedText} Preserve ids, tags, variables, and left/right meaning unless the creator direction says otherwise.`
       },
       explain: {
         actionLabel: "Explain selection",
@@ -1281,6 +1366,10 @@ function App() {
     syncWorkbenchUrl(activePanel, resolvedSkin, "replace");
   }
 
+  function changeLocale(nextLocale) {
+    setLocale(normalizeUiLocale(nextLocale));
+  }
+
   const playerHref = useMemo(() => {
     const params = new URLSearchParams();
     params.set("skin", resolveSkinId(skin) ?? DEFAULT_SKIN);
@@ -1290,7 +1379,8 @@ function App() {
   }, [skin]);
 
   return (
-    <div className="app-shell">
+    <LocaleContext.Provider value={locale}>
+    <div className="app-shell" data-client={desktopClient ? "desktop" : "web"}>
       {aiAssistEnabled && (
         <AiAmbientLayer
           activePanelLabel={activePanelLabel}
@@ -1309,20 +1399,20 @@ function App() {
           </div>
         </div>
         <div className="topbar__readout" aria-label="Current workspace state">
-          <span>{activePanelLabel}</span>
-          <span>{editor?.cards?.length ?? 0} cards</span>
-          <span>{playerReady ? "player ready" : "player blocked"}</span>
+          <span>{tr(locale, activePanelLabel)}</span>
+          <span>{editor?.cards?.length ?? 0} {tr(locale, "cards")}</span>
+          <span>{tr(locale, playerReady ? "player ready" : "player blocked")}</span>
         </div>
         <div className="topbar__tools">
           <label className="skin-select">
-            Project
+            {tr(locale, "Project")}
             <select value={activeProjectId ?? ""} onChange={(event) => void openProject(event.target.value)}>
               {projects.map((project) => <option key={project.id} value={project.id}>{project.title}</option>)}
             </select>
           </label>
-          <button className="link-button" type="button" onClick={() => void createProject("blank")}>New</button>
-          <button className="link-button" type="button" onClick={() => void createProject("sample")}>Sample</button>
-          <button className="link-button" type="button" onClick={() => void deleteActiveProject()}>Delete</button>
+          <button className="link-button" type="button" onClick={() => void createProject("blank")}>{tr(locale, "New")}</button>
+          <button className="link-button" type="button" onClick={() => void createProject("sample")}>{tr(locale, "Sample")}</button>
+          <button className="link-button" type="button" onClick={() => void deleteActiveProject()}>{tr(locale, "Delete")}</button>
           <button
             className={`ai-presence ai-presence--${aiPresenceState}`}
             type="button"
@@ -1335,7 +1425,7 @@ function App() {
             </span>
             <span className="ai-presence__copy">
               <strong>AI</strong>
-              <small>{aiPresenceLabel}</small>
+              <small>{tr(locale, aiPresenceLabel)}</small>
             </span>
             <span className="ai-presence__wave" aria-hidden="true">
               <span />
@@ -1344,16 +1434,18 @@ function App() {
             </span>
           </button>
           <label className="skin-select">
-            Skin
+            {tr(locale, "Skin")}
             <select value={skin} onChange={(event) => changeSkin(event.target.value)}>
               {SKINS.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
             </select>
           </label>
-          <a className="link-button" href={playerHref}>Player</a>
+          <a className="link-button player-launch" href={playerHref} aria-label={tr(locale, "Open player preview")}>
+            <span>{tr(locale, "Player")}</span><span className="player-launch__arrow" aria-hidden="true">↗</span>
+          </a>
         </div>
       </header>
 
-      <div className="workspace">
+      <div className={railCollapsed ? "workspace workspace--rail-collapsed" : "workspace"}>
         <nav className="rail" aria-label="Creator panels">
           {PANELS.map(({ id, label, group }, index) => (
             <button
@@ -1361,21 +1453,34 @@ function App() {
               className={activePanel === id ? "rail__item rail__item--active" : "rail__item"}
               type="button"
               onClick={() => openPanel(id)}
+              aria-label={tr(locale, label)}
+              title={desktopClient ? `${tr(locale, label)} · Ctrl+${index + 1}` : tr(locale, label)}
             >
               <span className="phantom-shape-wrapper" aria-hidden="true">
                 <span className="phantom-shape phantom-shape--red phantom-jelly" />
                 <span className="phantom-shape phantom-shape--cyan phantom-jelly" />
               </span>
-              <span className="rail__meta">{String(index + 1).padStart(2, "0")} / {group}</span>
-              <span className="rail__label">{label}</span>
-              <small>{panelStatus(id, { editor, playerReady, diagnostics, build })}</small>
+              <span className="rail__meta"><span className="rail__index">{String(index + 1).padStart(2, "0")}</span><span className="rail__group"> / {tr(locale, group)}</span></span>
+              <span className="rail__label">{tr(locale, label)}</span>
+              <small>{tr(locale, panelStatus(id, { editor, playerReady, diagnostics, build }))}</small>
             </button>
           ))}
+          <button
+            className="rail__toggle"
+            type="button"
+            onClick={() => setRailCollapsed((collapsed) => !collapsed)}
+            aria-expanded={!railCollapsed}
+            aria-label={tr(locale, railCollapsed ? "Expand navigation" : "Collapse navigation")}
+            title={tr(locale, railCollapsed ? "Expand navigation" : "Collapse navigation")}
+          >
+            <span aria-hidden="true">{railCollapsed ? "»" : "«"}</span>
+            <span className="rail__toggle-label">{tr(locale, railCollapsed ? "Expand navigation" : "Collapse navigation")}</span>
+          </button>
         </nav>
 
         <main className="stage">
           <div className="stage__status" role="status">
-            <span>{import.meta.env.VITE_CREATOR_HOST === "browser" ? "Browser workspace" : "Local session"}</span>
+            <span>{tr(locale, desktopClient ? "Desktop session" : import.meta.env.VITE_CREATOR_HOST === "browser" ? "Browser workspace" : "Local session")}</span>
             <strong>{busy || status}</strong>
           </div>
           {draftInfo && (
@@ -1469,6 +1574,8 @@ function App() {
               aiSettings={aiSettings}
               apiKey={aiApiKey}
               apiKeySaved={hasSavedApiKey}
+              locale={locale}
+              onLocaleChange={changeLocale}
               onAiSettingsChange={setAiSettings}
               onApiKeyChange={setAiApiKey}
               onApiKeyClear={clearSavedApiKey}
@@ -1490,6 +1597,7 @@ function App() {
         </main>
       </div>
     </div>
+    </LocaleContext.Provider>
   );
 }
 
@@ -4994,7 +5102,7 @@ function HostedWorkspaceTools({ onRefresh, onStatus }) {
   );
 }
 
-function SettingsPanel({ editor, aiSettings, apiKey, apiKeySaved, onAiSettingsChange, onApiKeyChange, onApiKeyClear, onRefresh, onStatus }) {
+function SettingsPanel({ editor, aiSettings, apiKey, apiKeySaved, locale, onLocaleChange, onAiSettingsChange, onApiKeyChange, onApiKeyClear, onRefresh, onStatus }) {
   const [title, setTitle] = useState(editor?.metadata?.title ?? "");
   const [plan, setPlan] = useState("");
   const [theme, setTheme] = useState("small kingdom");
@@ -5015,7 +5123,7 @@ function SettingsPanel({ editor, aiSettings, apiKey, apiKeySaved, onAiSettingsCh
 
   async function saveTitle() {
     await api("/api/editor/metadata", { method: "PATCH", body: { metadata: { title } } });
-    onStatus("Project title saved");
+    onStatus(tr(locale, "Project title saved"));
     await onRefresh();
   }
 
@@ -5210,22 +5318,34 @@ function SettingsPanel({ editor, aiSettings, apiKey, apiKeySaved, onAiSettingsCh
     <section className="panel">
       {import.meta.env.VITE_CREATOR_HOST === "browser" && <HostedWorkspaceTools onRefresh={onRefresh} onStatus={onStatus} />}
       <PanelHead title="Settings / Pipeline" note="Project metadata, AI endpoint posture, locale hooks, and connector planning." />
+      <div className="subsection interface-settings">
+        <div>
+          <h3>{tr(locale, "Interface")}</h3>
+          <p className="muted">{tr(locale, "Interface language is shared by browser, local, and desktop clients.")}</p>
+        </div>
+        <label className="interface-settings__language">
+          <span>{tr(locale, "Language")}</span>
+          <select value={locale} onChange={(event) => onLocaleChange(event.target.value)}>
+            {UI_LOCALES.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+          </select>
+        </label>
+      </div>
       <div className="subsection">
-        <h3>Project</h3>
+        <h3>{tr(locale, "Project")}</h3>
         <div className="field-row">
-          <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Deck title" />
-          <button className="btn" onClick={() => void saveTitle()}>Save title</button>
+          <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder={tr(locale, "Deck title")} />
+          <button className="btn" onClick={() => void saveTitle()}>{tr(locale, "Save title")}</button>
         </div>
       </div>
       <div className="subsection">
-        <h3>AI Endpoint</h3>
+        <h3>{tr(locale, "AI Endpoint")}</h3>
         <div className="ai-channel-form">
           <div className="ai-form-row">
-            <label className="ai-field-label">Channel Type</label>
+            <label className="ai-field-label">{tr(locale, "Channel Type")}</label>
             <AiProviderDropdown value={normalizedAiSettings.endpointPresetId} onChange={applyEndpointPreset} />
           </div>
           <div className="ai-form-row">
-            <label className="ai-field-label" htmlFor="ai-base-url">Base URL</label>
+            <label className="ai-field-label" htmlFor="ai-base-url">{tr(locale, "Base URL")}</label>
             <input
               id="ai-base-url"
               value={normalizedAiSettings.baseUrl}
@@ -5235,7 +5355,7 @@ function SettingsPanel({ editor, aiSettings, apiKey, apiKeySaved, onAiSettingsCh
             />
           </div>
           <div className="ai-form-row">
-            <label className="ai-field-label" htmlFor="ai-api-key">API Key</label>
+            <label className="ai-field-label" htmlFor="ai-api-key">{tr(locale, "API Key")}</label>
             <div className="secret-input">
               <input
                 id="ai-api-key"
@@ -5257,7 +5377,7 @@ function SettingsPanel({ editor, aiSettings, apiKey, apiKeySaved, onAiSettingsCh
             </div>
           </div>
           <div className="ai-form-row">
-            <label className="ai-field-label">Model</label>
+            <label className="ai-field-label">{tr(locale, "Model")}</label>
             <div className="ai-model-control">
               <AiModelDropdown models={modelPresets} value={normalizedAiSettings.modelId} providerLabel={endpointPreset.label} onChange={applyModelPreset} />
               <input
@@ -5267,11 +5387,11 @@ function SettingsPanel({ editor, aiSettings, apiKey, apiKeySaved, onAiSettingsCh
                 placeholder="gpt-5, claude-sonnet-4-20250514, deepseek-chat..."
                 aria-label="Model ID"
               />
-              <button className="btn models-fetch-btn" type="button" onClick={() => void fetchEndpointModels()}>Fetch /models</button>
+              <button className="btn models-fetch-btn" type="button" onClick={() => void fetchEndpointModels()}>{tr(locale, "Fetch /models")}</button>
             </div>
           </div>
           <div className="ai-form-row ai-form-row--stack">
-            <span className="ai-field-label">Capabilities</span>
+            <span className="ai-field-label">{tr(locale, "Capabilities")}</span>
             <div className="capability-grid" aria-label="Model capabilities">
               {AI_CAPABILITIES.map(([id, label]) => (
                 <button
@@ -5288,31 +5408,31 @@ function SettingsPanel({ editor, aiSettings, apiKey, apiKeySaved, onAiSettingsCh
         </div>
         <details className="ai-advanced">
           <summary>
-            <span className="ai-field-label">Advanced</span>
-            <span>Protocol, route, compatibility, and JSON mode</span>
+            <span className="ai-field-label">{tr(locale, "Advanced")}</span>
+            <span>{tr(locale, "Protocol, route, compatibility, and JSON mode")}</span>
           </summary>
           <div className="ai-advanced-grid">
-            <AiOptionGroup label="Protocol" value={normalizedAiSettings.protocol} options={AI_PROTOCOLS} onChange={(value) => updateAiSetting("protocol", value)} />
-            <AiOptionGroup label="Route mode" value={normalizedAiSettings.routeMode} options={AI_ROUTE_MODES} onChange={(value) => updateAiSetting("routeMode", value)} />
-            <AiOptionGroup label="Compatibility" value={normalizedAiSettings.compatibilityFamily} options={AI_COMPATIBILITY_FAMILIES} onChange={(value) => updateAiSetting("compatibilityFamily", value)} />
-            <AiOptionGroup label="JSON mode" value={normalizedAiSettings.jsonMode} options={AI_JSON_MODES} onChange={(value) => updateAiSetting("jsonMode", value)} />
+            <AiOptionGroup label={tr(locale, "Protocol")} value={normalizedAiSettings.protocol} options={AI_PROTOCOLS} onChange={(value) => updateAiSetting("protocol", value)} />
+            <AiOptionGroup label={tr(locale, "Route mode")} value={normalizedAiSettings.routeMode} options={AI_ROUTE_MODES} onChange={(value) => updateAiSetting("routeMode", value)} />
+            <AiOptionGroup label={tr(locale, "Compatibility")} value={normalizedAiSettings.compatibilityFamily} options={AI_COMPATIBILITY_FAMILIES} onChange={(value) => updateAiSetting("compatibilityFamily", value)} />
+            <AiOptionGroup label={tr(locale, "JSON mode")} value={normalizedAiSettings.jsonMode} options={AI_JSON_MODES} onChange={(value) => updateAiSetting("jsonMode", value)} />
           </div>
         </details>
         <div className="action-row">
-          <button className="btn btn--primary endpoint-validate-btn" type="button" onClick={() => void testEndpoint()}>Validate endpoint</button>
+          <button className="btn btn--primary endpoint-validate-btn" type="button" onClick={() => void testEndpoint()}>{tr(locale, "Validate endpoint")}</button>
           <span className={`endpoint-check endpoint-check--${setupCheck.state}`}>
-            {setupCheck.message || "Configured endpoints are used when drafting AI Assist plans."}
+            {setupCheck.message || tr(locale, "Configured endpoints are used when drafting AI Assist plans.")}
           </span>
         </div>
       </div>
       <div className="subsection">
-        <h3>Connector Request Preview</h3>
+        <h3>{tr(locale, "Connector Request Preview")}</h3>
         <div className="field-row field-row--compact">
           <input value={theme} onChange={(event) => setTheme(event.target.value)} placeholder="theme" />
           <input type="number" min="1" value={count} onChange={(event) => setCount(Number(event.target.value))} />
-          <button className="btn btn--primary" onClick={() => void buildPlan()}>Build plan</button>
+          <button className="btn btn--primary" onClick={() => void buildPlan()}>{tr(locale, "Build plan")}</button>
         </div>
-        <pre className="output">{plan || "No connector plan generated."}</pre>
+        <pre className="output">{plan || tr(locale, "No connector plan generated.")}</pre>
       </div>
     </section>
   );
@@ -6009,21 +6129,23 @@ function AiProgress({ step, active, status = "idle" }) {
 }
 
 function PanelHead({ title, note }) {
+  const locale = useUiLocale();
   return (
     <div className="panel-head">
       <div>
-        <h2>{title}</h2>
-        <p>{note}</p>
+        <h2>{tr(locale, title)}</h2>
+        <p>{tr(locale, note)}</p>
       </div>
     </div>
   );
 }
 
 function Metric({ label, value, tone = "" }) {
+  const locale = useUiLocale();
   return (
     <div className={`metric ${tone ? `metric--${tone}` : ""}`} data-ai-target="metric" data-ai-label={label} data-ai-context={label}>
-      <span>{label}</span>
-      <strong>{value}</strong>
+      <span>{tr(locale, label)}</span>
+      <strong>{tr(locale, value)}</strong>
     </div>
   );
 }

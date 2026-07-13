@@ -301,7 +301,9 @@ npm run test:desktop
 npm run build:desktop
 ```
 
-The desktop app, window, executable, and metadata all use the product name `ReignsAgent`; package author metadata is `Sisyphe42`, matching the GitHub repository owner. It uses application ID `io.reignsagent.app`, starts the Creator Server in an Electron utility process on a random loopback port, and loads `/workbench` in a sandboxed BrowserWindow.
+The desktop app, window, executable, and metadata all use the product name `ReignsAgent`; package author metadata is `Sisyphe42`, matching the GitHub repository owner. It uses application ID `io.reignsagent.app`, starts the Creator Server in an Electron utility process on a random loopback port, and loads `/workbench` in a sandboxed BrowserWindow. The host marks that shared route as a desktop client so the Creator can enable desktop-only panel shortcuts (`Ctrl+Tab`, `Ctrl+Shift+Tab`, and `Ctrl+1` through `Ctrl+8`) without importing Electron APIs.
+
+Creator navigation can be collapsed on wide layouts and remains a horizontal tab strip on narrow layouts. The collapse preference is local to each client, while the interface language selected in Settings uses the shared workspace config so browser, local server, and desktop clients consume the same locale preference.
 
 All desktop targets are portable ZIP archives: Windows x64, macOS x64/arm64, and Linux x64. Extract the archive and run `ReignsAgent` directly; no installer or system Node.js is required. Electron profile data, `config.toml`, projects, and game exports stay beside the extracted app under `ReignsAgentData/`. On macOS, that directory is created beside `ReignsAgent.app`. Moving the app and its data together preserves the portable workspace.
 
