@@ -27,6 +27,7 @@ The project is built for two primary audiences: creators who need a practical wo
 - [Content Model](#content-model)
 - [AI-Assisted Workflows](#ai-assisted-workflows)
 - [Build Output](#build-output)
+- [Creator Distribution](#creator-distribution)
 - [Package Examples](#package-examples)
 - [Repository Layout](#repository-layout)
 - [CI And Verification](#ci-and-verification)
@@ -37,7 +38,7 @@ The project is built for two primary audiences: creators who need a practical wo
 
 | Area | Scope |
 | --- | --- |
-| Creator workbench | Import, edit, review, preview, configure AI Assist, and prepare builds from a single browser workspace. |
+| Creator workbench | Manage projects, import, edit, review, preview, configure AI Assist, and prepare builds from one responsive workspace with English and Simplified Chinese UI. |
 | Core runtime | Deterministic headless play sessions with four default gauges, card scheduling, choices, game-over detection, snapshots, restore, and event logs. |
 | Reviewer | Monte Carlo simulation, graph reachability, coverage diagnostics, pacing checks, endings analysis, and balance warnings. |
 | Pipeline | JSON/CSV/content-bundle exchange, generation request contracts, endpoint protocol handling, patch prevalidation, and reviewer feedback actions. |
@@ -111,12 +112,20 @@ The main authoring UI lives in `apps/creator-web`.
 
 Workbench URLs preserve panel state, for example `/workbench/content`. Skin state is shared through query parameters such as `?skin=github-light`, `?skin=catppuccin-latte`, and `?skin=classic`; preview player pages accept the same `skin` query.
 
+An explicit `/workbench/<panel>` URL takes precedence over the last panel stored in the project workspace, so deep links remain deterministic. On wide screens the navigation rail supports pinned expanded, pinned icon-only, and unpinned hover/focus-reveal modes; narrow screens retain the full horizontal tab strip. Electron additionally enables `Ctrl+Tab`, `Ctrl+Shift+Tab`, and `Ctrl+1` through `Ctrl+8`. Rail density and pinning remain local to each client, while the interface locale is shared through workspace configuration. Opening the Player carries the selected skin, locale, and desktop marker; its back link preserves that context while the project workspace restores the last active panel.
+
 ## Architecture
 
 ```mermaid
 flowchart LR
-  creator["Creator Web<br/>authoring, preview, AI Assist"]
-  api["Local Creator API<br/>/api/*"]
+  local["Local browser"]
+  nodeZip["Node ZIP"]
+  electron["Electron ZIP"]
+  hosted["Hosted PWA"]
+  creator["Creator Web<br/>shared React workspace"]
+  server["Creator Server<br/>HTTP API + static host"]
+  fileWorkspace["Filesystem Workspace<br/>TOML + projects"]
+  browserBackend["Browser backend<br/>OPFS + Web Worker"]
   interface["Interface<br/>workflow orchestration"]
   pipeline["Pipeline<br/>content exchange and AI contracts"]
   reviewer["Reviewer<br/>simulation diagnostics"]
@@ -124,10 +133,16 @@ flowchart LR
   player["Deployable Player<br/>core-only runtime"]
   provider["User AI Endpoint"]
 
-  browserBackend["Hosted browser backend<br/>OPFS + Web Worker"]
-  creator --> api
+  local --> server
+  nodeZip --> server
+  electron --> server
+  server --> creator
+  server --> fileWorkspace
+  hosted --> creator
   creator --> browserBackend
-  api --> interface
+  creator --> server
+  server --> interface
+  browserBackend --> interface
   interface --> core
   interface --> reviewer
   interface --> pipeline
@@ -137,7 +152,7 @@ flowchart LR
   core --> player
 ```
 
-The Creator UI has two host adapters. Local Web, Node ZIP, and Electron use `HttpCreatorBackend` over the shared Creator Server. The hosted PWA uses `BrowserCreatorBackend`, stores equivalent documents in OPFS, runs diagnostics in a Web Worker, and calls user AI endpoints directly. Neither adapter changes Core, content, proposal, or player contracts.
+The Creator UI has two host adapters. Local Web, Node ZIP, and Electron use `HttpCreatorBackend` over the shared Creator Server and filesystem Workspace. The hosted PWA uses `BrowserCreatorBackend`; browser APIs and the OPFS adapter stay in `apps/creator-web`, while `packages/workspace` remains host-neutral. Hosted diagnostics run in a Web Worker and user AI endpoints are called directly. Neither adapter changes Core, content, proposal, or player contracts.
 
 | Layer | Responsibility |
 | --- | --- |
@@ -146,6 +161,9 @@ The Creator UI has two host adapters. Local Web, Node ZIP, and Electron use `Htt
 | `packages/pipeline` | Content exchange, AI request contracts, endpoint normalization, patch prevalidation, and feedback actions. |
 | `packages/interface` | Creator workflow orchestration, local web surfaces, play-session helpers, diagnostics projection, and build assembly. |
 | `apps/creator-web` | Vite/React creator workspace. |
+| `apps/creator-server` | Shared HTTP/static host for local Web, Node ZIP, and Electron. |
+| `packages/workspace` | Host-neutral configuration/project contracts and the Node filesystem adapter. |
+| `apps/desktop-electron` | Sandboxed portable lifecycle shell; no Creator business logic. |
 
 ## Content Model
 
@@ -240,6 +258,8 @@ The output is `apps/creator-web/dist-hosted/`. Set `REIGNS_AGENT_BASE_PATH=/reig
 
 Hosted projects and `config.toml` live in origin-scoped OPFS. Chrome and Edge are the supported v1 browsers. After the first successful load the PWA can reopen offline. Clearing site data destroys the workspace, and changing scheme, host, or port selects a different workspace, so Settings exposes persistence status plus Workspace ZIP and active-project ZIP export/import. Backups exclude the plaintext AI key by default; including it requires an explicit checkbox and confirmation.
 
+Hosted navigation is app-shell based: when a same-scope page navigation is offline or returns a non-success HTTP response, the Service Worker falls back to the cached `index.html` so direct workbench routes continue to open inside the PWA.
+
 AI calls go directly to the configured endpoint. An HTTPS Creator requires an HTTPS endpoint, except localhost, and the endpoint must allow the Creator origin plus `Authorization` and `Content-Type` through CORS. ReignsAgent operates no relay. Browser player export downloads a locally assembled ZIP and excludes AI settings and credentials.
 
 Server-side `.env` or process-environment credential loading belongs only to the local Creator Server and self-hosted server deployments. A hosted static build cannot read a private server `.env`; never expose secrets through `VITE_*` variables because those values are compiled into public browser assets. Each hosted user supplies their own endpoint and key in the browser workspace.
@@ -285,6 +305,8 @@ The package intentionally excludes tests, frontend source, caches, `.env`, `node
 ```sh
 node scripts/build-game.mjs fixtures/content/oss-court.cards.json output/player
 ```
+
+Builds started through the packaged Creator default to `ReignsAgentData/Builds`, even when the launcher is invoked from another working directory. Explicit CLI output paths remain under caller control.
 
 ## Electron Desktop Host
 
@@ -421,11 +443,13 @@ console.log(diagnostics.healthScore, session.factions, build.player.choiceModel)
 | Path | Purpose |
 | --- | --- |
 | `apps/creator-web` | Creator dashboard with HTTP and hosted OPFS backend adapters. |
+| `apps/creator-server` | Shared local HTTP API and compiled Creator host for development, Node ZIP, and Electron. |
+| `apps/desktop-electron` | Sandboxed portable desktop lifecycle shell with no Creator business logic. |
 | `packages/core` | Headless game runtime. |
 | `packages/reviewer` | Simulation and diagnostic engine. |
 | `packages/pipeline` | Content exchange and AI proposal contracts. |
 | `packages/interface` | Creator orchestration and player build assembly. |
-| `packages/workspace` | Host-neutral TOML/project contracts plus Node filesystem and browser OPFS adapters. |
+| `packages/workspace` | Host-neutral TOML/project contracts plus the Node filesystem Workspace adapter; browser OPFS code stays in `apps/creator-web`. |
 | `scripts` | Dev server, content CLI, build-game assembler, and verification gates. |
 | `fixtures` | Sample and validation content. |
 | `test` | Cross-package integration tests. |
@@ -463,6 +487,7 @@ Use focused commands while iterating, then run the full gate before commit:
 npm run build
 npm run test:unit
 npm run test:integration
+npm run test:hosted
 npm run content:validate -- fixtures/content/minimal.cards.json
 npm run content:review -- fixtures/content/minimal.cards.json --cycles 100 --maxTurns 20
 ```
@@ -484,7 +509,8 @@ For visible creator or player changes:
 1. Start `npm run dev:interface`.
 2. Start `npm run dev:dashboard`.
 3. Open `/workbench` and `/play?skin=<skin>`.
-4. Confirm the expected panel state, skin query behavior, `document.documentElement.dataset.skin`, and visible layout at desktop and mobile widths.
+4. Confirm explicit panel routes override stored panel state, Player return context is preserved, and the expected skin/locale is visible at desktop and mobile widths.
+5. For navigation, localization, Hosted PWA, or cross-client routing changes, run `npm run test:hosted`.
 
 ## Acknowledgements
 

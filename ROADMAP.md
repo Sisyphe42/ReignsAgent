@@ -1,20 +1,31 @@
 # ReignsAgent Roadmap
 
 ## Current Direction
-ReignsAgent is moving from a functional prototype toward a creator-focused workspace for building, reviewing, previewing, and shipping Reigns-like card narratives. Local Web, Node ZIP, and Electron share the Creator Server; the hosted PWA uses OPFS and a browser backend over the same domain contracts.
+ReignsAgent now has a creator-focused workspace for building, reviewing, previewing, and shipping Reigns-like card narratives. Local Web, the Node ZIP, and portable Electron ZIPs share the Creator Server and filesystem Workspace; the Hosted PWA uses OPFS and a browser backend over the same domain contracts.
 
-The current priority is the dashboard experience. Backend and package boundaries should remain stable while the creator UI becomes easier to navigate and reason about. Development keeps the backend API-only and the Creator on Vite; Node ZIP and Electron hosts reuse the same Creator Server factory for packaged delivery.
+The current priority is depth rather than another host or shell: make Content, Story, Review, AI Assist, and the production player clearer and more actionable for non-technical authors while keeping backend and package boundaries stable.
 
 Story and Content work should now optimize for non-technical content authors: the creator surface should explain what each card does, when it appears, how it moves the story, what is broken, and what the next repair action should be.
 
-## Dashboard-First Refactor
-- Start the dashboard migration with `apps/creator-web`, a Vite/React creator workspace that consumes the existing local API.
-- Make the React workbench the primary creator surface (`/workbench`) in the Vite dashboard. Keep the backend server API-only during development.
-- Reframe the dashboard as a project workspace with separate panels for overview, card content, story/endings, review diagnostics, developer preview, build/export, and settings.
-- Preserve existing API endpoints, content bundle schema, localStorage draft restore, and player preview behavior.
-- Treat review diagnostics and seeds as creator-facing tools: visible enough for debugging and reproducible balancing, but not player-facing game UI.
-- Keep developer preview and production player related but distinct. Developer preview may show debug state; production player should focus on final player experience.
-- Keep game-flavored UI styling as a global skin/theme layer that can travel across workbench, preview player, and deployable player through shared state and URL parameters. Do not bind creator workflows or deployable player behavior directly to a single visual CSS framework.
+## Delivered Creator And Distribution Baseline
+
+Recent merged work established the baseline that future phases should preserve:
+
+- PR #21 shipped one React Creator across local Web, a cross-platform Node ZIP, portable Electron ZIPs, and an offline-capable Hosted PWA. It also delivered durable TOML configuration, multi-project filesystems, OPFS persistence, Workspace/project ZIP interchange, direct-CORS Hosted AI, and shared release verification.
+- PR #22 made explicit workbench routes authoritative over persisted panel state, anchored packaged Creator exports under `ReignsAgentData/Builds` independently of the launch working directory, and added cached-shell fallback for non-success Hosted navigations.
+- PR #24 delivered responsive pinned/compact/floating navigation, desktop-only panel shortcuts, project management in the header, client-aware English/Simplified Chinese locale controls, and Player launch/return context preservation.
+- `/workbench` is the primary Creator surface, with overview, content, story, review, AI Assist, preview, build, and settings panels over shared backend contracts.
+- Review diagnostics and seeds remain creator-facing and reproducible; developer preview may expose debug state while the production player remains focused on play.
+- Skins remain a presentation layer shared through configuration and URL context rather than a dependency of Creator workflows or player behavior.
+
+## Near-Term Creator Priorities
+
+- Replace remaining implementation-shaped controls and raw fields with author-facing summaries, explanations, repair actions, and progressive disclosure.
+- Tighten project lifecycle UX around blank, sample, import, backup/restore, rename, and destructive actions without weakening portable or Hosted persistence contracts.
+- Continue cross-skin, responsive, keyboard, and Simplified Chinese visual QA as panels gain richer content.
+- Keep direct routes, Player return context, client-local navigation preferences, and shared locale behavior covered by Hosted browser tests.
+- Close the #24 post-merge storage-resilience follow-up by making optional rail-preference reads and writes tolerate unavailable or throwing `localStorage` without blocking Creator startup.
+- Preserve existing API endpoints and content bundle schemas unless a reviewed contract change justifies migration.
 
 ## Story/Content Completion Direction
 - Keep the player interaction model pure: card text plus binary left/right choices. Add richness through authored narrative state, not through inventory, equipment, shops, builds, or other RPG management loops.
@@ -43,15 +54,13 @@ Story and Content work should now optimize for non-technical content authors: th
 - Extend the hosted Reviewer Worker with richer incremental progress and resumable runs beyond the bounded v1 workload.
 - Production player shell: A dedicated deployable player surface with animation, settings, language switching, interaction preferences, about/attribution, and polished runtime UX.
 
-## Desktop Distribution Direction
-- Keep Browser/Vite development, the Node ZIP, and Electron as parallel hosts over the same WebUI and local API.
+## Distribution Evolution
+- Preserve Browser/Vite development, the Node ZIP, and Electron as parallel hosts over the same WebUI and local API.
 - Keep Electron isolated in `apps/desktop-electron`; no package or Creator Web code may import desktop APIs.
-- Use an Electron utility process for the Creator Server so diagnostics and connector work do not block the desktop main process.
-- Build unsigned portable ZIP artifacts on Windows x64, macOS x64/arm64, and Linux x64 before promoting signing, notarization, publishing, or automatic updates.
-- Keep Electron profile data and game builds beside the extracted application in `ReignsAgentData`; v1 does not install files or use platform user-data directories.
-- Use the shared TOML/file Workspace contract for Electron, the Node ZIP, and local Web: global `config.toml`, multiple ordinary projects, and project-local workspace state.
-- Maintain the static hosted Creator as an OPFS adapter over the same logical Workspace contract; AI remains direct-CORS only and does not operate a public relay.
-- Treat native file dialogs, menus, notifications, and protocol handlers as later opt-in bridges; v1 is a secure portable lifecycle shell only.
+- Preserve the utility-process Creator Server, ZIP-only Windows x64/macOS x64+arm64/Linux x64 outputs, and beside-app `ReignsAgentData` portability model.
+- Preserve the shared TOML/file Workspace contract for Electron, Node ZIP, and local Web, and the equivalent Hosted OPFS projections owned by `apps/creator-web`.
+- Keep Hosted AI direct-CORS only; do not introduce a public relay or compile server secrets into the static application.
+- Treat signing, notarization, publishing, automatic updates, native file dialogs, menus, notifications, and protocol handlers as later opt-in release work rather than v1 shell requirements.
 
 ## Non-Goals For The Current Phase
 - No full engine migration to Unity, Godot, or another game editor.
@@ -59,4 +68,5 @@ Story and Content work should now optimize for non-technical content authors: th
 - No content schema migration.
 - No default multi-provider/profile management system before the lightweight AI Assist endpoint UX is proven.
 - No MCP/skills/tool-agent surface in the normal creator UX.
+- No second Creator frontend or host-specific fork of the shared WebUI.
 - No built-in RPG management systems such as inventory, equipment, pets, shops, rarity, crafting, character builds, skill trees, or loot progression.
