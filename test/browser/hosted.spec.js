@@ -5,8 +5,10 @@ import { strFromU8, unzipSync } from "fflate";
 
 let aiServer;
 let aiEndpoint;
+let productVersion;
 
 test.beforeAll(async () => {
+  productVersion = JSON.parse(await readFile(new URL("../../package.json", import.meta.url), "utf8")).version;
   aiServer = createServer((request, response) => {
     response.setHeader("access-control-allow-origin", "*");
     response.setHeader("access-control-allow-headers", "authorization,content-type");
@@ -23,7 +25,7 @@ test.afterAll(async () => new Promise((resolve) => aiServer.close(resolve)));
 
 test("persists an OPFS project and reopens the PWA offline", async ({ page, context }) => {
   await openHosted(page);
-  await expect(page.getByRole("heading", { name: "ReignsAgent" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "ReignsAgent", exact: true })).toBeVisible();
   await page.getByRole("button", { name: /Settings/ }).click();
   const title = page.getByPlaceholder("Deck title");
   await title.fill("Hosted persistence smoke");
@@ -34,7 +36,7 @@ test("persists an OPFS project and reopens the PWA offline", async ({ page, cont
   await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(true);
   await context.setOffline(true);
   await page.reload();
-  await expect(page.getByRole("heading", { name: "ReignsAgent" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "ReignsAgent", exact: true })).toBeVisible();
   await expect(page.locator(".brand p")).toHaveText("Hosted persistence smoke");
 });
 
@@ -211,6 +213,10 @@ test("persists navigation density and shared interface language", async ({ page 
 
   await page.locator('.rail__item[aria-label="Settings"]').click();
   await expect(page.getByRole("heading", { name: "Settings / Pipeline" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "About ReignsAgent" })).toBeVisible();
+  await expect(page.locator(".about-settings__meta-line")).toContainText(`v${productVersion}`);
+  await expect(page.getByRole("link", { name: `Version ${productVersion} releases` })).toHaveAttribute("href", "https://github.com/Sisyphe42/ReignsAgent/releases");
+  await expect(page.getByRole("link", { name: "GitHub repository sisyphe42/ReignsAgent" })).toHaveAttribute("href", "https://github.com/Sisyphe42/ReignsAgent");
   await expect(page.getByLabel("Language")).toHaveValue("system");
   await expect(page.getByLabel("Language").locator('option[value="system"]')).toHaveText("Follow browser");
   await page.getByPlaceholder("Deck title").fill("Ready");
@@ -218,6 +224,7 @@ test("persists navigation density and shared interface language", async ({ page 
   await page.getByLabel("Language").selectOption("zh-Hans");
   await expect(page.locator("html")).toHaveAttribute("lang", "zh-Hans");
   await expect(page.getByRole("heading", { name: "设置 / 流水线" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "关于 ReignsAgent" })).toBeVisible();
   await expect(page.getByRole("link", { name: "打开玩家端预览" })).toBeVisible();
   await expect(page.getByRole("link", { name: "打开玩家端预览" })).toHaveAttribute("href", /locale=zh-Hans/);
   await page.getByRole("button", { name: "概览" }).click();

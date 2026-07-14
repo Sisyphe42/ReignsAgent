@@ -1,5 +1,5 @@
 import react from "@vitejs/plugin-react";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { extname } from "node:path";
 import { defineConfig } from "vite";
@@ -7,6 +7,7 @@ import { defineConfig } from "vite";
 const apiTarget = process.env.REIGNS_AGENT_API ?? "http://127.0.0.1:4321";
 const dashboardHtml = new URL("../../packages/interface/web/dashboard.html", import.meta.url);
 const playerHtml = new URL("../../packages/interface/web/player.html", import.meta.url);
+const productVersion = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")).version;
 const MIME = {
   ".css": "text/css; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
@@ -51,7 +52,10 @@ export default defineConfig(({ mode }) => {
   const base = normalizeBase(process.env.REIGNS_AGENT_BASE_PATH ?? "/");
   return ({
   base,
-  define: { "import.meta.env.VITE_CREATOR_HOST": JSON.stringify(hosted ? "browser" : "http") },
+  define: {
+    "import.meta.env.VITE_CREATOR_HOST": JSON.stringify(hosted ? "browser" : "http"),
+    "import.meta.env.VITE_PRODUCT_VERSION": JSON.stringify(productVersion)
+  },
   plugins: [
     react(),
     ...(hosted ? [hostedPwaPlugin(base)] : []),

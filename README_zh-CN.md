@@ -109,7 +109,7 @@ npm run content:feedback -- review-report.json
 | AI Assist | 用户 endpoint 配置，以及可审阅的草稿、修复、故事和视觉提案。 |
 | Preview | 使用键盘、鼠标拖拽、触摸或按钮进行本地 Reigns-style 游玩会话。 |
 | Build | 准备可部署 `.game.json` 和玩家资源。 |
-| Settings | creator skin、endpoint protocol、model id、capability flags 和 route compatibility。 |
+| Settings | Creator skin、界面语言、endpoint protocol、model id、capability flags、route compatibility 和产品关于信息。 |
 
 Workbench URL 会保留面板状态，例如 `/workbench/content`。Skin 状态通过 `?skin=github-light`、`?skin=catppuccin-latte`、`?skin=classic` 等查询参数共享；预览玩家页面也接受同样的 `skin` 参数。
 

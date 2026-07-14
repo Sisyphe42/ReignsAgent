@@ -108,7 +108,7 @@ The main authoring UI lives in `apps/creator-web`.
 | AI Assist | User endpoint configuration plus reviewable draft, repair, story, and visual proposals. |
 | Preview | Local Reigns-style play sessions using keyboard, pointer drag, touch, or buttons. |
 | Build | Deployable `.game.json` and player asset preparation. |
-| Settings | Creator skin, endpoint protocol, model id, capability flags, and route compatibility. |
+| Settings | Creator skin, interface language, endpoint protocol, model id, capability flags, route compatibility, and product About information. |
 
 Workbench URLs preserve panel state, for example `/workbench/content`. Skin state is shared through query parameters such as `?skin=github-light`, `?skin=catppuccin-latte`, and `?skin=classic`; preview player pages accept the same `skin` query.
 

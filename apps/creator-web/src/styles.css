@@ -3301,6 +3301,108 @@ select {
   width: 100%;
 }
 
+.subsection.about-settings {
+  display: block;
+  margin-top: 26px;
+  padding: 22px 2px 2px;
+  border: 0;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.about-settings__identity {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.about-settings__mark {
+  flex: 0 0 auto;
+  width: 38px;
+  height: 38px;
+  margin-top: 1px;
+  object-fit: contain;
+}
+
+.about-settings__identity h3 {
+  font-size: 0.95rem;
+  letter-spacing: -0.012em;
+}
+
+.about-settings__identity p {
+  max-width: 62ch;
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+
+.about-settings__identity small {
+  display: block;
+  margin-top: 5px;
+  color: color-mix(in srgb, var(--muted) 82%, transparent);
+  font-size: 0.64rem;
+  line-height: 1.45;
+}
+
+.about-settings__meta-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 9px;
+  color: var(--muted);
+  font-family: var(--font-data);
+  font-size: 0.68rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.about-settings__separator {
+  color: var(--border-strong);
+  user-select: none;
+}
+
+.about-settings__meta-line a {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--ink);
+  font-weight: 760;
+  text-decoration: none;
+  text-underline-offset: 3px;
+  transition: color 160ms ease, text-decoration-color 160ms ease;
+}
+
+.about-settings__repo-link {
+  overflow-wrap: anywhere;
+}
+
+.about-settings__meta-line a:hover,
+.about-settings__meta-line a:focus-visible {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.about-settings__github-mark {
+  width: 13px;
+  height: 13px;
+  fill: currentColor;
+}
+
+:root[data-skin="phantom"] .about-settings__identity p,
+:root[data-skin="phantom"] .about-settings__identity small,
+:root[data-skin="phantom"] .about-settings__meta-line {
+  color: #423c35;
+}
+
+:root[data-skin="phantom"] .about-settings__meta-line a {
+  color: #1f1a16;
+}
+
 .player-launch {
   position: relative;
   isolation: isolate;
