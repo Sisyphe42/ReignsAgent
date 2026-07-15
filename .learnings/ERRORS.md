@@ -1,5 +1,39 @@
 # Error Log
 
+## [ERR-20260715-007] hosted_opfs_ci_flake
+
+**Logged**: 2026-07-15T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+The Hosted CI job intermittently failed while a test directly read an OPFS file, then passed unchanged on rerun.
+
+### Error
+```text
+NotReadableError: The requested file could not be read, typically due to permission problems after a file reference was acquired.
+```
+
+### Context
+- Node verification, deployable-player smoke, desktop smoke, and five other Hosted tests passed.
+- The exact failing test passed locally after rebuilding Hosted output with `REIGNS_AGENT_BASE_PATH=/reignsagent/`.
+- Running the local test against output built for a different base path caused Service Worker readiness to time out and was not a valid reproduction.
+- The bundled CI inspection helper also required UTF-8 process decoding on this Windows locale, so `gh run view --log-failed` was used as the reliable fallback.
+
+### Suggested Fix
+Build and test with the same base-path environment, rerun the isolated failing test, and rerun only the failed GitHub job when the evidence indicates an OPFS race rather than a product regression.
+
+### Metadata
+- Reproducible: no
+- Related Files: test/browser/hosted.spec.js, .github/workflows/ci.yml
+
+### Resolution
+- **Resolved**: 2026-07-15T00:00:00+08:00
+- **Notes**: The isolated local test passed and the unchanged Hosted CI job passed 6/6 on rerun.
+
+---
+
 ## [ERR-20260715-006] github-push-close-notify
 
 **Logged**: 2026-07-15T00:00:00+08:00
