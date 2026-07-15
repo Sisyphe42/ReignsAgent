@@ -125,6 +125,11 @@ describe("Creator Server factory", () => {
       assert.equal(repeated.release.id, result.release.id);
       assert.equal((await request(address.origin, "/api/releases")).releases.length, 1);
       const artifactPath = join(dataRoot, "Builds", ...result.release.artifactRelativePath.split("/"));
+      await writeFile(playerHostPath, "MZ-updated-player-host");
+      const rebuilt = await request(address.origin, "/api/releases/windows-x64", { method: "POST", body: {} });
+      assert.equal(rebuilt.release.id, result.release.id);
+      assert.equal((await request(address.origin, "/api/releases")).releases.length, 1);
+      assert.equal((await readFile(artifactPath)).subarray(0, "MZ-updated-player-host".length).toString(), "MZ-updated-player-host");
       const parsed = parseWindowsReleasePayload(await readFile(artifactPath));
       assert.equal(parsed.manifest.projectId, result.release.projectId);
       assert.equal(parsed.files.has("game.game.json"), true);

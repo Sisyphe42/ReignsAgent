@@ -280,6 +280,7 @@ void WriteSmokeOutput(const std::wstring& value) {
 
 LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
   if (message == WM_SIZE && g_controller) {
+    g_controller->put_IsVisible(wParam != SIZE_MINIMIZED);
     RECT bounds{};
     GetClientRect(window, &bounds);
     g_controller->put_Bounds(bounds);
@@ -312,6 +313,7 @@ void StartWebView(HWND window, const ReleasePayload& payload) {
               g_controller = controller;
               controller->get_CoreWebView2(&g_webview);
               RECT bounds{}; GetClientRect(window, &bounds); controller->put_Bounds(bounds);
+              controller->put_IsVisible(TRUE);
               ComPtr<ICoreWebView2Settings> settings; g_webview->get_Settings(&settings);
               settings->put_AreDefaultContextMenusEnabled(FALSE);
               settings->put_AreDevToolsEnabled(FALSE);
@@ -341,9 +343,11 @@ void StartWebView(HWND window, const ReleasePayload& payload) {
                 [](ICoreWebView2*, ICoreWebView2NavigationCompletedEventArgs* args) -> HRESULT {
                   if (!g_smoke) return S_OK;
                   BOOL succeeded = FALSE;
+                  BOOL visible = FALSE;
                   args->get_IsSuccess(&succeeded);
-                  if (succeeded) WriteSmokeOutput(g_smokeSummary);
-                  PostQuitMessage(succeeded ? 0 : 3);
+                  if (g_controller) g_controller->get_IsVisible(&visible);
+                  if (succeeded && visible) WriteSmokeOutput(g_smokeSummary);
+                  PostQuitMessage(succeeded && visible ? 0 : 3);
                   return S_OK;
                 }).Get(), &token);
               if (!g_smoke) ShowWindow(window, SW_SHOW);

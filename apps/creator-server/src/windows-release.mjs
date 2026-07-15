@@ -14,19 +14,23 @@ let temporarySequence = 0;
 export async function buildWindowsPlayerRelease({ editor, interfaceWebRoot, coreSourcePath, playerHostPath, workspace }) {
   const project = await workspace.getActiveProject();
   const build = prepareGameBuild({ editor });
-  const existing = (await workspace.listReleases()).find((release) => release.buildId === build.buildId);
-  if (existing) {
-    await workspace.resolveReleaseArtifact(existing.id);
-    return existing;
-  }
-  const createdAt = new Date().toISOString();
-  const releaseBuild = { ...build, createdAt };
-  const files = await assembleWindowsPlayerFiles({ build: releaseBuild, interfaceWebRoot, coreSourcePath, workspace });
   const hostBytes = await readFile(playerHostPath).catch((error) => {
     const wrapped = new Error(`Windows player host is unavailable: ${error.message}`);
     wrapped.code = "windows_release_host_unavailable";
     throw wrapped;
   });
+  const existing = (await workspace.listReleases()).find((release) => release.buildId === build.buildId);
+  let previousArtifact = null;
+  if (existing) {
+    const { artifactPath } = await workspace.resolveReleaseArtifact(existing.id);
+    previousArtifact = await readFile(artifactPath);
+    if (previousArtifact.length >= hostBytes.length && previousArtifact.subarray(0, hostBytes.length).equals(hostBytes)) {
+      return existing;
+    }
+  }
+  const createdAt = new Date().toISOString();
+  const releaseBuild = { ...build, createdAt };
+  const files = await assembleWindowsPlayerFiles({ build: releaseBuild, interfaceWebRoot, coreSourcePath, workspace });
   const { executable } = appendWindowsReleasePayload(hostBytes, {
     projectId: project.id,
     buildId: build.buildId,
@@ -41,7 +45,7 @@ export async function buildWindowsPlayerRelease({ editor, interfaceWebRoot, core
   ].join("-") + ".exe";
   const output = await workspace.getReleaseOutput({ fileName });
   await writeBinaryAtomic(output.artifactPath, executable);
-  const record = createReleaseRecord({
+  const nextRecord = createReleaseRecord({
     projectId: project.id,
     build,
     artifactRelativePath: output.artifactRelativePath,
@@ -49,10 +53,12 @@ export async function buildWindowsPlayerRelease({ editor, interfaceWebRoot, core
     sha256: sha256(executable),
     createdAt
   });
+  const record = existing ? { ...nextRecord, id: existing.id } : nextRecord;
   try {
     await workspace.saveRelease(record);
   } catch (error) {
-    await rm(output.artifactPath, { force: true }).catch(() => {});
+    if (previousArtifact) await writeBinaryAtomic(output.artifactPath, previousArtifact).catch(() => {});
+    else await rm(output.artifactPath, { force: true }).catch(() => {});
     throw error;
   }
   return record;
