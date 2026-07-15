@@ -1,5 +1,5 @@
 import { strToU8, zipSync } from "fflate";
-import { prepareGameBuild, serializeBuild, validatePlayerCards } from "../../../packages/interface/src/index.js";
+import { prepareGameBuild, serializeBuild, stitchPlayerRuntime, validatePlayerCards } from "../../../packages/interface/src/index.js";
 import coreSource from "../../../packages/core/src/index.js?raw";
 import playerRuntimeTemplate from "../../../packages/interface/web/player-runtime.js?raw";
 import playerHtml from "../../../packages/interface/web/standalone-player.html?raw";
@@ -36,12 +36,4 @@ export async function downloadPlayerZip(options) {
   return { buildId: build.buildId, fileName: `${build.buildId}.zip` };
 }
 
-export function stitchPlayerRuntime(template, source) {
-  if (!template.includes("/* CORE_IMPORT_MARKER */")) throw new Error("Player runtime template is missing the CORE_IMPORT_MARKER");
-  const inlined = source
-    .replace(/export\s+const\s+FACTIONS\s*=/, "const FACTIONS =")
-    .replace(/export\s+const\s+LEGACY_FACTION_KEYS\s*=/, "const LEGACY_FACTION_KEYS =")
-    .replace(/export\s+class\s+CoreError/g, "class CoreError")
-    .replace(/export\s+function\s+(createInitialState|createRuntime|getEligibleCards|normalizeFactionKey|normalizeCards|restoreState|serializeState|validateCards)/g, "function $1");
-  return template.replace("/* CORE_IMPORT_MARKER */", `${inlined}\nconst createCoreRuntime = createRuntime;`);
-}
+export { stitchPlayerRuntime };

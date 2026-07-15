@@ -1,6 +1,6 @@
-import { randomUUID } from "node:crypto";
-import { access, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { createHash, randomUUID } from "node:crypto";
+import { access, mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
+import { dirname, join, relative, resolve } from "node:path";
 
 import { parse, stringify } from "./toml.js";
 import {
@@ -8,6 +8,9 @@ import {
   defaultWorkspaceState, mergeConfig, normalizeConfig, normalizeWorkspaceState, parseBundle,
   projectConfig, serializeBundle
 } from "./contracts.js";
+import { createReleaseRecord, normalizeArtifactRelativePath, normalizeReleaseRecord, WINDOWS_RELEASE_TARGET } from "./release-contracts.js";
+
+export { createReleaseRecord, normalizeReleaseRecord, WINDOWS_RELEASE_TARGET };
 
 export class WorkspaceError extends Error {
   constructor(message, code = "workspace_error") {
@@ -163,6 +166,84 @@ class WorkspaceStore {
     });
   }
 
+  async getActiveProject() {
+    await this.#settled();
+    return this.#readProject(this.#activeProjectId());
+  }
+
+  async getReleaseOutput({ fileName }) {
+    await this.#settled();
+    const projectId = this.#activeProjectId();
+    const safeFileName = normalizeReleaseFileName(fileName);
+    const artifactRelativePath = `${projectId}/${safeFileName}`;
+    const artifactPath = this.#resolveBuildArtifact(artifactRelativePath, projectId);
+    return { projectId, artifactRelativePath, artifactPath };
+  }
+
+  async readActiveProjectAsset(uri) {
+    await this.#settled();
+    const normalized = normalizeProjectAssetUri(uri);
+    const projectRoot = this.#projectRoot(this.#activeProjectId());
+    const assetPath = resolve(projectRoot, ...normalized.split("/"));
+    const relativePath = relative(projectRoot, assetPath);
+    if (relativePath.startsWith("..") || relativePath === "" || assetPath.includes("\0")) {
+      throw new WorkspaceError("Project asset path escapes its project", "project_asset_path_invalid");
+    }
+    try {
+      return await readFile(assetPath);
+    } catch (error) {
+      if (error?.code === "ENOENT") return null;
+      throw error;
+    }
+  }
+
+  async listReleases() {
+    await this.#settled();
+    return this.#listReleasesForProject(this.#activeProjectId());
+  }
+
+  async saveRelease(record) {
+    return this.#enqueue(async () => {
+      const projectId = this.#activeProjectId();
+      const normalized = normalizeReleaseRecord(record, projectId);
+      this.#resolveBuildArtifact(normalized.artifactRelativePath, projectId);
+      const artifact = await stat(this.#resolveBuildArtifact(normalized.artifactRelativePath, projectId));
+      if (!artifact.isFile() || artifact.size !== normalized.size) {
+        throw new WorkspaceError("Release artifact does not match its record", "release_artifact_mismatch");
+      }
+      await assertArtifactHash(this.#resolveBuildArtifact(normalized.artifactRelativePath, projectId), normalized.sha256);
+      await atomicWrite(this.#releaseRecordPath(projectId, normalized.id), `${JSON.stringify(normalized, null, 2)}\n`);
+      return normalized;
+    });
+  }
+
+  async resolveReleaseArtifact(releaseId) {
+    await this.#settled();
+    const projectId = this.#activeProjectId();
+    const record = await this.#readRelease(projectId, releaseId);
+    const artifactPath = this.#resolveBuildArtifact(record.artifactRelativePath, projectId);
+    const artifact = await stat(artifactPath).catch((error) => {
+      if (error?.code === "ENOENT") throw new WorkspaceError("Release artifact is missing", "release_artifact_missing");
+      throw error;
+    });
+    if (!artifact.isFile() || artifact.size !== record.size) {
+      throw new WorkspaceError("Release artifact does not match its record", "release_artifact_mismatch");
+    }
+    await assertArtifactHash(artifactPath, record.sha256);
+    return { record, artifactPath };
+  }
+
+  async deleteRelease(releaseId) {
+    return this.#enqueue(async () => {
+      const projectId = this.#activeProjectId();
+      const record = await this.#readRelease(projectId, releaseId);
+      const artifactPath = this.#resolveBuildArtifact(record.artifactRelativePath, projectId);
+      await rm(artifactPath, { force: true });
+      await rm(this.#releaseRecordPath(projectId, record.id), { force: false });
+      return { deleted: true, id: record.id };
+    });
+  }
+
   async deleteProject(id) {
     assertProjectId(id);
     return this.#enqueue(async () => {
@@ -235,6 +316,61 @@ class WorkspaceStore {
       updatedAt: normalizeString(value.updatedAt, new Date(0).toISOString()),
       contentPath: "content.json"
     };
+  }
+
+  async #listReleasesForProject(projectId) {
+    const releasesRoot = join(this.#projectRoot(projectId), "builds");
+    const entries = await readdir(releasesRoot, { withFileTypes: true });
+    const releases = [];
+    for (const entry of entries) {
+      if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
+      const releaseId = entry.name.slice(0, -5);
+      try {
+        releases.push(await this.#readRelease(projectId, releaseId));
+      } catch (error) {
+        if (error instanceof WorkspaceError) throw error;
+        throw new WorkspaceError(`Could not read release '${releaseId}': ${error.message}`, "release_read_failed");
+      }
+    }
+    return releases.sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+  }
+
+  async #readRelease(projectId, releaseId) {
+    assertReleaseId(releaseId);
+    let value;
+    try {
+      value = JSON.parse(await readFile(this.#releaseRecordPath(projectId, releaseId), "utf8"));
+    } catch (error) {
+      if (error?.code === "ENOENT") throw new WorkspaceError(`Unknown release '${releaseId}'`, "release_not_found");
+      throw new WorkspaceError(`Could not parse release '${releaseId}': ${error.message}`, "release_record_invalid");
+    }
+    try {
+      const record = normalizeReleaseRecord(value, projectId);
+      if (record.id !== releaseId) throw new Error("Release id does not match its file name");
+      this.#resolveBuildArtifact(record.artifactRelativePath, projectId);
+      return record;
+    } catch (error) {
+      throw new WorkspaceError(`Invalid release '${releaseId}': ${error.message}`, error.code ?? "release_record_invalid");
+    }
+  }
+
+  #releaseRecordPath(projectId, releaseId) {
+    assertReleaseId(releaseId);
+    return join(this.#projectRoot(projectId), "builds", `${releaseId}.json`);
+  }
+
+  #resolveBuildArtifact(artifactRelativePath, projectId) {
+    const normalized = normalizeArtifactRelativePath(artifactRelativePath);
+    if (!normalized.startsWith(`${projectId}/`)) {
+      throw new WorkspaceError("Release artifact is outside its project output", "release_project_mismatch");
+    }
+    const buildsRoot = resolve(this.dataRoot, "Builds");
+    const artifactPath = resolve(buildsRoot, ...normalized.split("/"));
+    const relativePath = relative(buildsRoot, artifactPath);
+    if (relativePath.startsWith("..") || relativePath === "" || artifactPath.includes("\0")) {
+      throw new WorkspaceError("Release artifact path escapes Builds", "release_artifact_path_invalid");
+    }
+    return artifactPath;
   }
 
   async #selectProject(id) {
@@ -310,6 +446,39 @@ async function exists(path) {
 
 function normalizeString(value, fallback) {
   return typeof value === "string" ? value : fallback;
+}
+
+function normalizeReleaseFileName(value) {
+  if (typeof value !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,191}\.exe$/.test(value)) {
+    throw new WorkspaceError("Release file name is invalid", "release_file_name_invalid");
+  }
+  return value;
+}
+
+function assertReleaseId(value) {
+  if (typeof value !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9-]{0,63}$/.test(value)) {
+    throw new WorkspaceError("Release id is invalid", "release_id_invalid");
+  }
+}
+
+function normalizeProjectAssetUri(value) {
+  if (typeof value !== "string" || !value.startsWith("assets/") || value.includes("\\") || value.includes("\0")) {
+    throw new WorkspaceError("Project asset path is invalid", "project_asset_path_invalid");
+  }
+  const parts = value.split("/");
+  if (parts.some((part) => {
+    const stem = part.split(".")[0].toUpperCase();
+    return part === "" || part === "." || part === ".." || /[<>:"|?*\u0000-\u001f]/.test(part)
+      || /[. ]$/.test(part) || /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/.test(stem);
+  })) {
+    throw new WorkspaceError("Project asset path is invalid", "project_asset_path_invalid");
+  }
+  return parts.join("/");
+}
+
+async function assertArtifactHash(path, expected) {
+  const actual = createHash("sha256").update(await readFile(path)).digest("hex");
+  if (actual !== expected) throw new WorkspaceError("Release artifact hash does not match its record", "release_artifact_mismatch");
 }
 
 

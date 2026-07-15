@@ -3,7 +3,7 @@ import { copyFile, readFile, writeFile, mkdir } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { prepareGameBuild, serializeBuild, validatePlayerCards } from "../packages/interface/src/index.js";
+import { prepareGameBuild, serializeBuild, stitchPlayerRuntime, validatePlayerCards } from "../packages/interface/src/index.js";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const WEB_ROOT = join(ROOT, "packages/interface/web");
@@ -94,29 +94,6 @@ try {
  * replacing the CORE_IMPORT marker. The shipped player-runtime.js is then fully
  * self-contained (no repo-relative imports) and only exposes the player surface.
  */
-function stitchPlayerRuntime(template, coreSource) {
-  if (!template.includes("/* CORE_IMPORT_MARKER */")) {
-    throw new Error("Player runtime template is missing the CORE_IMPORT_MARKER");
-  }
-
-  const coreWithoutExport = coreSource
-    .replace(/export\s+const\s+FACTIONS\s*=/, "const FACTIONS =")
-    .replace(/export\s+const\s+LEGACY_FACTION_KEYS\s*=/, "const LEGACY_FACTION_KEYS =")
-    .replace(/export\s+class\s+CoreError/g, "class CoreError")
-    .replace(/export\s+function\s+createInitialState/g, "function createInitialState")
-    .replace(/export\s+function\s+createRuntime/g, "function createRuntime")
-    .replace(/export\s+function\s+getEligibleCards/g, "function getEligibleCards")
-    .replace(/export\s+function\s+normalizeFactionKey/g, "function normalizeFactionKey")
-    .replace(/export\s+function\s+normalizeCards/g, "function normalizeCards")
-    .replace(/export\s+function\s+restoreState/g, "function restoreState")
-    .replace(/export\s+function\s+serializeState/g, "function serializeState")
-    .replace(/export\s+function\s+validateCards/g, "function validateCards");
-
-  const inlinedCore = `${coreWithoutExport}\nconst createCoreRuntime = createRuntime;`;
-
-  return template.replace("/* CORE_IMPORT_MARKER */", inlinedCore);
-}
-
 async function copyStaticBuildAssets(outputDir) {
   const staticAssets = ["assets/logo-alpha.png"];
   for (const assetPath of staticAssets) {

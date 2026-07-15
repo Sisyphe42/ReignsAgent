@@ -197,6 +197,7 @@
     const params = new URLSearchParams(window.location.search);
     const requestedLocale = params.get("locale") || navigator.language || "en";
     const requestedSkin = params.get("skin");
+    const embeddedBuildPath = params.get("build");
     const DEFAULT_SKIN = "github-light";
     const KNOWN_SKINS = new Set(["github-light", "catppuccin-latte", "classic", "famicom", "phantom", "arcade", "terminal"]);
     const SKIN_ALIASES = { workbench: "classic" };
@@ -296,15 +297,7 @@
       const file = event.target.files?.[0];
       if (!file) return;
       try {
-        const build = JSON.parse(await file.text());
-        assetByCard = createAssetMap(build.content?.assets ?? []);
-        presentation = build.presentation ?? {};
-        applyPresentation(build.presentation);
-        player = createPlayer(build, { locale: requestedLocale });
-        player.on(render);
-        const snap = player.start();
-        render(snap);
-        setStatus("Reign started");
+        startBuild(JSON.parse(await file.text()));
       } catch (error) {
         setStatus(error.message);
       }
@@ -351,9 +344,37 @@
     function updateActionButtons(snap) {
       el("restart").hidden = !player;
       el("restart").textContent = awaitingRestartConfirm ? "Confirm restart" : "Restart reign";
+      el("load").hidden = Boolean(embeddedBuildPath);
       el("load").textContent = player && !snap?.gameOver ? "Build loaded" : "Load build";
       el("load").disabled = Boolean(player) && !snap?.gameOver;
     }
+
+    function startBuild(build) {
+      assetByCard = createAssetMap(build.content?.assets ?? []);
+      presentation = build.presentation ?? {};
+      applyPresentation(build.presentation);
+      player = createPlayer(build, { locale: requestedLocale });
+      player.on(render);
+      const snap = player.start();
+      render(snap);
+      setStatus("Reign started");
+    }
+
+    async function loadEmbeddedBuild() {
+      if (!embeddedBuildPath) return;
+      el("load").hidden = true;
+      try {
+        const url = new URL(embeddedBuildPath, window.location.href);
+        if (url.origin !== window.location.origin) throw new Error("Embedded build must use the player origin");
+        const response = await fetch(url, { cache: "no-store" });
+        if (!response.ok) throw new Error(`Embedded build failed to load (${response.status})`);
+        startBuild(await response.json());
+      } catch (error) {
+        setStatus(error.message);
+      }
+    }
+
+    void loadEmbeddedBuild();
 
     function render(snap) {
       lastSnap = snap;

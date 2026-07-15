@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, it } from "node:test";
 
-import { WorkspaceError, createWorkspaceStore } from "../src/index.js";
+import { WorkspaceError, createReleaseRecord, createWorkspaceStore } from "../src/index.js";
 
 const roots = [];
 
@@ -72,6 +73,55 @@ describe("workspace storage", () => {
     const projectRoot = join(root, "projects", (await store.getConfig()).activeProjectId);
     const files = await import("node:fs/promises").then(({ readdir }) => readdir(projectRoot));
     assert.equal(files.some((file) => file.endsWith(".tmp")), false);
+  });
+
+  it("persists project-scoped release history and safely resolves artifacts", async () => {
+    const root = await temporaryRoot();
+    const store = await createWorkspaceStore({ dataRoot: root, initialBundle: sampleBundle("Release One") });
+    const firstProject = await store.getActiveProject();
+    await mkdir(join(root, "projects", firstProject.id, "assets", "art"), { recursive: true });
+    await writeFile(join(root, "projects", firstProject.id, "assets", "art", "card.png"), "project-art");
+    assert.equal((await store.readActiveProjectAsset("assets/art/card.png")).toString(), "project-art");
+    assert.equal(await store.readActiveProjectAsset("assets/art/missing.png"), null);
+    await assert.rejects(() => store.readActiveProjectAsset("assets/../content.json"), { code: "project_asset_path_invalid" });
+    const firstOutput = await store.getReleaseOutput({ fileName: "release-one-1.0.0-build.exe" });
+    await mkdir(join(root, "Builds", firstProject.id), { recursive: true });
+    await writeFile(firstOutput.artifactPath, "MZ-first");
+    const firstRecord = createReleaseRecord({
+      projectId: firstProject.id,
+      build: { buildId: "build-one", title: "Release One", version: "1.0.0" },
+      artifactRelativePath: firstOutput.artifactRelativePath,
+      size: 8,
+      sha256: createHash("sha256").update("MZ-first").digest("hex")
+    });
+    await store.saveRelease(firstRecord);
+    assert.deepEqual((await store.listReleases()).map((release) => release.id), [firstRecord.id]);
+    assert.equal((await store.resolveReleaseArtifact(firstRecord.id)).artifactPath, firstOutput.artifactPath);
+
+    const secondProject = await store.createProject({ bundle: sampleBundle("Release Two") });
+    assert.deepEqual(await store.listReleases(), []);
+    await assert.rejects(() => store.resolveReleaseArtifact(firstRecord.id), { code: "release_not_found" });
+
+    await store.openProject(firstProject.id);
+    await store.deleteRelease(firstRecord.id);
+    assert.deepEqual(await store.listReleases(), []);
+    await assert.rejects(() => readFile(firstOutput.artifactPath), { code: "ENOENT" });
+    assert.notEqual(secondProject.id, firstProject.id);
+  });
+
+  it("rejects release paths outside the active project output", async () => {
+    const root = await temporaryRoot();
+    const store = await createWorkspaceStore({ dataRoot: root });
+    const project = await store.getActiveProject();
+    const record = createReleaseRecord({
+      projectId: project.id,
+      build: { buildId: "build-one", title: "Release", version: "1.0.0" },
+      artifactRelativePath: `another-project/release.exe`,
+      size: 1,
+      sha256: "b".repeat(64)
+    });
+    await assert.rejects(() => store.saveRelease(record), { code: "release_project_mismatch" });
+    await assert.rejects(() => store.getReleaseOutput({ fileName: "../escape.exe" }), { code: "release_file_name_invalid" });
   });
 
   it("rejects malformed TOML without replacing it", async () => {

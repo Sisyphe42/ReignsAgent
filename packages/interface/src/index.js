@@ -14,6 +14,7 @@ import {
   validateContentBundle
 } from "../../pipeline/src/index.js";
 import { analyzeCardGraph, runMonteCarloReview } from "../../reviewer/src/index.js";
+export { stitchPlayerRuntime } from "./player-build.js";
 
 const PLAYER_SCHEMA_VERSION = 1;
 const BUILD_SCHEMA_VERSION = 1;
@@ -1247,9 +1248,26 @@ function normalizeStringList(value) {
 
 function createBuildId(bundle) {
   const title = bundle.metadata?.title ?? "untitled";
-  const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "deck";
-  const stamp = Date.now().toString(36);
-  return `${slug}-${stamp}`;
+  const slug = (title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "deck").slice(0, 44);
+  const fingerprint = fnv1a64(JSON.stringify(stableJsonValue(bundle))).toString(36);
+  return `${slug}-${fingerprint}`;
+}
+
+function stableJsonValue(value) {
+  if (Array.isArray(value)) return value.map(stableJsonValue);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.keys(value).sort().map((key) => [key, stableJsonValue(value[key])]));
+  }
+  return value;
+}
+
+function fnv1a64(value) {
+  let hash = 0xcbf29ce484222325n;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= BigInt(value.charCodeAt(index));
+    hash = BigInt.asUintN(64, hash * 0x100000001b3n);
+  }
+  return hash;
 }
 
 function round(value) {

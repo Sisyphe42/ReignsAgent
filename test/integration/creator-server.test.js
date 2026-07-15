@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { createCreatorServer } from "../../apps/creator-server/src/server.mjs";
+import { parseWindowsReleasePayload } from "../../packages/interface/src/windows-release.js";
 
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
 
@@ -93,6 +94,88 @@ describe("Creator Server factory", () => {
       assert.equal((await request(address.origin, "/api/projects")).projects.length, 2);
       assert.equal((await request(address.origin, "/api/workspace")).activePanel, "review");
       assert.match(await readFile(join(dataRoot, "config.toml"), "utf8"), /apiKey = "stored-secret"/);
+    } finally {
+      await server.close();
+      await rm(dataRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("builds, restores, downloads, isolates, and deletes Windows project releases", async () => {
+    const dataRoot = await mkdtemp(join(tmpdir(), "reigns-agent-release-api-"));
+    const playerHostPath = join(dataRoot, "test-player-host.exe");
+    await writeFile(playerHostPath, "MZ-test-player-host");
+    const bundle = JSON.parse(await readFile(join(ROOT, "fixtures/content/oss-court.cards.json"), "utf8"));
+    let server = await createCreatorServer({
+      rootDir: ROOT,
+      dataRoot,
+      initialBundle: bundle,
+      windowsPlayerHostPath: playerHostPath,
+      enableWindowsRelease: true
+    });
+    try {
+      let address = await server.start({ port: 0 });
+      const initial = await request(address.origin, "/api/releases");
+      assert.equal(initial.capability.windowsX64, true);
+      assert.deepEqual(initial.releases, []);
+
+      const result = await request(address.origin, "/api/releases/windows-x64", { method: "POST", body: {} });
+      assert.equal(result.released, true);
+      assert.equal(result.release.target, "windows-x64");
+      const repeated = await request(address.origin, "/api/releases/windows-x64", { method: "POST", body: {} });
+      assert.equal(repeated.release.id, result.release.id);
+      assert.equal((await request(address.origin, "/api/releases")).releases.length, 1);
+      const artifactPath = join(dataRoot, "Builds", ...result.release.artifactRelativePath.split("/"));
+      const parsed = parseWindowsReleasePayload(await readFile(artifactPath));
+      assert.equal(parsed.manifest.projectId, result.release.projectId);
+      assert.equal(parsed.files.has("game.game.json"), true);
+      assert.doesNotMatch(parsed.files.get("game.game.json").toString("utf8"), /apiKey|credentials/);
+
+      const download = await fetch(`${address.origin}/api/releases/${result.release.id}/artifact`);
+      assert.equal(download.status, 200);
+      assert.match(download.headers.get("content-disposition"), /attachment/);
+      assert.equal(Buffer.from(await download.arrayBuffer()).equals(await readFile(artifactPath)), true);
+
+      const project = await request(address.origin, "/api/projects", { method: "POST", body: { source: "blank" } });
+      assert.equal((await request(address.origin, "/api/releases")).releases.length, 0);
+      await request(address.origin, `/api/projects/${result.release.projectId}/open`, { method: "POST", body: {} });
+      assert.equal((await request(address.origin, "/api/releases")).releases.length, 1);
+      assert.notEqual(project.project.id, result.release.projectId);
+
+      await server.close();
+      server = await createCreatorServer({
+        rootDir: ROOT,
+        dataRoot,
+        windowsPlayerHostPath: playerHostPath,
+        enableWindowsRelease: true
+      });
+      address = await server.start({ port: 0 });
+      assert.equal((await request(address.origin, "/api/releases")).releases[0].id, result.release.id);
+      await request(address.origin, `/api/releases/${result.release.id}`, { method: "DELETE" });
+      assert.deepEqual((await request(address.origin, "/api/releases")).releases, []);
+      await assert.rejects(() => readFile(artifactPath), { code: "ENOENT" });
+    } finally {
+      await server.close();
+      await rm(dataRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("does not record a Windows release when player validation fails", async () => {
+    const dataRoot = await mkdtemp(join(tmpdir(), "reigns-agent-release-failure-"));
+    const playerHostPath = join(dataRoot, "test-player-host.exe");
+    await writeFile(playerHostPath, "MZ-test-player-host");
+    const bundle = JSON.parse(await readFile(join(ROOT, "fixtures/content/minimal.cards.json"), "utf8"));
+    const server = await createCreatorServer({
+      rootDir: ROOT,
+      dataRoot,
+      initialBundle: bundle,
+      windowsPlayerHostPath: playerHostPath,
+      enableWindowsRelease: true
+    });
+    try {
+      const address = await server.start({ port: 0 });
+      const response = await fetch(`${address.origin}/api/releases/windows-x64`, { method: "POST" });
+      assert.equal(response.status, 500);
+      assert.deepEqual((await request(address.origin, "/api/releases")).releases, []);
     } finally {
       await server.close();
       await rm(dataRoot, { recursive: true, force: true });

@@ -1,0 +1,2 @@
+#define IDI_APP_ICON 101
+IDI_APP_ICON ICON "..\\..\\desktop-electron\\assets\\icon.ico"

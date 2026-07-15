@@ -4,7 +4,7 @@ import { join, resolve } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { CREATOR_RUNTIME_ENTRIES } from "../../scripts/runtime-files.mjs";
+import { CREATOR_OPTIONAL_RUNTIME_ENTRIES, CREATOR_RUNTIME_ENTRIES } from "../../scripts/runtime-files.mjs";
 import { desktopPortablePaths, desktopRuntimePaths } from "../../apps/desktop-electron/src/runtime-paths.mjs";
 import { isAllowedAppUrl } from "../../apps/desktop-electron/src/security.mjs";
 
@@ -67,6 +67,7 @@ describe("Electron desktop boundaries", () => {
     assert.equal(CREATOR_RUNTIME_ENTRIES.some(([source]) => source.includes("node_modules")), false);
     assert.equal(CREATOR_RUNTIME_ENTRIES.some(([source]) => source.includes("test")), false);
     assert.equal(CREATOR_RUNTIME_ENTRIES.some(([source]) => source === "packages/workspace/src"), true);
+    assert.equal(CREATOR_OPTIONAL_RUNTIME_ENTRIES.some(([source]) => source.endsWith("ReignsAgentPlayer.exe")), true);
 
     const creatorSource = await readFile(join(ROOT, "apps/creator-web/src/main.jsx"), "utf8");
     assert.doesNotMatch(creatorSource, /from\s+["']electron(?:\/|["'])/);

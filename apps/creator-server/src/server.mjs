@@ -1,8 +1,9 @@
 #!/usr/bin/env node
+import { createReadStream } from "node:fs";
 import { readFile, writeFile, mkdir, mkdtemp, rm, stat } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
-import { dirname, extname, join, relative, resolve } from "node:path";
+import { basename, dirname, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -27,6 +28,7 @@ import {
   validatePlayerCards
 } from "../../../packages/interface/src/index.js";
 import { createWorkspaceStore } from "../../../packages/workspace/src/index.js";
+import { buildWindowsPlayerRelease, windowsReleaseCapability } from "./windows-release.mjs";
 
 const DEFAULT_ROOT = fileURLToPath(new URL("../../..", import.meta.url));
 const MIME_TYPES = {
@@ -82,11 +84,14 @@ export async function createCreatorServer({
   samplePath = join(rootDir, "fixtures/content/oss-court.cards.json"),
   interfaceWebRoot = join(rootDir, "packages/interface/web"),
   defaultBuildOutputDir = join(process.cwd(), "dist"),
+  windowsPlayerHostPath = join(rootDir, "apps/player-windows/out/win-x64/ReignsAgentPlayer.exe"),
+  enableWindowsRelease = process.platform === "win32",
   dataRoot = null,
   initialBundle
 } = {}) {
 const resolvedStaticRoot = staticRoot ? resolve(staticRoot) : null;
 const resolvedInterfaceWebRoot = resolve(interfaceWebRoot);
+const resolvedWindowsPlayerHostPath = resolve(windowsPlayerHostPath);
 const temporaryDataRoot = dataRoot ? null : await mkdtemp(join(tmpdir(), "reigns-creator-"));
 const workspace = await createWorkspaceStore({
   dataRoot: dataRoot ?? temporaryDataRoot,
@@ -427,6 +432,39 @@ async function handleApi(req, res, url) {
     return sendJson(res, { exported: true, outputPath, buildId: build.buildId });
   }
 
+  if (path === "/api/releases" && req.method === "GET") {
+    return sendJson(res, {
+      capability: await windowsReleaseCapability({ enabled: enableWindowsRelease, playerHostPath: resolvedWindowsPlayerHostPath }),
+      releases: await workspace.listReleases()
+    });
+  }
+
+  if (path === "/api/releases/windows-x64" && req.method === "POST") {
+    const capability = await windowsReleaseCapability({ enabled: enableWindowsRelease, playerHostPath: resolvedWindowsPlayerHostPath });
+    if (!capability.windowsX64) {
+      const error = new Error(`Windows release is unavailable: ${capability.reason}`);
+      error.code = capability.reason;
+      throw error;
+    }
+    const release = await buildWindowsPlayerRelease({
+      editor: store.editor,
+      interfaceWebRoot: resolvedInterfaceWebRoot,
+      coreSourcePath: join(rootDir, "packages/core/src/index.js"),
+      playerHostPath: resolvedWindowsPlayerHostPath,
+      workspace
+    });
+    return sendJson(res, { released: true, release });
+  }
+
+  const releaseRoute = matchReleasePath(path);
+  if (releaseRoute?.action === "artifact" && req.method === "GET") {
+    const { record, artifactPath } = await workspace.resolveReleaseArtifact(releaseRoute.id);
+    return sendArtifact(req, res, artifactPath, basename(record.artifactRelativePath));
+  }
+  if (releaseRoute?.action === null && req.method === "DELETE") {
+    return sendJson(res, await workspace.deleteRelease(releaseRoute.id));
+  }
+
   res.writeHead(404, { "content-type": "application/json" });
   res.end(JSON.stringify({ error: { message: `Unknown API route: ${req.method} ${path}` } }));
 }
@@ -580,6 +618,38 @@ async function readDefaultSample() {
 function matchProjectPath(path) {
   const match = path.match(/^\/api\/projects\/([^/]+)(?:\/(open))?$/);
   return match ? { id: decodeURIComponent(match[1]), action: match[2] ?? null } : null;
+}
+
+function matchReleasePath(path) {
+  const match = path.match(/^\/api\/releases\/([^/]+)(?:\/(artifact))?$/);
+  return match ? { id: decodeURIComponent(match[1]), action: match[2] ?? null } : null;
+}
+
+function sendArtifact(req, res, path, fileName) {
+  return new Promise((resolveSend, rejectSend) => {
+    const stream = createReadStream(path);
+    stream.once("error", (error) => {
+      if (res.headersSent) {
+        res.destroy(error);
+        resolveSend();
+      } else {
+        rejectSend(error);
+      }
+    });
+    res.writeHead(200, {
+      "content-type": "application/vnd.microsoft.portable-executable",
+      "content-disposition": `attachment; filename="${fileName.replace(/["\\\r\n]/g, "-")}"`,
+      "cache-control": "no-store"
+    });
+    if (req.method === "HEAD") {
+      stream.destroy();
+      res.end();
+      resolveSend();
+      return;
+    }
+    stream.once("end", resolveSend);
+    stream.pipe(res);
+  });
 }
 
 async function persistEditor() {

@@ -14,9 +14,20 @@ export const CREATOR_RUNTIME_ENTRIES = Object.freeze([
   ["fixtures/content", "fixtures/content"]
 ]);
 
+export const CREATOR_OPTIONAL_RUNTIME_ENTRIES = Object.freeze([
+  ["apps/player-windows/out/win-x64/ReignsAgentPlayer.exe", "apps/player-windows/out/win-x64/ReignsAgentPlayer.exe"]
+]);
+
 export async function assembleCreatorRuntime({ rootDir, targetDir }) {
   for (const [source, target] of CREATOR_RUNTIME_ENTRIES) {
     await copyTree(join(rootDir, source), join(targetDir, target));
+  }
+  for (const [source, target] of CREATOR_OPTIONAL_RUNTIME_ENTRIES) {
+    try {
+      await copyTree(join(rootDir, source), join(targetDir, target));
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+    }
   }
   const files = await collectFiles(targetDir);
   validateCreatorRuntime(files, targetDir);
