@@ -9,7 +9,7 @@
 7. [x] Upgrade the Build panel with release summary, validation gate, local target capability, progress, history download/delete, localization, and Hosted ZIP preservation.
 8. [x] Update README, ROADMAP, workspace spec, and durable packaging boundary documentation.
 9. [x] Run focused tests, `npm run build:game -- fixtures/content/oss-court.cards.json <temporary-dir>`, Windows native/generated-EXE smoke tests, and final `npm run verify`.
-10. [ ] Run Trellis quality/spec gates, commit in reviewable phases, push the feature branch, and open a PR.
+10. [x] Run Trellis quality/spec gates, commit in reviewable phases, push the feature branch, and open a PR.
 
 ## Rollback Points
 
