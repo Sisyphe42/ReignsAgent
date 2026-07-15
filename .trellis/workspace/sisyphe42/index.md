@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 9
+- **Total Sessions**: 10
 - **Last Active**: 2026-07-15
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~325 | Active |
+| `journal-1.md` | ~358 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 10 | 2026-07-15 | Fix blank Windows player release | `bd28df4` | `feature/project-windows-release` |
 | 9 | 2026-07-15 | Windows Project Release Packaging | `4f5fb2d`, `0973363`, `cb302f8` | `feature/project-windows-release` |
 | 8 | 2026-07-14 | Stabilize Phantom hosted smoke | `c077cb8` | `feature/creator-navigation-polish` |
 | 7 | 2026-07-14 | Creator navigation and header polish | `f5240e2`, `04c83f0` | `feature/uiux-navigation-i18n` |

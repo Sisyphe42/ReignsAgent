@@ -323,3 +323,36 @@ Implemented and verified single-file Windows x64 Project releases with a secure 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 10: Fix blank Windows player release
+
+**Date**: 2026-07-15
+**Task**: Fix blank Windows player release
+**Branch**: `feature/project-windows-release`
+
+### Summary
+
+Fixed WebView2 controller visibility in generated Windows players, invalidated cached releases when the staged host changes, and isolated packaged desktop smoke tests from live portable data.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `bd28df4` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
