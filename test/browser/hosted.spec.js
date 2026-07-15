@@ -308,17 +308,18 @@ async function openHosted(page) {
 
 async function workspaceContains(page, expected) {
   return page.evaluate(async (text) => {
-    const root = await navigator.storage.getDirectory();
-    const dataRoot = await root.getDirectoryHandle("ReignsAgentData");
-    const projects = await dataRoot.getDirectoryHandle("projects");
-    for await (const [, project] of projects.entries()) {
-      if (project.kind !== "directory") continue;
-      try {
+    try {
+      const root = await navigator.storage.getDirectory();
+      const dataRoot = await root.getDirectoryHandle("ReignsAgentData");
+      const projects = await dataRoot.getDirectoryHandle("projects");
+      for await (const [, project] of projects.entries()) {
+        if (project.kind !== "directory") continue;
         const handle = await project.getFileHandle("workspace.toml");
         if ((await (await handle.getFile()).text()).includes(text)) return true;
-      } catch (error) {
-        if (error?.name !== "NotFoundError") throw error;
       }
+    } catch (error) {
+      if (error?.name === "NotFoundError" || error?.name === "NotReadableError") return false;
+      throw error;
     }
     return false;
   }, expected);

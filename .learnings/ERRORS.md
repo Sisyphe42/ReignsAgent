@@ -8,7 +8,7 @@
 **Area**: tests
 
 ### Summary
-The Hosted CI job intermittently failed while a test directly read an OPFS file, then passed unchanged on rerun.
+The Hosted CI job intermittently failed while a test directly read an OPFS file; a plain rerun was not sufficient across subsequent runs.
 
 ### Error
 ```text
@@ -22,7 +22,7 @@ NotReadableError: The requested file could not be read, typically due to permiss
 - The bundled CI inspection helper also required UTF-8 process decoding on this Windows locale, so `gh run view --log-failed` was used as the reliable fallback.
 
 ### Suggested Fix
-Build and test with the same base-path environment, rerun the isolated failing test, and rerun only the failed GitHub job when the evidence indicates an OPFS race rather than a product regression.
+Build and test with the same base-path environment. Make polling helpers treat transient `NotReadableError` and initialization-time `NotFoundError` as a false sample so the existing bounded `expect.poll` can retry.
 
 ### Metadata
 - Reproducible: no
@@ -30,7 +30,7 @@ Build and test with the same base-path environment, rerun the isolated failing t
 
 ### Resolution
 - **Resolved**: 2026-07-15T00:00:00+08:00
-- **Notes**: The isolated local test passed and the unchanged Hosted CI job passed 6/6 on rerun.
+- **Notes**: The isolated local test passed; after a later CI run reproduced the race, `workspaceContains` was made retry-safe through its existing bounded poll.
 
 ---
 
