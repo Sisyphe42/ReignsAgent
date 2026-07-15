@@ -71,7 +71,11 @@ const ZH_HANS_COPY = {
   Setup: "设置", Off: "关闭",
   "Project title saved": "项目标题已保存", ready: "就绪", loading: "加载中", new: "新增", draft: "草稿",
   blocked: "受阻", set: "已设置", Valid: "有效", "Needs work": "需要处理", Ready: "就绪", Blocked: "受阻",
-  Cards: "卡牌", Validation: "验证", "Player-ready": "玩家端就绪", "Not run": "未运行", Prepared: "已准备", "Not prepared": "未准备"
+  Cards: "卡牌", Validation: "验证", "Player-ready": "玩家端就绪", "Not run": "未运行", Prepared: "已准备", "Not prepared": "未准备",
+  "Windows release": "Windows 发布", "Build Windows EXE": "生成 Windows EXE", "Release history": "发布历史",
+  "No releases yet.": "尚无发布记录。", Download: "下载", "Delete release": "删除发布", Target: "目标平台",
+  "WebView2 required": "需要 WebView2", "Review is optional": "审查为可选项", "Player validation must pass before release.": "发布前必须通过玩家端校验。",
+  Unavailable: "不可用", Available: "可用", Size: "大小", Created: "创建时间"
 };
 const SKIN_ALIASES = {
   workbench: "classic"
@@ -1006,6 +1010,7 @@ function App() {
   const [diagnostics, setDiagnostics] = useState(null);
   const [play, setPlay] = useState({ sessionId: null, state: null });
   const [build, setBuild] = useState(null);
+  const [releaseState, setReleaseState] = useState({ capability: { windowsX64: false, reason: "loading" }, releases: [] });
   const [busy, setBusy] = useState("");
   const [draftInfo, setDraftInfo] = useState(null);
   const [focusCardId, setFocusCardId] = useState(null);
@@ -1122,15 +1127,19 @@ function App() {
   }, []);
 
   async function loadCreatorState() {
-    const [nextEditor, config, projectResult, workspaceState] = await Promise.all([
+    const [nextEditor, config, projectResult, workspaceState, nextReleases] = await Promise.all([
       api("/api/editor"),
       api("/api/config"),
       api("/api/projects"),
-      api("/api/workspace")
+      api("/api/workspace"),
+      import.meta.env.VITE_CREATOR_HOST === "browser"
+        ? Promise.resolve({ capability: { windowsX64: false, reason: "hosted_web" }, releases: [] })
+        : api("/api/releases")
     ]);
     setEditor(nextEditor);
     setProjects(projectResult.projects ?? []);
     setActiveProjectId(config.activeProjectId);
+    setReleaseState(nextReleases);
     setHasSavedApiKey(Boolean(config.ai?.hasApiKey));
     setAiSettings(aiSettingsFromConfig(config.ai));
     setLocalePreference(normalizeUiLocalePreference(config.locale));
@@ -1264,7 +1273,7 @@ function App() {
       await api("/api/projects", { method: "POST", body: { source } });
       historyRef.current = [];
       setHistoryDepth(0);
-      await Promise.all([refreshEditor({ statusMessage: "Project created" }), refreshProjects()]);
+      await Promise.all([refreshEditor({ statusMessage: "Project created" }), refreshProjects(), refreshReleases()]);
     });
   }
 
@@ -1276,7 +1285,8 @@ function App() {
       setHistoryDepth(0);
       setDiagnostics(null);
       setPlay({ sessionId: null, state: null });
-      await Promise.all([refreshEditor({ statusMessage: "Project opened" }), refreshProjects()]);
+      setBuild(null);
+      await Promise.all([refreshEditor({ statusMessage: "Project opened" }), refreshProjects(), refreshReleases()]);
     });
   }
 
@@ -1284,7 +1294,8 @@ function App() {
     if (!activeProjectId || !window.confirm("Delete the active project from this workspace?")) return;
     await runAction("Deleting project", async () => {
       await api(`/api/projects/${encodeURIComponent(activeProjectId)}`, { method: "DELETE" });
-      await Promise.all([refreshEditor({ statusMessage: "Project deleted" }), refreshProjects()]);
+      setBuild(null);
+      await Promise.all([refreshEditor({ statusMessage: "Project deleted" }), refreshProjects(), refreshReleases()]);
     });
   }
 
@@ -1355,6 +1366,31 @@ function App() {
       });
       setBuild(result);
       setStatus(exportBuild ? `Exported ${result.outputPath}` : "Build preview prepared");
+    });
+  }
+
+  async function refreshReleases() {
+    if (import.meta.env.VITE_CREATOR_HOST === "browser") {
+      setReleaseState({ capability: { windowsX64: false, reason: "hosted_web" }, releases: [] });
+      return;
+    }
+    setReleaseState(await api("/api/releases"));
+  }
+
+  async function buildWindowsRelease() {
+    await runAction("Building Windows release", async () => {
+      const result = await api("/api/releases/windows-x64", { method: "POST", body: {} });
+      await refreshReleases();
+      setStatus(`Released ${result.release.artifactRelativePath}`);
+    });
+  }
+
+  async function deleteRelease(release) {
+    if (!window.confirm(`Delete release ${release.title} ${release.version}?`)) return;
+    await runAction("Deleting release", async () => {
+      await api(`/api/releases/${encodeURIComponent(release.id)}`, { method: "DELETE" });
+      await refreshReleases();
+      setStatus("Release deleted");
     });
   }
 
@@ -1698,7 +1734,19 @@ function App() {
               onSwipe={swipe}
             />
           )}
-          {activePanel === "build" && <BuildPanel build={build} onPrepare={prepareBuild} />}
+          {activePanel === "build" && (
+            <BuildPanel
+              editor={editor}
+              diagnostics={diagnostics}
+              playerReady={playerReady}
+              build={build}
+              releaseState={releaseState}
+              busy={busy}
+              onPrepare={prepareBuild}
+              onRelease={buildWindowsRelease}
+              onDeleteRelease={deleteRelease}
+            />
+          )}
           {activePanel === "settings" && (
             <SettingsPanel
               editor={editor}
@@ -4821,17 +4869,69 @@ function PreviewPanel({ play, assetsByCard, playerReady, onStart, onSwipe }) {
   );
 }
 
-function BuildPanel({ build, onPrepare }) {
+function BuildPanel({ editor, diagnostics, playerReady, build, releaseState, busy, onPrepare, onRelease, onDeleteRelease }) {
+  const locale = useUiLocale();
+  const hosted = import.meta.env.VITE_CREATOR_HOST === "browser";
+  const capability = releaseState?.capability ?? { windowsX64: false, reason: "loading" };
+  const releases = releaseState?.releases ?? [];
   return (
     <section className="panel">
       <PanelHead title="Build / Deploy" note="Prepare and export the deployable player bundle." />
+      <div className="release-summary">
+        <Metric label="Project" value={editor?.metadata?.title ?? "Untitled"} />
+        <Metric label="Version" value={editor?.metadata?.version ?? "0.0.0"} />
+        <Metric label="Cards" value={String(editor?.cards?.length ?? 0)} />
+        <Metric label="Player-ready" value={playerReady ? "Ready" : "Blocked"} localizeValue tone={playerReady ? "good" : "bad"} />
+        <Metric label="Target" value={hosted ? "Web ZIP" : "Windows x64"} />
+        <Metric label="Review" value={diagnostics ? "Ready" : "Not run"} localizeValue />
+      </div>
+      {!playerReady && <p className="release-notice release-notice--danger">{tr(locale, "Player validation must pass before release.")}</p>}
+      {!diagnostics && <p className="release-notice">{tr(locale, "Review is optional")}</p>}
       <div className="action-row">
         <button className="btn" onClick={() => void onPrepare(false)}>Preview build</button>
-        <button className="btn btn--primary" onClick={() => void onPrepare(true)}>{import.meta.env.VITE_CREATOR_HOST === "browser" ? "Export player ZIP" : "Export .game.json"}</button>
+        {hosted ? (
+          <button className="btn btn--primary" disabled={!playerReady || Boolean(busy)} onClick={() => void onPrepare(true)}>Export player ZIP</button>
+        ) : (
+          <button className="btn btn--primary" disabled={!playerReady || !capability.windowsX64 || Boolean(busy)} onClick={() => void onRelease()}>
+            {tr(locale, "Build Windows EXE")}
+          </button>
+        )}
       </div>
+      {!hosted && (
+        <p className="muted">
+          {tr(locale, "Windows release")}: {tr(locale, capability.windowsX64 ? "Available" : "Unavailable")} · {tr(locale, "WebView2 required")}
+          {!capability.windowsX64 && capability.reason ? ` · ${capability.reason}` : ""}
+        </p>
+      )}
       <pre className="output">{build ? JSON.stringify(build.build ?? build, null, 2) : "No build prepared."}</pre>
+      {!hosted && (
+        <div className="release-history">
+          <h3>{tr(locale, "Release history")}</h3>
+          {releases.length === 0 && <p className="muted">{tr(locale, "No releases yet.")}</p>}
+          {releases.map((release) => (
+            <article className="release-history__item" key={release.id}>
+              <div>
+                <strong>{release.title} · {release.version}</strong>
+                <span>{release.target} · {formatFileSize(release.size)} · {new Date(release.createdAt).toLocaleString()}</span>
+                <code>{release.buildId}</code>
+              </div>
+              <div className="action-row">
+                <a className="btn btn--compact" href={`/api/releases/${encodeURIComponent(release.id)}/artifact`}>{tr(locale, "Download")}</a>
+                <button className="btn btn--ghost btn--compact" type="button" onClick={() => void onDeleteRelease(release)}>{tr(locale, "Delete release")}</button>
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
     </section>
   );
+}
+
+function formatFileSize(bytes) {
+  if (!Number.isFinite(bytes) || bytes < 0) return "—";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
 }
 
 function AiAssistPreflight({ request, aiConfigured, diagnostics, onChange, onClose, onBuild, onOpenPanel }) {
