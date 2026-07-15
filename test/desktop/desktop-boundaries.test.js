@@ -100,6 +100,9 @@ describe("Electron desktop boundaries", () => {
     const nativeSource = await readFile(join(ROOT, "apps/player-windows/src/main.cpp"), "utf8");
     const manifest = await readFile(join(ROOT, "apps/player-windows/src/player.manifest"), "utf8");
     const standalonePlayer = await readFile(join(ROOT, "packages/interface/web/standalone-player.html"), "utf8");
+    const creatorSource = await readFile(join(ROOT, "apps/creator-web/src/main.jsx"), "utf8");
+    const skinCatalog = await readFile(join(ROOT, "packages/interface/web/skin-catalog.js"), "utf8");
+    const windowsReleaseSource = await readFile(join(ROOT, "apps/creator-server/src/windows-release.mjs"), "utf8");
 
     assert.match(nativeSource, /SetProcessDpiAwarenessContext\(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2\)/);
     assert.match(nativeSource, /message == WM_DPICHANGED/);
@@ -108,6 +111,19 @@ describe("Electron desktop boundaries", () => {
     assert.match(standalonePlayer, /is-exiting-\$\{direction\}/);
     assert.match(standalonePlayer, /el\("left"\)\.addEventListener\("click"/);
     assert.match(standalonePlayer, /el\("restart"\)\.addEventListener\("click", restartReign\)/);
+    assert.match(standalonePlayer, /reigns-agent\.player\.skin\.v1/);
+    assert.match(standalonePlayer, /from "\.\/skin-catalog\.js"/);
+    assert.match(creatorSource, /from "\.\.\/\.\.\/\.\.\/packages\/interface\/web\/skin-catalog\.js"/);
+    assert.match(creatorSource, /applySkinTheme\(document\.documentElement, skin\)/);
+    assert.match(skinCatalog, /export const SKINS = Object\.freeze/);
+    assert.match(windowsReleaseSource, /previousArtifact\?\.equals\(executable\)/);
+    assert.doesNotMatch(windowsReleaseSource, /subarray\(0, hostBytes\.length\).*return existing/s);
+    assert.match(standalonePlayer, /safeStorageGet\(SKIN_PERSIST_KEY\)/);
+    assert.match(standalonePlayer, /reigns-agent\.player\.history\.v1:/);
+    assert.match(standalonePlayer, /decisionHistory = decisionHistory\.slice\(-MAX_HISTORY\)/);
+    assert.match(standalonePlayer, /const snapshot = player\.swipe\(direction\);\s+recordDecision\(before, snapshot, direction\)/);
+    assert.match(standalonePlayer, /animateFrom: direction === "left" \? "right" : "left"/);
+    assert.match(standalonePlayer, /prefers-reduced-motion: reduce/);
     assert.doesNotMatch(standalonePlayer, /awaitingRestartConfirm|Click restart again/);
   });
 });

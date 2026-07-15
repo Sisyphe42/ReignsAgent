@@ -133,6 +133,8 @@ describe("Creator Server factory", () => {
       const parsed = parseWindowsReleasePayload(await readFile(artifactPath));
       assert.equal(parsed.manifest.projectId, result.release.projectId);
       assert.equal(parsed.files.has("game.game.json"), true);
+      assert.equal(parsed.files.has("skin-catalog.js"), true);
+      assert.match(parsed.files.get("player.html").toString("utf8"), /from "\.\/skin-catalog\.js"/);
       assert.doesNotMatch(parsed.files.get("game.game.json").toString("utf8"), /apiKey|credentials/);
 
       const download = await fetch(`${address.origin}/api/releases/${result.release.id}/artifact`);

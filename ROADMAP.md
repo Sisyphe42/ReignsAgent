@@ -53,7 +53,7 @@ Recent merged work established the baseline that future phases should preserve:
 - `packages/contracts`: Shared schemas for cards, content bundles, diagnostics reports, connector requests, and build manifests.
 - Fastify remains an optional future transport upgrade if the shared `apps/creator-server` HTTP implementation outgrows Node's built-in server.
 - Extend the hosted Reviewer Worker with richer incremental progress and resumable runs beyond the bounded v1 workload.
-- Production player surface evolution: the shipped Web runtime and Windows native host now use a dedicated responsive decision stage with animated transitions, direct click/keyboard/drag choices, immediate restart, and DPI-aware native sizing. Continue with settings, language switching, interaction preferences, about/attribution, custom icons, signing, and additional platforms only through reviewed release work.
+- Production player surface evolution: the shipped Web runtime and Windows native host now use a dedicated responsive decision stage with directional card transitions, direct click/keyboard/drag choices, immediate restart, shared Creator Skin tokens, build-scoped local game records, and DPI-aware native sizing. Continue with language switching, broader interaction preferences, about/attribution, custom icons, signing, and additional platforms only through reviewed release work.
 
 ## Distribution Evolution
 - Preserve Browser/Vite development, the Node ZIP, and Electron as parallel hosts over the same WebUI and local API.

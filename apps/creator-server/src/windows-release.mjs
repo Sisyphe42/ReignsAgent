@@ -24,11 +24,8 @@ export async function buildWindowsPlayerRelease({ editor, interfaceWebRoot, core
   if (existing) {
     const { artifactPath } = await workspace.resolveReleaseArtifact(existing.id);
     previousArtifact = await readFile(artifactPath);
-    if (previousArtifact.length >= hostBytes.length && previousArtifact.subarray(0, hostBytes.length).equals(hostBytes)) {
-      return existing;
-    }
   }
-  const createdAt = new Date().toISOString();
+  const createdAt = existing?.createdAt ?? new Date().toISOString();
   const releaseBuild = { ...build, createdAt };
   const files = await assembleWindowsPlayerFiles({ build: releaseBuild, interfaceWebRoot, coreSourcePath, workspace });
   const { executable } = appendWindowsReleasePayload(hostBytes, {
@@ -38,6 +35,7 @@ export async function buildWindowsPlayerRelease({ editor, interfaceWebRoot, core
     version: build.version,
     files
   });
+  if (existing && previousArtifact?.equals(executable)) return existing;
   const fileName = [
     sanitizeReleaseFilePart(build.title),
     sanitizeReleaseFilePart(build.version, "0.0.0"),
@@ -72,6 +70,7 @@ export async function assembleWindowsPlayerFiles({ build, interfaceWebRoot, core
   const files = new Map([
     ["player.html", playerHtml],
     ["player-runtime.js", runtime],
+    ["skin-catalog.js", await readFile(resolve(interfaceWebRoot, "skin-catalog.js"))],
     ["game.game.json", serializeBuild(build)]
   ]);
   const logoPath = resolve(interfaceWebRoot, "assets/logo-alpha.png");

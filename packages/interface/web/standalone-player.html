@@ -77,6 +77,7 @@
       mask-image: linear-gradient(to bottom, black, transparent 70%);
     }
     button { font: inherit; }
+    button, select { color: inherit; }
     .player-shell {
       width: min(1180px, calc(100% - 40px));
       min-height: 100vh;
@@ -116,6 +117,41 @@
       line-height: 0.98;
     }
     .turn-readout { text-align: right; }
+    .masthead-tools {
+      display: flex;
+      justify-content: flex-end;
+      gap: 7px;
+      margin-bottom: 10px;
+    }
+    .utility-trigger {
+      min-height: 30px;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 6px 10px;
+      border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+      border-radius: 999px;
+      background: color-mix(in srgb, var(--panel) 52%, transparent);
+      color: var(--muted);
+      cursor: pointer;
+      font-family: "Cascadia Mono", Consolas, monospace;
+      font-size: 10px;
+      letter-spacing: .06em;
+      transition: color 150ms ease, border-color 150ms ease, transform 150ms ease;
+    }
+    .utility-trigger:hover { color: var(--ink); border-color: var(--accent); transform: translateY(-1px); }
+    .utility-trigger__count {
+      min-width: 18px;
+      height: 18px;
+      display: grid;
+      place-items: center;
+      padding: 0 5px;
+      border-radius: 999px;
+      background: var(--accent);
+      color: var(--button-ink);
+      font-size: 9px;
+      font-weight: 700;
+    }
     .turn-value {
       display: block;
       font-family: Georgia, "Times New Roman", serif;
@@ -189,7 +225,7 @@
       border: 1px solid var(--border);
       border-radius: var(--radius);
       background: linear-gradient(155deg, var(--panel-raised), var(--panel));
-      box-shadow: var(--shadow);
+      box-shadow: var(--player-shadow, 0 28px 80px var(--shadow));
       transform: translate3d(0, 0, 0);
       transform-origin: 50% 88%;
       transition: transform 230ms cubic-bezier(.22,.8,.24,1), opacity 190ms ease, box-shadow 180ms ease;
@@ -207,8 +243,44 @@
     .card.is-dragging { transition: box-shadow 120ms ease; cursor: grabbing; }
     .card.is-exiting-left { transform: translate3d(-125%, 10px, 0) rotate(-13deg); opacity: 0; }
     .card.is-exiting-right { transform: translate3d(125%, 10px, 0) rotate(13deg); opacity: 0; }
-    .card.is-entering { animation: card-arrive 360ms cubic-bezier(.16,.9,.22,1) both; }
-    @keyframes card-arrive { from { opacity: 0; transform: translate3d(0, -24px, 0) rotateX(3deg) scale(.985); } }
+    .card.is-entering-from-left { animation: card-arrive-left 440ms cubic-bezier(.16,.9,.22,1) both; }
+    .card.is-entering-from-right { animation: card-arrive-right 440ms cubic-bezier(.16,.9,.22,1) both; }
+    @keyframes card-arrive-left {
+      from { opacity: 0; transform: translate3d(-38%, -8px, -80px) rotate(-7deg) scale(.94); filter: blur(3px); }
+      72% { opacity: 1; transform: translate3d(2.5%, 0, 0) rotate(.7deg) scale(1.006); filter: blur(0); }
+    }
+    @keyframes card-arrive-right {
+      from { opacity: 0; transform: translate3d(38%, -8px, -80px) rotate(7deg) scale(.94); filter: blur(3px); }
+      72% { opacity: 1; transform: translate3d(-2.5%, 0, 0) rotate(-.7deg) scale(1.006); filter: blur(0); }
+    }
+    .transition-seal {
+      position: absolute;
+      z-index: 5;
+      left: 50%;
+      top: 48%;
+      width: 72px;
+      height: 72px;
+      display: grid;
+      place-items: center;
+      border: 2px solid var(--accent);
+      border-radius: 50%;
+      background: color-mix(in srgb, var(--panel) 82%, transparent);
+      color: var(--accent);
+      opacity: 0;
+      pointer-events: none;
+      transform: translate(-50%, -50%) rotate(-12deg) scale(1.7);
+      font-family: Georgia, serif;
+      font-size: 24px;
+      font-weight: 700;
+      box-shadow: 0 0 0 7px color-mix(in srgb, var(--accent) 14%, transparent);
+    }
+    .transition-seal.is-stamping { animation: seal-stamp 440ms cubic-bezier(.16,.9,.22,1) both; }
+    @keyframes seal-stamp {
+      0%, 30% { opacity: 0; transform: translate(-50%, -50%) rotate(-12deg) scale(1.7); }
+      48% { opacity: .92; transform: translate(-50%, -50%) rotate(-7deg) scale(.88); }
+      64% { opacity: .72; transform: translate(-50%, -50%) rotate(-7deg) scale(1); }
+      100% { opacity: 0; transform: translate(-50%, -50%) rotate(-5deg) scale(1.08); }
+    }
     .card__content { align-self: center; }
     .card__art {
       width: min(176px, 48%);
@@ -270,6 +342,70 @@
     .summary { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--border); text-align: center; }
     .summary__title { margin: 0 0 7px; font-family: Georgia, serif; font-size: 22px; }
     .summary__line { display: inline-block; margin: 2px 7px; color: var(--muted); font-size: 12px; }
+    .utility-layer {
+      position: fixed;
+      z-index: 30;
+      inset: 0;
+      display: grid;
+      grid-template-columns: 1fr minmax(320px, 430px);
+    }
+    .utility-backdrop {
+      border: 0;
+      border-radius: 0;
+      background: rgba(8, 12, 20, .48);
+      cursor: default;
+      backdrop-filter: blur(4px);
+      animation: backdrop-in 180ms ease both;
+    }
+    .utility-drawer {
+      min-width: 0;
+      height: 100%;
+      overflow: auto;
+      padding: 26px 24px 30px;
+      border-left: 1px solid var(--border);
+      background:
+        linear-gradient(180deg, color-mix(in srgb, var(--accent) 7%, transparent), transparent 220px),
+        var(--panel);
+      box-shadow: -24px 0 70px rgba(7, 12, 24, .28);
+      animation: drawer-in 260ms cubic-bezier(.2,.82,.24,1) both;
+    }
+    @keyframes backdrop-in { from { opacity: 0; } }
+    @keyframes drawer-in { from { transform: translateX(100%); } }
+    .utility-drawer__head { display: flex; align-items: start; justify-content: space-between; gap: 20px; padding-bottom: 20px; border-bottom: 1px solid var(--border); }
+    .utility-drawer__title { margin: 2px 0 0; font-family: Georgia, serif; font-size: 30px; font-weight: 500; }
+    .icon-button {
+      width: 34px; height: 34px; flex: 0 0 auto; border: 1px solid var(--border); border-radius: 50%;
+      background: transparent; color: var(--ink); cursor: pointer; font-size: 20px; line-height: 1;
+    }
+    .utility-panel { padding-top: 22px; }
+    .utility-copy { margin: 0 0 18px; color: var(--muted); font-size: 13px; line-height: 1.55; }
+    .skin-options { display: grid; gap: 8px; }
+    .skin-option {
+      width: 100%; min-height: 52px; display: grid; grid-template-columns: 34px 1fr auto; align-items: center; gap: 12px;
+      padding: 9px 12px; border: 1px solid var(--border); border-radius: calc(var(--radius) * .6);
+      background: var(--panel-raised); color: var(--ink); cursor: pointer; text-align: left;
+    }
+    .skin-option:hover, .skin-option[aria-pressed="true"] { border-color: var(--accent); }
+    .skin-option[aria-pressed="true"] { box-shadow: inset 3px 0 var(--accent); }
+    .skin-option__swatch { width: 34px; height: 34px; border: 1px solid color-mix(in srgb, var(--ink) 22%, transparent); border-radius: 50%; background: linear-gradient(135deg, var(--skin-bg), var(--skin-accent)); }
+    .skin-option__name { font-weight: 650; }
+    .skin-option__state { color: var(--accent); font-family: "Cascadia Mono", Consolas, monospace; font-size: 10px; text-transform: uppercase; }
+    .history-summary { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 18px; }
+    .history-stat { padding: 12px; border: 1px solid var(--border); border-radius: calc(var(--radius) * .55); background: var(--panel-raised); }
+    .history-stat strong { display: block; margin-top: 4px; font-family: Georgia, serif; font-size: 24px; font-weight: 500; }
+    .history-list { display: grid; gap: 9px; margin: 0; padding: 0; list-style: none; }
+    .history-entry { padding: 13px 14px; border: 1px solid var(--border); border-radius: calc(var(--radius) * .55); background: var(--panel-raised); }
+    .history-entry__head { display: flex; justify-content: space-between; gap: 12px; color: var(--muted); font-family: "Cascadia Mono", Consolas, monospace; font-size: 10px; }
+    .history-entry__choice { margin: 9px 0 4px; font-family: Georgia, serif; font-size: 18px; line-height: 1.25; }
+    .history-entry__card { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.4; }
+    .history-entry__delta { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 9px; }
+    .history-delta { padding: 3px 6px; border-radius: 999px; background: color-mix(in srgb, var(--accent) 9%, transparent); color: var(--muted); font-size: 10px; }
+    .history-empty { padding: 36px 18px; border: 1px dashed var(--border); color: var(--muted); text-align: center; line-height: 1.6; }
+    .history-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--border); }
+    .quiet-button, .danger-button { padding: 8px 12px; border: 1px solid var(--border); border-radius: 999px; background: transparent; color: var(--ink); cursor: pointer; font-size: 11px; font-weight: 650; }
+    .danger-button { border-color: var(--decision-left); color: var(--decision-left); }
+    .clear-confirm { margin-top: 12px; padding: 12px; border: 1px solid var(--decision-left); background: color-mix(in srgb, var(--decision-left) 7%, transparent); }
+    .clear-confirm p { margin: 0 0 10px; font-size: 12px; line-height: 1.45; }
     [hidden] { display: none !important; }
     @media (max-width: 820px) {
       .player-shell { width: min(640px, calc(100% - 24px)); padding-top: 18px; }
@@ -321,6 +457,10 @@
       .choice-button--right .choice-button__label { grid-column: 2; }
       .player-footer { grid-template-columns: 1fr auto; }
       .session-label { display: none; }
+      .masthead-tools { justify-content: flex-start; }
+      .utility-layer { grid-template-columns: 1fr; padding-top: 9vh; }
+      .utility-backdrop { position: absolute; inset: 0; }
+      .utility-drawer { position: relative; border-left: 0; border-top: 1px solid var(--border); border-radius: 20px 20px 0 0; }
     }
     @media (prefers-reduced-motion: reduce) {
       *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 1ms !important; transition-duration: 1ms !important; }
@@ -334,9 +474,15 @@
         <p class="eyebrow" id="release-label">A playable court</p>
         <h1 class="project-title" id="project-title">Awaiting a court</h1>
       </div>
-      <div class="turn-readout">
-        <p class="utility-label">Decision</p>
-        <span class="turn-value" id="turn-label">00</span>
+      <div>
+        <div class="masthead-tools" aria-label="Player utilities">
+          <button type="button" class="utility-trigger" id="open-appearance">Appearance</button>
+          <button type="button" class="utility-trigger" id="open-history">Record <span class="utility-trigger__count" id="history-count">0</span></button>
+        </div>
+        <div class="turn-readout">
+          <p class="utility-label">Decision</p>
+          <span class="turn-value" id="turn-label">00</span>
+        </div>
       </div>
     </header>
 
@@ -350,6 +496,7 @@
       </aside>
 
       <div class="card-wrap">
+        <div class="transition-seal" id="transition-seal" aria-hidden="true">✓</div>
         <article class="card" id="card" role="group" aria-label="Current card">
           <div class="card__content">
             <img id="art" class="card__art" alt="" hidden />
@@ -387,20 +534,61 @@
     </footer>
   </div>
 
+  <div class="utility-layer" id="utility-layer" hidden>
+    <button type="button" class="utility-backdrop" id="utility-backdrop" aria-label="Close player utility"></button>
+    <aside class="utility-drawer" id="utility-drawer" role="dialog" aria-modal="true" aria-labelledby="utility-title">
+      <header class="utility-drawer__head">
+        <div>
+          <p class="eyebrow" id="utility-eyebrow">Player setting</p>
+          <h2 class="utility-drawer__title" id="utility-title">Appearance</h2>
+        </div>
+        <button type="button" class="icon-button" id="utility-close" aria-label="Close">×</button>
+      </header>
+
+      <section class="utility-panel" id="appearance-panel">
+        <p class="utility-copy">Choose how this court is presented. Your selection is kept on this device for future releases.</p>
+        <div class="skin-options" id="skin-options" aria-label="Player skins"></div>
+      </section>
+
+      <section class="utility-panel" id="history-panel" hidden>
+        <p class="utility-copy">Every completed decree is kept locally for this build. Restarting begins a new reign without erasing earlier decisions.</p>
+        <div class="history-summary">
+          <div class="history-stat"><span class="utility-label">This reign</span><strong id="reign-history-count">0</strong></div>
+          <div class="history-stat"><span class="utility-label">All records</span><strong id="all-history-count">0</strong></div>
+        </div>
+        <ol class="history-list" id="history-list"></ol>
+        <div class="history-empty" id="history-empty">No decisions recorded yet.<br />Choose left or right to begin the record.</div>
+        <div class="history-actions">
+          <button type="button" class="quiet-button" id="clear-history">Clear record</button>
+        </div>
+        <div class="clear-confirm" id="clear-confirm" hidden>
+          <p>Delete every locally stored decision for this build? This cannot be undone.</p>
+          <div class="history-actions">
+            <button type="button" class="quiet-button" id="cancel-clear">Cancel</button>
+            <button type="button" class="danger-button" id="confirm-clear">Delete all</button>
+          </div>
+        </div>
+      </section>
+    </aside>
+  </div>
+
   <script type="module">
     import { createPlayer } from "./player-runtime.js";
+    import { SKINS, DEFAULT_SKIN, applySkinTheme, resolveSkinId } from "./skin-catalog.js";
 
     const el = (id) => document.getElementById(id);
     const params = new URLSearchParams(window.location.search);
     const requestedLocale = params.get("locale") || navigator.language || "en";
     const embeddedBuildPath = params.get("build");
-    const DEFAULT_SKIN = "github-light";
-    const KNOWN_SKINS = new Set(["github-light", "catppuccin-latte", "classic", "famicom", "phantom", "arcade", "terminal"]);
-    const SKIN_ALIASES = { workbench: "classic" };
-    const requestedSkin = SKIN_ALIASES[params.get("skin")] ?? params.get("skin");
+    const SKIN_PERSIST_KEY = "reigns-agent.player.skin.v1";
+    const HISTORY_PREFIX = "reigns-agent.player.history.v1:";
+    const REIGN_PREFIX = "reigns-agent.player.reign.v1:";
+    const MAX_HISTORY = 200;
+    const requestedSkin = resolveSkinId(params.get("skin"));
     const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ?? false;
 
-    document.documentElement.dataset.skin = KNOWN_SKINS.has(requestedSkin) ? requestedSkin : DEFAULT_SKIN;
+    let currentSkin = requestedSkin ?? resolveSkinId(safeStorageGet(SKIN_PERSIST_KEY)) ?? DEFAULT_SKIN;
+    applySkinTheme(document.documentElement, currentSkin);
 
     let buildData = null;
     let player = null;
@@ -409,6 +597,214 @@
     let presentation = {};
     let isTransitioning = false;
     let motionToken = 0;
+    let utilityMode = null;
+    let utilityReturnFocus = null;
+    let historyStorageKey = null;
+    let reignStorageKey = null;
+    let decisionHistory = [];
+    let currentReign = 0;
+
+    function safeStorageGet(key) {
+      try { return window.localStorage?.getItem(key) ?? null; }
+      catch { return null; }
+    }
+
+    function safeStorageSet(key, value) {
+      try { window.localStorage?.setItem(key, value); return true; }
+      catch { return false; }
+    }
+
+    function safeStorageRemove(key) {
+      try { window.localStorage?.removeItem(key); return true; }
+      catch { return false; }
+    }
+
+    function applySkin(value, { persist = true } = {}) {
+      const skin = resolveSkinId(value) ?? DEFAULT_SKIN;
+      currentSkin = skin;
+      applySkinTheme(document.documentElement, skin);
+      if (persist) safeStorageSet(SKIN_PERSIST_KEY, skin);
+      for (const option of el("skin-options").querySelectorAll("[data-skin-option]")) {
+        const selected = option.dataset.skinOption === skin;
+        option.setAttribute("aria-pressed", String(selected));
+        option.querySelector(".skin-option__state").textContent = selected ? "Active" : "";
+      }
+      try {
+        const url = new URL(window.location.href);
+        url.searchParams.set("skin", skin);
+        window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+      } catch { /* The fixed virtual player origin may reject history writes in hardened hosts. */ }
+    }
+
+    function renderSkinOptions() {
+      const container = el("skin-options");
+      container.replaceChildren();
+      for (const skin of SKINS) {
+        const option = document.createElement("button");
+        option.type = "button";
+        option.className = "skin-option";
+        option.dataset.skinOption = skin.id;
+        option.setAttribute("aria-pressed", "false");
+        const swatch = document.createElement("span");
+        swatch.className = "skin-option__swatch";
+        swatch.setAttribute("aria-hidden", "true");
+        const [background, accent] = skin.swatch;
+        swatch.style.setProperty("--skin-bg", background);
+        swatch.style.setProperty("--skin-accent", accent);
+        const name = document.createElement("span");
+        name.className = "skin-option__name";
+        name.textContent = skin.label;
+        const state = document.createElement("span");
+        state.className = "skin-option__state";
+        option.append(swatch, name, state);
+        option.addEventListener("click", () => applySkin(skin.id));
+        container.appendChild(option);
+      }
+      applySkin(currentSkin, { persist: false });
+    }
+
+    function openUtility(mode, trigger) {
+      utilityMode = mode;
+      utilityReturnFocus = trigger ?? document.activeElement;
+      const appearance = mode === "appearance";
+      el("appearance-panel").hidden = !appearance;
+      el("history-panel").hidden = appearance;
+      el("utility-eyebrow").textContent = appearance ? "Player setting" : `Reign ${String(currentReign).padStart(2, "0")}`;
+      el("utility-title").textContent = appearance ? "Appearance" : "Game record";
+      el("clear-confirm").hidden = true;
+      if (!appearance) renderHistory();
+      el("utility-layer").hidden = false;
+      document.querySelector(".player-shell").inert = true;
+      document.body.style.overflow = "hidden";
+      window.setTimeout(() => el("utility-close").focus(), 0);
+    }
+
+    function closeUtility() {
+      if (!utilityMode) return;
+      utilityMode = null;
+      el("utility-layer").hidden = true;
+      document.querySelector(".player-shell").inert = false;
+      document.body.style.overflow = "";
+      utilityReturnFocus?.focus?.();
+      utilityReturnFocus = null;
+    }
+
+    function normalizeGaugeMap(value) {
+      if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+      const result = {};
+      for (const [name, amount] of Object.entries(value)) {
+        if (typeof name === "string" && Number.isFinite(amount)) result[name] = Math.max(0, Math.min(100, amount));
+      }
+      return result;
+    }
+
+    function normalizeHistory(value) {
+      if (!Array.isArray(value)) return [];
+      return value.flatMap((record) => {
+        if (!record || typeof record !== "object" || !["left", "right"].includes(record.direction)) return [];
+        if (typeof record.id !== "string" || !Number.isInteger(record.reign) || !Number.isInteger(record.turn)) return [];
+        return [{
+          id: record.id,
+          reign: Math.max(1, record.reign),
+          turn: Math.max(1, record.turn),
+          timestamp: typeof record.timestamp === "string" ? record.timestamp : "",
+          cardId: typeof record.cardId === "string" ? record.cardId : "",
+          cardText: typeof record.cardText === "string" ? record.cardText : "",
+          direction: record.direction,
+          choiceLabel: typeof record.choiceLabel === "string" ? record.choiceLabel : record.direction,
+          before: normalizeGaugeMap(record.before),
+          after: normalizeGaugeMap(record.after)
+        }];
+      }).slice(-MAX_HISTORY);
+    }
+
+    function loadHistory() {
+      try { decisionHistory = normalizeHistory(JSON.parse(safeStorageGet(historyStorageKey) ?? "[]")); }
+      catch { decisionHistory = []; }
+      syncHistoryCount();
+    }
+
+    function persistHistory() {
+      if (historyStorageKey) safeStorageSet(historyStorageKey, JSON.stringify(decisionHistory.slice(-MAX_HISTORY)));
+      syncHistoryCount();
+    }
+
+    function nextReign() {
+      const previous = Number.parseInt(safeStorageGet(reignStorageKey) ?? "0", 10);
+      currentReign = Number.isInteger(previous) && previous >= 0 ? previous + 1 : 1;
+      if (reignStorageKey) safeStorageSet(reignStorageKey, String(currentReign));
+    }
+
+    function visibleGaugeValues(snapshot) {
+      return Object.fromEntries(Object.entries(projectGauges(snapshot?.factions ?? {}, presentation)).map(([name, gauge]) => [name, gauge.value]));
+    }
+
+    function recordDecision(before, after, direction) {
+      const card = before?.currentCard;
+      const choice = choiceFor(card, direction);
+      decisionHistory.push({
+        id: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        reign: currentReign,
+        turn: Math.max(1, Number(after?.turn) || 1),
+        timestamp: new Date().toISOString(),
+        cardId: card?.id ?? "",
+        cardText: card?.text ?? card?.id ?? "",
+        direction,
+        choiceLabel: choice?.label ?? direction,
+        before: visibleGaugeValues(before),
+        after: visibleGaugeValues(after)
+      });
+      decisionHistory = decisionHistory.slice(-MAX_HISTORY);
+      persistHistory();
+      if (utilityMode === "history") renderHistory();
+    }
+
+    function syncHistoryCount() {
+      el("history-count").textContent = String(decisionHistory.length);
+      el("reign-history-count").textContent = String(decisionHistory.filter((record) => record.reign === currentReign).length);
+      el("all-history-count").textContent = String(decisionHistory.length);
+    }
+
+    function renderHistory() {
+      syncHistoryCount();
+      const list = el("history-list");
+      list.replaceChildren();
+      const records = decisionHistory.slice().reverse();
+      el("history-empty").hidden = records.length > 0;
+      el("clear-history").disabled = records.length === 0;
+      for (const record of records) {
+        const item = document.createElement("li");
+        item.className = "history-entry";
+        const head = document.createElement("div");
+        head.className = "history-entry__head";
+        const sequence = document.createElement("span");
+        sequence.textContent = `Reign ${record.reign} · Decision ${String(record.turn).padStart(2, "0")}`;
+        const time = document.createElement("time");
+        time.dateTime = record.timestamp;
+        const parsed = Date.parse(record.timestamp);
+        time.textContent = Number.isNaN(parsed) ? "Local record" : new Intl.DateTimeFormat(requestedLocale, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(parsed);
+        head.append(sequence, time);
+        const choice = document.createElement("p");
+        choice.className = "history-entry__choice";
+        choice.textContent = `${record.direction === "left" ? "←" : "→"} ${record.choiceLabel}`;
+        const card = document.createElement("p");
+        card.className = "history-entry__card";
+        card.textContent = record.cardText || record.cardId || "Untitled card";
+        const deltas = document.createElement("div");
+        deltas.className = "history-entry__delta";
+        for (const [name, after] of Object.entries(record.after)) {
+          const delta = after - (record.before[name] ?? after);
+          if (!delta) continue;
+          const badge = document.createElement("span");
+          badge.className = "history-delta";
+          const label = projectGauges({ [name]: after }, presentation)[name]?.label || name;
+          badge.textContent = `${label} ${delta > 0 ? "+" : ""}${delta}`;
+          deltas.appendChild(badge);
+        }
+        item.append(head, choice, card, deltas);
+        list.appendChild(item);
+      }
+    }
 
     function setStatus(message, kind = "") {
       el("status").textContent = message;
@@ -448,7 +844,7 @@
       el("right").setAttribute("aria-label", `Choose right: ${right}`);
     }
 
-    function render(snapshot, { animate = false } = {}) {
+    function render(snapshot, { animateFrom = null } = {}) {
       lastSnap = snapshot;
       el("turn-label").textContent = String(snapshot?.turn ?? 0).padStart(2, "0");
       renderGauges(snapshot?.factions ?? {});
@@ -474,11 +870,18 @@
         if (snapshot?.gameOver) renderSummary(snapshot);
       }
       syncControls();
-      if (animate && !reducedMotion) {
-        el("card").classList.remove("is-entering");
+      if (animateFrom && !reducedMotion) {
+        const incomingClass = `is-entering-from-${animateFrom}`;
+        el("card").classList.remove("is-entering-from-left", "is-entering-from-right");
         void el("card").offsetWidth;
-        el("card").classList.add("is-entering");
-        window.setTimeout(() => el("card").classList.remove("is-entering"), 380);
+        el("card").classList.add(incomingClass);
+        el("transition-seal").classList.remove("is-stamping");
+        void el("transition-seal").offsetWidth;
+        el("transition-seal").classList.add("is-stamping");
+        window.setTimeout(() => {
+          el("card").classList.remove(incomingClass);
+          el("transition-seal").classList.remove("is-stamping");
+        }, 460);
       }
     }
 
@@ -504,6 +907,7 @@
 
     async function choose(direction) {
       if (!canChoose()) return;
+      const before = lastSnap;
       isTransitioning = true;
       const token = ++motionToken;
       syncControls();
@@ -512,14 +916,15 @@
       card.classList.remove("is-dragging");
       card.classList.add(`is-exiting-${direction}`);
       el("decision-stage").dataset.intent = direction;
-      await waitForMotion(220);
+      await waitForMotion(250);
       if (token !== motionToken) return;
       try {
         const snapshot = player.swipe(direction);
+        recordDecision(before, snapshot, direction);
         card.classList.remove("is-exiting-left", "is-exiting-right");
         el("decision-stage").removeAttribute("data-intent");
         isTransitioning = false;
-        render(snapshot, { animate: true });
+        render(snapshot, { animateFrom: direction === "left" ? "right" : "left" });
         setStatus(snapshot.gameOver ? "This reign is complete. Restart when ready." : "Decision recorded.");
       } catch (error) {
         card.classList.remove("is-exiting-left", "is-exiting-right");
@@ -534,12 +939,17 @@
       if (!buildData) return;
       motionToken += 1;
       isTransitioning = false;
-      el("card").classList.remove("is-exiting-left", "is-exiting-right", "is-dragging");
+      el("card").classList.remove("is-exiting-left", "is-exiting-right", "is-entering-from-left", "is-entering-from-right", "is-dragging");
+      el("transition-seal").classList.remove("is-stamping");
       el("card").style.transform = "";
       el("decision-stage").removeAttribute("data-intent");
       try {
-        player = createPlayer(buildData, { locale: requestedLocale });
-        render(player.start(), { animate: true });
+        const nextPlayer = createPlayer(buildData, { locale: requestedLocale });
+        const snapshot = nextPlayer.start();
+        player = nextPlayer;
+        nextReign();
+        render(snapshot, { animateFrom: "right" });
+        syncHistoryCount();
         setStatus("A new reign begins.");
       } catch (error) {
         setStatus(error.message, "error");
@@ -557,6 +967,10 @@
       el("project-title").textContent = title;
       el("release-label").textContent = version ? `Playable release · ${version}` : "Playable release";
       el("session-label").textContent = build.buildId ? `Build ${build.buildId}` : "Offline player";
+      const storageIdentity = encodeURIComponent(String(build.buildId || `${title}-${version || "local"}`));
+      historyStorageKey = `${HISTORY_PREFIX}${storageIdentity}`;
+      reignStorageKey = `${REIGN_PREFIX}${storageIdentity}`;
+      loadHistory();
       restartReign();
     }
 
@@ -593,7 +1007,11 @@
     }
 
     function applyPresentation(presentationConfig = {}) {
-      const blockedVariables = new Set(["--bg", "--panel", "--ink", "--muted", "--accent", "--accent-2", "--border", "--radius"]);
+      const blockedVariables = new Set([
+        "--bg", "--surface", "--surface-2", "--surface-3", "--panel", "--panel-raised", "--ink", "--muted",
+        "--accent", "--accent-2", "--danger", "--ok", "--decision-left", "--decision-right", "--button-ink",
+        "--border", "--radius", "--shadow", "--player-shadow"
+      ]);
       for (const [name, value] of Object.entries(presentationConfig?.css?.variables ?? {})) {
         if (name.startsWith("--") && !blockedVariables.has(name)) document.documentElement.style.setProperty(name, String(value));
       }
@@ -658,6 +1076,25 @@
     el("left").addEventListener("click", () => void choose("left"));
     el("right").addEventListener("click", () => void choose("right"));
     el("restart").addEventListener("click", restartReign);
+    el("open-appearance").addEventListener("click", (event) => openUtility("appearance", event.currentTarget));
+    el("open-history").addEventListener("click", (event) => openUtility("history", event.currentTarget));
+    el("utility-close").addEventListener("click", closeUtility);
+    el("utility-backdrop").addEventListener("click", closeUtility);
+    el("clear-history").addEventListener("click", () => {
+      el("clear-confirm").hidden = false;
+      el("confirm-clear").focus();
+    });
+    el("cancel-clear").addEventListener("click", () => {
+      el("clear-confirm").hidden = true;
+      el("clear-history").focus();
+    });
+    el("confirm-clear").addEventListener("click", () => {
+      decisionHistory = [];
+      if (historyStorageKey) safeStorageRemove(historyStorageKey);
+      el("clear-confirm").hidden = true;
+      renderHistory();
+      setStatus("Local game record cleared.");
+    });
     el("load").addEventListener("click", () => el("file").click());
     el("file").addEventListener("change", async (event) => {
       const file = event.target.files?.[0];
@@ -666,6 +1103,10 @@
       catch (error) { setStatus(error.message, "error"); }
     });
     window.addEventListener("keydown", (event) => {
+      if (utilityMode) {
+        if (event.key === "Escape") { event.preventDefault(); closeUtility(); }
+        return;
+      }
       if (event.repeat || !canChoose()) return;
       if (event.key === "ArrowLeft" || event.key.toLowerCase() === "a") {
         event.preventDefault(); void choose("left");
@@ -674,6 +1115,7 @@
       }
     });
 
+    renderSkinOptions();
     attachCardInput();
     syncControls();
     void loadEmbeddedBuild();

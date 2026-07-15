@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { SKINS as SKIN_CATALOG, DEFAULT_SKIN, applySkinTheme, resolveSkinId as resolveSharedSkinId } from "../../../packages/interface/web/skin-catalog.js";
 import { createCreatorBackend } from "./backend.js";
 import "./styles.css";
 
@@ -18,18 +19,9 @@ const PANELS = [
 ];
 
 const FACTIONS = ["gauge0", "gauge1", "gauge2", "gauge3"];
-const SKINS = [
-  ["github-light", "Github Light"],
-  ["catppuccin-latte", "Catppuccin Latte"],
-  ["classic", "Classic"],
-  ["famicom", "Famicom"],
-  ["phantom", "Phantom"],
-  ["arcade", "Arcade"],
-  ["terminal", "Terminal"]
-];
+const SKINS = SKIN_CATALOG.map(({ id, label }) => [id, label]);
 
 const DEFAULT_PANEL = "overview";
-const DEFAULT_SKIN = "github-light";
 const LEGACY_DRAFT_KEY = "reigns-agent.creator-web.editor-draft";
 const RAIL_COLLAPSED_KEY = "reigns-agent.creator-web.rail-collapsed";
 const RAIL_PINNED_KEY = "reigns-agent.creator-web.rail-pinned";
@@ -76,9 +68,6 @@ const ZH_HANS_COPY = {
   "No releases yet.": "尚无发布记录。", Download: "下载", "Delete release": "删除发布", Target: "目标平台",
   "WebView2 required": "需要 WebView2", "Review is optional": "审查为可选项", "Player validation must pass before release.": "发布前必须通过玩家端校验。",
   Unavailable: "不可用", Available: "可用", Size: "大小", Created: "创建时间"
-};
-const SKIN_ALIASES = {
-  workbench: "classic"
 };
 const AI_PROTOCOLS = [
   ["openai_chat", "OpenAI Chat"],
@@ -630,13 +619,8 @@ function readRailPinned() {
   return !readRailCollapsed();
 }
 
-function isKnownSkin(value) {
-  return SKINS.some(([id]) => id === value);
-}
-
 function resolveSkinId(value) {
-  const skin = SKIN_ALIASES[value] ?? value;
-  return isKnownSkin(skin) ? skin : null;
+  return resolveSharedSkinId(value);
 }
 
 function readUrlState() {
@@ -1057,7 +1041,7 @@ function App() {
   const followLocaleLabel = desktopClient ? "Follow device" : "Follow browser";
 
   useEffect(() => {
-    document.documentElement.dataset.skin = skin;
+    applySkinTheme(document.documentElement, skin);
     syncWorkbenchUrl(activePanel, skin, "replace");
     if (configReady) {
       void api("/api/config", { method: "PATCH", body: { theme: skin } });
