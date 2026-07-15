@@ -1,5 +1,37 @@
 # Error Log
 
+## [ERR-20260715-006] github-push-close-notify
+
+**Logged**: 2026-07-15T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: infra
+
+### Summary
+GitHub closed the HTTPS connection while pushing Trellis wrap-up commits.
+
+### Error
+```text
+fatal: unable to access 'https://github.com/Sisyphe42/ReignsAgent.git/': schannel: server closed abruptly (missing close_notify)
+```
+
+### Context
+- The feature commits had already pushed and PR #25 existed.
+- Only the task-archive and session-journal commits remained local.
+
+### Suggested Fix
+Keep the branch history unchanged and retry the normal push after confirming the local branch is only ahead, not diverged.
+
+### Metadata
+- Reproducible: no
+- Related Files: .trellis/workspace/journal-1.md
+
+### Resolution
+- **Resolved**: 2026-07-15T00:00:00+08:00
+- **Notes**: Confirmed the branch was ahead without divergence and retried the push.
+
+---
+
 ## [ERR-20260715-005] powershell-shell-fallback
 
 **Logged**: 2026-07-15T00:00:00+08:00
