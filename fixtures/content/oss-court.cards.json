@@ -2,6 +2,7 @@
   "metadata": {
     "title": "Open Court Sample",
     "version": "0.2.0",
+    "author": "ReignsAgent Contributors",
     "description": "A complete local test deck for Phase 4 creator, player, diagnostics, and build workflows.",
     "artLicense": "CC BY 3.0",
     "artSource": "Game-icons.net SVG icons from the game-icons/icons repository",

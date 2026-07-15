@@ -61,7 +61,7 @@ const ZH_HANS_COPY = {
   "Fetch /models": "获取 /models", "Validate endpoint": "验证端点", "Build plan": "生成计划",
   "No connector plan generated.": "尚未生成连接器计划。", "Configured endpoints are used when drafting AI Assist plans.": "配置的端点将用于生成 AI 辅助草稿。",
   Setup: "设置", Off: "关闭",
-  "Project title saved": "项目标题已保存", ready: "就绪", loading: "加载中", new: "新增", draft: "草稿",
+  "Project metadata saved": "项目资料已保存", "Project author": "项目作者", "Project description": "项目简介", "Save project details": "保存项目资料", ready: "就绪", loading: "加载中", new: "新增", draft: "草稿",
   blocked: "受阻", set: "已设置", Valid: "有效", "Needs work": "需要处理", Ready: "就绪", Blocked: "受阻",
   Cards: "卡牌", Validation: "验证", "Player-ready": "玩家端就绪", "Not run": "未运行", Prepared: "已准备", "Not prepared": "未准备",
   "Windows release": "Windows 发布", "Build Windows EXE": "生成 Windows EXE", "Release history": "发布历史",
@@ -5321,6 +5321,8 @@ function HostedWorkspaceTools({ onRefresh, onStatus }) {
 
 function SettingsPanel({ editor, aiSettings, apiKey, apiKeySaved, locale, localePreference, followLocaleLabel, onLocaleChange, onAiSettingsChange, onApiKeyChange, onApiKeyClear, onRefresh, onStatus }) {
   const [title, setTitle] = useState(editor?.metadata?.title ?? "");
+  const [author, setAuthor] = useState(editor?.metadata?.author ?? "");
+  const [description, setDescription] = useState(editor?.metadata?.description ?? "");
   const [plan, setPlan] = useState("");
   const [theme, setTheme] = useState("small kingdom");
   const [count, setCount] = useState(8);
@@ -5336,11 +5338,13 @@ function SettingsPanel({ editor, aiSettings, apiKey, apiKeySaved, locale, locale
   const protocolLabel = AI_PROTOCOLS.find(([id]) => id === normalizedAiSettings.protocol)?.[1] ?? normalizedAiSettings.protocol;
 
   useEffect(() => setTitle(editor?.metadata?.title ?? ""), [editor?.metadata?.title]);
+  useEffect(() => setAuthor(editor?.metadata?.author ?? ""), [editor?.metadata?.author]);
+  useEffect(() => setDescription(editor?.metadata?.description ?? ""), [editor?.metadata?.description]);
   useEffect(() => setFetchedModels([]), [normalizedAiSettings.baseUrl, normalizedAiSettings.protocol]);
 
-  async function saveTitle() {
-    await api("/api/editor/metadata", { method: "PATCH", body: { metadata: { title } } });
-    onStatus(tr(locale, "Project title saved"));
+  async function saveProjectMetadata() {
+    await api("/api/editor/metadata", { method: "PATCH", body: { metadata: { title, author, description } } });
+    onStatus(tr(locale, "Project metadata saved"));
     await onRefresh();
   }
 
@@ -5549,9 +5553,22 @@ function SettingsPanel({ editor, aiSettings, apiKey, apiKeySaved, locale, locale
       </div>
       <div className="subsection">
         <h3>{tr(locale, "Project")}</h3>
-        <div className="field-row">
-          <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder={tr(locale, "Deck title")} />
-          <button className="btn" onClick={() => void saveTitle()}>{tr(locale, "Save title")}</button>
+        <div className="ai-channel-form">
+          <div className="ai-form-row">
+            <label className="ai-field-label" htmlFor="project-title">{tr(locale, "Deck title")}</label>
+            <div className="field-row">
+              <input id="project-title" value={title} onChange={(event) => setTitle(event.target.value)} placeholder={tr(locale, "Deck title")} />
+              <button className="btn" type="button" onClick={() => void saveProjectMetadata()}>{tr(locale, "Save project details")}</button>
+            </div>
+          </div>
+          <div className="ai-form-row">
+            <label className="ai-field-label" htmlFor="project-author">{tr(locale, "Project author")}</label>
+            <input id="project-author" value={author} onChange={(event) => setAuthor(event.target.value)} placeholder={tr(locale, "Project author")} />
+          </div>
+          <div className="ai-form-row ai-form-row--stack">
+            <label className="ai-field-label" htmlFor="project-description">{tr(locale, "Project description")}</label>
+            <textarea id="project-description" rows="3" value={description} onChange={(event) => setDescription(event.target.value)} placeholder={tr(locale, "Project description")} />
+          </div>
         </div>
       </div>
       <div className="subsection">

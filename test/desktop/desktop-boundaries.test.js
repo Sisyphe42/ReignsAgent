@@ -108,7 +108,7 @@ describe("Electron desktop boundaries", () => {
     assert.match(nativeSource, /message == WM_DPICHANGED/);
     assert.match(manifest, /PerMonitorV2,PerMonitor/);
     assert.match(standalonePlayer, /class="decision-stage"/);
-    assert.match(standalonePlayer, /is-exiting-\$\{direction\}/);
+    assert.match(standalonePlayer, /element\.animate\(keyframes, options\)/);
     assert.match(standalonePlayer, /el\("left"\)\.addEventListener\("click"/);
     assert.match(standalonePlayer, /el\("restart"\)\.addEventListener\("click", restartReign\)/);
     assert.match(standalonePlayer, /reigns-agent\.player\.skin\.v1/);
@@ -122,7 +122,13 @@ describe("Electron desktop boundaries", () => {
     assert.match(standalonePlayer, /reigns-agent\.player\.history\.v1:/);
     assert.match(standalonePlayer, /decisionHistory = decisionHistory\.slice\(-MAX_HISTORY\)/);
     assert.match(standalonePlayer, /const snapshot = player\.swipe\(direction\);\s+recordDecision\(before, snapshot, direction\)/);
-    assert.match(standalonePlayer, /animateFrom: direction === "left" \? "right" : "left"/);
+    assert.match(standalonePlayer, /await animateOutgoing\(direction\)/);
+    assert.match(standalonePlayer, /await animateIncoming\(direction\)/);
+    assert.match(standalonePlayer, /new Set\(decisionHistory\.map\(\(record\) => record\.reign\)\)/);
+    assert.match(standalonePlayer, /player\.setLocale\(locale\)/);
+    assert.match(standalonePlayer, /id="about-project-description"/);
+    assert.match(standalonePlayer, /data-skin="famicom".*\.card/s);
+    assert.match(standalonePlayer, /data-skin="phantom".*\.card/s);
     assert.match(standalonePlayer, /prefers-reduced-motion: reduce/);
     assert.doesNotMatch(standalonePlayer, /awaitingRestartConfirm|Click restart again/);
   });

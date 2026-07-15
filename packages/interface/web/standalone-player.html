@@ -241,18 +241,6 @@
       background: linear-gradient(90deg, var(--decision-left), var(--accent), var(--decision-right));
     }
     .card.is-dragging { transition: box-shadow 120ms ease; cursor: grabbing; }
-    .card.is-exiting-left { transform: translate3d(-125%, 10px, 0) rotate(-13deg); opacity: 0; }
-    .card.is-exiting-right { transform: translate3d(125%, 10px, 0) rotate(13deg); opacity: 0; }
-    .card.is-entering-from-left { animation: card-arrive-left 440ms cubic-bezier(.16,.9,.22,1) both; }
-    .card.is-entering-from-right { animation: card-arrive-right 440ms cubic-bezier(.16,.9,.22,1) both; }
-    @keyframes card-arrive-left {
-      from { opacity: 0; transform: translate3d(-38%, -8px, -80px) rotate(-7deg) scale(.94); filter: blur(3px); }
-      72% { opacity: 1; transform: translate3d(2.5%, 0, 0) rotate(.7deg) scale(1.006); filter: blur(0); }
-    }
-    @keyframes card-arrive-right {
-      from { opacity: 0; transform: translate3d(38%, -8px, -80px) rotate(7deg) scale(.94); filter: blur(3px); }
-      72% { opacity: 1; transform: translate3d(-2.5%, 0, 0) rotate(-.7deg) scale(1.006); filter: blur(0); }
-    }
     .transition-seal {
       position: absolute;
       z-index: 5;
@@ -381,20 +369,29 @@
     .utility-copy { margin: 0 0 18px; color: var(--muted); font-size: 13px; line-height: 1.55; }
     .skin-options { display: grid; gap: 8px; }
     .skin-option {
-      width: 100%; min-height: 52px; display: grid; grid-template-columns: 34px 1fr auto; align-items: center; gap: 12px;
-      padding: 9px 12px; border: 1px solid var(--border); border-radius: calc(var(--radius) * .6);
+      width: 100%; min-height: 64px; display: grid; grid-template-columns: 42px 1fr auto; align-items: center; gap: 12px;
+      padding: 10px 12px; border: 1px solid var(--border); border-radius: calc(var(--radius) * .6);
       background: var(--panel-raised); color: var(--ink); cursor: pointer; text-align: left;
     }
     .skin-option:hover, .skin-option[aria-pressed="true"] { border-color: var(--accent); }
     .skin-option[aria-pressed="true"] { box-shadow: inset 3px 0 var(--accent); }
-    .skin-option__swatch { width: 34px; height: 34px; border: 1px solid color-mix(in srgb, var(--ink) 22%, transparent); border-radius: 50%; background: linear-gradient(135deg, var(--skin-bg), var(--skin-accent)); }
+    .skin-option__swatch { width: 42px; height: 42px; border: 1px solid color-mix(in srgb, var(--ink) 22%, transparent); border-radius: calc(var(--radius) * .45); background: linear-gradient(135deg, var(--skin-bg) 0 60%, var(--skin-accent) 60%); box-shadow: 3px 3px 0 color-mix(in srgb, var(--skin-accent) 32%, transparent); }
+    .skin-option__copy { min-width: 0; }
     .skin-option__name { font-weight: 650; }
+    .skin-option__description { display: block; margin-top: 3px; color: var(--muted); font-size: 11px; }
     .skin-option__state { color: var(--accent); font-family: "Cascadia Mono", Consolas, monospace; font-size: 10px; text-transform: uppercase; }
     .history-summary { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 18px; }
     .history-stat { padding: 12px; border: 1px solid var(--border); border-radius: calc(var(--radius) * .55); background: var(--panel-raised); }
     .history-stat strong { display: block; margin-top: 4px; font-family: Georgia, serif; font-size: 24px; font-weight: 500; }
-    .history-list { display: grid; gap: 9px; margin: 0; padding: 0; list-style: none; }
+    .history-list { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+    .history-reign { overflow: hidden; border: 1px solid var(--border); border-radius: calc(var(--radius) * .55); background: var(--panel-raised); }
+    .history-reign summary { display: grid; grid-template-columns: 1fr auto; gap: 10px; padding: 14px; cursor: pointer; list-style: none; }
+    .history-reign summary::-webkit-details-marker { display: none; }
+    .history-reign__title { font-family: Georgia, serif; font-size: 21px; }
+    .history-reign__meta { color: var(--muted); font-family: "Cascadia Mono", Consolas, monospace; font-size: 10px; text-align: right; }
+    .history-reign__decisions { display: grid; gap: 1px; margin: 0; padding: 1px 0 0; list-style: none; background: var(--border); }
     .history-entry { padding: 13px 14px; border: 1px solid var(--border); border-radius: calc(var(--radius) * .55); background: var(--panel-raised); }
+    .history-reign .history-entry { border: 0; border-radius: 0; }
     .history-entry__head { display: flex; justify-content: space-between; gap: 12px; color: var(--muted); font-family: "Cascadia Mono", Consolas, monospace; font-size: 10px; }
     .history-entry__choice { margin: 9px 0 4px; font-family: Georgia, serif; font-size: 18px; line-height: 1.25; }
     .history-entry__card { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.4; }
@@ -406,6 +403,42 @@
     .danger-button { border-color: var(--decision-left); color: var(--decision-left); }
     .clear-confirm { margin-top: 12px; padding: 12px; border: 1px solid var(--decision-left); background: color-mix(in srgb, var(--decision-left) 7%, transparent); }
     .clear-confirm p { margin: 0 0 10px; font-size: 12px; line-height: 1.45; }
+    .language-options { display: grid; gap: 8px; }
+    .language-option { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center; width: 100%; padding: 13px 14px; border: 1px solid var(--border); border-radius: calc(var(--radius) * .55); background: var(--panel-raised); color: var(--ink); cursor: pointer; text-align: left; }
+    .language-option[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 3px 0 var(--accent); }
+    .language-option small { display: block; margin-top: 3px; color: var(--muted); }
+    .language-option__state { color: var(--accent); font-family: "Cascadia Mono", Consolas, monospace; font-size: 10px; text-transform: uppercase; }
+    .about-project { margin: 0 0 22px; padding: 18px; border: 1px solid var(--border); border-radius: calc(var(--radius) * .65); background: var(--panel-raised); }
+    .about-project h3 { margin: 0; font-family: Georgia, serif; font-size: 26px; font-weight: 500; }
+    .about-project__byline { margin: 5px 0 14px; color: var(--accent); font-family: "Cascadia Mono", Consolas, monospace; font-size: 11px; }
+    .about-project__description { margin: 0; color: var(--muted); line-height: 1.65; white-space: pre-wrap; }
+    .about-engine { padding-top: 20px; border-top: 1px solid var(--border); }
+    .about-engine__name { margin: 0 0 6px; font-family: "Cascadia Mono", Consolas, monospace; font-size: 12px; letter-spacing: .15em; text-transform: uppercase; }
+    .about-engine p { color: var(--muted); line-height: 1.6; }
+
+    :root[data-skin="famicom"] body {
+      background-color: #efe4cc;
+      background-image: linear-gradient(90deg, color-mix(in srgb, var(--accent) 10%, transparent) 1px, transparent 1px), linear-gradient(color-mix(in srgb, var(--accent-2) 9%, transparent) 1px, transparent 1px);
+      background-size: 16px 16px;
+      font-family: "Cascadia Mono", Consolas, monospace;
+    }
+    :root[data-skin="famicom"] body::before { opacity: .28; background: repeating-linear-gradient(135deg, transparent 0 8px, color-mix(in srgb, var(--ink) 7%, transparent) 8px 9px); mask-image: none; }
+    :root[data-skin="famicom"] .player-shell { border-left: 8px solid var(--accent); border-right: 8px solid var(--accent-2); padding-inline: 18px; }
+    :root[data-skin="famicom"] .project-title, :root[data-skin="famicom"] .card__text, :root[data-skin="famicom"] .choice-rail__label { font-family: "Cascadia Mono", Consolas, monospace; font-weight: 800; letter-spacing: -.055em; }
+    :root[data-skin="famicom"] .card { border: 4px double var(--ink); background: var(--panel); box-shadow: 8px 8px 0 var(--accent-2); }
+    :root[data-skin="famicom"] .card::before { height: 9px; background: repeating-linear-gradient(90deg, var(--accent) 0 18px, var(--panel) 18px 24px, var(--accent-2) 24px 42px, var(--panel) 42px 48px); }
+    :root[data-skin="famicom"] .choice-button, :root[data-skin="famicom"] .utility-trigger { border-width: 2px; text-transform: uppercase; box-shadow: 3px 3px 0 var(--ink); }
+
+    :root[data-skin="phantom"] body { background: radial-gradient(circle at 74% 20%, rgba(215,25,32,.21), transparent 26rem), #09090a; }
+    :root[data-skin="phantom"] body::before { opacity: .35; background: repeating-linear-gradient(-18deg, transparent 0 13px, rgba(255,255,255,.035) 13px 14px); mask-image: none; }
+    :root[data-skin="phantom"] .masthead { border-bottom: 5px solid var(--accent); }
+    :root[data-skin="phantom"] .project-title, :root[data-skin="phantom"] .utility-drawer__title { font-family: Impact, "Arial Black", sans-serif; font-weight: 400; letter-spacing: .015em; text-transform: uppercase; }
+    :root[data-skin="phantom"] .card { border: 0; clip-path: polygon(2% 0, 100% 1%, 98% 100%, 0 98%); background: #f4f0e8; color: #121214; box-shadow: 16px 15px 0 var(--accent); }
+    :root[data-skin="phantom"] .card::before { height: 12px; background: var(--accent); clip-path: polygon(0 0, 100% 0, 84% 100%, 7% 65%); }
+    :root[data-skin="phantom"] .card__text { font-family: "Arial Black", Impact, sans-serif; font-size: clamp(22px, 3.3vw, 35px); line-height: 1.1; text-transform: uppercase; }
+    :root[data-skin="phantom"] .choice-button { background: #121214; color: #f4f0e8; border-color: #121214; }
+    :root[data-skin="phantom"] .gauge { border-color: var(--accent); background: #151515; }
+    :root[data-skin="phantom"] .utility-drawer { background: linear-gradient(160deg, rgba(215,25,32,.16), transparent 210px), #151515; }
     [hidden] { display: none !important; }
     @media (max-width: 820px) {
       .player-shell { width: min(640px, calc(100% - 24px)); padding-top: 18px; }
@@ -477,7 +510,9 @@
       <div>
         <div class="masthead-tools" aria-label="Player utilities">
           <button type="button" class="utility-trigger" id="open-appearance">Appearance</button>
+          <button type="button" class="utility-trigger" id="open-language" hidden>Language</button>
           <button type="button" class="utility-trigger" id="open-history">Record <span class="utility-trigger__count" id="history-count">0</span></button>
+          <button type="button" class="utility-trigger" id="open-about">About</button>
         </div>
         <div class="turn-readout">
           <p class="utility-label">Decision</p>
@@ -569,6 +604,24 @@
           </div>
         </div>
       </section>
+
+      <section class="utility-panel" id="language-panel" hidden>
+        <p class="utility-copy" id="language-copy">Switch the authored language for cards and choices. The current reign continues.</p>
+        <div class="language-options" id="language-options" aria-label="Game languages"></div>
+      </section>
+
+      <section class="utility-panel" id="about-panel" hidden>
+        <article class="about-project">
+          <h3 id="about-project-title">Untitled court</h3>
+          <p class="about-project__byline" id="about-project-byline"></p>
+          <p class="about-project__description" id="about-project-description"></p>
+        </article>
+        <div class="about-engine">
+          <p class="about-engine__name">Built with ReignsAgent</p>
+          <p id="about-engine-copy">ReignsAgent is an open-source authoring framework and deterministic runtime for card-based narrative experiences.</p>
+          <p id="about-boundary-copy">This release contains only the player runtime, authored content, and project assets. Creator tools, AI connectors, and credentials are not included.</p>
+        </div>
+      </section>
     </aside>
   </div>
 
@@ -583,9 +636,39 @@
     const SKIN_PERSIST_KEY = "reigns-agent.player.skin.v1";
     const HISTORY_PREFIX = "reigns-agent.player.history.v1:";
     const REIGN_PREFIX = "reigns-agent.player.reign.v1:";
+    const LOCALE_PREFIX = "reigns-agent.player.locale.v1:";
     const MAX_HISTORY = 200;
     const requestedSkin = resolveSkinId(params.get("skin"));
     const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ?? false;
+
+    const PLAYER_COPY = Object.freeze({
+      en: {
+        appearance: "Appearance", language: "Language", record: "Record", about: "About", decision: "Decision",
+        leftDecree: "Left decree", rightDecree: "Right decree", openBuild: "Open build", restart: "Restart reign",
+        setting: "Player setting", gameRecord: "Game record", appearanceCopy: "Choose how this court is presented. Your selection is kept on this device for future releases.",
+        languageCopy: "Switch the authored language for cards and choices. The current reign continues.",
+        recordCopy: "Decisions are grouped by local play session. Restarting begins a new reign without erasing earlier sessions.",
+        thisReign: "This reign", allReigns: "All reigns", noRecord: "No reigns recorded yet. Choose left or right to begin the record.",
+        clearRecord: "Clear record", active: "Active", decisions: "decisions", localRecord: "Local record", aboutTitle: "About this release",
+        builtWith: "Built with ReignsAgent", engineCopy: "ReignsAgent is an open-source authoring framework and deterministic runtime for card-based narrative experiences.",
+        boundaryCopy: "This release contains only the player runtime, authored content, and project assets. Creator tools, AI connectors, and credentials are not included.",
+        by: "By", playableRelease: "Playable release", offlinePlayer: "Offline player", newReign: "A new reign begins.",
+        recorded: "Decision recorded.", complete: "This reign is complete. Restart when ready.", reignConcluded: "Reign concluded", languageChanged: "Language changed."
+      },
+      "zh-Hans": {
+        appearance: "外观", language: "语言", record: "记录", about: "关于", decision: "决策",
+        leftDecree: "左侧选择", rightDecree: "右侧选择", openBuild: "打开构建", restart: "重新开始本局",
+        setting: "玩家设置", gameRecord: "游玩记录", appearanceCopy: "选择本作的视觉皮肤。设置会保存在此设备上并用于后续发布版本。",
+        languageCopy: "切换卡牌与选项的作者语言，当前局次会继续进行。",
+        recordCopy: "决策按本地游玩局次归档。重新开始会创建新的 Reign，但不会删除此前记录。",
+        thisReign: "本局决策", allReigns: "全部局次", noRecord: "尚无游玩记录。选择左侧或右侧后会开始记录。",
+        clearRecord: "清空记录", active: "当前", decisions: "次决策", localRecord: "本地记录", aboutTitle: "关于本作",
+        builtWith: "使用 ReignsAgent 构建", engineCopy: "ReignsAgent 是用于创作卡牌叙事体验的开源框架与确定性运行时。",
+        boundaryCopy: "本发布物仅包含玩家运行时、作者内容与项目资源，不包含 Creator 工具、AI 连接器或密钥。",
+        by: "作者", playableRelease: "可游玩版本", offlinePlayer: "离线玩家", newReign: "新的 Reign 开始了。",
+        recorded: "决策已记录。", complete: "本局已经结束，可以重新开始。", reignConcluded: "本局结束", languageChanged: "语言已切换。"
+      }
+    });
 
     let currentSkin = requestedSkin ?? resolveSkinId(safeStorageGet(SKIN_PERSIST_KEY)) ?? DEFAULT_SKIN;
     applySkinTheme(document.documentElement, currentSkin);
@@ -601,8 +684,11 @@
     let utilityReturnFocus = null;
     let historyStorageKey = null;
     let reignStorageKey = null;
+    let localeStorageKey = null;
     let decisionHistory = [];
     let currentReign = 0;
+    let currentLocale = requestedLocale;
+    let supportedLocales = ["en"];
 
     function safeStorageGet(key) {
       try { return window.localStorage?.getItem(key) ?? null; }
@@ -619,6 +705,61 @@
       catch { return false; }
     }
 
+    function copy(key) {
+      const exact = PLAYER_COPY[currentLocale];
+      const language = PLAYER_COPY[currentLocale?.split("-")[0]];
+      return exact?.[key] ?? language?.[key] ?? PLAYER_COPY.en[key] ?? key;
+    }
+
+    function localeLabel(locale) {
+      const known = { en: "English", "zh-Hans": "简体中文", zh: "中文" };
+      if (known[locale]) return known[locale];
+      try { return new Intl.DisplayNames([currentLocale], { type: "language" }).of(locale) ?? locale; }
+      catch { return locale; }
+    }
+
+    function translateChrome() {
+      document.documentElement.lang = currentLocale;
+      el("open-appearance").textContent = copy("appearance");
+      el("open-language").textContent = `${copy("language")} · ${localeLabel(currentLocale)}`;
+      const historyCount = el("history-count");
+      el("open-history").replaceChildren(document.createTextNode(`${copy("record")} `), historyCount);
+      el("open-about").textContent = copy("about");
+      document.querySelector(".turn-readout .utility-label").textContent = copy("decision");
+      document.querySelector(".choice-rail--left .choice-rail__key").textContent = copy("leftDecree");
+      document.querySelector(".choice-rail--right .choice-rail__key").textContent = copy("rightDecree");
+      el("load").textContent = copy("openBuild");
+      el("restart").textContent = copy("restart");
+      document.querySelector("#appearance-panel .utility-copy").textContent = copy("appearanceCopy");
+      el("language-copy").textContent = copy("languageCopy");
+      document.querySelector("#history-panel .utility-copy").textContent = copy("recordCopy");
+      document.querySelectorAll(".history-stat .utility-label")[0].textContent = copy("thisReign");
+      document.querySelectorAll(".history-stat .utility-label")[1].textContent = copy("allReigns");
+      el("history-empty").textContent = copy("noRecord");
+      el("clear-history").textContent = copy("clearRecord");
+      document.querySelector(".about-engine__name").textContent = copy("builtWith");
+      el("about-engine-copy").textContent = copy("engineCopy");
+      el("about-boundary-copy").textContent = copy("boundaryCopy");
+      syncBuildChrome();
+      if (utilityMode) updateUtilityHeading();
+      renderSkinOptions();
+      renderLanguageOptions();
+      renderHistory();
+    }
+
+    function syncBuildChrome() {
+      if (!buildData) return;
+      const metadata = buildData.content?.metadata ?? {};
+      const title = buildData.title || metadata.title || "Untitled court";
+      const version = buildData.version || metadata.version || "";
+      el("release-label").textContent = version ? `${copy("playableRelease")} · ${version}` : copy("playableRelease");
+      el("session-label").textContent = buildData.buildId ? `Build ${buildData.buildId}` : copy("offlinePlayer");
+      el("about-project-title").textContent = title;
+      const author = typeof metadata.author === "string" ? metadata.author.trim() : "";
+      el("about-project-byline").textContent = [author ? `${copy("by")} ${author}` : "", version ? `v${version}` : ""].filter(Boolean).join(" · ");
+      el("about-project-description").textContent = typeof metadata.description === "string" && metadata.description.trim() ? metadata.description.trim() : title;
+    }
+
     function applySkin(value, { persist = true } = {}) {
       const skin = resolveSkinId(value) ?? DEFAULT_SKIN;
       currentSkin = skin;
@@ -627,7 +768,7 @@
       for (const option of el("skin-options").querySelectorAll("[data-skin-option]")) {
         const selected = option.dataset.skinOption === skin;
         option.setAttribute("aria-pressed", String(selected));
-        option.querySelector(".skin-option__state").textContent = selected ? "Active" : "";
+        option.querySelector(".skin-option__state").textContent = selected ? copy("active") : "";
       }
       try {
         const url = new URL(window.location.href);
@@ -651,32 +792,84 @@
         const [background, accent] = skin.swatch;
         swatch.style.setProperty("--skin-bg", background);
         swatch.style.setProperty("--skin-accent", accent);
+        const optionCopy = document.createElement("span");
+        optionCopy.className = "skin-option__copy";
         const name = document.createElement("span");
         name.className = "skin-option__name";
         name.textContent = skin.label;
+        const description = document.createElement("small");
+        description.className = "skin-option__description";
+        description.textContent = skin.description ?? "";
+        optionCopy.append(name, description);
         const state = document.createElement("span");
         state.className = "skin-option__state";
-        option.append(swatch, name, state);
+        option.append(swatch, optionCopy, state);
         option.addEventListener("click", () => applySkin(skin.id));
         container.appendChild(option);
       }
       applySkin(currentSkin, { persist: false });
     }
 
+    function updateUtilityHeading() {
+      const modes = {
+        appearance: [copy("setting"), copy("appearance")],
+        language: [copy("setting"), copy("language")],
+        history: [`Reign ${String(currentReign).padStart(2, "0")}`, copy("gameRecord")],
+        about: [copy("playableRelease"), copy("aboutTitle")]
+      };
+      const [eyebrow, title] = modes[utilityMode] ?? modes.appearance;
+      el("utility-eyebrow").textContent = eyebrow;
+      el("utility-title").textContent = title;
+    }
+
     function openUtility(mode, trigger) {
       utilityMode = mode;
       utilityReturnFocus = trigger ?? document.activeElement;
-      const appearance = mode === "appearance";
-      el("appearance-panel").hidden = !appearance;
-      el("history-panel").hidden = appearance;
-      el("utility-eyebrow").textContent = appearance ? "Player setting" : `Reign ${String(currentReign).padStart(2, "0")}`;
-      el("utility-title").textContent = appearance ? "Appearance" : "Game record";
+      for (const panel of ["appearance", "language", "history", "about"]) el(`${panel}-panel`).hidden = mode !== panel;
+      updateUtilityHeading();
       el("clear-confirm").hidden = true;
-      if (!appearance) renderHistory();
+      if (mode === "history") renderHistory();
       el("utility-layer").hidden = false;
       document.querySelector(".player-shell").inert = true;
       document.body.style.overflow = "hidden";
       window.setTimeout(() => el("utility-close").focus(), 0);
+    }
+
+    function renderLanguageOptions() {
+      const container = el("language-options");
+      container.replaceChildren();
+      for (const locale of supportedLocales) {
+        const option = document.createElement("button");
+        option.type = "button";
+        option.className = "language-option";
+        option.dataset.localeOption = locale;
+        option.setAttribute("aria-pressed", String(locale === currentLocale));
+        const label = document.createElement("span");
+        label.textContent = localeLabel(locale);
+        const code = document.createElement("small");
+        code.textContent = locale;
+        label.appendChild(code);
+        const state = document.createElement("span");
+        state.className = "language-option__state";
+        state.textContent = locale === currentLocale ? copy("active") : "";
+        option.append(label, state);
+        option.addEventListener("click", () => applyLocale(locale));
+        container.appendChild(option);
+      }
+    }
+
+    function applyLocale(locale, { persist = true } = {}) {
+      if (!player) return;
+      currentLocale = player.setLocale(locale);
+      if (persist && localeStorageKey) safeStorageSet(localeStorageKey, currentLocale);
+      try {
+        const url = new URL(window.location.href);
+        url.searchParams.set("locale", currentLocale);
+        window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+      } catch { /* Ignore fixed-origin history restrictions. */ }
+      render(player.snapshot());
+      translateChrome();
+      if (persist) setStatus(copy("languageChanged"));
     }
 
     function closeUtility() {
@@ -760,29 +953,59 @@
     }
 
     function syncHistoryCount() {
-      el("history-count").textContent = String(decisionHistory.length);
+      const reignCount = new Set(decisionHistory.map((record) => record.reign)).size;
+      el("history-count").textContent = String(reignCount);
       el("reign-history-count").textContent = String(decisionHistory.filter((record) => record.reign === currentReign).length);
-      el("all-history-count").textContent = String(decisionHistory.length);
+      el("all-history-count").textContent = String(reignCount);
     }
 
     function renderHistory() {
       syncHistoryCount();
       const list = el("history-list");
       list.replaceChildren();
-      const records = decisionHistory.slice().reverse();
-      el("history-empty").hidden = records.length > 0;
-      el("clear-history").disabled = records.length === 0;
-      for (const record of records) {
+      const sessions = Array.from(decisionHistory.reduce((groups, record) => {
+        if (!groups.has(record.reign)) groups.set(record.reign, []);
+        groups.get(record.reign).push(record);
+        return groups;
+      }, new Map()).entries()).sort(([a], [b]) => b - a);
+      el("history-empty").hidden = sessions.length > 0;
+      el("clear-history").disabled = sessions.length === 0;
+      for (const [reign, records] of sessions) {
+        const session = document.createElement("li");
+        const details = document.createElement("details");
+        details.className = "history-reign";
+        details.open = reign === currentReign || reign === sessions[0][0];
+        const summary = document.createElement("summary");
+        const title = document.createElement("span");
+        title.className = "history-reign__title";
+        title.textContent = `Reign ${String(reign).padStart(2, "0")}`;
+        const sessionMeta = document.createElement("span");
+        sessionMeta.className = "history-reign__meta";
+        const firstTimestamp = records[0]?.timestamp;
+        const parsed = Date.parse(firstTimestamp);
+        const date = Number.isNaN(parsed) ? copy("localRecord") : new Intl.DateTimeFormat(currentLocale, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(parsed);
+        sessionMeta.textContent = `${records.length} ${copy("decisions")} · ${date}`;
+        summary.append(title, sessionMeta);
+        const decisions = document.createElement("ol");
+        decisions.className = "history-reign__decisions";
+        for (const record of records.slice().sort((a, b) => a.turn - b.turn)) decisions.appendChild(renderHistoryDecision(record));
+        details.append(summary, decisions);
+        session.appendChild(details);
+        list.appendChild(session);
+      }
+    }
+
+    function renderHistoryDecision(record) {
         const item = document.createElement("li");
         item.className = "history-entry";
         const head = document.createElement("div");
         head.className = "history-entry__head";
         const sequence = document.createElement("span");
-        sequence.textContent = `Reign ${record.reign} · Decision ${String(record.turn).padStart(2, "0")}`;
+        sequence.textContent = `${copy("decision")} ${String(record.turn).padStart(2, "0")}`;
         const time = document.createElement("time");
         time.dateTime = record.timestamp;
         const parsed = Date.parse(record.timestamp);
-        time.textContent = Number.isNaN(parsed) ? "Local record" : new Intl.DateTimeFormat(requestedLocale, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(parsed);
+        time.textContent = Number.isNaN(parsed) ? copy("localRecord") : new Intl.DateTimeFormat(currentLocale, { hour: "2-digit", minute: "2-digit" }).format(parsed);
         head.append(sequence, time);
         const choice = document.createElement("p");
         choice.className = "history-entry__choice";
@@ -802,8 +1025,7 @@
           deltas.appendChild(badge);
         }
         item.append(head, choice, card, deltas);
-        list.appendChild(item);
-      }
+        return item;
     }
 
     function setStatus(message, kind = "") {
@@ -844,7 +1066,7 @@
       el("right").setAttribute("aria-label", `Choose right: ${right}`);
     }
 
-    function render(snapshot, { animateFrom = null } = {}) {
+    function render(snapshot) {
       lastSnap = snapshot;
       el("turn-label").textContent = String(snapshot?.turn ?? 0).padStart(2, "0");
       renderGauges(snapshot?.factions ?? {});
@@ -870,19 +1092,6 @@
         if (snapshot?.gameOver) renderSummary(snapshot);
       }
       syncControls();
-      if (animateFrom && !reducedMotion) {
-        const incomingClass = `is-entering-from-${animateFrom}`;
-        el("card").classList.remove("is-entering-from-left", "is-entering-from-right");
-        void el("card").offsetWidth;
-        el("card").classList.add(incomingClass);
-        el("transition-seal").classList.remove("is-stamping");
-        void el("transition-seal").offsetWidth;
-        el("transition-seal").classList.add("is-stamping");
-        window.setTimeout(() => {
-          el("card").classList.remove(incomingClass);
-          el("transition-seal").classList.remove("is-stamping");
-        }, 460);
-      }
     }
 
     function renderGauges(factions) {
@@ -901,8 +1110,41 @@
       const lines = Object.entries(snapshot.factions ?? {})
         .map(([name, value]) => `<span class="summary__line">${escapeHtml(name)} ${value}</span>`)
         .join("");
-      summary.innerHTML = `<p class="summary__title">Reign concluded</p><div>Decisions: ${snapshot.turn ?? 0}</div><div>${lines}</div>`;
+      summary.innerHTML = `<p class="summary__title">${escapeHtml(copy("reignConcluded"))}</p><div>${escapeHtml(copy("decision"))}: ${snapshot.turn ?? 0}</div><div>${lines}</div>`;
       summary.hidden = false;
+    }
+
+    async function playCardAnimation(element, keyframes, options) {
+      if (reducedMotion || typeof element.animate !== "function") return;
+      const animation = element.animate(keyframes, options);
+      try { await animation.finished; }
+      catch { /* A restart or locale change may cancel an in-flight animation. */ }
+    }
+
+    async function animateOutgoing(direction) {
+      const sign = direction === "left" ? -1 : 1;
+      await playCardAnimation(el("card"), [
+        { transform: "translate3d(0,0,0) rotate(0deg)", opacity: 1, offset: 0 },
+        { transform: `translate3d(${sign * 12}%, -6px, 0) rotate(${sign * 2.5}deg)`, opacity: 1, offset: .28 },
+        { transform: `translate3d(${sign * 132}%, 18px, 0) rotate(${sign * 15}deg)`, opacity: 0, offset: 1 }
+      ], { duration: 360, easing: "cubic-bezier(.4,0,.72,.3)", fill: "none" });
+    }
+
+    async function animateIncoming(direction) {
+      const sign = direction === "left" ? 1 : -1;
+      await Promise.all([
+        playCardAnimation(el("card"), [
+          { transform: `translate3d(${sign * 48}%, -12px, -90px) rotate(${sign * 8}deg) scale(.93)`, opacity: 0, filter: "blur(4px)" },
+          { transform: `translate3d(${sign * -2.5}%, 0, 0) rotate(${sign * -.8}deg) scale(1.008)`, opacity: 1, filter: "blur(0)", offset: .78 },
+          { transform: "translate3d(0,0,0) rotate(0deg) scale(1)", opacity: 1, filter: "blur(0)" }
+        ], { duration: 480, easing: "cubic-bezier(.16,.9,.22,1)", fill: "none" }),
+        playCardAnimation(el("transition-seal"), [
+          { opacity: 0, transform: "translate(-50%,-50%) rotate(-12deg) scale(1.7)", offset: 0 },
+          { opacity: 0, offset: .3 },
+          { opacity: .92, transform: "translate(-50%,-50%) rotate(-7deg) scale(.88)", offset: .5 },
+          { opacity: 0, transform: "translate(-50%,-50%) rotate(-5deg) scale(1.08)", offset: 1 }
+        ], { duration: 480, easing: "cubic-bezier(.16,.9,.22,1)", fill: "none" })
+      ]);
     }
 
     async function choose(direction) {
@@ -914,20 +1156,20 @@
       const card = el("card");
       card.style.transform = "";
       card.classList.remove("is-dragging");
-      card.classList.add(`is-exiting-${direction}`);
       el("decision-stage").dataset.intent = direction;
-      await waitForMotion(250);
+      await animateOutgoing(direction);
       if (token !== motionToken) return;
       try {
         const snapshot = player.swipe(direction);
         recordDecision(before, snapshot, direction);
-        card.classList.remove("is-exiting-left", "is-exiting-right");
         el("decision-stage").removeAttribute("data-intent");
+        render(snapshot);
+        await animateIncoming(direction);
+        if (token !== motionToken) return;
         isTransitioning = false;
-        render(snapshot, { animateFrom: direction === "left" ? "right" : "left" });
-        setStatus(snapshot.gameOver ? "This reign is complete. Restart when ready." : "Decision recorded.");
+        syncControls();
+        setStatus(snapshot.gameOver ? copy("complete") : copy("recorded"));
       } catch (error) {
-        card.classList.remove("is-exiting-left", "is-exiting-right");
         el("decision-stage").removeAttribute("data-intent");
         isTransitioning = false;
         syncControls();
@@ -939,18 +1181,19 @@
       if (!buildData) return;
       motionToken += 1;
       isTransitioning = false;
-      el("card").classList.remove("is-exiting-left", "is-exiting-right", "is-entering-from-left", "is-entering-from-right", "is-dragging");
+      el("card").classList.remove("is-dragging");
       el("transition-seal").classList.remove("is-stamping");
       el("card").style.transform = "";
       el("decision-stage").removeAttribute("data-intent");
       try {
-        const nextPlayer = createPlayer(buildData, { locale: requestedLocale });
+        const nextPlayer = createPlayer(buildData, { locale: currentLocale });
         const snapshot = nextPlayer.start();
         player = nextPlayer;
         nextReign();
-        render(snapshot, { animateFrom: "right" });
+        render(snapshot);
+        void animateIncoming("left");
         syncHistoryCount();
-        setStatus("A new reign begins.");
+        setStatus(copy("newReign"));
       } catch (error) {
         setStatus(error.message, "error");
       }
@@ -963,15 +1206,22 @@
       applyPresentation(presentation);
       const title = build.title || build.content?.metadata?.title || "Untitled court";
       const version = build.version || build.content?.metadata?.version || "";
+      const metadata = build.content?.metadata ?? {};
       document.title = `${title} — Player`;
       el("project-title").textContent = title;
-      el("release-label").textContent = version ? `Playable release · ${version}` : "Playable release";
-      el("session-label").textContent = build.buildId ? `Build ${build.buildId}` : "Offline player";
+      syncBuildChrome();
       const storageIdentity = encodeURIComponent(String(build.buildId || `${title}-${version || "local"}`));
       historyStorageKey = `${HISTORY_PREFIX}${storageIdentity}`;
       reignStorageKey = `${REIGN_PREFIX}${storageIdentity}`;
+      localeStorageKey = `${LOCALE_PREFIX}${storageIdentity}`;
+      const i18n = build.player?.i18n ?? metadata.i18n ?? {};
+      supportedLocales = Array.isArray(i18n.supportedLocales) && i18n.supportedLocales.length ? i18n.supportedLocales.filter((locale) => typeof locale === "string" && locale) : [i18n.defaultLocale || "en"];
+      const savedLocale = safeStorageGet(localeStorageKey);
+      currentLocale = params.has("locale") ? requestedLocale : (savedLocale || requestedLocale || i18n.defaultLocale || "en");
+      el("open-language").hidden = supportedLocales.length < 2;
       loadHistory();
       restartReign();
+      applyLocale(currentLocale, { persist: false });
     }
 
     async function loadEmbeddedBuild() {
@@ -1030,10 +1280,6 @@
       return map;
     }
 
-    function waitForMotion(milliseconds) {
-      return reducedMotion ? Promise.resolve() : new Promise((resolve) => window.setTimeout(resolve, milliseconds));
-    }
-
     function attachCardInput() {
       const card = el("card");
       let pointerId = null;
@@ -1077,7 +1323,9 @@
     el("right").addEventListener("click", () => void choose("right"));
     el("restart").addEventListener("click", restartReign);
     el("open-appearance").addEventListener("click", (event) => openUtility("appearance", event.currentTarget));
+    el("open-language").addEventListener("click", (event) => openUtility("language", event.currentTarget));
     el("open-history").addEventListener("click", (event) => openUtility("history", event.currentTarget));
+    el("open-about").addEventListener("click", (event) => openUtility("about", event.currentTarget));
     el("utility-close").addEventListener("click", closeUtility);
     el("utility-backdrop").addEventListener("click", closeUtility);
     el("clear-history").addEventListener("click", () => {
@@ -1116,6 +1364,8 @@
     });
 
     renderSkinOptions();
+    renderLanguageOptions();
+    translateChrome();
     attachCardInput();
     syncControls();
     void loadEmbeddedBuild();

@@ -76,7 +76,7 @@ describe("Creator Server factory", () => {
       });
       await request(address.origin, "/api/editor/metadata", {
         method: "PATCH",
-        body: { metadata: { title: "Persistent project" } }
+        body: { metadata: { title: "Persistent project", author: "Court Author", description: "A portable court." } }
       });
       const created = await request(address.origin, "/api/projects", {
         method: "POST",
@@ -88,7 +88,10 @@ describe("Creator Server factory", () => {
 
       server = await createCreatorServer({ rootDir: ROOT, dataRoot });
       address = await server.start({ port: 0 });
-      assert.equal((await request(address.origin, "/api/editor")).metadata.title, "Persistent project");
+      const restoredEditor = await request(address.origin, "/api/editor");
+      assert.equal(restoredEditor.metadata.title, "Persistent project");
+      assert.equal(restoredEditor.metadata.author, "Court Author");
+      assert.equal(restoredEditor.metadata.description, "A portable court.");
       assert.equal((await request(address.origin, "/api/config")).theme, "phantom");
       assert.equal((await request(address.origin, "/api/config")).ai.hasApiKey, true);
       assert.equal((await request(address.origin, "/api/projects")).projects.length, 2);

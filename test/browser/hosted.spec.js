@@ -29,7 +29,7 @@ test("persists an OPFS project and reopens the PWA offline", async ({ page, cont
   await page.getByRole("button", { name: /Settings/ }).click();
   const title = page.getByPlaceholder("Deck title");
   await title.fill("Hosted persistence smoke");
-  await page.getByRole("button", { name: "Save title" }).click();
+  await page.getByRole("button", { name: "Save project details" }).click();
   await expect(page.locator(".brand p")).toHaveText("Hosted persistence smoke");
   await page.reload();
   await expect(page.locator(".brand p")).toHaveText("Hosted persistence smoke");
@@ -212,6 +212,8 @@ test("persists navigation density and shared interface language", async ({ page 
   await expect(page.locator('.rail__item[aria-label="Settings"] .rail__label')).toBeVisible();
 
   await page.locator('.rail__item[aria-label="Settings"]').click();
+  await page.mouse.move(600, 400);
+  await expect(page.locator(".rail")).toHaveCSS("width", "79px");
   await expect(page.getByRole("heading", { name: "Settings / Pipeline" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "About ReignsAgent" })).toBeVisible();
   await expect(page.locator(".about-settings__meta-line")).toContainText(`v${productVersion}`);
@@ -220,7 +222,7 @@ test("persists navigation density and shared interface language", async ({ page 
   await expect(page.getByLabel("Language")).toHaveValue("system");
   await expect(page.getByLabel("Language").locator('option[value="system"]')).toHaveText("Follow browser");
   await page.getByPlaceholder("Deck title").fill("Ready");
-  await page.getByRole("button", { name: "Save title" }).click();
+  await page.getByRole("button", { name: "Save project details" }).click();
   await page.getByLabel("Language").selectOption("zh-Hans");
   await expect(page.locator("html")).toHaveAttribute("lang", "zh-Hans");
   await expect(page.getByRole("heading", { name: "设置 / 流水线" })).toBeVisible();
@@ -252,7 +254,7 @@ test("exports a key-free workspace and restores mapped projects", async ({ page 
   await openHosted(page);
   await page.getByRole("button", { name: /Settings/ }).click();
   await page.getByPlaceholder("Deck title").fill("Backup source");
-  await page.getByRole("button", { name: "Save title" }).click();
+  await page.getByRole("button", { name: "Save project details" }).click();
 
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Export workspace backup" }).click();
