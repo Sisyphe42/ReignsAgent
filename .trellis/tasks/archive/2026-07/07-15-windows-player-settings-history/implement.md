@@ -7,4 +7,4 @@
 5. [x] Extend player release boundary tests for settings, persistence, history, and motion.
 6. [x] Build and visually validate the Web player and a real release EXE.
 7. [x] Run deployable-player, Windows player, packaged Electron, and repository verification gates.
-8. [ ] Commit, push PR #25, archive the task, and record the session.
+8. [x] Commit, push PR #25, archive the task, and record the session.
