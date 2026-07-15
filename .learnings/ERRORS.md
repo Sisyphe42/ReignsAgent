@@ -1,5 +1,101 @@
 # Error Log
 
+## [ERR-20260715-005] powershell-shell-fallback
+
+**Logged**: 2026-07-15T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tooling
+
+### Summary
+A repository scan used a POSIX-style fallback after `rg` in PowerShell.
+
+### Error
+```text
+The term 'exit' is not recognized as a name of a cmdlet, function, script file, or executable program.
+```
+
+### Context
+- The command used `|| exit 0` to treat ripgrep's no-match code as success.
+- Repository commands run under PowerShell and should inspect `$LASTEXITCODE` directly.
+
+### Suggested Fix
+Use a PowerShell conditional and distinguish `rg` no-match exit code 1 from execution errors above 1.
+
+### Metadata
+- Reproducible: yes
+- Related Files: .learnings/ERRORS.md
+
+### Resolution
+- **Resolved**: 2026-07-15T00:00:00+08:00
+- **Notes**: Repeated the scan using PowerShell-native exit-code handling.
+
+---
+
+## [ERR-20260715-004] build_panel_locale_hook
+
+**Logged**: 2026-07-15T00:00:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+The new Build panel referenced a non-existent locale hook, causing the workbench to render blank.
+
+### Error
+```text
+ReferenceError: useLocale is not defined
+```
+
+### Context
+- Creator components consume `LocaleContext` through the repository helper `useUiLocale`.
+- Vite compilation did not catch the runtime identifier error; browser smoke did.
+
+### Suggested Fix
+Reuse the established `useUiLocale` helper and run a real-browser smoke for visible panel changes.
+
+### Metadata
+- Reproducible: yes
+- Related Files: apps/creator-web/src/main.jsx
+
+### Resolution
+- **Resolved**: 2026-07-15T00:00:00+08:00
+- **Notes**: Switched the Build panel to `useUiLocale` and repeated the browser check.
+
+---
+
+## [ERR-20260715-003] interface_test_method_name
+
+**Logged**: 2026-07-15T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+A deterministic build ID test called a metadata method that is not part of the card editor API.
+
+### Error
+```text
+TypeError: editor.updateMetadata is not a function
+```
+
+### Context
+- `createCardEditor` exposes `setMetadata`, while the server session state uses a differently named metadata operation.
+- The test should exercise the public editor contract it instantiated.
+
+### Suggested Fix
+Check the returned editor surface before writing a mutation-based test and use `setMetadata`.
+
+### Metadata
+- Reproducible: yes
+- Related Files: packages/interface/test/interface.test.js
+
+### Resolution
+- **Resolved**: 2026-07-15T00:00:00+08:00
+- **Notes**: Replaced the invalid call with `setMetadata` and reran the focused suite.
+
+---
+
 ## [ERR-20260710-001] electron-workspace-runtime-dependency
 
 **Logged**: 2026-07-10T00:00:00+08:00
@@ -30,6 +126,71 @@ Keep the desktop main process dependency-free where practical and run smoke test
 ### Resolution
 - **Resolved**: 2026-07-10T22:15:00+08:00
 - **Notes**: Removed the hoisted runtime dependency, unpacked the utility entry/runtime, used a physical working directory, and added packaged-executable smoke coverage.
+
+---
+
+## [ERR-20260715-002] release_test_fixture
+
+**Logged**: 2026-07-15T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+The Windows release API smoke test selected a content fixture that is valid for import coverage but not player-ready.
+
+### Error
+```text
+InterfaceError: Cannot build: player cards are invalid; left/right choices are required.
+```
+
+### Context
+- `fixtures/content/minimal.cards.json` uses legacy choice names and intentionally fails the deployable player contract.
+- Release tests must exercise the successful path with `oss-court.cards.json`; invalid fixtures belong in explicit rejection tests.
+
+### Suggested Fix
+Use a player-ready fixture for build/export success cases and assert invalid fixture rejection separately.
+
+### Metadata
+- Reproducible: yes
+- Related Files: test/integration/creator-server.test.js
+- See Also: ERR-20260715-001
+
+### Resolution
+- **Resolved**: 2026-07-15T00:00:00+08:00
+- **Notes**: Switched the release smoke setup to the repository's player-ready fixture.
+
+---
+
+## [ERR-20260715-001] node_test_fixture
+
+**Logged**: 2026-07-15T00:00:00+08:00
+**Priority**: low
+**Status**: resolved
+**Area**: tests
+
+### Summary
+A duplicate-path test used a JavaScript Map, which discarded the duplicate key before the release validator received it.
+
+### Error
+```text
+AssertionError [ERR_ASSERTION]: Missing expected exception.
+```
+
+### Context
+- The Windows release payload test attempted to create two `player.html` entries with `new Map(...)`.
+- Map key uniqueness made the fixture incapable of representing the invalid input under test.
+
+### Suggested Fix
+Use an entry-pair array when testing duplicate-key validation at a boundary.
+
+### Metadata
+- Reproducible: yes
+- Related Files: packages/interface/test/windows-release.test.js
+
+### Resolution
+- **Resolved**: 2026-07-15T00:00:00+08:00
+- **Notes**: The payload normalizer accepts entry-pair arrays specifically for ordered boundary input and duplicate validation.
 
 ---
 

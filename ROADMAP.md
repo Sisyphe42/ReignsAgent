@@ -14,6 +14,7 @@ Recent merged work established the baseline that future phases should preserve:
 - PR #21 shipped one React Creator across local Web, a cross-platform Node ZIP, portable Electron ZIPs, and an offline-capable Hosted PWA. It also delivered durable TOML configuration, multi-project filesystems, OPFS persistence, Workspace/project ZIP interchange, direct-CORS Hosted AI, and shared release verification.
 - PR #22 made explicit workbench routes authoritative over persisted panel state, anchored packaged Creator exports under `ReignsAgentData/Builds` independently of the launch working directory, and added cached-shell fallback for non-success Hosted navigations.
 - PR #24 delivered responsive pinned/compact/floating navigation, desktop-only panel shortcuts, project management in the header, client-aware English/Simplified Chinese locale controls, and Player launch/return context preservation.
+- Windows Project release packaging now publishes a validated active Project as a single x64 EXE from local Node/Electron Creator, with deterministic build IDs, project-scoped release history, portable `Builds` output, and a restricted native WebView2 host. Hosted Creator retains Web Player ZIP export.
 - `/workbench` is the primary Creator surface, with overview, content, story, review, AI Assist, preview, build, and settings panels over shared backend contracts.
 - Review diagnostics and seeds remain creator-facing and reproducible; developer preview may expose debug state while the production player remains focused on play.
 - Skins remain a presentation layer shared through configuration and URL context rather than a dependency of Creator workflows or player behavior.
@@ -52,12 +53,13 @@ Recent merged work established the baseline that future phases should preserve:
 - `packages/contracts`: Shared schemas for cards, content bundles, diagnostics reports, connector requests, and build manifests.
 - Fastify remains an optional future transport upgrade if the shared `apps/creator-server` HTTP implementation outgrows Node's built-in server.
 - Extend the hosted Reviewer Worker with richer incremental progress and resumable runs beyond the bounded v1 workload.
-- Production player shell: A dedicated deployable player surface with animation, settings, language switching, interaction preferences, about/attribution, and polished runtime UX.
+- Production player surface evolution: build on the shipped Web runtime and Windows native host with animation, settings, language switching, interaction preferences, about/attribution, custom icons, signing, and additional platforms only through reviewed release work.
 
 ## Distribution Evolution
 - Preserve Browser/Vite development, the Node ZIP, and Electron as parallel hosts over the same WebUI and local API.
 - Keep Electron isolated in `apps/desktop-electron`; no package or Creator Web code may import desktop APIs.
-- Preserve the utility-process Creator Server, ZIP-only Windows x64/macOS x64+arm64/Linux x64 outputs, and beside-app `ReignsAgentData` portability model.
+- Preserve the utility-process Creator Server, ZIP-only Windows x64/macOS x64+arm64/Linux x64 Creator outputs, and beside-app `ReignsAgentData` portability model. ZIP-only constrains Creator Electron distributions, not single-file Project player releases.
+- Keep Windows Project EXEs player-only: embedded authored content, Core/player runtime, and assets are allowed; Creator, Pipeline, Reviewer, AI connectors, settings, and credentials are forbidden.
 - Preserve the shared TOML/file Workspace contract for Electron, Node ZIP, and local Web, and the equivalent Hosted OPFS projections owned by `apps/creator-web`.
 - Keep Hosted AI direct-CORS only; do not introduce a public relay or compile server secrets into the static application.
 - Treat signing, notarization, publishing, automatic updates, native file dialogs, menus, notifications, and protocol handlers as later opt-in release work rather than v1 shell requirements.

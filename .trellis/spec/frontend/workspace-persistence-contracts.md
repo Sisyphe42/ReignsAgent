@@ -70,3 +70,72 @@ const server = await createCreatorServer({ rootDir, dataRoot });
 ```
 
 The UI talks to the Server projection, the Server owns active-editor synchronization, and Workspace alone owns disk formats and atomic writes.
+
+## Scenario: Windows Project release persistence
+
+### 1. Scope / Trigger
+
+- Trigger: changes to Windows Project packaging, release API routes, release history, packaged Creator staging, or `ReignsAgentData/Builds` resolution.
+- Scope: local Windows x64 Node/Electron Creator only. Hosted keeps Web ZIP export, and non-Windows local hosts report the target unavailable.
+
+### 2. Signatures
+
+- `createCreatorServer({ windowsPlayerHostPath?, enableWindowsRelease?, ... })`
+- `workspace.getReleaseOutput({ fileName })`
+- `workspace.listReleases()` / `saveRelease(record)` / `resolveReleaseArtifact(id)` / `deleteRelease(id)`
+- `GET /api/releases`
+- `POST /api/releases/windows-x64`
+- `GET /api/releases/:id/artifact`
+- `DELETE /api/releases/:id`
+- `npm run build:player:windows` / `npm run test:player:windows`
+
+### 3. Contracts
+
+- Release record fields are fixed: `schemaVersion`, `id`, `projectId`, `buildId`, `title`, `version`, `target`, `createdAt`, `artifactRelativePath`, `size`, and `sha256`.
+- `target` is exactly `windows-x64`; artifacts resolve below `ReignsAgentData/Builds/<active-project-id>/` and records below `projects/<id>/builds/`.
+- A successful write is ordered: validate Project -> append versioned payload -> atomically rename EXE -> verify size/hash -> atomically write record. No record may precede the artifact.
+- Build IDs derive deterministically from normalized authored content. Re-publishing the same build reuses its existing verified record and artifact.
+- The staged native host is optional on non-Windows runtimes and required for Windows release capability. Creator users never compile it; distribution builders run the MSVC build first.
+- Payload files are player-only: `player.html`, stitched player runtime, `.game.json`, default logo, and referenced assets. Creator, AI, Pipeline, Reviewer, endpoint configuration, and credentials are forbidden.
+- Creator Electron remains ZIP-only. The single EXE is a Project player artifact, not a Creator distribution.
+
+### 4. Validation & Error Matrix
+
+- Unsupported host -> capability `windowsX64: false` with `windows_host_required`.
+- Missing staged host -> capability `windowsX64: false` with `player_host_missing`.
+- Invalid player cards -> build rejection; no EXE and no record.
+- Unsafe file/artifact path, duplicate payload path, invalid footer/bounds, or hash mismatch -> reject without loading or downloading the artifact.
+- Project mismatch or foreign release ID -> `release_project_mismatch` or `release_not_found`; never expose another Project's artifact.
+- Artifact missing, wrong size, or wrong SHA-256 -> `release_artifact_missing` or `release_artifact_mismatch`.
+
+### 5. Good/Base/Bad Cases
+
+- Good: publish on Windows, restart Creator from another working directory, list the same record, and download the verified EXE from the portable data root.
+- Base: skip Review, show a warning, and publish after player validation passes.
+- Bad: write the release record before the final atomic EXE rename, or resolve output relative to `process.cwd()`.
+- Bad: place the WebView2 user-data folder beside the EXE or embed endpoint settings in `.game.json`.
+
+### 6. Tests Required
+
+- Payload unit tests assert deterministic ordering, path traversal/duplicate rejection, footer/bounds corruption, and payload/file SHA-256 validation.
+- Workspace/API tests assert publish, restart restore, verified download, confirmed delete, active-Project isolation, failure cleanup, and portable `Builds` anchoring.
+- Ubuntu verification uses a fake host for transport and persistence logic. Windows CI builds the static WebView2 Loader host, publishes through the real API, and runs `--smoke-test` to assert WebView2 initialization, title, and card count.
+- Deployable-player and packaged Creator smoke gates remain required because the release reuses those runtime and staging paths.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```js
+const output = resolve(process.cwd(), `${build.buildId}.exe`);
+await workspace.saveRelease(record);
+await writeFile(output, executable);
+```
+
+#### Correct
+
+```js
+const output = await workspace.getReleaseOutput({ fileName });
+await writeBinaryAtomic(output.artifactPath, executable);
+await workspace.saveRelease(record); // verifies active Project, size, and SHA-256
+```
