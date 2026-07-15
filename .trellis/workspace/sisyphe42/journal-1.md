@@ -356,3 +356,36 @@ Fixed WebView2 controller visibility in generated Windows players, invalidated c
 ### Next Steps
 
 - None - task complete
+
+
+## Session 11: Polish Windows release player interaction
+
+**Date**: 2026-07-15
+**Task**: Polish Windows release player interaction
+**Branch**: `feature/project-windows-release`
+
+### Summary
+
+Fixed DPI-scaled native hit testing, direct choice clicks, one-click restart, and delivered a dedicated animated release-player surface; verified Web, real EXE, packaged Electron, and full repository gates.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3001f3e` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
