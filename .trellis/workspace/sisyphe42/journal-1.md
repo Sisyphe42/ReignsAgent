@@ -389,3 +389,36 @@ Fixed DPI-scaled native hit testing, direct choice clicks, one-click restart, an
 ### Next Steps
 
 - None - task complete
+
+
+## Session 12: Add Windows player skins, records, and transitions
+
+**Date**: 2026-07-15
+**Task**: Add Windows player skins, records, and transitions
+**Branch**: `feature/project-windows-release`
+
+### Summary
+
+Reused the Creator skin catalog in deployable players, added build-scoped local game records, strengthened directional card animations, and fixed release cache invalidation; verified Web, real EXE, packaged Electron, and full repository gates.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e5e4f92` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

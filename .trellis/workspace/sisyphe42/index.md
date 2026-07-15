@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 11
+- **Total Sessions**: 12
 - **Last Active**: 2026-07-15
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~391 | Active |
+| `journal-1.md` | ~424 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 12 | 2026-07-15 | Add Windows player skins, records, and transitions | `e5e4f92` | `feature/project-windows-release` |
 | 11 | 2026-07-15 | Polish Windows release player interaction | `3001f3e` | `feature/project-windows-release` |
 | 10 | 2026-07-15 | Fix blank Windows player release | `bd28df4` | `feature/project-windows-release` |
 | 9 | 2026-07-15 | Windows Project Release Packaging | `4f5fb2d`, `0973363`, `cb302f8` | `feature/project-windows-release` |
