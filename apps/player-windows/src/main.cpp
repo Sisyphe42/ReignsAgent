@@ -279,6 +279,13 @@ void WriteSmokeOutput(const std::wstring& value) {
 }
 
 LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
+  if (message == WM_DPICHANGED) {
+    const auto* suggested = reinterpret_cast<RECT*>(lParam);
+    SetWindowPos(window, nullptr, suggested->left, suggested->top,
+      suggested->right - suggested->left, suggested->bottom - suggested->top,
+      SWP_NOACTIVATE | SWP_NOZORDER);
+    return 0;
+  }
   if (message == WM_SIZE && g_controller) {
     g_controller->put_IsVisible(wParam != SIZE_MINIMIZED);
     RECT bounds{};
@@ -291,6 +298,26 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
     return 0;
   }
   return DefWindowProcW(window, message, wParam, lParam);
+}
+
+RECT InitialWindowBounds() {
+  const UINT dpi = GetDpiForSystem();
+  RECT workArea{};
+  if (!SystemParametersInfoW(SPI_GETWORKAREA, 0, &workArea, 0)) {
+    workArea = { 0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN) };
+  }
+  RECT frame{ 0, 0, MulDiv(1100, dpi, 96), MulDiv(760, dpi, 96) };
+  AdjustWindowRectExForDpi(&frame, WS_OVERLAPPEDWINDOW, FALSE, 0, dpi);
+  const int margin = MulDiv(24, dpi, 96);
+  const int availableWidth = static_cast<int>(std::max(1L, workArea.right - workArea.left - margin * 2L));
+  const int availableHeight = static_cast<int>(std::max(1L, workArea.bottom - workArea.top - margin * 2L));
+  const int frameWidth = static_cast<int>(frame.right - frame.left);
+  const int frameHeight = static_cast<int>(frame.bottom - frame.top);
+  const int width = std::min(frameWidth, availableWidth);
+  const int height = std::min(frameHeight, availableHeight);
+  const int left = workArea.left + (workArea.right - workArea.left - width) / 2;
+  const int top = workArea.top + (workArea.bottom - workArea.top - height) / 2;
+  return { left, top, left + width, top + height };
 }
 
 void StartWebView(HWND window, const ReleasePayload& payload) {
@@ -361,6 +388,7 @@ void StartWebView(HWND window, const ReleasePayload& payload) {
 
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
   try {
+    SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     winrt::init_apartment(winrt::apartment_type::single_threaded);
     g_smoke = commandLine && std::wstring(commandLine).find(L"--smoke-test") != std::wstring::npos;
     const ReleasePayload payload = ParsePayload();
@@ -380,8 +408,10 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
     windowClass.hIcon = LoadIconW(instance, MAKEINTRESOURCEW(101));
     windowClass.hCursor = LoadCursorW(nullptr, IDC_ARROW);
     if (!RegisterClassW(&windowClass)) throw std::runtime_error("Player window class registration failed");
+    const RECT initialBounds = InitialWindowBounds();
     HWND window = CreateWindowExW(0, kWindowClass, payload.title.c_str(), WS_OVERLAPPEDWINDOW,
-      CW_USEDEFAULT, CW_USEDEFAULT, 1100, 760, nullptr, nullptr, instance, nullptr);
+      initialBounds.left, initialBounds.top, initialBounds.right - initialBounds.left, initialBounds.bottom - initialBounds.top,
+      nullptr, nullptr, instance, nullptr);
     if (!window) throw std::runtime_error("Player window creation failed");
     StartWebView(window, payload);
     MSG message{};

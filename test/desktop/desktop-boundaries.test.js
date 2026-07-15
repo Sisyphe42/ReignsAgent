@@ -95,4 +95,19 @@ describe("Electron desktop boundaries", () => {
     assert.doesNotMatch(mainSource, /Squirrel|documents/);
     assert.match(mainSource, /!smokeTest && !app\.requestSingleInstanceLock\(\)/);
   });
+
+  it("keeps the Windows release player DPI-correct and distinct from Creator preview", async () => {
+    const nativeSource = await readFile(join(ROOT, "apps/player-windows/src/main.cpp"), "utf8");
+    const manifest = await readFile(join(ROOT, "apps/player-windows/src/player.manifest"), "utf8");
+    const standalonePlayer = await readFile(join(ROOT, "packages/interface/web/standalone-player.html"), "utf8");
+
+    assert.match(nativeSource, /SetProcessDpiAwarenessContext\(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2\)/);
+    assert.match(nativeSource, /message == WM_DPICHANGED/);
+    assert.match(manifest, /PerMonitorV2,PerMonitor/);
+    assert.match(standalonePlayer, /class="decision-stage"/);
+    assert.match(standalonePlayer, /is-exiting-\$\{direction\}/);
+    assert.match(standalonePlayer, /el\("left"\)\.addEventListener\("click"/);
+    assert.match(standalonePlayer, /el\("restart"\)\.addEventListener\("click", restartReign\)/);
+    assert.doesNotMatch(standalonePlayer, /awaitingRestartConfirm|Click restart again/);
+  });
 });

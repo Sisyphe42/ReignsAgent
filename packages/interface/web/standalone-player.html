@@ -7,361 +7,564 @@
   <title>ReignsAgent Player</title>
   <style>
     :root {
-      --bg: #f6f8fa;
+      --bg: #edf2f7;
       --panel: #ffffff;
-      --ink: #24292f;
-      --muted: #57606a;
-      --accent: #0969da;
-      --accent-2: #8250df;
-      --border: #d0d7de;
-      --radius: 6px;
+      --panel-raised: #f8fafc;
+      --ink: #172033;
+      --muted: #637087;
+      --accent: #3457d5;
+      --accent-2: #7444c8;
+      --border: #c8d2df;
+      --radius: 18px;
       --button-ink: #ffffff;
+      --decision-left: #b3475b;
+      --decision-right: #207a68;
+      --shadow: 0 28px 80px rgba(35, 49, 73, 0.18);
       color-scheme: light;
     }
     :root[data-skin="catppuccin-latte"] {
-      --bg: #eff1f5;
-      --panel: #fafafa;
-      --ink: #4c4f69;
-      --muted: #6c6f85;
-      --accent: #8839ef;
-      --accent-2: #ea76cb;
-      --border: #ccd0da;
-      --radius: 8px;
-      --button-ink: #ffffff;
-      color-scheme: light;
+      --bg: #e6e9ef; --panel: #eff1f5; --panel-raised: #fafafa; --ink: #4c4f69;
+      --muted: #6c6f85; --accent: #8839ef; --accent-2: #7287fd; --border: #bcc0cc;
+      --decision-left: #d20f39; --decision-right: #179299; --button-ink: #ffffff;
     }
     :root[data-skin="classic"] {
-      --bg: #0f1115;
-      --panel: #1f232c;
-      --ink: #e8e6e1;
-      --muted: #8a8f99;
-      --accent: #c9a24b;
-      --accent-2: #6d8fd6;
-      --border: #2a2f3a;
-      --radius: 8px;
-      --button-ink: #1a1405;
+      --bg: #0c0f14; --panel: #171c25; --panel-raised: #202735; --ink: #eee9dc;
+      --muted: #9da3ad; --accent: #c9a24b; --accent-2: #6d8fd6; --border: #353d4b;
+      --decision-left: #b95a63; --decision-right: #5f9d82; --button-ink: #17120a; color-scheme: dark;
+      --shadow: 0 32px 90px rgba(0, 0, 0, 0.52);
     }
     :root[data-skin="arcade"] {
-      --bg: #15111c;
-      --panel: #302442;
-      --ink: #fff2c9;
-      --muted: #c6b8d8;
-      --accent: #ffd34f;
-      --accent-2: #6fe6c4;
-      --border: #654f83;
-      --radius: 4px;
-      --button-ink: #17111f;
+      --bg: #100b19; --panel: #241834; --panel-raised: #332148; --ink: #fff2c9;
+      --muted: #c6b8d8; --accent: #ffd34f; --accent-2: #b568ff; --border: #664b86;
+      --decision-left: #ff5b81; --decision-right: #4ce6bb; --button-ink: #17111f; color-scheme: dark;
     }
     :root[data-skin="famicom"] {
-      --bg: #efe4cc;
-      --panel: #fff8e8;
-      --ink: #211f1c;
-      --muted: #6d6256;
-      --accent: #b52222;
-      --accent-2: #275c9a;
-      --border: #24211d;
-      --radius: 0px;
-      --button-ink: #fff8e8;
-      color-scheme: light;
+      --bg: #dfd0b4; --panel: #fff8e8; --panel-raised: #f6ead3; --ink: #211f1c;
+      --muted: #6d6256; --accent: #b52222; --accent-2: #275c9a; --border: #24211d;
+      --radius: 2px; --decision-left: #b52222; --decision-right: #275c9a; --button-ink: #fff8e8;
+      --shadow: 10px 12px 0 rgba(36, 33, 29, 0.22);
     }
     :root[data-skin="phantom"] {
-      --bg: #09090a;
-      --panel: #f4f0e8;
-      --ink: #f7f2e9;
-      --muted: #c8c1b5;
-      --accent: #d71920;
-      --accent-2: #f4f0e8;
-      --border: #f7f2e9;
-      --radius: 0px;
-      --button-ink: #f7f2e9;
+      --bg: #08080a; --panel: #f4f0e8; --panel-raised: #e8e0d3; --ink: #121214;
+      --muted: #70695f; --accent: #d71920; --accent-2: #18181b; --border: #d71920;
+      --radius: 0; --decision-left: #d71920; --decision-right: #18181b; --button-ink: #f7f2e9;
+      --shadow: 12px 12px 0 rgba(215, 25, 32, 0.38); color-scheme: dark;
     }
     :root[data-skin="terminal"] {
-      --bg: #07100c;
-      --panel: #12231a;
-      --ink: #daf8e5;
-      --muted: #91b89d;
-      --accent: #68ff95;
-      --accent-2: #78c6ff;
-      --border: #28543a;
-      --radius: 2px;
-      --button-ink: #06100a;
+      --bg: #050d09; --panel: #0c1710; --panel-raised: #13251a; --ink: #daf8e5;
+      --muted: #91b89d; --accent: #68ff95; --accent-2: #78c6ff; --border: #28543a;
+      --radius: 4px; --decision-left: #ff7b8d; --decision-right: #68ff95; --button-ink: #06100a;
+      --shadow: 0 0 54px rgba(104, 255, 149, 0.11); color-scheme: dark;
     }
+    * { box-sizing: border-box; }
+    html, body { min-height: 100%; }
     body {
       margin: 0;
-      background: var(--bg);
+      overflow-x: hidden;
+      background:
+        radial-gradient(circle at 50% -12%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 38rem),
+        linear-gradient(135deg, color-mix(in srgb, var(--bg) 92%, var(--accent) 8%), var(--bg));
       color: var(--ink);
-      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
+      font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+    }
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      opacity: 0.18;
+      background-image: repeating-linear-gradient(90deg, transparent 0 47px, color-mix(in srgb, var(--ink) 8%, transparent) 48px);
+      mask-image: linear-gradient(to bottom, black, transparent 70%);
+    }
+    button { font: inherit; }
+    .player-shell {
+      width: min(1180px, calc(100% - 40px));
       min-height: 100vh;
-      padding: 24px;
+      margin: 0 auto;
+      padding: 28px 0 22px;
+      display: grid;
+      grid-template-rows: auto auto 1fr auto;
+      gap: 20px;
     }
-    .stage { width: 100%; max-width: 440px; }
-    .gauges { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 16px; }
-    .gauge { background: var(--panel); border-radius: 6px; padding: 8px; border: 1px solid var(--border); }
-    .gauge__name { font-size: 11px; color: var(--muted); text-transform: capitalize; }
-    .gauge__desc { margin-top: 2px; font-size: 10px; color: var(--muted); line-height: 1.35; }
-    .gauge__bar { height: 6px; background: rgba(0, 0, 0, 0.26); border-radius: 3px; overflow: hidden; margin-top: 4px; }
-    .gauge__fill { height: 100%; background: var(--accent-2); }
+    .masthead {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: end;
+      gap: 24px;
+      padding: 0 4px 18px;
+      border-bottom: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+    }
+    .eyebrow, .utility-label {
+      margin: 0 0 5px;
+      color: var(--muted);
+      font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+      font-size: 11px;
+      font-weight: 650;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+    }
+    .project-title {
+      margin: 0;
+      max-width: 760px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: clamp(28px, 4vw, 52px);
+      font-weight: 500;
+      letter-spacing: -0.035em;
+      line-height: 0.98;
+    }
+    .turn-readout { text-align: right; }
+    .turn-value {
+      display: block;
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: 30px;
+      line-height: 1;
+    }
+    .gauges {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .gauge {
+      min-width: 0;
+      padding: 10px 12px 11px;
+      border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+      background: color-mix(in srgb, var(--panel) 76%, transparent);
+      backdrop-filter: blur(12px);
+      border-radius: calc(var(--radius) * 0.6);
+    }
+    .gauge__head { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; }
+    .gauge__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+    .gauge__value { font-family: "Cascadia Mono", Consolas, monospace; font-weight: 700; }
+    .gauge__bar { height: 3px; margin-top: 8px; overflow: hidden; background: color-mix(in srgb, var(--border) 70%, transparent); }
+    .gauge__fill { height: 100%; background: var(--accent); transition: width 360ms cubic-bezier(.22,.8,.22,1); }
+    .gauge__desc { display: none; }
+    .decision-stage {
+      min-height: 520px;
+      display: grid;
+      grid-template-columns: minmax(116px, 1fr) minmax(340px, 560px) minmax(116px, 1fr);
+      align-items: center;
+      gap: clamp(18px, 4vw, 52px);
+      perspective: 1400px;
+    }
+    .choice-rail {
+      min-width: 0;
+      opacity: 0.62;
+      transition: opacity 180ms ease, transform 220ms ease;
+    }
+    .choice-rail--right { text-align: right; }
+    .choice-rail__line { width: 100%; height: 1px; background: var(--border); }
+    .choice-rail__key {
+      display: block;
+      margin: 12px 0 6px;
+      color: var(--muted);
+      font-family: "Cascadia Mono", Consolas, monospace;
+      font-size: 11px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+    .choice-rail__label { margin: 0; font-family: Georgia, serif; font-size: clamp(18px, 2.2vw, 28px); line-height: 1.12; }
+    .decision-stage[data-intent="left"] .choice-rail--left,
+    .decision-stage[data-intent="right"] .choice-rail--right { opacity: 1; transform: translateX(0); }
+    .card-wrap { position: relative; min-width: 0; }
+    .card-wrap::before, .card-wrap::after {
+      content: "";
+      position: absolute;
+      inset: 18px -12px -12px;
+      z-index: -1;
+      border: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+      border-radius: var(--radius);
+      transform: rotate(-1.4deg);
+    }
+    .card-wrap::after { inset: 9px -7px -6px; transform: rotate(1deg); background: color-mix(in srgb, var(--panel) 38%, transparent); }
     .card {
-      background: linear-gradient(160deg, color-mix(in srgb, var(--panel) 84%, white 8%), color-mix(in srgb, var(--panel) 92%, black 8%));
+      position: relative;
+      min-height: 430px;
+      overflow: hidden;
+      display: grid;
+      grid-template-rows: minmax(0, 1fr) auto;
+      padding: clamp(26px, 5vw, 50px);
       border: 1px solid var(--border);
       border-radius: var(--radius);
-      padding: 28px;
-      min-height: 220px;
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-      box-shadow: 0 12px 30px rgba(0,0,0,0.35);
+      background: linear-gradient(155deg, var(--panel-raised), var(--panel));
+      box-shadow: var(--shadow);
+      transform: translate3d(0, 0, 0);
+      transform-origin: 50% 88%;
+      transition: transform 230ms cubic-bezier(.22,.8,.24,1), opacity 190ms ease, box-shadow 180ms ease;
+      touch-action: pan-y;
+      user-select: none;
+      will-change: transform, opacity;
     }
-    :root[data-skin="phantom"] .card {
-      background: linear-gradient(160deg, #f4f0e8, #e7ded0);
-      color: #09090a;
-      border-width: 2px;
-      box-shadow: 8px 8px 0 rgba(215, 25, 32, 0.18);
+    .card::before {
+      content: "";
+      position: absolute;
+      inset: 0 0 auto;
+      height: 4px;
+      background: linear-gradient(90deg, var(--decision-left), var(--accent), var(--decision-right));
     }
-    .art {
-      width: min(160px, 48%);
+    .card.is-dragging { transition: box-shadow 120ms ease; cursor: grabbing; }
+    .card.is-exiting-left { transform: translate3d(-125%, 10px, 0) rotate(-13deg); opacity: 0; }
+    .card.is-exiting-right { transform: translate3d(125%, 10px, 0) rotate(13deg); opacity: 0; }
+    .card.is-entering { animation: card-arrive 360ms cubic-bezier(.16,.9,.22,1) both; }
+    @keyframes card-arrive { from { opacity: 0; transform: translate3d(0, -24px, 0) rotateX(3deg) scale(.985); } }
+    .card__content { align-self: center; }
+    .card__art {
+      width: min(176px, 48%);
       aspect-ratio: 1;
-      align-self: center;
+      display: block;
+      margin: 0 auto 24px;
       object-fit: contain;
-      background: rgba(0, 0, 0, 0.18);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 14px;
-      margin-bottom: 18px;
+      padding: 16px;
+      border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+      background: color-mix(in srgb, var(--bg) 45%, transparent);
+      border-radius: calc(var(--radius) * 0.72);
     }
-    .text { font-size: 19px; line-height: 1.5; }
-    .swipes { display: flex; gap: 12px; margin-top: 24px; }
-    .start-wrap { text-align: center; margin-top: 24px; display: flex; gap: 10px; justify-content: center; }
-    .session-meta { display: flex; justify-content: space-between; gap: 12px; margin-top: 10px; color: var(--muted); font-size: 12px; }
-    .swipe-hint { font-size: 11px; color: #8a8f99; text-align: center; margin: 12px 0 0; }
-    .summary { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; margin-top: 16px; }
-    .summary__title { font-size: 14px; font-weight: 600; margin: 0 0 6px; }
-    .summary__line { font-size: 12px; color: var(--muted); margin: 2px 0; }
-    .card { transition: transform 0.18s ease-out; touch-action: pan-y; user-select: none; }
-    .card.swiping { transition: none; cursor: grabbing; }
-    .card[data-swipe-hint="left"] { box-shadow: -6px 12px 30px rgba(217,106,106,0.35); }
-    .card[data-swipe-hint="right"] { box-shadow: 6px 12px 30px rgba(106,217,143,0.35); }
-    @media (prefers-reduced-motion: reduce) { .card { transition: none; } }
-    button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-    button {
-      flex: 1;
-      background: var(--panel);
+    .card__text {
+      max-width: 26ch;
+      margin: 0 auto;
+      text-align: center;
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: clamp(24px, 3.6vw, 38px);
+      line-height: 1.18;
+      letter-spacing: -0.018em;
+    }
+    .choice-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 34px; }
+    .choice-button {
+      min-height: 70px;
+      display: grid;
+      grid-template-columns: auto 1fr;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 15px;
+      border: 1px solid var(--border);
+      border-radius: calc(var(--radius) * 0.72);
+      background: color-mix(in srgb, var(--panel-raised) 88%, transparent);
       color: var(--ink);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 14px;
-      font-size: 15px;
       cursor: pointer;
-      transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+      text-align: left;
+      transition: transform 150ms ease, border-color 150ms ease, background 150ms ease, box-shadow 150ms ease;
     }
-    button:hover:not(:disabled) { border-color: var(--accent); transform: translateY(-1px); box-shadow: 0 10px 22px rgba(0,0,0,0.16); }
-    button:disabled { opacity: 0.4; cursor: not-allowed; }
-    .primary { background: var(--accent); color: var(--button-ink); font-weight: 600; border-color: var(--accent); }
-    .status { margin-top: 16px; font-size: 13px; color: var(--muted); text-align: center; min-height: 18px; }
+    .choice-button--right { grid-template-columns: 1fr auto; text-align: right; }
+    .choice-button:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 10px 24px color-mix(in srgb, var(--ink) 12%, transparent); }
+    .choice-button--left:hover:not(:disabled), .choice-button--left:focus-visible { border-color: var(--decision-left); }
+    .choice-button--right:hover:not(:disabled), .choice-button--right:focus-visible { border-color: var(--decision-right); }
+    .choice-button:disabled { opacity: 0.42; cursor: default; }
+    .choice-button__key {
+      width: 32px; height: 32px; display: grid; place-items: center;
+      border: 1px solid currentColor; border-radius: 50%; font-family: "Cascadia Mono", Consolas, monospace;
+    }
+    .choice-button__label { font-size: 14px; font-weight: 650; line-height: 1.2; }
+    .player-footer { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 20px; min-height: 42px; }
+    .status { min-width: 0; color: var(--muted); font-size: 12px; }
+    .status[data-kind="error"] { color: var(--decision-left); }
+    .session-label { color: var(--muted); font-family: "Cascadia Mono", Consolas, monospace; font-size: 11px; text-align: right; }
+    .restart-button, .load-button {
+      border: 1px solid var(--border); border-radius: 999px; background: transparent; color: var(--ink);
+      padding: 9px 16px; cursor: pointer; font-size: 12px; font-weight: 650;
+      transition: border-color 150ms ease, background 150ms ease, transform 150ms ease;
+    }
+    .restart-button:hover, .load-button:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, transparent); transform: translateY(-1px); }
+    button:focus-visible { outline: 3px solid color-mix(in srgb, var(--accent) 72%, transparent); outline-offset: 3px; }
+    .summary { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--border); text-align: center; }
+    .summary__title { margin: 0 0 7px; font-family: Georgia, serif; font-size: 22px; }
+    .summary__line { display: inline-block; margin: 2px 7px; color: var(--muted); font-size: 12px; }
+    [hidden] { display: none !important; }
+    @media (max-width: 820px) {
+      .player-shell { width: min(640px, calc(100% - 24px)); padding-top: 18px; }
+      .masthead { align-items: center; }
+      .gauges { grid-template-columns: repeat(2, 1fr); }
+      .decision-stage { grid-template-columns: minmax(0, 1fr); min-height: 0; }
+      .choice-rail { display: none; }
+      .card { min-height: 420px; }
+    }
+    @media (max-height: 820px) and (min-width: 821px) {
+      .player-shell { padding: 14px 0 12px; gap: 10px; }
+      .masthead { padding-bottom: 10px; }
+      .project-title { font-size: clamp(28px, 3.4vw, 40px); }
+      .turn-value { font-size: 25px; }
+      .gauge { padding: 7px 10px 8px; }
+      .decision-stage { min-height: 420px; }
+      .card { min-height: 350px; padding: 24px 34px; }
+      .card__art { width: min(120px, 34%); padding: 10px; margin-bottom: 14px; }
+      .card__text { font-size: clamp(22px, 2.6vw, 31px); }
+      .choice-actions { margin-top: 20px; }
+      .choice-button { min-height: 58px; padding: 9px 12px; }
+    }
+    @media (max-height: 600px) and (min-width: 821px) {
+      .player-shell { padding: 10px 0 8px; gap: 7px; }
+      .masthead { padding-bottom: 7px; }
+      .eyebrow, .utility-label { margin-bottom: 2px; font-size: 9px; }
+      .project-title { font-size: 28px; }
+      .turn-value { font-size: 21px; }
+      .gauge { padding: 5px 8px 6px; }
+      .gauge__bar { margin-top: 5px; }
+      .decision-stage { min-height: 310px; }
+      .card { min-height: 280px; padding: 17px 24px; }
+      .card__art { width: min(82px, 28%); padding: 7px; margin-bottom: 9px; }
+      .card__text { font-size: 23px; }
+      .choice-actions { margin-top: 13px; }
+      .choice-button { min-height: 48px; padding: 7px 10px; }
+      .choice-button__key { width: 28px; height: 28px; }
+      .player-footer { min-height: 34px; }
+      .restart-button, .load-button { padding: 7px 14px; }
+    }
+    @media (max-width: 500px) {
+      .masthead { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+      .turn-readout { display: flex; align-items: baseline; justify-content: space-between; text-align: left; }
+      .project-title { white-space: normal; }
+      .card { min-height: 390px; padding: 24px 20px; }
+      .choice-actions { grid-template-columns: 1fr; }
+      .choice-button--right { grid-template-columns: auto 1fr; text-align: left; }
+      .choice-button--right .choice-button__key { grid-column: 1; grid-row: 1; }
+      .choice-button--right .choice-button__label { grid-column: 2; }
+      .player-footer { grid-template-columns: 1fr auto; }
+      .session-label { display: none; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 1ms !important; transition-duration: 1ms !important; }
+    }
   </style>
 </head>
 <body>
-  <div class="stage">
-    <div class="gauges" id="gauges"></div>
-    <div class="card" id="card" role="group" aria-label="Current card">
-      <img id="art" class="art" alt="" hidden />
-      <div class="text" id="text" aria-live="polite">No build loaded.</div>
-      <div class="swipes">
-        <button id="left" disabled aria-label="Swipe left">◀ Left</button>
-        <button id="right" disabled aria-label="Swipe right">Right ▶</button>
+  <div class="player-shell">
+    <header class="masthead">
+      <div>
+        <p class="eyebrow" id="release-label">A playable court</p>
+        <h1 class="project-title" id="project-title">Awaiting a court</h1>
       </div>
-      <div class="swipe-hint" id="swipe-hint" hidden>Drag the card or use ← → keys</div>
-    </div>
-    <div class="summary" id="summary" hidden aria-live="polite"></div>
-    <div class="start-wrap">
-      <input type="file" id="file" accept=".json,application/json" hidden />
-      <button class="primary" id="load">Load build</button>
-      <button id="restart" hidden>Restart reign</button>
-    </div>
-    <div class="session-meta">
-      <span id="turn-label">Turn 0</span>
-      <span id="session-label">No build loaded</span>
-    </div>
-    <div class="status" id="status" role="status" aria-live="polite"></div>
+      <div class="turn-readout">
+        <p class="utility-label">Decision</p>
+        <span class="turn-value" id="turn-label">00</span>
+      </div>
+    </header>
+
+    <section class="gauges" id="gauges" aria-label="Court gauges"></section>
+
+    <main class="decision-stage" id="decision-stage">
+      <aside class="choice-rail choice-rail--left" aria-hidden="true">
+        <div class="choice-rail__line"></div>
+        <span class="choice-rail__key">Left decree</span>
+        <p class="choice-rail__label" id="left-rail-label">Left</p>
+      </aside>
+
+      <div class="card-wrap">
+        <article class="card" id="card" role="group" aria-label="Current card">
+          <div class="card__content">
+            <img id="art" class="card__art" alt="" hidden />
+            <p class="card__text" id="text" aria-live="polite">Open a build to begin.</p>
+            <div class="summary" id="summary" hidden aria-live="polite"></div>
+          </div>
+          <div class="choice-actions">
+            <button type="button" id="left" class="choice-button choice-button--left" disabled aria-label="Choose left">
+              <span class="choice-button__key" aria-hidden="true">←</span>
+              <span class="choice-button__label" id="left-label">Left</span>
+            </button>
+            <button type="button" id="right" class="choice-button choice-button--right" disabled aria-label="Choose right">
+              <span class="choice-button__label" id="right-label">Right</span>
+              <span class="choice-button__key" aria-hidden="true">→</span>
+            </button>
+          </div>
+        </article>
+      </div>
+
+      <aside class="choice-rail choice-rail--right" aria-hidden="true">
+        <div class="choice-rail__line"></div>
+        <span class="choice-rail__key">Right decree</span>
+        <p class="choice-rail__label" id="right-rail-label">Right</p>
+      </aside>
+    </main>
+
+    <footer class="player-footer">
+      <div class="status" id="status" role="status" aria-live="polite">Preparing the court…</div>
+      <div>
+        <input type="file" id="file" accept=".json,application/json" hidden />
+        <button type="button" class="load-button" id="load">Open build</button>
+        <button type="button" class="restart-button" id="restart" hidden>Restart reign</button>
+      </div>
+      <div class="session-label" id="session-label">Offline player</div>
+    </footer>
   </div>
 
   <script type="module">
     import { createPlayer } from "./player-runtime.js";
 
     const el = (id) => document.getElementById(id);
-    const setStatus = (msg) => { el("status").textContent = msg; };
-    const escapeHtml = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
     const params = new URLSearchParams(window.location.search);
     const requestedLocale = params.get("locale") || navigator.language || "en";
-    const requestedSkin = params.get("skin");
     const embeddedBuildPath = params.get("build");
     const DEFAULT_SKIN = "github-light";
     const KNOWN_SKINS = new Set(["github-light", "catppuccin-latte", "classic", "famicom", "phantom", "arcade", "terminal"]);
     const SKIN_ALIASES = { workbench: "classic" };
-    const requestedSkinId = SKIN_ALIASES[requestedSkin] ?? requestedSkin;
-    const skin = KNOWN_SKINS.has(requestedSkinId) ? requestedSkinId : DEFAULT_SKIN;
-    document.documentElement.dataset.skin = skin;
-    params.set("skin", skin);
-    window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}${window.location.hash}`);
+    const requestedSkin = SKIN_ALIASES[params.get("skin")] ?? params.get("skin");
+    const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ?? false;
 
+    document.documentElement.dataset.skin = KNOWN_SKINS.has(requestedSkin) ? requestedSkin : DEFAULT_SKIN;
+
+    let buildData = null;
     let player = null;
-    let assetByCard = new Map();
     let lastSnap = null;
+    let assetByCard = new Map();
     let presentation = {};
-    let awaitingRestartConfirm = false;
+    let isTransitioning = false;
+    let motionToken = 0;
 
-    // attachSwipe is inlined here (mirroring packages/interface/web/assets/swipe-input.js)
-    // so the deployed player.html needs no repo-relative imports.
-    function attachSwipe(options) {
-      const element = options.element;
-      const onSwipe = options.onSwipe;
-      const canSwipe = typeof options.canSwipe === "function" ? options.canSwipe : () => true;
-      const reducedMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-      const THRESHOLD = 0.28;
-      const MAX_TILT = 14;
-      let dragging = false, startX = 0, currentX = 0, pointerId = null;
-
-      const onKey = (event) => {
-        if (!canSwipe()) return;
-        if (event.key === "ArrowLeft" || event.key === "a" || event.key === "A") { event.preventDefault(); onSwipe("left"); }
-        else if (event.key === "ArrowRight" || event.key === "d" || event.key === "D") { event.preventDefault(); onSwipe("right"); }
-      };
-      const onDown = (event) => {
-        if (!canSwipe() || dragging) return;
-        if (event.pointerType === "mouse" && event.button !== 0) return;
-        dragging = true; pointerId = event.pointerId; startX = currentX = event.clientX;
-        try { element.setPointerCapture?.(event.pointerId); } catch {}
-        element.classList.add("swiping");
-      };
-      const onMove = (event) => {
-        if (!dragging || event.pointerId !== pointerId) return;
-        currentX = event.clientX;
-        if (reducedMotion) return;
-        const width = element.offsetWidth || 1;
-        const delta = Math.max(-width, Math.min(width, currentX - startX));
-        const fraction = delta / width;
-        element.style.transform = `translateX(${delta}px) rotate(${fraction * MAX_TILT}deg)`;
-        element.dataset.swipeHint = fraction <= -THRESHOLD ? "left" : fraction >= THRESHOLD ? "right" : "";
-      };
-      const finish = () => {
-        const width = element.offsetWidth || 1;
-        const fraction = (currentX - startX) / width;
-        dragging = false; pointerId = null;
-        element.style.transform = ""; delete element.dataset.swipeHint;
-        element.classList.remove("swiping");
-        if (Math.abs(fraction) >= THRESHOLD && canSwipe()) onSwipe(fraction < 0 ? "left" : "right");
-      };
-      const onTouchStart = (event) => {
-        if (!canSwipe() || dragging || event.touches.length !== 1) return;
-        dragging = true; startX = currentX = event.touches[0].clientX;
-        element.classList.add("swiping");
-      };
-      const onMoveTouch = (event) => {
-        if (!dragging || event.touches.length !== 1) return;
-        currentX = event.touches[0].clientX;
-        if (reducedMotion) return;
-        const width = element.offsetWidth || 1;
-        const delta = Math.max(-width, Math.min(width, currentX - startX));
-        const fraction = delta / width;
-        element.style.transform = `translateX(${delta}px) rotate(${fraction * MAX_TILT}deg)`;
-        element.dataset.swipeHint = fraction <= -THRESHOLD ? "left" : fraction >= THRESHOLD ? "right" : "";
-      };
-
-      window.addEventListener("keydown", onKey);
-      element.addEventListener("pointerdown", onDown);
-      element.addEventListener("pointermove", onMove);
-      element.addEventListener("pointerup", finish);
-      element.addEventListener("pointercancel", finish);
-      element.addEventListener("touchstart", onTouchStart, { passive: true });
-      element.addEventListener("touchmove", onMoveTouch, { passive: true });
-      element.addEventListener("touchend", finish);
+    function setStatus(message, kind = "") {
+      el("status").textContent = message;
+      el("status").dataset.kind = kind;
     }
 
-    function canSwipe() {
-      return Boolean(player) && !lastSnap?.gameOver && lastSnap?.currentCard;
+    function escapeHtml(value) {
+      return String(value ?? "").replace(/[&<>"']/g, (character) => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;"
+      })[character]);
     }
 
-    // Inlined swipe input (no import) so the shipped player.html stays
-    // self-contained — same principle as the inlined core runtime.
-    attachSwipe({
-      element: el("card"),
-      onSwipe: (direction) => swipe(direction),
-      canSwipe
-    });
+    function canChoose() {
+      return Boolean(player && lastSnap?.currentCard && !lastSnap?.gameOver && !isTransitioning);
+    }
 
-    el("load").addEventListener("click", () => el("file").click());
-    el("file").addEventListener("change", async (event) => {
-      const file = event.target.files?.[0];
-      if (!file) return;
+    function syncControls() {
+      const enabled = canChoose();
+      el("left").disabled = !enabled;
+      el("right").disabled = !enabled;
+      el("restart").hidden = !buildData;
+      el("load").hidden = Boolean(embeddedBuildPath || buildData);
+    }
+
+    function choiceFor(card, direction) {
+      return card?.choices?.find((choice) => choice.id === direction);
+    }
+
+    function updateChoiceLabels(card) {
+      const left = choiceFor(card, "left")?.label ?? "Left";
+      const right = choiceFor(card, "right")?.label ?? "Right";
+      el("left-label").textContent = left;
+      el("right-label").textContent = right;
+      el("left-rail-label").textContent = left;
+      el("right-rail-label").textContent = right;
+      el("left").setAttribute("aria-label", `Choose left: ${left}`);
+      el("right").setAttribute("aria-label", `Choose right: ${right}`);
+    }
+
+    function render(snapshot, { animate = false } = {}) {
+      lastSnap = snapshot;
+      el("turn-label").textContent = String(snapshot?.turn ?? 0).padStart(2, "0");
+      renderGauges(snapshot?.factions ?? {});
+      const card = snapshot?.currentCard;
+      if (card) {
+        const asset = assetByCard.get(card.id);
+        if (asset) {
+          el("art").src = asset.uri;
+          el("art").alt = asset.title || "Card illustration";
+          el("art").hidden = false;
+        } else {
+          el("art").removeAttribute("src");
+          el("art").hidden = true;
+        }
+        el("text").textContent = card.text ?? card.id;
+        updateChoiceLabels(card);
+        el("summary").hidden = true;
+      } else {
+        el("art").removeAttribute("src");
+        el("art").hidden = true;
+        el("text").textContent = snapshot?.gameOver ? "The reign has reached its end." : "No decree is available.";
+        updateChoiceLabels(null);
+        if (snapshot?.gameOver) renderSummary(snapshot);
+      }
+      syncControls();
+      if (animate && !reducedMotion) {
+        el("card").classList.remove("is-entering");
+        void el("card").offsetWidth;
+        el("card").classList.add("is-entering");
+        window.setTimeout(() => el("card").classList.remove("is-entering"), 380);
+      }
+    }
+
+    function renderGauges(factions) {
+      const gauges = el("gauges");
+      gauges.innerHTML = "";
+      for (const [name, gauge] of Object.entries(projectGauges(factions, presentation))) {
+        const node = document.createElement("div");
+        node.className = "gauge";
+        node.innerHTML = `<div class="gauge__head"><span class="gauge__name">${escapeHtml(gauge.label || name)}</span><span class="gauge__value">${gauge.value}</span></div><div class="gauge__bar"><div class="gauge__fill" style="width:${gauge.value}%"></div></div>`;
+        gauges.appendChild(node);
+      }
+    }
+
+    function renderSummary(snapshot) {
+      const summary = el("summary");
+      const lines = Object.entries(snapshot.factions ?? {})
+        .map(([name, value]) => `<span class="summary__line">${escapeHtml(name)} ${value}</span>`)
+        .join("");
+      summary.innerHTML = `<p class="summary__title">Reign concluded</p><div>Decisions: ${snapshot.turn ?? 0}</div><div>${lines}</div>`;
+      summary.hidden = false;
+    }
+
+    async function choose(direction) {
+      if (!canChoose()) return;
+      isTransitioning = true;
+      const token = ++motionToken;
+      syncControls();
+      const card = el("card");
+      card.style.transform = "";
+      card.classList.remove("is-dragging");
+      card.classList.add(`is-exiting-${direction}`);
+      el("decision-stage").dataset.intent = direction;
+      await waitForMotion(220);
+      if (token !== motionToken) return;
       try {
-        startBuild(JSON.parse(await file.text()));
+        const snapshot = player.swipe(direction);
+        card.classList.remove("is-exiting-left", "is-exiting-right");
+        el("decision-stage").removeAttribute("data-intent");
+        isTransitioning = false;
+        render(snapshot, { animate: true });
+        setStatus(snapshot.gameOver ? "This reign is complete. Restart when ready." : "Decision recorded.");
       } catch (error) {
-        setStatus(error.message);
-      }
-    });
-
-    el("restart").addEventListener("click", () => {
-      if (!player) return;
-      if (!awaitingRestartConfirm) {
-        awaitingRestartConfirm = true;
-        updateActionButtons(lastSnap);
-        setStatus("Click restart again to confirm");
-        return;
-      }
-      try {
-        const snap = player.start();
-        awaitingRestartConfirm = false;
-        render(snap);
-        setStatus("Reign restarted");
-      } catch (error) {
-        setStatus(error.message);
-      }
-    });
-
-    el("left").addEventListener("click", () => swipe("left"));
-    el("right").addEventListener("click", () => swipe("right"));
-
-    function swipe(direction) {
-      if (!canSwipe()) return;
-      try {
-        const snap = player.swipe(direction);
-        render(snap);
-        if (snap.gameOver) setStatus(`Reign ended: ${snap.gameOver.faction}`);
-      } catch (error) {
-        setStatus(error.message);
+        card.classList.remove("is-exiting-left", "is-exiting-right");
+        el("decision-stage").removeAttribute("data-intent");
+        isTransitioning = false;
+        syncControls();
+        setStatus(error.message, "error");
       }
     }
 
-    function updateSessionMeta(snap) {
-      const turn = snap?.turn ?? 0;
-      el("turn-label").textContent = `Turn ${turn}`;
-      el("session-label").textContent = player ? "Build loaded" : "No build loaded";
-    }
-
-    function updateActionButtons(snap) {
-      el("restart").hidden = !player;
-      el("restart").textContent = awaitingRestartConfirm ? "Confirm restart" : "Restart reign";
-      el("load").hidden = Boolean(embeddedBuildPath);
-      el("load").textContent = player && !snap?.gameOver ? "Build loaded" : "Load build";
-      el("load").disabled = Boolean(player) && !snap?.gameOver;
+    function restartReign() {
+      if (!buildData) return;
+      motionToken += 1;
+      isTransitioning = false;
+      el("card").classList.remove("is-exiting-left", "is-exiting-right", "is-dragging");
+      el("card").style.transform = "";
+      el("decision-stage").removeAttribute("data-intent");
+      try {
+        player = createPlayer(buildData, { locale: requestedLocale });
+        render(player.start(), { animate: true });
+        setStatus("A new reign begins.");
+      } catch (error) {
+        setStatus(error.message, "error");
+      }
     }
 
     function startBuild(build) {
+      buildData = build;
       assetByCard = createAssetMap(build.content?.assets ?? []);
-      presentation = build.presentation ?? {};
-      applyPresentation(build.presentation);
-      player = createPlayer(build, { locale: requestedLocale });
-      player.on(render);
-      const snap = player.start();
-      render(snap);
-      setStatus("Reign started");
+      presentation = build.presentation ?? build.content?.metadata?.presentation ?? {};
+      applyPresentation(presentation);
+      const title = build.title || build.content?.metadata?.title || "Untitled court";
+      const version = build.version || build.content?.metadata?.version || "";
+      document.title = `${title} — Player`;
+      el("project-title").textContent = title;
+      el("release-label").textContent = version ? `Playable release · ${version}` : "Playable release";
+      el("session-label").textContent = build.buildId ? `Build ${build.buildId}` : "Offline player";
+      restartReign();
     }
 
     async function loadEmbeddedBuild() {
-      if (!embeddedBuildPath) return;
+      if (!embeddedBuildPath) {
+        setStatus("Open a game build to begin.");
+        return;
+      }
       el("load").hidden = true;
       try {
         const url = new URL(embeddedBuildPath, window.location.href);
@@ -370,79 +573,8 @@
         if (!response.ok) throw new Error(`Embedded build failed to load (${response.status})`);
         startBuild(await response.json());
       } catch (error) {
-        setStatus(error.message);
+        setStatus(error.message, "error");
       }
-    }
-
-    void loadEmbeddedBuild();
-
-    function render(snap) {
-      lastSnap = snap;
-      updateSessionMeta(snap);
-      updateActionButtons(snap);
-      const gauges = el("gauges");
-      gauges.innerHTML = "";
-      const factions = snap?.factions ?? {};
-      for (const [name, gauge] of Object.entries(projectGauges(factions, presentation))) {
-        const div = document.createElement("div");
-        div.className = "gauge";
-        const description = gauge.description ? `<div class="gauge__desc">${escapeHtml(gauge.description)}</div>` : "";
-        div.innerHTML = `<div class="gauge__name">${escapeHtml(gauge.label || name)} · ${gauge.value}</div>${description}<div class="gauge__bar"><div class="gauge__fill" style="width:${gauge.left}%"></div></div>`;
-        gauges.appendChild(div);
-      }
-      el("swipe-hint").hidden = !snap?.currentCard || snap?.gameOver;
-      const card = snap?.currentCard;
-      if (card) {
-        const asset = assetByCard.get(card.id);
-        if (asset) {
-          el("art").src = asset.uri;
-          el("art").hidden = false;
-        } else {
-          el("art").removeAttribute("src");
-          el("art").hidden = true;
-        }
-        el("text").textContent = card.text ?? card.id;
-        setChoiceButtonLabels(card);
-        el("left").disabled = false;
-        el("right").disabled = false;
-        el("summary").hidden = true;
-      } else {
-        el("art").removeAttribute("src");
-        el("art").hidden = true;
-        el("text").textContent = snap?.gameOver ? "Your reign has ended." : "No card available.";
-        resetChoiceButtonLabels();
-        el("left").disabled = true;
-        el("right").disabled = true;
-        if (snap?.gameOver) {
-          renderSummary(snap);
-        }
-      }
-    }
-
-    function renderSummary(snap) {
-      const summary = el("summary");
-      const faction = snap.gameOver?.faction ?? "—";
-      const lines = Object.entries(snap.factions ?? {})
-        .map(([name, value]) => `<div class="summary__line">${escapeHtml(name)}: ${value}</div>`)
-        .join("");
-      summary.innerHTML = `
-        <p class="summary__title">Reign ended · ${escapeHtml(faction)}</p>
-        <div class="summary__line">Turns survived: ${snap.turn ?? 0}</div>
-        ${lines}
-      `;
-      summary.hidden = false;
-    }
-
-    function setChoiceButtonLabels(card) {
-      const left = card.choices?.find((choice) => choice.id === "left");
-      const right = card.choices?.find((choice) => choice.id === "right");
-      el("left").textContent = `◀ ${left?.label ?? "Left"}`;
-      el("right").textContent = `${right?.label ?? "Right"} ▶`;
-    }
-
-    function resetChoiceButtonLabels() {
-      el("left").textContent = "◀ Left";
-      el("right").textContent = "Right ▶";
     }
 
     function projectGauges(factions, presentationConfig = {}) {
@@ -454,54 +586,97 @@
         const value = Math.max(0, Math.min(100, Number.isFinite(factions[name]) ? factions[name] : 50));
         result[name] = {
           label: typeof gaugeConfig.label === "string" && gaugeConfig.label.trim() ? gaugeConfig.label.trim() : null,
-          description: typeof gaugeConfig.description === "string" && gaugeConfig.description.trim() ? gaugeConfig.description.trim() : null,
-          value,
-          left: value,
-          right: 100 - value
+          value
         };
       }
       return result;
     }
 
-    function applyPresentation(presentation = {}) {
-      const variables = presentation?.css?.variables ?? {};
-      const blockedVariables = new Set([
-        "--bg",
-        "--panel",
-        "--ink",
-        "--muted",
-        "--accent",
-        "--accent-2",
-        "--border",
-        "--radius"
-      ]);
-      for (const [name, value] of Object.entries(variables)) {
-        if (name.startsWith("--") && !blockedVariables.has(name)) {
-          document.documentElement.style.setProperty(name, String(value));
-        }
+    function applyPresentation(presentationConfig = {}) {
+      const blockedVariables = new Set(["--bg", "--panel", "--ink", "--muted", "--accent", "--accent-2", "--border", "--radius"]);
+      for (const [name, value] of Object.entries(presentationConfig?.css?.variables ?? {})) {
+        if (name.startsWith("--") && !blockedVariables.has(name)) document.documentElement.style.setProperty(name, String(value));
       }
-
       let style = document.getElementById("presentation-css");
       if (!style) {
         style = document.createElement("style");
         style.id = "presentation-css";
         document.head.appendChild(style);
       }
-      style.textContent = presentation?.policy?.allowCssText === true ? (presentation?.css?.text ?? "") : "";
+      style.textContent = presentationConfig?.policy?.allowCssText === true ? (presentationConfig?.css?.text ?? "") : "";
     }
 
     function createAssetMap(assets) {
       const map = new Map();
-      for (const asset of assets) {
-        if (asset?.cardId && asset?.uri && !map.has(asset.cardId)) {
-          map.set(asset.cardId, asset);
-        }
-      }
+      for (const asset of assets) if (asset?.cardId && asset?.uri && !map.has(asset.cardId)) map.set(asset.cardId, asset);
       return map;
     }
 
-    updateSessionMeta(null);
-    updateActionButtons(null);
+    function waitForMotion(milliseconds) {
+      return reducedMotion ? Promise.resolve() : new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+    }
+
+    function attachCardInput() {
+      const card = el("card");
+      let pointerId = null;
+      let startX = 0;
+      let currentX = 0;
+      const threshold = 0.24;
+
+      card.addEventListener("pointerdown", (event) => {
+        if (event.target.closest("button, input, a, select, textarea")) return;
+        if (!canChoose() || (event.pointerType === "mouse" && event.button !== 0)) return;
+        pointerId = event.pointerId;
+        startX = currentX = event.clientX;
+        card.setPointerCapture?.(pointerId);
+        card.classList.add("is-dragging");
+      });
+      card.addEventListener("pointermove", (event) => {
+        if (pointerId !== event.pointerId) return;
+        currentX = event.clientX;
+        const width = card.offsetWidth || 1;
+        const delta = Math.max(-width, Math.min(width, currentX - startX));
+        const fraction = delta / width;
+        card.style.transform = reducedMotion ? "" : `translate3d(${delta}px, 0, 0) rotate(${fraction * 9}deg)`;
+        const intent = fraction <= -threshold ? "left" : fraction >= threshold ? "right" : "";
+        if (intent) el("decision-stage").dataset.intent = intent;
+        else el("decision-stage").removeAttribute("data-intent");
+      });
+      const finish = (event) => {
+        if (pointerId !== event.pointerId) return;
+        const fraction = (currentX - startX) / (card.offsetWidth || 1);
+        pointerId = null;
+        card.style.transform = "";
+        card.classList.remove("is-dragging");
+        el("decision-stage").removeAttribute("data-intent");
+        if (Math.abs(fraction) >= threshold) void choose(fraction < 0 ? "left" : "right");
+      };
+      card.addEventListener("pointerup", finish);
+      card.addEventListener("pointercancel", finish);
+    }
+
+    el("left").addEventListener("click", () => void choose("left"));
+    el("right").addEventListener("click", () => void choose("right"));
+    el("restart").addEventListener("click", restartReign);
+    el("load").addEventListener("click", () => el("file").click());
+    el("file").addEventListener("change", async (event) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      try { startBuild(JSON.parse(await file.text())); }
+      catch (error) { setStatus(error.message, "error"); }
+    });
+    window.addEventListener("keydown", (event) => {
+      if (event.repeat || !canChoose()) return;
+      if (event.key === "ArrowLeft" || event.key.toLowerCase() === "a") {
+        event.preventDefault(); void choose("left");
+      } else if (event.key === "ArrowRight" || event.key.toLowerCase() === "d") {
+        event.preventDefault(); void choose("right");
+      }
+    });
+
+    attachCardInput();
+    syncControls();
+    void loadEmbeddedBuild();
   </script>
 </body>
 </html>
