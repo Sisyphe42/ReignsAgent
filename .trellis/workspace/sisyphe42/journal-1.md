@@ -455,3 +455,36 @@ Restored deterministic card motion with an explicit reduced-motion setting, simp
 ### Next Steps
 
 - None - task complete
+
+
+## Session 14: Fix Phantom utility contrast
+
+**Date**: 2026-07-16
+**Task**: Fix Phantom utility contrast
+**Branch**: `feature/project-windows-release`
+
+### Summary
+
+Separated raised-paper text colors from the Phantom drawer palette, visually verified Appearance in a real browser, rebuilt Electron, and smoke-tested a fresh Windows release.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `02276ef` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
