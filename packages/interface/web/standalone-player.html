@@ -380,6 +380,11 @@
     .skin-option__name { font-weight: 650; }
     .skin-option__description { display: block; margin-top: 3px; color: var(--muted); font-size: 11px; }
     .skin-option__state { color: var(--accent); font-family: "Cascadia Mono", Consolas, monospace; font-size: 10px; text-transform: uppercase; }
+    .motion-setting { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--border); }
+    .motion-setting__label { display: block; margin-bottom: 9px; color: var(--muted); font-family: "Cascadia Mono", Consolas, monospace; font-size: 10px; letter-spacing: .12em; text-transform: uppercase; }
+    .motion-options { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .motion-option { min-height: 44px; border: 1px solid var(--border); border-radius: calc(var(--radius) * .55); background: var(--panel-raised); color: var(--ink); cursor: pointer; font-size: 12px; font-weight: 650; }
+    .motion-option[aria-pressed="true"] { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--panel-raised)); box-shadow: inset 0 -3px var(--accent); }
     .history-summary { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 18px; }
     .history-stat { padding: 12px; border: 1px solid var(--border); border-radius: calc(var(--radius) * .55); background: var(--panel-raised); }
     .history-stat strong { display: block; margin-top: 4px; font-family: Georgia, serif; font-size: 24px; font-weight: 500; }
@@ -410,11 +415,12 @@
     .language-option__state { color: var(--accent); font-family: "Cascadia Mono", Consolas, monospace; font-size: 10px; text-transform: uppercase; }
     .about-project { margin: 0 0 22px; padding: 18px; border: 1px solid var(--border); border-radius: calc(var(--radius) * .65); background: var(--panel-raised); }
     .about-project h3 { margin: 0; font-family: Georgia, serif; font-size: 26px; font-weight: 500; }
+    .project-link, .about-project a, .about-engine a { color: inherit; text-decoration-color: color-mix(in srgb, currentColor 38%, transparent); text-decoration-thickness: 1px; text-underline-offset: .16em; }
+    .project-link { text-decoration: none; }
+    .project-link[href]:hover, .about-project a:hover, .about-engine a:hover { color: var(--accent); text-decoration-color: currentColor; }
     .about-project__byline { margin: 5px 0 14px; color: var(--accent); font-family: "Cascadia Mono", Consolas, monospace; font-size: 11px; }
     .about-project__description { margin: 0; color: var(--muted); line-height: 1.65; white-space: pre-wrap; }
-    .about-engine { padding-top: 20px; border-top: 1px solid var(--border); }
-    .about-engine__name { margin: 0 0 6px; font-family: "Cascadia Mono", Consolas, monospace; font-size: 12px; letter-spacing: .15em; text-transform: uppercase; }
-    .about-engine p { color: var(--muted); line-height: 1.6; }
+    .about-engine { padding-top: 18px; border-top: 1px solid var(--border); color: var(--muted); font-family: "Cascadia Mono", Consolas, monospace; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; }
 
     :root[data-skin="famicom"] body {
       background-color: #efe4cc;
@@ -505,7 +511,7 @@
     <header class="masthead">
       <div>
         <p class="eyebrow" id="release-label">A playable court</p>
-        <h1 class="project-title" id="project-title">Awaiting a court</h1>
+        <h1 class="project-title"><a class="project-link" id="project-title" rel="noreferrer">Awaiting a court</a></h1>
       </div>
       <div>
         <div class="masthead-tools" aria-label="Player utilities">
@@ -583,6 +589,10 @@
       <section class="utility-panel" id="appearance-panel">
         <p class="utility-copy">Choose how this court is presented. Your selection is kept on this device for future releases.</p>
         <div class="skin-options" id="skin-options" aria-label="Player skins"></div>
+        <div class="motion-setting">
+          <span class="motion-setting__label" id="motion-label">Card motion</span>
+          <div class="motion-options" id="motion-options" aria-labelledby="motion-label"></div>
+        </div>
       </section>
 
       <section class="utility-panel" id="history-panel" hidden>
@@ -612,15 +622,11 @@
 
       <section class="utility-panel" id="about-panel" hidden>
         <article class="about-project">
-          <h3 id="about-project-title">Untitled court</h3>
+          <h3><a id="about-project-title" rel="noreferrer">Untitled court</a></h3>
           <p class="about-project__byline" id="about-project-byline"></p>
           <p class="about-project__description" id="about-project-description"></p>
         </article>
-        <div class="about-engine">
-          <p class="about-engine__name">Built with ReignsAgent</p>
-          <p id="about-engine-copy">ReignsAgent is an open-source authoring framework and deterministic runtime for card-based narrative experiences.</p>
-          <p id="about-boundary-copy">This release contains only the player runtime, authored content, and project assets. Creator tools, AI connectors, and credentials are not included.</p>
-        </div>
+        <div class="about-engine"><span id="built-with-prefix">Built with</span> <a href="https://github.com/Sisyphe42/ReignsAgent" target="_blank" rel="noreferrer">ReignsAgent ↗</a></div>
       </section>
     </aside>
   </div>
@@ -634,12 +640,12 @@
     const requestedLocale = params.get("locale") || navigator.language || "en";
     const embeddedBuildPath = params.get("build");
     const SKIN_PERSIST_KEY = "reigns-agent.player.skin.v1";
+    const MOTION_PERSIST_KEY = "reigns-agent.player.motion.v1";
     const HISTORY_PREFIX = "reigns-agent.player.history.v1:";
     const REIGN_PREFIX = "reigns-agent.player.reign.v1:";
     const LOCALE_PREFIX = "reigns-agent.player.locale.v1:";
     const MAX_HISTORY = 200;
     const requestedSkin = resolveSkinId(params.get("skin"));
-    const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ?? false;
 
     const PLAYER_COPY = Object.freeze({
       en: {
@@ -650,8 +656,7 @@
         recordCopy: "Decisions are grouped by local play session. Restarting begins a new reign without erasing earlier sessions.",
         thisReign: "This reign", allReigns: "All reigns", noRecord: "No reigns recorded yet. Choose left or right to begin the record.",
         clearRecord: "Clear record", active: "Active", decisions: "decisions", localRecord: "Local record", aboutTitle: "About this release",
-        builtWith: "Built with ReignsAgent", engineCopy: "ReignsAgent is an open-source authoring framework and deterministic runtime for card-based narrative experiences.",
-        boundaryCopy: "This release contains only the player runtime, authored content, and project assets. Creator tools, AI connectors, and credentials are not included.",
+        builtWith: "Built with", cardMotion: "Card motion", fullMotion: "Full motion", reducedMotion: "Reduced motion",
         by: "By", playableRelease: "Playable release", offlinePlayer: "Offline player", newReign: "A new reign begins.",
         recorded: "Decision recorded.", complete: "This reign is complete. Restart when ready.", reignConcluded: "Reign concluded", languageChanged: "Language changed."
       },
@@ -663,14 +668,14 @@
         recordCopy: "决策按本地游玩局次归档。重新开始会创建新的 Reign，但不会删除此前记录。",
         thisReign: "本局决策", allReigns: "全部局次", noRecord: "尚无游玩记录。选择左侧或右侧后会开始记录。",
         clearRecord: "清空记录", active: "当前", decisions: "次决策", localRecord: "本地记录", aboutTitle: "关于本作",
-        builtWith: "使用 ReignsAgent 构建", engineCopy: "ReignsAgent 是用于创作卡牌叙事体验的开源框架与确定性运行时。",
-        boundaryCopy: "本发布物仅包含玩家运行时、作者内容与项目资源，不包含 Creator 工具、AI 连接器或密钥。",
+        builtWith: "构建于", cardMotion: "卡片动效", fullMotion: "完整动效", reducedMotion: "减少动效",
         by: "作者", playableRelease: "可游玩版本", offlinePlayer: "离线玩家", newReign: "新的 Reign 开始了。",
         recorded: "决策已记录。", complete: "本局已经结束，可以重新开始。", reignConcluded: "本局结束", languageChanged: "语言已切换。"
       }
     });
 
     let currentSkin = requestedSkin ?? resolveSkinId(safeStorageGet(SKIN_PERSIST_KEY)) ?? DEFAULT_SKIN;
+    let currentMotion = safeStorageGet(MOTION_PERSIST_KEY) === "reduced" ? "reduced" : "full";
     applySkinTheme(document.documentElement, currentSkin);
 
     let buildData = null;
@@ -737,14 +742,34 @@
       document.querySelectorAll(".history-stat .utility-label")[1].textContent = copy("allReigns");
       el("history-empty").textContent = copy("noRecord");
       el("clear-history").textContent = copy("clearRecord");
-      document.querySelector(".about-engine__name").textContent = copy("builtWith");
-      el("about-engine-copy").textContent = copy("engineCopy");
-      el("about-boundary-copy").textContent = copy("boundaryCopy");
+      el("built-with-prefix").textContent = copy("builtWith");
+      el("motion-label").textContent = copy("cardMotion");
       syncBuildChrome();
       if (utilityMode) updateUtilityHeading();
       renderSkinOptions();
+      renderMotionOptions();
       renderLanguageOptions();
       renderHistory();
+    }
+
+    function safeExternalUrl(value) {
+      if (typeof value !== "string" || !value.trim()) return null;
+      try {
+        const url = new URL(value.trim());
+        return ["http:", "https:"].includes(url.protocol) ? url.href : null;
+      } catch { return null; }
+    }
+
+    function setExternalLink(link, value) {
+      const href = safeExternalUrl(value);
+      if (href) {
+        link.href = href;
+        link.target = "_blank";
+        link.rel = "noreferrer";
+      } else {
+        link.removeAttribute("href");
+        link.removeAttribute("target");
+      }
     }
 
     function syncBuildChrome() {
@@ -754,9 +779,22 @@
       const version = buildData.version || metadata.version || "";
       el("release-label").textContent = version ? `${copy("playableRelease")} · ${version}` : copy("playableRelease");
       el("session-label").textContent = buildData.buildId ? `Build ${buildData.buildId}` : copy("offlinePlayer");
+      el("project-title").textContent = title;
       el("about-project-title").textContent = title;
+      setExternalLink(el("project-title"), metadata.titleUrl);
+      setExternalLink(el("about-project-title"), metadata.titleUrl);
       const author = typeof metadata.author === "string" ? metadata.author.trim() : "";
-      el("about-project-byline").textContent = [author ? `${copy("by")} ${author}` : "", version ? `v${version}` : ""].filter(Boolean).join(" · ");
+      const byline = el("about-project-byline");
+      byline.replaceChildren();
+      if (author) {
+        byline.append(document.createTextNode(`${copy("by")} `));
+        const authorLink = document.createElement("a");
+        authorLink.textContent = author;
+        setExternalLink(authorLink, metadata.authorUrl);
+        byline.append(authorLink);
+      }
+      if (author && version) byline.append(document.createTextNode(" · "));
+      if (version) byline.append(document.createTextNode(`v${version}`));
       el("about-project-description").textContent = typeof metadata.description === "string" && metadata.description.trim() ? metadata.description.trim() : title;
     }
 
@@ -808,6 +846,29 @@
         container.appendChild(option);
       }
       applySkin(currentSkin, { persist: false });
+    }
+
+    function renderMotionOptions() {
+      const container = el("motion-options");
+      container.replaceChildren();
+      for (const [value, labelKey] of [["full", "fullMotion"], ["reduced", "reducedMotion"]]) {
+        const option = document.createElement("button");
+        option.type = "button";
+        option.className = "motion-option";
+        option.dataset.motionOption = value;
+        option.setAttribute("aria-pressed", String(currentMotion === value));
+        option.textContent = copy(labelKey);
+        option.addEventListener("click", () => applyMotion(value));
+        container.appendChild(option);
+      }
+    }
+
+    function applyMotion(value) {
+      currentMotion = value === "reduced" ? "reduced" : "full";
+      safeStorageSet(MOTION_PERSIST_KEY, currentMotion);
+      for (const option of el("motion-options").querySelectorAll("[data-motion-option]")) {
+        option.setAttribute("aria-pressed", String(option.dataset.motionOption === currentMotion));
+      }
     }
 
     function updateUtilityHeading() {
@@ -1115,7 +1176,7 @@
     }
 
     async function playCardAnimation(element, keyframes, options) {
-      if (reducedMotion || typeof element.animate !== "function") return;
+      if (currentMotion === "reduced" || typeof element.animate !== "function") return;
       const animation = element.animate(keyframes, options);
       try { await animation.finished; }
       catch { /* A restart or locale change may cancel an in-flight animation. */ }
@@ -1301,7 +1362,7 @@
         const width = card.offsetWidth || 1;
         const delta = Math.max(-width, Math.min(width, currentX - startX));
         const fraction = delta / width;
-        card.style.transform = reducedMotion ? "" : `translate3d(${delta}px, 0, 0) rotate(${fraction * 9}deg)`;
+        card.style.transform = currentMotion === "reduced" ? "" : `translate3d(${delta}px, 0, 0) rotate(${fraction * 9}deg)`;
         const intent = fraction <= -threshold ? "left" : fraction >= threshold ? "right" : "";
         if (intent) el("decision-stage").dataset.intent = intent;
         else el("decision-stage").removeAttribute("data-intent");

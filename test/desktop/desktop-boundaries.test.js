@@ -112,6 +112,7 @@ describe("Electron desktop boundaries", () => {
     assert.match(standalonePlayer, /el\("left"\)\.addEventListener\("click"/);
     assert.match(standalonePlayer, /el\("restart"\)\.addEventListener\("click", restartReign\)/);
     assert.match(standalonePlayer, /reigns-agent\.player\.skin\.v1/);
+    assert.match(standalonePlayer, /reigns-agent\.player\.motion\.v1/);
     assert.match(standalonePlayer, /from "\.\/skin-catalog\.js"/);
     assert.match(creatorSource, /from "\.\.\/\.\.\/\.\.\/packages\/interface\/web\/skin-catalog\.js"/);
     assert.match(creatorSource, /applySkinTheme\(document\.documentElement, skin\)/);
@@ -124,9 +125,18 @@ describe("Electron desktop boundaries", () => {
     assert.match(standalonePlayer, /const snapshot = player\.swipe\(direction\);\s+recordDecision\(before, snapshot, direction\)/);
     assert.match(standalonePlayer, /await animateOutgoing\(direction\)/);
     assert.match(standalonePlayer, /await animateIncoming\(direction\)/);
+    assert.match(standalonePlayer, /currentMotion === "reduced"/);
+    assert.doesNotMatch(standalonePlayer, /matchMedia\?\.\("\(prefers-reduced-motion: reduce\)"\)/);
     assert.match(standalonePlayer, /new Set\(decisionHistory\.map\(\(record\) => record\.reign\)\)/);
     assert.match(standalonePlayer, /player\.setLocale\(locale\)/);
     assert.match(standalonePlayer, /id="about-project-description"/);
+    assert.match(standalonePlayer, /href="https:\/\/github\.com\/Sisyphe42\/ReignsAgent"/);
+    assert.match(standalonePlayer, /\["http:", "https:"\]\.includes\(url\.protocol\)/);
+    assert.doesNotMatch(standalonePlayer, /open-source authoring framework|Creator tools, AI connectors/);
+    assert.match(nativeSource, /IsExternalHttpUrl\(uri\).*ShellExecuteW/s);
+    assert.match(creatorSource, /id="project-title-url"/);
+    assert.match(creatorSource, /id="project-author-url"/);
+    assert.match(creatorSource, /normalizeOptionalExternalUrl\(titleUrl\)/);
     assert.match(standalonePlayer, /data-skin="famicom".*\.card/s);
     assert.match(standalonePlayer, /data-skin="phantom".*\.card/s);
     assert.match(standalonePlayer, /prefers-reduced-motion: reduce/);

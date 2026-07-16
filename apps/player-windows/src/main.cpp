@@ -1,6 +1,7 @@
 #include <windows.h>
 #include <bcrypt.h>
 #include <shlobj.h>
+#include <shellapi.h>
 #include <wrl.h>
 #include <WebView2.h>
 #include <winrt/base.h>
@@ -34,6 +35,11 @@ constexpr std::uint32_t kPayloadVersion = 1;
 constexpr std::uint32_t kFooterSize = 72;
 constexpr wchar_t kWindowClass[] = L"ReignsAgentPlayerWindow";
 constexpr wchar_t kVirtualOrigin[] = L"https://reignsagent.local/";
+
+bool IsExternalHttpUrl(const wchar_t* uri) {
+  if (!uri) return false;
+  return _wcsnicmp(uri, L"https://", 8) == 0 || _wcsnicmp(uri, L"http://", 7) == 0;
+}
 
 #pragma pack(push, 1)
 struct PayloadFooter {
@@ -358,7 +364,14 @@ void StartWebView(HWND window, const ReleasePayload& payload) {
                   return S_OK;
                 }).Get(), &token);
               g_webview->add_NewWindowRequested(Callback<ICoreWebView2NewWindowRequestedEventHandler>(
-                [](ICoreWebView2*, ICoreWebView2NewWindowRequestedEventArgs* args) -> HRESULT { args->put_Handled(TRUE); return S_OK; }).Get(), &token);
+                [](ICoreWebView2*, ICoreWebView2NewWindowRequestedEventArgs* args) -> HRESULT {
+                  LPWSTR uri = nullptr;
+                  args->get_Uri(&uri);
+                  if (IsExternalHttpUrl(uri)) ShellExecuteW(nullptr, L"open", uri, nullptr, nullptr, SW_SHOWNORMAL);
+                  CoTaskMemFree(uri);
+                  args->put_Handled(TRUE);
+                  return S_OK;
+                }).Get(), &token);
               g_webview->add_PermissionRequested(Callback<ICoreWebView2PermissionRequestedEventHandler>(
                 [](ICoreWebView2*, ICoreWebView2PermissionRequestedEventArgs* args) -> HRESULT { args->put_State(COREWEBVIEW2_PERMISSION_STATE_DENY); return S_OK; }).Get(), &token);
               ComPtr<ICoreWebView2_4> webview4;

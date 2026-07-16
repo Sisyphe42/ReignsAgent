@@ -61,7 +61,7 @@ const ZH_HANS_COPY = {
   "Fetch /models": "获取 /models", "Validate endpoint": "验证端点", "Build plan": "生成计划",
   "No connector plan generated.": "尚未生成连接器计划。", "Configured endpoints are used when drafting AI Assist plans.": "配置的端点将用于生成 AI 辅助草稿。",
   Setup: "设置", Off: "关闭",
-  "Project metadata saved": "项目资料已保存", "Project author": "项目作者", "Project description": "项目简介", "Save project details": "保存项目资料", ready: "就绪", loading: "加载中", new: "新增", draft: "草稿",
+  "Project metadata saved": "项目资料已保存", "Project author": "项目作者", "Project description": "项目简介", "Project title link": "项目名称链接", "Project author link": "作者链接", "Project links must use http or https": "项目链接必须使用 http 或 https", "Save project details": "保存项目资料", ready: "就绪", loading: "加载中", new: "新增", draft: "草稿",
   blocked: "受阻", set: "已设置", Valid: "有效", "Needs work": "需要处理", Ready: "就绪", Blocked: "受阻",
   Cards: "卡牌", Validation: "验证", "Player-ready": "玩家端就绪", "Not run": "未运行", Prepared: "已准备", "Not prepared": "未准备",
   "Windows release": "Windows 发布", "Build Windows EXE": "生成 Windows EXE", "Release history": "发布历史",
@@ -4911,6 +4911,16 @@ function BuildPanel({ editor, diagnostics, playerReady, build, releaseState, bus
   );
 }
 
+function normalizeOptionalExternalUrl(value) {
+  if (typeof value !== "string" || !value.trim()) return "";
+  try {
+    const url = new URL(value.trim());
+    return ["http:", "https:"].includes(url.protocol) ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
 function formatFileSize(bytes) {
   if (!Number.isFinite(bytes) || bytes < 0) return "—";
   if (bytes < 1024) return `${bytes} B`;
@@ -5321,7 +5331,9 @@ function HostedWorkspaceTools({ onRefresh, onStatus }) {
 
 function SettingsPanel({ editor, aiSettings, apiKey, apiKeySaved, locale, localePreference, followLocaleLabel, onLocaleChange, onAiSettingsChange, onApiKeyChange, onApiKeyClear, onRefresh, onStatus }) {
   const [title, setTitle] = useState(editor?.metadata?.title ?? "");
+  const [titleUrl, setTitleUrl] = useState(editor?.metadata?.titleUrl ?? "");
   const [author, setAuthor] = useState(editor?.metadata?.author ?? "");
+  const [authorUrl, setAuthorUrl] = useState(editor?.metadata?.authorUrl ?? "");
   const [description, setDescription] = useState(editor?.metadata?.description ?? "");
   const [plan, setPlan] = useState("");
   const [theme, setTheme] = useState("small kingdom");
@@ -5338,12 +5350,20 @@ function SettingsPanel({ editor, aiSettings, apiKey, apiKeySaved, locale, locale
   const protocolLabel = AI_PROTOCOLS.find(([id]) => id === normalizedAiSettings.protocol)?.[1] ?? normalizedAiSettings.protocol;
 
   useEffect(() => setTitle(editor?.metadata?.title ?? ""), [editor?.metadata?.title]);
+  useEffect(() => setTitleUrl(editor?.metadata?.titleUrl ?? ""), [editor?.metadata?.titleUrl]);
   useEffect(() => setAuthor(editor?.metadata?.author ?? ""), [editor?.metadata?.author]);
+  useEffect(() => setAuthorUrl(editor?.metadata?.authorUrl ?? ""), [editor?.metadata?.authorUrl]);
   useEffect(() => setDescription(editor?.metadata?.description ?? ""), [editor?.metadata?.description]);
   useEffect(() => setFetchedModels([]), [normalizedAiSettings.baseUrl, normalizedAiSettings.protocol]);
 
   async function saveProjectMetadata() {
-    await api("/api/editor/metadata", { method: "PATCH", body: { metadata: { title, author, description } } });
+    const normalizedTitleUrl = normalizeOptionalExternalUrl(titleUrl);
+    const normalizedAuthorUrl = normalizeOptionalExternalUrl(authorUrl);
+    if (normalizedTitleUrl === null || normalizedAuthorUrl === null) {
+      onStatus(tr(locale, "Project links must use http or https"));
+      return;
+    }
+    await api("/api/editor/metadata", { method: "PATCH", body: { metadata: { title, titleUrl: normalizedTitleUrl, author, authorUrl: normalizedAuthorUrl, description } } });
     onStatus(tr(locale, "Project metadata saved"));
     await onRefresh();
   }
@@ -5562,8 +5582,16 @@ function SettingsPanel({ editor, aiSettings, apiKey, apiKeySaved, locale, locale
             </div>
           </div>
           <div className="ai-form-row">
+            <label className="ai-field-label" htmlFor="project-title-url">{tr(locale, "Project title link")}</label>
+            <input id="project-title-url" type="url" value={titleUrl} onChange={(event) => setTitleUrl(event.target.value)} placeholder="https://example.com/project" />
+          </div>
+          <div className="ai-form-row">
             <label className="ai-field-label" htmlFor="project-author">{tr(locale, "Project author")}</label>
             <input id="project-author" value={author} onChange={(event) => setAuthor(event.target.value)} placeholder={tr(locale, "Project author")} />
+          </div>
+          <div className="ai-form-row">
+            <label className="ai-field-label" htmlFor="project-author-url">{tr(locale, "Project author link")}</label>
+            <input id="project-author-url" type="url" value={authorUrl} onChange={(event) => setAuthorUrl(event.target.value)} placeholder="https://example.com/author" />
           </div>
           <div className="ai-form-row ai-form-row--stack">
             <label className="ai-field-label" htmlFor="project-description">{tr(locale, "Project description")}</label>
