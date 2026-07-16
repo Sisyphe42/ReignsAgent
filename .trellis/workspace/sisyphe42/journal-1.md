@@ -422,3 +422,36 @@ Reused the Creator skin catalog in deployable players, added build-scoped local 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 13: Release player motion and project links
+
+**Date**: 2026-07-16
+**Task**: Release player motion and project links
+**Branch**: `feature/project-windows-release`
+
+### Summary
+
+Restored deterministic card motion with an explicit reduced-motion setting, simplified About attribution, added safe project and author links, rebuilt the Windows player and packaged Electron release, and passed repository and release smoke checks.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `43bd3cb` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
