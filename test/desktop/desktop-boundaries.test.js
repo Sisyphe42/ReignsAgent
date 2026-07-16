@@ -139,6 +139,9 @@ describe("Electron desktop boundaries", () => {
     assert.match(creatorSource, /normalizeOptionalExternalUrl\(titleUrl\)/);
     assert.match(standalonePlayer, /data-skin="famicom".*\.card/s);
     assert.match(standalonePlayer, /data-skin="phantom".*\.card/s);
+    assert.match(standalonePlayer, /--raised-ink: #121214; --raised-muted: #5f584f/);
+    assert.match(standalonePlayer, /\.skin-option__description[^}]+color: var\(--raised-muted\)/);
+    assert.match(standalonePlayer, /\.motion-option[^}]+color: var\(--raised-ink\)/);
     assert.match(standalonePlayer, /prefers-reduced-motion: reduce/);
     assert.doesNotMatch(standalonePlayer, /awaitingRestartConfirm|Click restart again/);
   });
