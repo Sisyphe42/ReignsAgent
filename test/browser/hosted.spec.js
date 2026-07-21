@@ -29,7 +29,7 @@ test("persists an OPFS project and reopens the PWA offline", async ({ page, cont
   await page.getByRole("button", { name: /Settings/ }).click();
   const title = page.getByPlaceholder("Deck title");
   await title.fill("Hosted persistence smoke");
-  await page.getByRole("button", { name: "Save title" }).click();
+  await page.getByRole("button", { name: "Save project details" }).click();
   await expect(page.locator(".brand p")).toHaveText("Hosted persistence smoke");
   await page.reload();
   await expect(page.locator(".brand p")).toHaveText("Hosted persistence smoke");
@@ -44,7 +44,7 @@ test("honors a direct panel URL over the persisted workspace panel", async ({ pa
   await openHosted(page);
   await page.getByRole("button", { name: /Review/ }).click();
   await expect(page).toHaveURL(/\/workbench\/review(?:\?|$)/);
-  await expect.poll(() => workspaceContains(page, 'activePanel = "review"')).toBe(true);
+  await expect.poll(() => workspaceContains(page, 'activePanel = "review"'), { timeout: 15_000 }).toBe(true);
 
   await page.goto("workbench/content");
   await expect(page.locator(".stage__status strong")).toContainText("cards loaded");
@@ -150,11 +150,11 @@ test("persists navigation density and shared interface language", async ({ page 
   const standardHoverIcon = await hoverItem.locator(".rail__icon").boundingBox();
   await page.mouse.move(standardHoverIcon.x + standardHoverIcon.width / 2, standardHoverIcon.y + standardHoverIcon.height / 2);
   await expect(page.locator(".rail")).toHaveCSS("width", "236px");
+  await expect.poll(() => page.locator(".rail").evaluate((rail) => rail.scrollTop)).toBe(0);
   const iconAfterReveal = await firstItem.locator(".rail__icon").boundingBox();
   expect(iconAfterReveal.height).toBe(iconBeforeReveal.height);
   expect(Math.abs(iconAfterReveal.x - iconBeforeReveal.x)).toBeLessThan(1);
   expect(Math.abs(iconAfterReveal.y - iconBeforeReveal.y)).toBeLessThan(1);
-  await expect.poll(() => page.locator(".rail").evaluate((rail) => rail.scrollTop)).toBe(0);
   await expect(aiAssistLabel).toHaveCSS("white-space", "nowrap");
   const aiAssistRevealed = await aiAssistLabel.boundingBox();
   expect(aiAssistRevealed.height).toBe(aiAssistExpanded.height);
@@ -212,6 +212,8 @@ test("persists navigation density and shared interface language", async ({ page 
   await expect(page.locator('.rail__item[aria-label="Settings"] .rail__label')).toBeVisible();
 
   await page.locator('.rail__item[aria-label="Settings"]').click();
+  await page.mouse.move(600, 400);
+  await expect(page.locator(".rail")).toHaveCSS("width", "79px");
   await expect(page.getByRole("heading", { name: "Settings / Pipeline" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "About ReignsAgent" })).toBeVisible();
   await expect(page.locator(".about-settings__meta-line")).toContainText(`v${productVersion}`);
@@ -220,7 +222,7 @@ test("persists navigation density and shared interface language", async ({ page 
   await expect(page.getByLabel("Language")).toHaveValue("system");
   await expect(page.getByLabel("Language").locator('option[value="system"]')).toHaveText("Follow browser");
   await page.getByPlaceholder("Deck title").fill("Ready");
-  await page.getByRole("button", { name: "Save title" }).click();
+  await page.getByRole("button", { name: "Save project details" }).click();
   await page.getByLabel("Language").selectOption("zh-Hans");
   await expect(page.locator("html")).toHaveAttribute("lang", "zh-Hans");
   await expect(page.getByRole("heading", { name: "设置 / 流水线" })).toBeVisible();
@@ -229,7 +231,7 @@ test("persists navigation density and shared interface language", async ({ page 
   await expect(page.getByRole("link", { name: "打开玩家端预览" })).toHaveAttribute("href", /locale=zh-Hans/);
   await page.getByRole("button", { name: "概览" }).click();
   await expect(page.locator('.metric[data-ai-label="Project"] strong')).toHaveText("Ready");
-  await expect.poll(() => workspaceContains(page, 'activePanel = "overview"')).toBe(true);
+  await expect.poll(() => workspaceContains(page, 'activePanel = "overview"'), { timeout: 15_000 }).toBe(true);
   await page.reload();
   await expect(page.getByRole("heading", { name: "项目概览" })).toBeVisible();
 });
@@ -252,7 +254,7 @@ test("exports a key-free workspace and restores mapped projects", async ({ page 
   await openHosted(page);
   await page.getByRole("button", { name: /Settings/ }).click();
   await page.getByPlaceholder("Deck title").fill("Backup source");
-  await page.getByRole("button", { name: "Save title" }).click();
+  await page.getByRole("button", { name: "Save project details" }).click();
 
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Export workspace backup" }).click();
@@ -308,17 +310,22 @@ async function openHosted(page) {
 
 async function workspaceContains(page, expected) {
   return page.evaluate(async (text) => {
-    const root = await navigator.storage.getDirectory();
-    const dataRoot = await root.getDirectoryHandle("ReignsAgentData");
-    const projects = await dataRoot.getDirectoryHandle("projects");
-    for await (const [, project] of projects.entries()) {
-      if (project.kind !== "directory") continue;
-      try {
-        const handle = await project.getFileHandle("workspace.toml");
-        if ((await (await handle.getFile()).text()).includes(text)) return true;
-      } catch (error) {
-        if (error?.name !== "NotFoundError") throw error;
+    try {
+      const root = await navigator.storage.getDirectory();
+      const dataRoot = await root.getDirectoryHandle("ReignsAgentData");
+      const projects = await dataRoot.getDirectoryHandle("projects");
+      for await (const [, project] of projects.entries()) {
+        if (project.kind !== "directory") continue;
+        try {
+          const handle = await project.getFileHandle("workspace.toml");
+          if ((await (await handle.getFile()).text()).includes(text)) return true;
+        } catch (error) {
+          if (error?.name !== "NotFoundError" && error?.name !== "NotReadableError") throw error;
+        }
       }
+    } catch (error) {
+      if (error?.name === "NotFoundError" || error?.name === "NotReadableError") return false;
+      throw error;
     }
     return false;
   }, expected);

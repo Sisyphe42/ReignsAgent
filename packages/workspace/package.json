@@ -4,6 +4,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.js",
-    "./contracts": "./src/contracts.js"
+    "./contracts": "./src/contracts.js",
+    "./release-contracts": "./src/release-contracts.js"
   }
 }

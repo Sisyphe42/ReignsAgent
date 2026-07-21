@@ -288,3 +288,237 @@ Fixed the Linux-only Phantom rail geometry smoke failure by establishing a true 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 9: Windows Project Release Packaging
+
+**Date**: 2026-07-15
+**Task**: Windows Project Release Packaging
+**Branch**: `feature/project-windows-release`
+
+### Summary
+
+Implemented and verified single-file Windows x64 Project releases with a secure WebView2 host, portable release persistence/APIs, Creator Build workspace, runtime staging, documentation, and real Windows packaging smoke coverage.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `4f5fb2d` | (see git log) |
+| `0973363` | (see git log) |
+| `cb302f8` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 10: Fix blank Windows player release
+
+**Date**: 2026-07-15
+**Task**: Fix blank Windows player release
+**Branch**: `feature/project-windows-release`
+
+### Summary
+
+Fixed WebView2 controller visibility in generated Windows players, invalidated cached releases when the staged host changes, and isolated packaged desktop smoke tests from live portable data.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `bd28df4` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 11: Polish Windows release player interaction
+
+**Date**: 2026-07-15
+**Task**: Polish Windows release player interaction
+**Branch**: `feature/project-windows-release`
+
+### Summary
+
+Fixed DPI-scaled native hit testing, direct choice clicks, one-click restart, and delivered a dedicated animated release-player surface; verified Web, real EXE, packaged Electron, and full repository gates.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3001f3e` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 12: Add Windows player skins, records, and transitions
+
+**Date**: 2026-07-15
+**Task**: Add Windows player skins, records, and transitions
+**Branch**: `feature/project-windows-release`
+
+### Summary
+
+Reused the Creator skin catalog in deployable players, added build-scoped local game records, strengthened directional card animations, and fixed release cache invalidation; verified Web, real EXE, packaged Electron, and full repository gates.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e5e4f92` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 13: Release player motion and project links
+
+**Date**: 2026-07-16
+**Task**: Release player motion and project links
+**Branch**: `feature/project-windows-release`
+
+### Summary
+
+Restored deterministic card motion with an explicit reduced-motion setting, simplified About attribution, added safe project and author links, rebuilt the Windows player and packaged Electron release, and passed repository and release smoke checks.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `43bd3cb` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 14: Fix Phantom utility contrast
+
+**Date**: 2026-07-16
+**Task**: Fix Phantom utility contrast
+**Branch**: `feature/project-windows-release`
+
+### Summary
+
+Separated raised-paper text colors from the Phantom drawer palette, visually verified Appearance in a real browser, rebuilt Electron, and smoke-tested a fresh Windows release.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `02276ef` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 15: Stabilize hosted CI
+
+**Date**: 2026-07-21
+**Task**: Stabilize hosted CI
+**Branch**: `feature/project-windows-release`
+
+### Summary
+
+Diagnosed PR 25 Hosted smoke failures, made OPFS assertions tolerate recoverable incomplete project entries, waited for floating-rail scroll anchoring before geometry checks, and verified all local and GitHub checks.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d39f040` | (see git log) |
+| `2ae2f2e` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

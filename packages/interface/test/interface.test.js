@@ -646,6 +646,18 @@ describe("ReignsAgent interface controller", () => {
     assert.match(serialized, /"choiceModel": "binary"/);
   });
 
+  it("derives deterministic build ids from normalized project content", () => {
+    const editor = createCardEditor({
+      cards: [sampleCard("gate"), sampleCard("arch")],
+      metadata: { title: "Twin Gates", version: "1.2.0" }
+    });
+    const first = prepareGameBuild({ editor });
+    const second = prepareGameBuild({ editor });
+    assert.equal(first.buildId, second.buildId);
+    editor.setMetadata({ title: "Changed Gates" });
+    assert.notEqual(prepareGameBuild({ editor }).buildId, first.buildId);
+  });
+
   it("refuses to build when player cards are not binary", () => {
     const editor = createCardEditor({ cards: [sampleCard("gate")] });
     editor.addCard({ id: "broken", choices: [{ id: "left", effects: {} }] });

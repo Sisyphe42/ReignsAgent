@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { SKINS as SKIN_CATALOG, DEFAULT_SKIN, applySkinTheme, resolveSkinId as resolveSharedSkinId } from "../../../packages/interface/web/skin-catalog.js";
 import { createCreatorBackend } from "./backend.js";
 import "./styles.css";
 
@@ -18,18 +19,9 @@ const PANELS = [
 ];
 
 const FACTIONS = ["gauge0", "gauge1", "gauge2", "gauge3"];
-const SKINS = [
-  ["github-light", "Github Light"],
-  ["catppuccin-latte", "Catppuccin Latte"],
-  ["classic", "Classic"],
-  ["famicom", "Famicom"],
-  ["phantom", "Phantom"],
-  ["arcade", "Arcade"],
-  ["terminal", "Terminal"]
-];
+const SKINS = SKIN_CATALOG.map(({ id, label }) => [id, label]);
 
 const DEFAULT_PANEL = "overview";
-const DEFAULT_SKIN = "github-light";
 const LEGACY_DRAFT_KEY = "reigns-agent.creator-web.editor-draft";
 const RAIL_COLLAPSED_KEY = "reigns-agent.creator-web.rail-collapsed";
 const RAIL_PINNED_KEY = "reigns-agent.creator-web.rail-pinned";
@@ -69,12 +61,13 @@ const ZH_HANS_COPY = {
   "Fetch /models": "获取 /models", "Validate endpoint": "验证端点", "Build plan": "生成计划",
   "No connector plan generated.": "尚未生成连接器计划。", "Configured endpoints are used when drafting AI Assist plans.": "配置的端点将用于生成 AI 辅助草稿。",
   Setup: "设置", Off: "关闭",
-  "Project title saved": "项目标题已保存", ready: "就绪", loading: "加载中", new: "新增", draft: "草稿",
+  "Project metadata saved": "项目资料已保存", "Project author": "项目作者", "Project description": "项目简介", "Project title link": "项目名称链接", "Project author link": "作者链接", "Project links must use http or https": "项目链接必须使用 http 或 https", "Save project details": "保存项目资料", ready: "就绪", loading: "加载中", new: "新增", draft: "草稿",
   blocked: "受阻", set: "已设置", Valid: "有效", "Needs work": "需要处理", Ready: "就绪", Blocked: "受阻",
-  Cards: "卡牌", Validation: "验证", "Player-ready": "玩家端就绪", "Not run": "未运行", Prepared: "已准备", "Not prepared": "未准备"
-};
-const SKIN_ALIASES = {
-  workbench: "classic"
+  Cards: "卡牌", Validation: "验证", "Player-ready": "玩家端就绪", "Not run": "未运行", Prepared: "已准备", "Not prepared": "未准备",
+  "Windows release": "Windows 发布", "Build Windows EXE": "生成 Windows EXE", "Release history": "发布历史",
+  "No releases yet.": "尚无发布记录。", Download: "下载", "Delete release": "删除发布", Target: "目标平台",
+  "WebView2 required": "需要 WebView2", "Review is optional": "审查为可选项", "Player validation must pass before release.": "发布前必须通过玩家端校验。",
+  Unavailable: "不可用", Available: "可用", Size: "大小", Created: "创建时间"
 };
 const AI_PROTOCOLS = [
   ["openai_chat", "OpenAI Chat"],
@@ -626,13 +619,8 @@ function readRailPinned() {
   return !readRailCollapsed();
 }
 
-function isKnownSkin(value) {
-  return SKINS.some(([id]) => id === value);
-}
-
 function resolveSkinId(value) {
-  const skin = SKIN_ALIASES[value] ?? value;
-  return isKnownSkin(skin) ? skin : null;
+  return resolveSharedSkinId(value);
 }
 
 function readUrlState() {
@@ -1006,6 +994,7 @@ function App() {
   const [diagnostics, setDiagnostics] = useState(null);
   const [play, setPlay] = useState({ sessionId: null, state: null });
   const [build, setBuild] = useState(null);
+  const [releaseState, setReleaseState] = useState({ capability: { windowsX64: false, reason: "loading" }, releases: [] });
   const [busy, setBusy] = useState("");
   const [draftInfo, setDraftInfo] = useState(null);
   const [focusCardId, setFocusCardId] = useState(null);
@@ -1052,7 +1041,7 @@ function App() {
   const followLocaleLabel = desktopClient ? "Follow device" : "Follow browser";
 
   useEffect(() => {
-    document.documentElement.dataset.skin = skin;
+    applySkinTheme(document.documentElement, skin);
     syncWorkbenchUrl(activePanel, skin, "replace");
     if (configReady) {
       void api("/api/config", { method: "PATCH", body: { theme: skin } });
@@ -1122,15 +1111,19 @@ function App() {
   }, []);
 
   async function loadCreatorState() {
-    const [nextEditor, config, projectResult, workspaceState] = await Promise.all([
+    const [nextEditor, config, projectResult, workspaceState, nextReleases] = await Promise.all([
       api("/api/editor"),
       api("/api/config"),
       api("/api/projects"),
-      api("/api/workspace")
+      api("/api/workspace"),
+      import.meta.env.VITE_CREATOR_HOST === "browser"
+        ? Promise.resolve({ capability: { windowsX64: false, reason: "hosted_web" }, releases: [] })
+        : api("/api/releases")
     ]);
     setEditor(nextEditor);
     setProjects(projectResult.projects ?? []);
     setActiveProjectId(config.activeProjectId);
+    setReleaseState(nextReleases);
     setHasSavedApiKey(Boolean(config.ai?.hasApiKey));
     setAiSettings(aiSettingsFromConfig(config.ai));
     setLocalePreference(normalizeUiLocalePreference(config.locale));
@@ -1264,7 +1257,7 @@ function App() {
       await api("/api/projects", { method: "POST", body: { source } });
       historyRef.current = [];
       setHistoryDepth(0);
-      await Promise.all([refreshEditor({ statusMessage: "Project created" }), refreshProjects()]);
+      await Promise.all([refreshEditor({ statusMessage: "Project created" }), refreshProjects(), refreshReleases()]);
     });
   }
 
@@ -1276,7 +1269,8 @@ function App() {
       setHistoryDepth(0);
       setDiagnostics(null);
       setPlay({ sessionId: null, state: null });
-      await Promise.all([refreshEditor({ statusMessage: "Project opened" }), refreshProjects()]);
+      setBuild(null);
+      await Promise.all([refreshEditor({ statusMessage: "Project opened" }), refreshProjects(), refreshReleases()]);
     });
   }
 
@@ -1284,7 +1278,8 @@ function App() {
     if (!activeProjectId || !window.confirm("Delete the active project from this workspace?")) return;
     await runAction("Deleting project", async () => {
       await api(`/api/projects/${encodeURIComponent(activeProjectId)}`, { method: "DELETE" });
-      await Promise.all([refreshEditor({ statusMessage: "Project deleted" }), refreshProjects()]);
+      setBuild(null);
+      await Promise.all([refreshEditor({ statusMessage: "Project deleted" }), refreshProjects(), refreshReleases()]);
     });
   }
 
@@ -1355,6 +1350,31 @@ function App() {
       });
       setBuild(result);
       setStatus(exportBuild ? `Exported ${result.outputPath}` : "Build preview prepared");
+    });
+  }
+
+  async function refreshReleases() {
+    if (import.meta.env.VITE_CREATOR_HOST === "browser") {
+      setReleaseState({ capability: { windowsX64: false, reason: "hosted_web" }, releases: [] });
+      return;
+    }
+    setReleaseState(await api("/api/releases"));
+  }
+
+  async function buildWindowsRelease() {
+    await runAction("Building Windows release", async () => {
+      const result = await api("/api/releases/windows-x64", { method: "POST", body: {} });
+      await refreshReleases();
+      setStatus(`Released ${result.release.artifactRelativePath}`);
+    });
+  }
+
+  async function deleteRelease(release) {
+    if (!window.confirm(`Delete release ${release.title} ${release.version}?`)) return;
+    await runAction("Deleting release", async () => {
+      await api(`/api/releases/${encodeURIComponent(release.id)}`, { method: "DELETE" });
+      await refreshReleases();
+      setStatus("Release deleted");
     });
   }
 
@@ -1698,7 +1718,19 @@ function App() {
               onSwipe={swipe}
             />
           )}
-          {activePanel === "build" && <BuildPanel build={build} onPrepare={prepareBuild} />}
+          {activePanel === "build" && (
+            <BuildPanel
+              editor={editor}
+              diagnostics={diagnostics}
+              playerReady={playerReady}
+              build={build}
+              releaseState={releaseState}
+              busy={busy}
+              onPrepare={prepareBuild}
+              onRelease={buildWindowsRelease}
+              onDeleteRelease={deleteRelease}
+            />
+          )}
           {activePanel === "settings" && (
             <SettingsPanel
               editor={editor}
@@ -4821,17 +4853,79 @@ function PreviewPanel({ play, assetsByCard, playerReady, onStart, onSwipe }) {
   );
 }
 
-function BuildPanel({ build, onPrepare }) {
+function BuildPanel({ editor, diagnostics, playerReady, build, releaseState, busy, onPrepare, onRelease, onDeleteRelease }) {
+  const locale = useUiLocale();
+  const hosted = import.meta.env.VITE_CREATOR_HOST === "browser";
+  const capability = releaseState?.capability ?? { windowsX64: false, reason: "loading" };
+  const releases = releaseState?.releases ?? [];
   return (
     <section className="panel">
       <PanelHead title="Build / Deploy" note="Prepare and export the deployable player bundle." />
+      <div className="release-summary">
+        <Metric label="Project" value={editor?.metadata?.title ?? "Untitled"} />
+        <Metric label="Version" value={editor?.metadata?.version ?? "0.0.0"} />
+        <Metric label="Cards" value={String(editor?.cards?.length ?? 0)} />
+        <Metric label="Player-ready" value={playerReady ? "Ready" : "Blocked"} localizeValue tone={playerReady ? "good" : "bad"} />
+        <Metric label="Target" value={hosted ? "Web ZIP" : "Windows x64"} />
+        <Metric label="Review" value={diagnostics ? "Ready" : "Not run"} localizeValue />
+      </div>
+      {!playerReady && <p className="release-notice release-notice--danger">{tr(locale, "Player validation must pass before release.")}</p>}
+      {!diagnostics && <p className="release-notice">{tr(locale, "Review is optional")}</p>}
       <div className="action-row">
         <button className="btn" onClick={() => void onPrepare(false)}>Preview build</button>
-        <button className="btn btn--primary" onClick={() => void onPrepare(true)}>{import.meta.env.VITE_CREATOR_HOST === "browser" ? "Export player ZIP" : "Export .game.json"}</button>
+        {hosted ? (
+          <button className="btn btn--primary" disabled={!playerReady || Boolean(busy)} onClick={() => void onPrepare(true)}>Export player ZIP</button>
+        ) : (
+          <button className="btn btn--primary" disabled={!playerReady || !capability.windowsX64 || Boolean(busy)} onClick={() => void onRelease()}>
+            {tr(locale, "Build Windows EXE")}
+          </button>
+        )}
       </div>
+      {!hosted && (
+        <p className="muted">
+          {tr(locale, "Windows release")}: {tr(locale, capability.windowsX64 ? "Available" : "Unavailable")} · {tr(locale, "WebView2 required")}
+          {!capability.windowsX64 && capability.reason ? ` · ${capability.reason}` : ""}
+        </p>
+      )}
       <pre className="output">{build ? JSON.stringify(build.build ?? build, null, 2) : "No build prepared."}</pre>
+      {!hosted && (
+        <div className="release-history">
+          <h3>{tr(locale, "Release history")}</h3>
+          {releases.length === 0 && <p className="muted">{tr(locale, "No releases yet.")}</p>}
+          {releases.map((release) => (
+            <article className="release-history__item" key={release.id}>
+              <div>
+                <strong>{release.title} · {release.version}</strong>
+                <span>{release.target} · {formatFileSize(release.size)} · {new Date(release.createdAt).toLocaleString()}</span>
+                <code>{release.buildId}</code>
+              </div>
+              <div className="action-row">
+                <a className="btn btn--compact" href={`/api/releases/${encodeURIComponent(release.id)}/artifact`}>{tr(locale, "Download")}</a>
+                <button className="btn btn--ghost btn--compact" type="button" onClick={() => void onDeleteRelease(release)}>{tr(locale, "Delete release")}</button>
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
     </section>
   );
+}
+
+function normalizeOptionalExternalUrl(value) {
+  if (typeof value !== "string" || !value.trim()) return "";
+  try {
+    const url = new URL(value.trim());
+    return ["http:", "https:"].includes(url.protocol) ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
+function formatFileSize(bytes) {
+  if (!Number.isFinite(bytes) || bytes < 0) return "—";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
 }
 
 function AiAssistPreflight({ request, aiConfigured, diagnostics, onChange, onClose, onBuild, onOpenPanel }) {
@@ -5237,6 +5331,10 @@ function HostedWorkspaceTools({ onRefresh, onStatus }) {
 
 function SettingsPanel({ editor, aiSettings, apiKey, apiKeySaved, locale, localePreference, followLocaleLabel, onLocaleChange, onAiSettingsChange, onApiKeyChange, onApiKeyClear, onRefresh, onStatus }) {
   const [title, setTitle] = useState(editor?.metadata?.title ?? "");
+  const [titleUrl, setTitleUrl] = useState(editor?.metadata?.titleUrl ?? "");
+  const [author, setAuthor] = useState(editor?.metadata?.author ?? "");
+  const [authorUrl, setAuthorUrl] = useState(editor?.metadata?.authorUrl ?? "");
+  const [description, setDescription] = useState(editor?.metadata?.description ?? "");
   const [plan, setPlan] = useState("");
   const [theme, setTheme] = useState("small kingdom");
   const [count, setCount] = useState(8);
@@ -5252,11 +5350,21 @@ function SettingsPanel({ editor, aiSettings, apiKey, apiKeySaved, locale, locale
   const protocolLabel = AI_PROTOCOLS.find(([id]) => id === normalizedAiSettings.protocol)?.[1] ?? normalizedAiSettings.protocol;
 
   useEffect(() => setTitle(editor?.metadata?.title ?? ""), [editor?.metadata?.title]);
+  useEffect(() => setTitleUrl(editor?.metadata?.titleUrl ?? ""), [editor?.metadata?.titleUrl]);
+  useEffect(() => setAuthor(editor?.metadata?.author ?? ""), [editor?.metadata?.author]);
+  useEffect(() => setAuthorUrl(editor?.metadata?.authorUrl ?? ""), [editor?.metadata?.authorUrl]);
+  useEffect(() => setDescription(editor?.metadata?.description ?? ""), [editor?.metadata?.description]);
   useEffect(() => setFetchedModels([]), [normalizedAiSettings.baseUrl, normalizedAiSettings.protocol]);
 
-  async function saveTitle() {
-    await api("/api/editor/metadata", { method: "PATCH", body: { metadata: { title } } });
-    onStatus(tr(locale, "Project title saved"));
+  async function saveProjectMetadata() {
+    const normalizedTitleUrl = normalizeOptionalExternalUrl(titleUrl);
+    const normalizedAuthorUrl = normalizeOptionalExternalUrl(authorUrl);
+    if (normalizedTitleUrl === null || normalizedAuthorUrl === null) {
+      onStatus(tr(locale, "Project links must use http or https"));
+      return;
+    }
+    await api("/api/editor/metadata", { method: "PATCH", body: { metadata: { title, titleUrl: normalizedTitleUrl, author, authorUrl: normalizedAuthorUrl, description } } });
+    onStatus(tr(locale, "Project metadata saved"));
     await onRefresh();
   }
 
@@ -5465,9 +5573,30 @@ function SettingsPanel({ editor, aiSettings, apiKey, apiKeySaved, locale, locale
       </div>
       <div className="subsection">
         <h3>{tr(locale, "Project")}</h3>
-        <div className="field-row">
-          <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder={tr(locale, "Deck title")} />
-          <button className="btn" onClick={() => void saveTitle()}>{tr(locale, "Save title")}</button>
+        <div className="ai-channel-form">
+          <div className="ai-form-row">
+            <label className="ai-field-label" htmlFor="project-title">{tr(locale, "Deck title")}</label>
+            <div className="field-row">
+              <input id="project-title" value={title} onChange={(event) => setTitle(event.target.value)} placeholder={tr(locale, "Deck title")} />
+              <button className="btn" type="button" onClick={() => void saveProjectMetadata()}>{tr(locale, "Save project details")}</button>
+            </div>
+          </div>
+          <div className="ai-form-row">
+            <label className="ai-field-label" htmlFor="project-title-url">{tr(locale, "Project title link")}</label>
+            <input id="project-title-url" type="url" value={titleUrl} onChange={(event) => setTitleUrl(event.target.value)} placeholder="https://example.com/project" />
+          </div>
+          <div className="ai-form-row">
+            <label className="ai-field-label" htmlFor="project-author">{tr(locale, "Project author")}</label>
+            <input id="project-author" value={author} onChange={(event) => setAuthor(event.target.value)} placeholder={tr(locale, "Project author")} />
+          </div>
+          <div className="ai-form-row">
+            <label className="ai-field-label" htmlFor="project-author-url">{tr(locale, "Project author link")}</label>
+            <input id="project-author-url" type="url" value={authorUrl} onChange={(event) => setAuthorUrl(event.target.value)} placeholder="https://example.com/author" />
+          </div>
+          <div className="ai-form-row ai-form-row--stack">
+            <label className="ai-field-label" htmlFor="project-description">{tr(locale, "Project description")}</label>
+            <textarea id="project-description" rows="3" value={description} onChange={(event) => setDescription(event.target.value)} placeholder={tr(locale, "Project description")} />
+          </div>
         </div>
       </div>
       <div className="subsection">

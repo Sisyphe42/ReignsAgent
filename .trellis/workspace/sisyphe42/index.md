@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 8
-- **Last Active**: 2026-07-14
+- **Total Sessions**: 15
+- **Last Active**: 2026-07-21
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~290 | Active |
+| `journal-1.md` | ~524 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,13 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 15 | 2026-07-21 | Stabilize hosted CI | `d39f040`, `2ae2f2e` | `feature/project-windows-release` |
+| 14 | 2026-07-16 | Fix Phantom utility contrast | `02276ef` | `feature/project-windows-release` |
+| 13 | 2026-07-16 | Release player motion and project links | `43bd3cb` | `feature/project-windows-release` |
+| 12 | 2026-07-15 | Add Windows player skins, records, and transitions | `e5e4f92` | `feature/project-windows-release` |
+| 11 | 2026-07-15 | Polish Windows release player interaction | `3001f3e` | `feature/project-windows-release` |
+| 10 | 2026-07-15 | Fix blank Windows player release | `bd28df4` | `feature/project-windows-release` |
+| 9 | 2026-07-15 | Windows Project Release Packaging | `4f5fb2d`, `0973363`, `cb302f8` | `feature/project-windows-release` |
 | 8 | 2026-07-14 | Stabilize Phantom hosted smoke | `c077cb8` | `feature/creator-navigation-polish` |
 | 7 | 2026-07-14 | Creator navigation and header polish | `f5240e2`, `04c83f0` | `feature/uiux-navigation-i18n` |
 | 6 | 2026-07-13 | Fix release review regressions | `cc05e79` | `master` |

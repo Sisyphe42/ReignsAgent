@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
-import { access, mkdtemp, readdir, rm } from "node:fs/promises";
+import { access, cp, mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -11,10 +11,18 @@ const platform = process.argv[2] ?? process.platform;
 const architecture = process.argv[3] ?? process.arch;
 const archiveRoot = process.argv[4] ? resolve(process.argv[4]) : null;
 let extractedRoot = null;
+let copiedRoot = null;
 
 try {
   if (archiveRoot) extractedRoot = await extractPortableArchive(archiveRoot, platform);
-  const packageDirectory = await findPackageDirectory(extractedRoot ?? outputRoot, platform, architecture);
+  let packageDirectory = await findPackageDirectory(extractedRoot ?? outputRoot, platform, architecture);
+  if (!archiveRoot) {
+    copiedRoot = await mkdtemp(join(tmpdir(), "reigns-packaged-smoke-"));
+    const copiedPackage = join(copiedRoot, basename(packageDirectory));
+    await cp(packageDirectory, copiedPackage, { recursive: true });
+    await rm(join(copiedPackage, "ReignsAgentData"), { recursive: true, force: true });
+    packageDirectory = copiedPackage;
+  }
   const executable = packagedExecutable(packageDirectory, platform);
   const resources = packagedResources(packageDirectory, platform);
   const portableData = join(packageDirectory, "ReignsAgentData");
@@ -39,7 +47,12 @@ try {
   await access(join(portableData, "SessionData"));
   console.log(`Packaged Electron smoke passed: ${executable}`);
 } finally {
-  if (extractedRoot) await rm(extractedRoot, { recursive: true, force: true });
+  if (extractedRoot) await removeTemporaryTree(extractedRoot);
+  if (copiedRoot) await removeTemporaryTree(copiedRoot);
+}
+
+async function removeTemporaryTree(path) {
+  await rm(path, { recursive: true, force: true, maxRetries: 8, retryDelay: 250 });
 }
 
 async function findPackageDirectory(root, targetPlatform, targetArchitecture) {

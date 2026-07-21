@@ -49,6 +49,9 @@ jobs:
       - run: npm ci
       - run: npm run build:dashboard
       - run: npm run desktop:prepare
+      - name: Smoke test Windows project player
+        if: matrix.platform == 'win32'
+        run: npm run test:player:windows
       - name: Smoke test Electron host on Linux
         if: matrix.platform == 'linux'
         run: xvfb-run -a npm exec -- electron apps/desktop-electron --smoke-test --no-sandbox

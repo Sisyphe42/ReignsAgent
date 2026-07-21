@@ -1,7 +1,10 @@
 {
   "metadata": {
     "title": "Open Court Sample",
+    "titleUrl": "https://github.com/Sisyphe42/ReignsAgent",
     "version": "0.2.0",
+    "author": "ReignsAgent Contributors",
+    "authorUrl": "https://github.com/Sisyphe42/ReignsAgent/graphs/contributors",
     "description": "A complete local test deck for Phase 4 creator, player, diagnostics, and build workflows.",
     "artLicense": "CC BY 3.0",
     "artSource": "Game-icons.net SVG icons from the game-icons/icons repository",

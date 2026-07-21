@@ -131,6 +131,8 @@ flowchart LR
   reviewer["Reviewer<br/>simulation diagnostics"]
   core["Core<br/>headless runtime"]
   player["Deployable Player<br/>core-only runtime"]
+  winPlayer["Windows Project Player<br/>single EXE + WebView2"]
+  releases["Project Releases<br/>records + Builds artifacts"]
   provider["User AI Endpoint"]
 
   local --> server
@@ -138,6 +140,7 @@ flowchart LR
   electron --> server
   server --> creator
   server --> fileWorkspace
+  server --> releases
   hosted --> creator
   creator --> browserBackend
   creator --> server
@@ -150,6 +153,8 @@ flowchart LR
   reviewer -->|"JSON diagnostics"| interface
   pipeline -->|"validated proposals"| interface
   core --> player
+  player --> winPlayer
+  releases --> winPlayer
 ```
 
 The Creator UI has two host adapters. Local Web, Node ZIP, and Electron use `HttpCreatorBackend` over the shared Creator Server and filesystem Workspace. The hosted PWA uses `BrowserCreatorBackend`; browser APIs and the OPFS adapter stay in `apps/creator-web`, while `packages/workspace` remains host-neutral. Hosted diagnostics run in a Web Worker and user AI endpoints are called directly. Neither adapter changes Core, content, proposal, or player contracts.
@@ -162,6 +167,7 @@ The Creator UI has two host adapters. Local Web, Node ZIP, and Electron use `Htt
 | `packages/interface` | Creator workflow orchestration, local web surfaces, play-session helpers, diagnostics projection, and build assembly. |
 | `apps/creator-web` | Vite/React creator workspace. |
 | `apps/creator-server` | Shared HTTP/static host for local Web, Node ZIP, and Electron. |
+| `apps/player-windows` | Native Win32/WebView2 host for Windows x64 Project player releases; no Creator product logic. |
 | `packages/workspace` | Host-neutral configuration/project contracts and the Node filesystem adapter. |
 | `apps/desktop-electron` | Sandboxed portable lifecycle shell; no Creator business logic. |
 
@@ -243,6 +249,32 @@ The build emits:
 | `assets/logo-alpha.png` | Transparent product logo. |
 | Local content assets | Assets referenced by the bundle, such as `assets/sample/*.svg`. |
 
+### Windows Project Release
+
+On Windows x64, the local Node Creator and Electron Creator can publish the active Project from **Build / Deploy** as one directly launchable EXE. Player validation is required; running Review is recommended but does not block publishing. Hosted Creator continues to export the Web Player ZIP.
+
+The EXE contains the active `.game.json`, standalone player page, stitched Core/player runtime, default icon, and referenced player assets. It never contains Creator Web, Creator Server, Pipeline, Reviewer, AI connectors, endpoint settings, or credentials. The native host validates the versioned payload bounds and SHA-256 hashes before extracting read-only web resources to a temporary directory, then serves them through a restricted WebView2 virtual host. In-view external navigation, permissions, downloads, developer tools, and default context menus are disabled; authored HTTP(S) links opened in a new window are handed to the system browser.
+
+The release player has its own presentation surface rather than reusing the Creator preview: a responsive decision stage, reliable directional card-and-seal transitions, clickable left/right decrees, keyboard and drag input, live gauge feedback, and an immediate one-click restart. Full card motion is the deterministic default and an explicit reduced-motion preference is available in Appearance. Its Appearance drawer consumes the same canonical Skin catalog and semantic theme tokens as Creator, with player-specific compositions for skins such as Famicom and Phantom. The Game record groups a bounded, build-scoped history by local `Reign XX` play session, while Language switches authored card and choice translations through `metadata.i18n` without restarting the current reign. About presents project-authored title, version, author, and description plus one linked `Built with ReignsAgent` credit. Skin, motion, locale, and records survive relaunch; storage failures fall back without blocking play, and records can be explicitly cleared. The native window is per-monitor DPI-aware so controls remain correctly sized and hit-tested on scaled Windows displays. Authoring and editing remain Creator-only responsibilities.
+
+Windows 10/11 x64 and an installed Evergreen WebView2 Runtime are required. The release does not bundle or download WebView2, is unsigned, and has no installer or automatic updater. Build the reusable native host and run the real release smoke test with:
+
+```sh
+npm run build:player:windows
+npm run test:player:windows
+```
+
+Creator users do not need Visual Studio, Node.js, .NET, or Electron to publish: supported Creator distributions already stage the reusable host. Repository builders need Visual Studio 2022 C++ tools; the build script restores the pinned WebView2 SDK and statically links its Loader.
+
+Release artifacts live under `ReignsAgentData/Builds/<project-id>/` as `<project-title>-<version>-<build-id>.exe`. Records live under the Project's `builds/` directory and contain the release ID, project/build IDs, title, version, `windows-x64` target, timestamp, relative artifact path, size, and SHA-256. The local API exposes:
+
+| API | Behavior |
+| --- | --- |
+| `GET /api/releases` | Return the active Project's release history and Windows capability. |
+| `POST /api/releases/windows-x64` | Validate the active Project and atomically create or reuse its deterministic build release. |
+| `GET /api/releases/:id/artifact` | Download a size- and hash-verified EXE owned by the active Project. |
+| `DELETE /api/releases/:id` | Delete the confirmed release record and EXE. |
+
 ## Creator Distribution
 
 ### Hosted PWA
@@ -299,6 +331,7 @@ The distribution contains:
 | `packages/*/src` | Runtime modules required by the local API and player builder. |
 | `packages/interface/web` | Player preview and standalone player templates. |
 | `fixtures/content` | Example content for evaluation and player builds. |
+| `apps/player-windows/out/win-x64/ReignsAgentPlayer.exe` | Prebuilt native Project player host in Windows distributions. |
 
 The package intentionally excludes tests, frontend source, caches, `.env`, `node_modules`, and AI-specific player behavior. Creator state is stored beside the extracted package under `ReignsAgentData`; set `REIGNS_AGENT_DATA_ROOT` to override that location. To generate a player site from the extracted package, run:
 
@@ -327,7 +360,7 @@ The desktop app, window, executable, and metadata all use the product name `Reig
 
 Creator navigation has independent density and anchoring controls on wide layouts: the arrow switches a pinned rail between full and icon-only sizes, while the pin switches between a fixed rail and an icon rail that temporarily reveals the full navigation on hover or keyboard focus. Narrow layouts keep the complete horizontal tab strip. Both navigation preferences are local to each client. Interface language defaults to following the current browser or device, with explicit English and Simplified Chinese overrides stored in the shared workspace config so browser, local server, and desktop clients consume the same preference.
 
-All desktop targets are portable ZIP archives: Windows x64, macOS x64/arm64, and Linux x64. Extract the archive and run `ReignsAgent` directly; no installer or system Node.js is required. Electron profile data, `config.toml`, projects, and game exports stay beside the extracted app under `ReignsAgentData/`. On macOS, that directory is created beside `ReignsAgent.app`. Moving the app and its data together preserves the portable workspace.
+All Creator Electron targets are portable ZIP archives: Windows x64, macOS x64/arm64, and Linux x64. This ZIP-only rule applies to Creator distribution artifacts; an authored Project may be published separately as a single Windows x64 player EXE. Extract the Creator archive and run `ReignsAgent` directly; no installer or system Node.js is required. Electron profile data, `config.toml`, projects, and game exports stay beside the extracted app under `ReignsAgentData/`. On macOS, that directory is created beside `ReignsAgent.app`. Moving the app and its data together preserves the portable workspace.
 
 The durable workspace layout is shared by Electron and the Node ZIP:
 
@@ -342,9 +375,10 @@ ReignsAgentData/
     reviews/
     builds/
   Builds/
+    <project-id>/*.exe
 ```
 
-`content.json.metadata.title` is the canonical project name. The bundled sample is immutable; choosing **Sample** clones it into an ordinary project. Global theme and AI endpoint settings live in `config.toml`; project-local panel/selection state lives in `workspace.toml`. API keys are stored as plaintext in the local config by product choice, masked in the UI, and excluded from project/player exports and logs.
+`content.json.metadata.title` is the canonical project name; optional `author` and `description` fields provide release credits, and `titleUrl` / `authorUrl` may provide HTTP(S) links edited in Creator Settings. Project translations are authored data: `metadata.i18n` declares default/supported locales, while card and choice `i18n` entries supply localized text. Authors can provide them through imported JSON/content proposals; the bundled sample includes English and Simplified Chinese and its release player exposes a language switch. The bundled sample is immutable; choosing **Sample** clones it into an ordinary project. Global theme and AI endpoint settings live in `config.toml`; project-local panel/selection state lives in `workspace.toml`. API keys are stored as plaintext in the local config by product choice, masked in the UI, and excluded from project/player exports and logs.
 
 `.github/workflows/desktop.yml` builds portable archives only for manual runs and `v*` tags, then uploads workflow artifacts without publishing a release. The archives are unsigned and may still trigger SmartScreen or Gatekeeper warnings.
 
