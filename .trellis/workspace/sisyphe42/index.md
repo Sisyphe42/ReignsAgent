@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 16
+- **Total Sessions**: 17
 - **Last Active**: 2026-07-21
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~561 | Active |
+| `journal-1.md` | ~594 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 17 | 2026-07-21 | Creator Web optional storage resilience | `9e8a8de` | `master` |
 | 16 | 2026-07-21 | Publish ReignsAgent v0.1.0 | `f482542`, `0fb4e67`, `7c11bc4`, `ad53e69`, `6c0251f` | `master` |
 | 15 | 2026-07-21 | Stabilize hosted CI | `d39f040`, `2ae2f2e` | `feature/project-windows-release` |
 | 14 | 2026-07-16 | Fix Phantom utility contrast | `02276ef` | `feature/project-windows-release` |

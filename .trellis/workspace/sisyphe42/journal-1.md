@@ -559,3 +559,36 @@ Prepared and published the first repository release: stabilized Hosted navigatio
 ### Next Steps
 
 - None - task complete
+
+
+## Session 17: Creator Web optional storage resilience
+
+**Date**: 2026-07-21
+**Task**: Creator Web optional storage resilience
+**Branch**: `master`
+
+### Summary
+
+Guarded optional Creator Web localStorage access, added Hosted failure-mode coverage, and documented the completed resilience contract.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `9e8a8de` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
