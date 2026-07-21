@@ -2,6 +2,8 @@
 import { readdir, stat } from "node:fs/promises";
 import { extname, join, resolve } from "node:path";
 
+import { readZipEntryNames, validatePortableArchiveEntries } from "./release-archive.mjs";
+
 const args = parseArgs(process.argv.slice(2));
 const root = resolve(args.root);
 if (!(await stat(root)).isDirectory()) throw new Error(`Desktop artifact root is not a directory: ${root}`);
@@ -23,8 +25,10 @@ const installer = files.find((file) => installerExtensions.has(extname(file).toL
 if (installer) {
   throw new Error(`Portable desktop artifacts contain installer '${installer}'.`);
 }
+const names = await readZipEntryNames(zipFiles[0]);
+validatePortableArchiveEntries(names, { kind: "desktop", platform: args.platform });
 
-console.log(JSON.stringify({ verified: true, platform: args.platform, root, files }, null, 2));
+console.log(JSON.stringify({ verified: true, platform: args.platform, root, files, entries: names.length }, null, 2));
 
 async function collectFiles(directory) {
   const files = [];

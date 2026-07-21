@@ -14,6 +14,24 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  build-node:
+    name: Cross-platform Node Creator
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build:release
+      - run: npm run verify:release-artifacts
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ReignsAgent-node
+          path: dist/reigns-agent-*.zip
+          if-no-files-found: error
+
   make-desktop:
     name: ${{ matrix.artifact }}
     runs-on: ${{ matrix.runner }}
@@ -47,6 +65,7 @@ jobs:
         if: matrix.platform == 'linux'
         run: sudo apt-get update && sudo apt-get install -y xvfb
       - run: npm ci
+      - run: npm run verify:release-metadata
       - run: npm run build:dashboard
       - run: npm run desktop:prepare
       - name: Smoke test Windows project player
@@ -68,8 +87,65 @@ jobs:
         run: xvfb-run -a npm run test:desktop:packaged -- ${{ matrix.platform }} ${{ matrix.arch }} apps/desktop-electron/out/make
       - run: node scripts/verify-desktop-artifacts.mjs --platform ${{ matrix.platform }} --root apps/desktop-electron/out/make
       - uses: actions/upload-artifact@v4
-        if: always()
         with:
           name: ${{ matrix.artifact }}
-          path: apps/desktop-electron/out/make/**/*
-          if-no-files-found: ${{ job.status == 'success' && 'error' || 'warn' }}
+          path: apps/desktop-electron/out/make/zip/${{ matrix.platform }}/${{ matrix.arch }}/ReignsAgent-${{ matrix.platform }}-${{ matrix.arch }}-*.zip
+          if-no-files-found: error
+
+  assemble-release:
+    name: Verify complete release asset set
+    needs: [build-node, make-desktop]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - uses: actions/download-artifact@v5
+        with:
+          pattern: ReignsAgent-*
+          path: downloaded-assets
+          merge-multiple: true
+      - run: node scripts/assemble-release.mjs --input downloaded-assets --output release-assets
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ReignsAgent-release-assets
+          path: |
+            release-assets/*.zip
+            release-assets/SHA256SUMS.txt
+          if-no-files-found: error
+
+  publish-release:
+    name: Publish GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: assemble-release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - uses: actions/download-artifact@v5
+        with:
+          name: ReignsAgent-release-assets
+          path: release-assets
+      - run: node scripts/verify-release-metadata.mjs --tag "${{ github.ref_name }}"
+      - run: node scripts/assemble-release.mjs --input release-assets --output verified-assets --tag "${{ github.ref_name }}"
+      - name: Refuse to replace an existing release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            echo "Release ${GITHUB_REF_NAME} already exists; refusing to replace its assets." >&2
+            exit 1
+          fi
+      - name: Publish verified assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${GITHUB_REF_NAME}" verified-assets/* --verify-tag --title "ReignsAgent ${GITHUB_REF_NAME}" --notes-file RELEASE_NOTES.md

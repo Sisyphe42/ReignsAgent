@@ -25,6 +25,8 @@ await mkdir(releaseRoot, { recursive: true });
 await assembleCreatorRuntime({ rootDir: ROOT, targetDir: releaseRoot });
 
 const releaseEntries = [
+  ["LICENSE", "LICENSE.reigns-agent.txt"],
+  ["THIRD_PARTY_NOTICES.md", "THIRD_PARTY_NOTICES.md"],
   ["scripts/release/start.mjs", "start.mjs"],
   ["scripts/release/start.cmd", "start.cmd"],
   ["scripts/release/start.sh", "start.sh"],
@@ -82,6 +84,8 @@ function validateReleaseFiles(files) {
     "start.cmd",
     "start.sh",
     "README.md",
+    "LICENSE.reigns-agent.txt",
+    "THIRD_PARTY_NOTICES.md",
     "package.json"
   ];
   for (const requiredPath of required) {
@@ -92,6 +96,8 @@ function validateReleaseFiles(files) {
 
   const forbidden = names.find((name) =>
     name === ".env"
+    || name === "ReignsAgentData"
+    || name.startsWith("ReignsAgentData/")
     || name.startsWith("node_modules/")
     || name.includes("/node_modules/")
     || name.startsWith("test/")
