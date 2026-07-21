@@ -607,14 +607,41 @@ function ProjectMenu({ locale, projects, activeProjectId, onOpen, onCreate, onDe
   );
 }
 
+function readOptionalStorage(key) {
+  try {
+    if (typeof window === "undefined" || !window.localStorage) return null;
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function writeOptionalStorage(key, value) {
+  try {
+    if (typeof window === "undefined" || !window.localStorage) return false;
+    window.localStorage.setItem(key, value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function removeOptionalStorage(key) {
+  try {
+    if (typeof window === "undefined" || !window.localStorage) return false;
+    window.localStorage.removeItem(key);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function readRailCollapsed() {
-  if (typeof localStorage === "undefined") return false;
-  return localStorage.getItem(RAIL_COLLAPSED_KEY) === "true";
+  return readOptionalStorage(RAIL_COLLAPSED_KEY) === "true";
 }
 
 function readRailPinned() {
-  if (typeof localStorage === "undefined") return true;
-  const stored = localStorage.getItem(RAIL_PINNED_KEY);
+  const stored = readOptionalStorage(RAIL_PINNED_KEY);
   if (stored !== null) return stored === "true";
   return !readRailCollapsed();
 }
@@ -1062,11 +1089,11 @@ function App() {
   }, []);
 
   useEffect(() => {
-    localStorage.setItem(RAIL_COLLAPSED_KEY, String(railCollapsed));
+    writeOptionalStorage(RAIL_COLLAPSED_KEY, String(railCollapsed));
   }, [railCollapsed]);
 
   useEffect(() => {
-    localStorage.setItem(RAIL_PINNED_KEY, String(railPinned));
+    writeOptionalStorage(RAIL_PINNED_KEY, String(railPinned));
   }, [railPinned]);
 
   useEffect(() => {
@@ -6460,9 +6487,8 @@ function effectPath(cardId, choiceId, kind, target) {
 }
 
 function readStoredDraft() {
-  if (typeof localStorage === "undefined") return null;
   try {
-    const raw = localStorage.getItem(LEGACY_DRAFT_KEY);
+    const raw = readOptionalStorage(LEGACY_DRAFT_KEY);
     if (!raw) return null;
     const entry = JSON.parse(raw);
     if (!entry?.bundle || !Array.isArray(entry.bundle.cards)) return null;
@@ -6482,9 +6508,7 @@ function readDraftInfo() {
 }
 
 function clearStoredDraft() {
-  if (typeof localStorage !== "undefined") {
-    localStorage.removeItem(LEGACY_DRAFT_KEY);
-  }
+  removeOptionalStorage(LEGACY_DRAFT_KEY);
 }
 
 function formatDraftTime(savedAt) {

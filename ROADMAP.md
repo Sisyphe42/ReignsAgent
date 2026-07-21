@@ -13,7 +13,7 @@ Recent merged work established the baseline that future phases should preserve:
 
 - PR #21 shipped one React Creator across local Web, a cross-platform Node ZIP, portable Electron ZIPs, and an offline-capable Hosted PWA. It also delivered durable TOML configuration, multi-project filesystems, OPFS persistence, Workspace/project ZIP interchange, direct-CORS Hosted AI, and shared release verification.
 - PR #22 made explicit workbench routes authoritative over persisted panel state, anchored packaged Creator exports under `ReignsAgentData/Builds` independently of the launch working directory, and added cached-shell fallback for non-success Hosted navigations.
-- PR #24 delivered responsive pinned/compact/floating navigation, desktop-only panel shortcuts, project management in the header, client-aware English/Simplified Chinese locale controls, and Player launch/return context preservation.
+- PR #24 delivered responsive pinned/compact/floating navigation, desktop-only panel shortcuts, project management in the header, client-aware English/Simplified Chinese locale controls, and Player launch/return context preservation. Optional rail preferences now degrade safely when `localStorage` is unavailable or throws.
 - The first repository release pipeline defines `v0.1.0` as the canonical identity, verifies legal and private-data boundaries inside every archive, assembles exactly five Creator ZIPs, generates SHA-256 checksums, and keeps manual native runs non-publishing while tag publication remains explicitly gated.
 - Windows Project release packaging now publishes a validated active Project as a single x64 EXE from local Node/Electron Creator, with deterministic build IDs, project-scoped release history, portable `Builds` output, and a restricted native WebView2 host. Hosted Creator retains Web Player ZIP export.
 - `/workbench` is the primary Creator surface, with overview, content, story, review, AI Assist, preview, build, and settings panels over shared backend contracts.
@@ -26,7 +26,6 @@ Recent merged work established the baseline that future phases should preserve:
 - Tighten project lifecycle UX around blank, sample, import, backup/restore, rename, and destructive actions without weakening portable or Hosted persistence contracts.
 - Continue cross-skin, responsive, keyboard, and Simplified Chinese visual QA as panels gain richer content.
 - Keep direct routes, Player return context, client-local navigation preferences, and shared locale behavior covered by Hosted browser tests.
-- Close the #24 post-merge storage-resilience follow-up by making optional rail-preference reads and writes tolerate unavailable or throwing `localStorage` without blocking Creator startup.
 - Preserve existing API endpoints and content bundle schemas unless a reviewed contract change justifies migration.
 
 ## Story/Content Completion Direction

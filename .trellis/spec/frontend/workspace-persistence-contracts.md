@@ -28,6 +28,7 @@
 - New runtime modules must be registered once in `CREATOR_RUNTIME_ENTRIES`, which feeds both Node ZIP and Electron staging.
 - Browser APIs stay in `apps/creator-web/src/opfs-workspace.js`; `packages/workspace` exports only host-neutral contracts and the Node filesystem adapter.
 - Hosted Workspace imports validate the full snapshot before mutation, map imported project ids into active/recent config state, restore project-local workspace state, and omit `ai.apiKey` entirely unless explicitly included.
+- Nonessential client-local UI preferences may use `localStorage` only through exception-safe helpers. Unavailable or throwing storage reads use product defaults, and failed writes/removals are silent no-ops that must not block Creator startup or interaction.
 
 ### 4. Validation & Error Matrix
 
@@ -37,6 +38,7 @@
 - Invalid project ID/path -> `project_id_invalid`; never resolve an arbitrary filesystem path.
 - Failed editor mutation -> do not enqueue or write a replacement bundle.
 - Delete active project -> select the newest remaining project; deleting the last project creates a blank project.
+- Missing or throwing `localStorage` -> default the rail to expanded and pinned; keep current-session React state interactive without reporting a persistence error.
 
 ### 5. Good/Base/Bad Cases
 
@@ -44,6 +46,7 @@
 - Base: choose Sample, clone the immutable fixture into a normal project, then edit it independently.
 - Bad: persist theme, endpoint metadata, project content, or API keys only in `localStorage`; Electron random-port origins make that state unstable.
 - Bad: import a new package from Creator Server without adding it to the shared runtime allowlist; source tests pass but extracted releases fail at module resolution.
+- Bad: call `localStorage.getItem`, `setItem`, or `removeItem` directly for optional UI state; privacy modes and restricted origins may throw even when the property exists.
 
 ### 6. Tests Required
 
@@ -52,6 +55,7 @@
 - AI integration tests assert stored-key fallback, explicit request-key precedence, and no key in responses.
 - Node ZIP and packaged Electron smoke tests must launch twice and assert state created by the first process is restored by the second.
 - Runtime tests assert `packages/workspace/src` is staged and no `.env`, tests, frontend source, cache, credentials, or `node_modules` enter release output.
+- Hosted browser tests inject both a throwing `window.localStorage` accessor and throwing storage methods, then assert Creator reaches its loaded state with default rail state and working rail controls.
 
 ### 7. Wrong vs Correct
 
@@ -70,6 +74,20 @@ const server = await createCreatorServer({ rootDir, dataRoot });
 ```
 
 The UI talks to the Server projection, the Server owns active-editor synchronization, and Workspace alone owns disk formats and atomic writes.
+
+For optional client-local preferences, guard the property access and the operation together:
+
+```js
+// Wrong: the accessor or method may throw before Creator mounts.
+localStorage.setItem(key, value);
+
+// Correct: optional persistence degrades without affecting current-session state.
+try {
+  window.localStorage?.setItem(key, value);
+} catch {
+  // Preference persistence is nonessential.
+}
+```
 
 ## Scenario: Windows Project release persistence
 

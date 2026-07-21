@@ -52,6 +52,43 @@ test("honors a direct panel URL over the persisted workspace panel", async ({ pa
   await expect(page).toHaveURL(/\/workbench\/content(?:\?|$)/);
 });
 
+test("starts with default navigation when localStorage access is unavailable", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      get() {
+        throw new DOMException("Storage access denied", "SecurityError");
+      }
+    });
+  });
+
+  await openHosted(page);
+
+  await expect(page.locator(".workspace")).toHaveClass(/workspace--rail-expanded.*workspace--rail-pinned|workspace--rail-pinned.*workspace--rail-expanded/);
+  await expect(page.getByRole("button", { name: "Collapse navigation" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Unpin navigation" })).toBeVisible();
+});
+
+test("keeps navigation interactive when localStorage methods fail", async ({ page }) => {
+  await page.addInitScript(() => {
+    const fail = () => { throw new DOMException("Storage operation denied", "SecurityError"); };
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      value: { getItem: fail, setItem: fail, removeItem: fail }
+    });
+  });
+
+  await openHosted(page);
+
+  await expect(page.locator(".workspace")).toHaveClass(/workspace--rail-expanded.*workspace--rail-pinned|workspace--rail-pinned.*workspace--rail-expanded/);
+  await page.getByRole("button", { name: "Collapse navigation" }).click();
+  await expect(page.locator(".workspace")).toHaveClass(/workspace--rail-collapsed.*workspace--rail-pinned|workspace--rail-pinned.*workspace--rail-collapsed/);
+  await page.getByRole("button", { name: "Expand navigation" }).click();
+  await page.getByRole("button", { name: "Unpin navigation" }).click();
+  await expect(page.locator(".workspace")).toHaveClass(/workspace--rail-floating/);
+  await expect(page.locator(".stage__status strong")).toContainText("cards loaded");
+});
+
 test("persists navigation density and shared interface language", async ({ page }) => {
   await openHosted(page);
 
