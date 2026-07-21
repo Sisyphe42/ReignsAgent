@@ -41,9 +41,9 @@ The project is built for two primary audiences: creators who need a practical wo
 | Creator workbench | Manage projects, import, edit, review, preview, configure AI Assist, and prepare builds from one responsive workspace with English and Simplified Chinese UI. |
 | Core runtime | Deterministic headless play sessions with four default gauges, card scheduling, choices, game-over detection, snapshots, restore, and event logs. |
 | Reviewer | Monte Carlo simulation, graph reachability, coverage diagnostics, pacing checks, endings analysis, and balance warnings. |
-| Pipeline | JSON/CSV/content-bundle exchange, generation request contracts, endpoint protocol handling, patch prevalidation, and reviewer feedback actions. |
+| Pipeline | JSON/CSV/content-bundle exchange, text and image endpoint adapters, capability negotiation, patch prevalidation, and reviewer feedback actions. |
 | Deployable player | Standalone player assets built from validated content and core runtime code only. |
-| AI Assist | User-supplied endpoint workflow for draft proposals, review repair, story edits, and visual request previews. |
+| AI Assist | User-supplied endpoint workflow for draft proposals, review repair, story edits, image generation/edit/inpaint/outpaint drafts, and explicit apply. |
 
 ## Design Boundaries
 
@@ -105,7 +105,7 @@ The main authoring UI lives in `apps/creator-web`.
 | Content | Content-bundle import, card editing, left/right choice tuning, gauge effects, tags, variables, and art bindings. |
 | Story | Reachability, left/right transitions, story groups, endings, graph issues, and reviewer heat. |
 | Review | Narrative QA for balance, pacing, coverage, unreachable paths, endings, and story group health. |
-| AI Assist | User endpoint configuration plus reviewable draft, repair, story, and visual proposals. |
+| AI Assist | User endpoint configuration plus reviewable text proposals and generated image candidates with explicit apply/discard. |
 | Preview | Local Reigns-style play sessions using keyboard, pointer drag, touch, or buttons. |
 | Build | Deployable `.game.json` and player asset preparation. |
 | Settings | Creator skin, interface language, endpoint protocol, model id, capability flags, route compatibility, and product About information. |
@@ -134,6 +134,8 @@ flowchart LR
   winPlayer["Windows Project Player<br/>single EXE + WebView2"]
   releases["Project Releases<br/>records + Builds artifacts"]
   provider["User AI Endpoint"]
+  imageDrafts["Image Drafts<br/>binary staging"]
+  generatedAssets["Generated Assets<br/>SHA-256 addressed"]
 
   local --> server
   nodeZip --> server
@@ -150,6 +152,11 @@ flowchart LR
   interface --> reviewer
   interface --> pipeline
   pipeline -->|"transient request"| provider
+  provider -->|"base64, URL, or binary"| pipeline
+  pipeline --> imageDrafts
+  imageDrafts -->|"explicit apply"| generatedAssets
+  generatedAssets --> fileWorkspace
+  generatedAssets --> browserBackend
   reviewer -->|"JSON diagnostics"| interface
   pipeline -->|"validated proposals"| interface
   core --> player
@@ -157,13 +164,13 @@ flowchart LR
   releases --> winPlayer
 ```
 
-The Creator UI has two host adapters. Local Web, Node ZIP, and Electron use `HttpCreatorBackend` over the shared Creator Server and filesystem Workspace. The hosted PWA uses `BrowserCreatorBackend`; browser APIs and the OPFS adapter stay in `apps/creator-web`, while `packages/workspace` remains host-neutral. Hosted diagnostics run in a Web Worker and user AI endpoints are called directly. Neither adapter changes Core, content, proposal, or player contracts.
+The Creator UI has two host adapters. Local Web, Node ZIP, and Electron use `HttpCreatorBackend` over the shared Creator Server and filesystem Workspace. The hosted PWA uses `BrowserCreatorBackend`; browser APIs and the OPFS adapter stay in `apps/creator-web`, while `packages/workspace` remains host-neutral. Hosted diagnostics run in a Web Worker and user AI endpoints are called directly. Image responses are localized immediately, staged as binary drafts, and only enter authored content after explicit apply; committed files use `assets/generated/<sha256>.<ext>`. Neither adapter changes Core or player runtime contracts.
 
 | Layer | Responsibility |
 | --- | --- |
 | `packages/core` | Headless deterministic runtime. No UI, IO, AI, reviewer, pipeline, or deployment code. |
 | `packages/reviewer` | Simulation, graph diagnostics, narrative coverage, endings analysis, and balance reporting. |
-| `packages/pipeline` | Content exchange, AI request contracts, endpoint normalization, patch prevalidation, and feedback actions. |
+| `packages/pipeline` | Content exchange, text proposal contracts, OpenAI Images-compatible/Gemini Interactions/Stability/Midjourney Proxy image adapters, capability negotiation, and feedback actions. |
 | `packages/interface` | Creator workflow orchestration, local web surfaces, play-session helpers, diagnostics projection, and build assembly. |
 | `apps/creator-web` | Vite/React creator workspace. |
 | `apps/creator-server` | Shared HTTP/static host for local Web, Node ZIP, and Electron. |
@@ -192,6 +199,8 @@ Legacy `faith`, `people`, `military`, and `treasury` keys are accepted on import
 ## AI-Assisted Workflows
 
 ReignsAgent is designed to work with AI systems as controlled collaborators. AI output should be explicit, reviewable, and validated before it becomes authored content.
+
+Image Endpoint settings are independent from the text endpoint, but may inherit its connection credentials. The first-party adapters expose only the operations and parameters they support: OpenAI Images-compatible routes use JSON generation and multipart edit requests, Gemini Interactions uses JSON plus inline image blocks, Stability Stable Image uses operation-specific multipart routes, and Midjourney Proxy/NewAPI submits asynchronous Imagine tasks and polls them to completion. Midjourney exposes Generate and reference Edit in Creator; task-context operations such as mask edits and outpaint remain hidden. Generate, Edit, Inpaint, and Outpaint produce local draft candidates where supported; Apply commits the selected candidate and binds it to a card or saves it as an unbound asset, while Discard removes the draft. Remote result URLs are downloaded before a response is returned and are never stored in project content.
 
 For content generation or repair:
 
@@ -380,7 +389,7 @@ ReignsAgentData/
     <project-id>/*.exe
 ```
 
-`content.json.metadata.title` is the canonical project name; optional `author` and `description` fields provide release credits, and `titleUrl` / `authorUrl` may provide HTTP(S) links edited in Creator Settings. Project translations are authored data: `metadata.i18n` declares default/supported locales, while card and choice `i18n` entries supply localized text. Authors can provide them through imported JSON/content proposals; the bundled sample includes English and Simplified Chinese and its release player exposes a language switch. The bundled sample is immutable; choosing **Sample** clones it into an ordinary project. Global theme and AI endpoint settings live in `config.toml`; project-local panel/selection state lives in `workspace.toml`. API keys are stored as plaintext in the local config by product choice, masked in the UI, and excluded from project/player exports and logs.
+`content.json.metadata.title` is the canonical project name; optional `author` and `description` fields provide release credits, and `titleUrl` / `authorUrl` may provide HTTP(S) links edited in Creator Settings. Project translations are authored data: `metadata.i18n` declares default/supported locales, while card and choice `i18n` entries supply localized text. Authors can provide them through imported JSON/content proposals; the bundled sample includes English and Simplified Chinese and its release player exposes a language switch. The bundled sample is immutable; choosing **Sample** clones it into an ordinary project. Global theme and text/image endpoint settings live in `config.toml`; project-local panel/selection state lives in `workspace.toml`. API keys are stored as plaintext in the local config by product choice, masked in the UI, and excluded from project/player exports and logs; API projections expose only `hasApiKey`.
 
 `.github/workflows/desktop.yml` builds the Node Creator ZIP and all four native Electron ZIPs. A manual run smoke-tests and assembles the complete asset set without publishing. A matching `v*` tag additionally validates the tag against `package.json`, generates sorted `SHA256SUMS.txt`, and publishes only after every native job succeeds. Only that tag-gated publication job receives `contents: write`; it refuses to replace an existing release.
 

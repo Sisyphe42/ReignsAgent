@@ -5,6 +5,7 @@ import { strFromU8, unzipSync } from "fflate";
 
 let aiServer;
 let aiEndpoint;
+const tinyPngBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
 let productVersion;
 
 test.beforeAll(async () => {
@@ -15,6 +16,10 @@ test.beforeAll(async () => {
     response.setHeader("access-control-allow-methods", "GET,POST,OPTIONS");
     if (request.method === "OPTIONS") { response.writeHead(204); response.end(); return; }
     response.setHeader("content-type", "application/json");
+    if (request.url.includes("/images/generations") || request.url.includes("/images/edits")) {
+      response.end(JSON.stringify({ data: [{ b64_json: tinyPngBase64 }] }));
+      return;
+    }
     response.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ proposals: [] }) } }] }));
   });
   await new Promise((resolve) => aiServer.listen(0, "127.0.0.1", resolve));
@@ -50,6 +55,43 @@ test("honors a direct panel URL over the persisted workspace panel", async ({ pa
   await expect(page.locator(".stage__status strong")).toContainText("cards loaded");
   await expect(page.getByRole("button", { name: /Content/ })).toHaveClass(/rail__item--active/);
   await expect(page).toHaveURL(/\/workbench\/content(?:\?|$)/);
+});
+
+test("starts with default navigation when localStorage access is unavailable", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      get() {
+        throw new DOMException("Storage access denied", "SecurityError");
+      }
+    });
+  });
+
+  await openHosted(page);
+
+  await expect(page.locator(".workspace")).toHaveClass(/workspace--rail-expanded.*workspace--rail-pinned|workspace--rail-pinned.*workspace--rail-expanded/);
+  await expect(page.getByRole("button", { name: "Collapse navigation" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Unpin navigation" })).toBeVisible();
+});
+
+test("keeps navigation interactive when localStorage methods fail", async ({ page }) => {
+  await page.addInitScript(() => {
+    const fail = () => { throw new DOMException("Storage operation denied", "SecurityError"); };
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      value: { getItem: fail, setItem: fail, removeItem: fail }
+    });
+  });
+
+  await openHosted(page);
+
+  await expect(page.locator(".workspace")).toHaveClass(/workspace--rail-expanded.*workspace--rail-pinned|workspace--rail-pinned.*workspace--rail-expanded/);
+  await page.getByRole("button", { name: "Collapse navigation" }).click();
+  await expect(page.locator(".workspace")).toHaveClass(/workspace--rail-collapsed.*workspace--rail-pinned|workspace--rail-pinned.*workspace--rail-collapsed/);
+  await page.getByRole("button", { name: "Expand navigation" }).click();
+  await page.getByRole("button", { name: "Unpin navigation" }).click();
+  await expect(page.locator(".workspace")).toHaveClass(/workspace--rail-floating/);
+  await expect(page.locator(".stage__status strong")).toContainText("cards loaded");
 });
 
 test("persists navigation density and shared interface language", async ({ page }) => {
@@ -151,6 +193,13 @@ test("persists navigation density and shared interface language", async ({ page 
   await page.mouse.move(standardHoverIcon.x + standardHoverIcon.width / 2, standardHoverIcon.y + standardHoverIcon.height / 2);
   await expect(page.locator(".rail")).toHaveCSS("width", "236px");
   await expect.poll(() => page.locator(".rail").evaluate((rail) => rail.scrollTop)).toBe(0);
+  await expect.poll(async () => {
+    const revealed = await firstItem.locator(".rail__icon").boundingBox();
+    return Math.max(
+      Math.abs(revealed.x - iconBeforeReveal.x),
+      Math.abs(revealed.y - iconBeforeReveal.y)
+    );
+  }).toBeLessThan(1);
   const iconAfterReveal = await firstItem.locator(".rail__icon").boundingBox();
   expect(iconAfterReveal.height).toBe(iconBeforeReveal.height);
   expect(Math.abs(iconAfterReveal.x - iconBeforeReveal.x)).toBeLessThan(1);
@@ -221,12 +270,26 @@ test("persists navigation density and shared interface language", async ({ page 
   await expect(page.getByRole("link", { name: "GitHub repository sisyphe42/ReignsAgent" })).toHaveAttribute("href", "https://github.com/Sisyphe42/ReignsAgent");
   await expect(page.getByLabel("Language")).toHaveValue("system");
   await expect(page.getByLabel("Language").locator('option[value="system"]')).toHaveText("Follow browser");
+  await expect(page.locator(".image-endpoint-settings").getByText("Protocol", { exact: true })).toHaveCount(1);
+  const aiEndpointHeadingGap = await page.locator(".ai-endpoint-settings").evaluate((section) => {
+    const heading = section.querySelector("h3").getBoundingClientRect();
+    const form = section.querySelector(".ai-channel-form").getBoundingClientRect();
+    return form.top - heading.bottom;
+  });
+  expect(aiEndpointHeadingGap).toBeGreaterThanOrEqual(10);
+  await page.locator(".image-endpoint-settings").getByRole("button", { name: "Midjourney Proxy / NewAPI" }).click();
+  await expect(page.locator(".image-endpoint-settings .capability-chip")).toHaveText(["Generate", "Edit / reference"]);
   await page.getByPlaceholder("Deck title").fill("Ready");
   await page.getByRole("button", { name: "Save project details" }).click();
   await page.getByLabel("Language").selectOption("zh-Hans");
   await expect(page.locator("html")).toHaveAttribute("lang", "zh-Hans");
   await expect(page.getByRole("heading", { name: "设置 / 流水线" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "关于 ReignsAgent" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "图像端点" })).toBeVisible();
+  await expect(page.locator(".image-endpoint-settings").getByText("协议", { exact: true })).toHaveCount(1);
+  await expect(page.locator(".image-endpoint-settings .capability-chip")).toHaveText(["生成", "编辑 / 参考图"]);
+  await expect(page.getByRole("button", { name: "复制文本端点连接" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "验证图像配置" })).toBeVisible();
   await expect(page.getByRole("link", { name: "打开玩家端预览" })).toBeVisible();
   await expect(page.getByRole("link", { name: "打开玩家端预览" })).toHaveAttribute("href", /locale=zh-Hans/);
   await page.getByRole("button", { name: "概览" }).click();
@@ -298,6 +361,98 @@ test("validates a direct CORS AI endpoint through the browser backend", async ({
   await page.getByRole("button", { name: "Validate endpoint" }).click();
   await expect(page.locator(".endpoint-check--success")).toContainText("validated", { timeout: 10_000 });
 });
+
+test("generates and applies an OPFS-backed image through the browser backend", async ({ page }) => {
+  await openHosted(page);
+  await page.getByRole("button", { name: /Settings/ }).click();
+  await page.locator("#image-base-url").fill(aiEndpoint);
+  await page.locator("#image-model-id").fill("cors-image-model");
+  await page.getByRole("button", { name: "Validate image config" }).click();
+  await expect(page.locator(".image-endpoint-settings .endpoint-check--success")).toContainText("Generate");
+
+  await page.getByRole("button", { name: /AI Assist/ }).click();
+  await page.locator(".ai-edit-controls select").first().selectOption("generate");
+  await page.locator(".ai-edit-controls textarea").fill("A stark ink portrait for the opening court card");
+  await page.getByRole("button", { name: "Build draft" }).click();
+  await expect(page.getByRole("heading", { name: "Generated images" })).toBeVisible({ timeout: 10_000 });
+  await expect(page.locator(".image-result img")).toBeVisible();
+  await page.getByRole("button", { name: "Apply selected image" }).click();
+  await expect(page.locator(".stage__status strong")).toContainText("Image asset applied");
+  await expect.poll(() => page.evaluate(async () => {
+    const root = await navigator.storage.getDirectory();
+    const dataRoot = await root.getDirectoryHandle("ReignsAgentData");
+    const config = await (await dataRoot.getFileHandle("config.toml")).getFile();
+    const active = (await config.text()).match(/activeProjectId\s*=\s*"([^"]+)"/)?.[1];
+    if (!active) return false;
+    const project = await (await dataRoot.getDirectoryHandle("projects")).getDirectoryHandle(active);
+    const content = await (await project.getFileHandle("content.json")).getFile();
+    return /assets\/generated\/[a-f0-9]{64}\.png/.test(await content.text());
+  })).toBe(true);
+  const generatedUri = await activeGeneratedAssetUri(page);
+
+  await page.locator(".ai-edit-controls select").first().selectOption("edit");
+  const referenceInput = page.locator('.image-operation-controls input[type="file"]');
+  await expect(referenceInput).toHaveCount(1);
+  await referenceInput.setInputFiles([{ name: "court portrait 中文.png", mimeType: "image/png", buffer: Buffer.from(tinyPngBase64, "base64") }]);
+  await expect(page.locator(".image-operation-controls")).toContainText("1 reference image staged");
+  await page.locator(".ai-edit-controls select").first().selectOption("inpaint");
+  await expect(page.getByLabel("Inpaint mask canvas")).toBeVisible();
+  await expect.poll(() => page.getByLabel("Inpaint mask canvas").evaluate((canvas) => [canvas.width, canvas.height])).toEqual([1, 1]);
+  await page.getByLabel("Inpaint mask canvas").click({ position: { x: 10, y: 10 } });
+  await page.getByRole("button", { name: "Use mask" }).click();
+  await expect(page.locator(".image-operation-controls")).toContainText("Mask ready");
+  await expect.poll(() => activeMaskMetadata(page)).toEqual({ width: 1, height: 1, alpha: 0 });
+  await page.locator(".ai-edit-controls select").first().selectOption("outpaint");
+  await page.locator('.outpaint-grid label', { hasText: "left" }).locator("input").fill("32");
+  await page.getByRole("button", { name: "Build draft" }).click();
+  await expect(page.getByRole("heading", { name: "Generated images" })).toBeVisible({ timeout: 10_000 });
+  await page.getByRole("button", { name: "Discard draft" }).click();
+  await expect(page.locator(".stage__status strong")).toContainText("Image draft discarded");
+
+  await page.locator(".rail__item", { hasText: "Build" }).click();
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Export player ZIP" }).click();
+  const archive = unzipSync(new Uint8Array(await readFile(await (await downloadPromise).path())));
+  expect(archive[generatedUri]).toBeDefined();
+  expect([...archive[generatedUri]]).toEqual([...Buffer.from(tinyPngBase64, "base64")]);
+});
+
+async function activeGeneratedAssetUri(page) {
+  return page.evaluate(async () => {
+    const root = await navigator.storage.getDirectory();
+    const dataRoot = await root.getDirectoryHandle("ReignsAgentData");
+    const config = await (await dataRoot.getFileHandle("config.toml")).getFile();
+    const active = (await config.text()).match(/activeProjectId\s*=\s*"([^"]+)"/)?.[1];
+    const project = await (await dataRoot.getDirectoryHandle("projects")).getDirectoryHandle(active);
+    const content = JSON.parse(await (await project.getFileHandle("content.json")).getFile().then((file) => file.text()));
+    return content.assets.findLast((asset) => /^assets\/generated\/[a-f0-9]{64}\.png$/.test(asset.uri))?.uri ?? "";
+  });
+}
+
+async function activeMaskMetadata(page) {
+  return page.evaluate(async () => {
+    const root = await navigator.storage.getDirectory();
+    const dataRoot = await root.getDirectoryHandle("ReignsAgentData");
+    const config = await (await dataRoot.getFileHandle("config.toml")).getFile();
+    const active = (await config.text()).match(/activeProjectId\s*=\s*"([^"]+)"/)?.[1];
+    const project = await (await dataRoot.getDirectoryHandle("projects")).getDirectoryHandle(active);
+    const assets = await project.getDirectoryHandle("assets");
+    const drafts = await assets.getDirectoryHandle(".drafts");
+    for await (const [name, entry] of drafts.entries()) {
+      if (entry.kind !== "directory" || !name.startsWith("mask-")) continue;
+      const blob = await (await entry.getFileHandle("mask.png")).getFile();
+      const bitmap = await createImageBitmap(blob);
+      const canvas = document.createElement("canvas");
+      canvas.width = bitmap.width;
+      canvas.height = bitmap.height;
+      const context = canvas.getContext("2d");
+      context.drawImage(bitmap, 0, 0);
+      bitmap.close();
+      return { width: canvas.width, height: canvas.height, alpha: context.getImageData(0, 0, 1, 1).data[3] };
+    }
+    return null;
+  });
+}
 
 async function openHosted(page) {
   await page.goto("workbench");

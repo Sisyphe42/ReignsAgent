@@ -14,6 +14,30 @@ afterEach(async () => {
 });
 
 describe("workspace storage", () => {
+  it("stages, commits, reads, and discards content-addressed image assets", async () => {
+    const root = await temporaryRoot();
+    const store = await createWorkspaceStore({ dataRoot: root });
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
+    const staged = await store.stageActiveProjectAsset({ draftId: "draft-one", fileName: "candidate.png", bytes: png, mimeType: "image/png" });
+    assert.equal(staged.uri, "assets/.drafts/draft-one/candidate.png");
+    assert.deepEqual(new Uint8Array(await store.readActiveProjectAsset(staged.uri)), png);
+    const committed = await store.commitActiveProjectAsset(staged.uri);
+    assert.match(committed.uri, /^assets\/generated\/[a-f0-9]{64}\.png$/);
+    assert.deepEqual(new Uint8Array(await store.readActiveProjectAsset(committed.uri)), png);
+    await store.discardActiveProjectAssetDraft("draft-one");
+    assert.equal(await store.readActiveProjectAsset(staged.uri), null);
+    assert.deepEqual(new Uint8Array(await store.readActiveProjectAsset(committed.uri)), png);
+  });
+
+  it("rejects unsafe or mismatched image asset drafts", async () => {
+    const root = await temporaryRoot();
+    const store = await createWorkspaceStore({ dataRoot: root });
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    await assert.rejects(() => store.stageActiveProjectAsset({ draftId: "../escape", fileName: "x.png", bytes: png, mimeType: "image/png" }), { code: "project_asset_draft_id_invalid" });
+    await assert.rejects(() => store.stageActiveProjectAsset({ draftId: "safe", fileName: "x.png", bytes: png, mimeType: "image/jpeg" }), { code: "project_asset_mime_invalid" });
+    await assert.rejects(() => store.commitActiveProjectAsset("assets/sample/castle.svg"), { code: "project_asset_not_staged" });
+  });
+
   it("creates config and a normal project, then restores both", async () => {
     const root = await temporaryRoot();
     const first = await createWorkspaceStore({ dataRoot: root, initialBundle: sampleBundle("Sample") });
@@ -21,7 +45,7 @@ describe("workspace storage", () => {
     assert.equal(project.title, "Sample");
     assert.equal(project.source, "sample");
 
-    await first.updateConfig({ theme: "nocturne", ai: { endpoint: "https://example.test/v1", apiKey: "plain-secret" } });
+    await first.updateConfig({ theme: "nocturne", ai: { endpoint: "https://example.test/v1", apiKey: "plain-secret", image: { endpoint: "https://images.example.test/v1", protocol: "openai_images", modelId: "image-model", credentialMode: "dedicated", apiKey: "image-secret" } } });
     await first.updateWorkspaceState({ activePanel: "review", selectedCardId: "opening" });
     const bundle = await first.readActiveBundle();
     bundle.metadata.title = "Renamed";
@@ -30,7 +54,9 @@ describe("workspace storage", () => {
     const second = await createWorkspaceStore({ dataRoot: root });
     assert.equal((await second.getConfig()).theme, "nocturne");
     assert.equal((await second.getConfig()).ai.hasApiKey, true);
+    assert.equal((await second.getConfig()).ai.image.hasApiKey, true);
     assert.equal(await second.getStoredApiKey(), "plain-secret");
+    assert.equal(await second.getStoredImageApiKey(), "image-secret");
     assert.equal((await second.listProjects())[0].title, "Renamed");
     assert.deepEqual(await second.getWorkspaceState(), {
       schemaVersion: 1,
@@ -39,7 +65,9 @@ describe("workspace storage", () => {
       previewSkin: ""
     });
     assert.doesNotMatch(JSON.stringify(await second.getConfig()), /plain-secret/);
+    assert.doesNotMatch(JSON.stringify(await second.getConfig()), /image-secret/);
     assert.match(await readFile(join(root, "config.toml"), "utf8"), /apiKey = "plain-secret"/);
+    assert.match(await readFile(join(root, "config.toml"), "utf8"), /apiKey = "image-secret"/);
   });
 
   it("creates, opens, and deletes isolated projects", async () => {

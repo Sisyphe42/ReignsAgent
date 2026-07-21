@@ -559,3 +559,70 @@ Prepared and published the first repository release: stabilized Hosted navigatio
 ### Next Steps
 
 - None - task complete
+
+
+## Session 17: Creator Web optional storage resilience
+
+**Date**: 2026-07-21
+**Task**: Creator Web optional storage resilience
+**Branch**: `master`
+
+### Summary
+
+Guarded optional Creator Web localStorage access, added Hosted failure-mode coverage, and documented the completed resilience contract.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `9e8a8de` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 18: Image generation API
+
+**Date**: 2026-07-21
+**Task**: Image generation API
+**Branch**: `feature/image-generation-api`
+
+### Summary
+
+Added capability-driven image provider adapters, safe binary draft storage, Creator Server and Hosted routes, explicit image apply/undo workflow, UI controls, tests, and architecture contracts.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `40189db` | (see git log) |
+| `e55d783` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

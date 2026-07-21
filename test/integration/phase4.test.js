@@ -344,6 +344,62 @@ describe("Phase 4 interface integration", () => {
       await rm(dataRoot, { recursive: true, force: true });
     }
   });
+
+  it("generates, stages, applies, and serves image endpoint results", async () => {
+    const port = await reservePort();
+    const dataRoot = await mkdtemp(join(tmpdir(), "reigns-phase4-images-"));
+    const mock = await startMockImageEndpoint();
+    const server = spawn(process.execPath, ["scripts/dev-server.mjs"], { env: { ...process.env, PORT: String(port), REIGNS_AGENT_DATA_ROOT: dataRoot }, stdio: ["ignore", "pipe", "pipe"] });
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
+    try {
+      await waitForServer(port, server);
+      const validation = await api(port, "/api/ai/images/validate", { method: "POST", body: { config: { protocol: "openai_images", endpoint: `http://127.0.0.1:${mock.port}/v1`, modelId: "mock-image" } } });
+      assert.equal(validation.valid, true);
+      assert.equal(validation.capabilities.supportsMask, true);
+      await api(port, "/api/config", { method: "PATCH", body: { ai: { apiKey: "inherited-image-secret" } } });
+      const editorBefore = await api(port, "/api/editor");
+      const targetAsset = editorBefore.assets.find((asset) => asset.cardId);
+      assert.ok(targetAsset, "fixture must contain an existing card asset");
+
+      const stagedResponse = await fetch(`http://127.0.0.1:${port}/api/ai/images/stage?fileName=source.png`, { method: "POST", headers: { "content-type": "image/png" }, body: png });
+      assert.equal(stagedResponse.ok, true);
+      const staged = await stagedResponse.json();
+
+      const drafts = [];
+      for (const operation of ["generate", "edit", "inpaint", "outpaint"]) {
+        drafts.push(await api(port, "/api/ai/images/run", { method: "POST", body: { config: { protocol: "openai_images", endpoint: `http://127.0.0.1:${mock.port}/v1`, modelId: "mock-image", credentialMode: operation === "generate" ? "inherit_text" : "dedicated" }, ...(operation === "generate" ? {} : { credentials: { apiKey: "image-secret" } }), request: { operation, prompt: `${operation} the court`, references: operation === "generate" ? [] : [staged.uri], mask: ["inpaint", "outpaint"].includes(operation) ? staged.uri : null, targetCardId: targetAsset.cardId, targetAssetId: operation === "generate" ? null : targetAsset.id, output: { format: "png", count: 1 }, outpaint: { left: 64 } } } }));
+      }
+      assert.deepEqual(mock.requests.map((entry) => entry.path), ["/v1/images/generations", "/v1/images/edits", "/v1/images/edits", "/v1/images/edits"]);
+      assert.equal(mock.requests[0].authorization, "Bearer inherited-image-secret");
+      assert.equal(mock.requests.slice(1).every((entry) => entry.authorization === "Bearer image-secret"), true);
+      assert.equal(drafts.every((draft) => !JSON.stringify(draft).includes("image-secret")), true);
+      assert.equal(drafts.every((draft) => draft.outputs[0].previewUrl.startsWith("/api/project-assets/")), true);
+
+      const midjourneyDraft = await api(port, "/api/ai/images/run", { method: "POST", body: { config: { protocol: "midjourney_proxy", endpoint: `http://127.0.0.1:${mock.port}`, modelId: "MID_JOURNEY", credentialMode: "dedicated" }, credentials: { apiKey: "image-secret" }, request: { operation: "generate", prompt: "imagine the court", targetCardId: targetAsset.cardId, output: { format: "png", count: 1 } } } });
+      assert.deepEqual(mock.requests.slice(-3).map((entry) => entry.path), ["/mj/submit/imagine", "/mj/task/mock-task/fetch", "/result.png"]);
+      assert.equal(midjourneyDraft.provider.protocol, "midjourney_proxy");
+      assert.equal(midjourneyDraft.outputs[0].previewUrl.startsWith("/api/project-assets/"), true);
+      await api(port, `/api/ai/images/drafts/${midjourneyDraft.draftId}`, { method: "DELETE" });
+
+      for (const draft of drafts.slice(0, -1)) await api(port, `/api/ai/images/drafts/${draft.draftId}`, { method: "DELETE" });
+      const applied = await api(port, "/api/ai/images/apply", { method: "POST", body: { draftId: drafts.at(-1).draftId, outputId: drafts.at(-1).outputs[0].id, cardId: targetAsset.cardId } });
+      assert.equal(applied.applied, true);
+      assert.equal(applied.asset.id, targetAsset.id);
+      assert.match(applied.asset.uri, /^assets\/generated\/[a-f0-9]{64}\.png$/);
+      const assetResponse = await fetch(`http://127.0.0.1:${port}/api/project-assets/${encodeURIComponent(applied.asset.uri)}`);
+      assert.equal(assetResponse.headers.get("content-type"), "image/png");
+      assert.deepEqual(new Uint8Array(await assetResponse.arrayBuffer()), png);
+      const editor = await api(port, "/api/editor");
+      assert.equal(editor.assets.length, editorBefore.assets.length);
+      assert.equal(editor.assets.filter((asset) => asset.id === targetAsset.id && asset.cardId === targetAsset.cardId).length, 1);
+      const build = await api(port, "/api/build/prepare", { method: "POST", body: {} });
+      assert.equal(build.build.content.assets.some((asset) => asset.uri === applied.asset.uri), true);
+    } finally {
+      await stopServer(server);
+      await mock.close();
+      await rm(dataRoot, { recursive: true, force: true });
+    }
+  });
 });
 
 async function api(port, path, options = {}) {
@@ -481,6 +537,33 @@ async function startMockAiEndpoint() {
     requests,
     close: () => new Promise((resolve) => server.close(resolve))
   };
+}
+
+async function startMockImageEndpoint() {
+  const requests = [];
+  const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
+  const server = createServer(async (req, res) => {
+    for await (const _chunk of req) { /* drain request */ }
+    const path = new URL(req.url, "http://127.0.0.1").pathname;
+    requests.push({ path, authorization: req.headers.authorization, contentType: req.headers["content-type"] });
+    if (path === "/result.png") {
+      res.writeHead(200, { "content-type": "image/png" });
+      res.end(png);
+      return;
+    }
+    res.writeHead(200, { "content-type": "application/json" });
+    if (path === "/mj/submit/imagine") {
+      res.end(JSON.stringify({ code: 1, result: "mock-task" }));
+      return;
+    }
+    if (path === "/mj/task/mock-task/fetch") {
+      res.end(JSON.stringify({ status: "SUCCESS", imageUrl: `http://127.0.0.1:${server.address().port}/result.png` }));
+      return;
+    }
+    res.end(JSON.stringify({ data: [{ b64_json: Buffer.from(png).toString("base64") }] }));
+  });
+  const port = await new Promise((resolve) => server.listen(0, "127.0.0.1", () => resolve(server.address().port)));
+  return { port, requests, close: () => new Promise((resolve) => server.close(resolve)) };
 }
 
 async function readRequestJson(req) {

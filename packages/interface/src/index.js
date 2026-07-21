@@ -3,8 +3,11 @@ import {
   applyAiEditPatches,
   createAiEditSuggestions,
   createAiEditSuggestionsFromEndpoint,
+  executeImageOperation,
+  getImageEndpointCapabilities,
   listAiEndpointModels,
   validateAiEditEndpoint,
+  validateImageEndpointConfig,
   buildCardGenerationRequest,
   createContentBundle,
   createDiagnosticFeedback,
@@ -789,6 +792,42 @@ export async function listAiEditEndpointModels({
     credentials,
     fetchImpl
   });
+}
+
+export function inspectImageEndpointConfig({ config = {} } = {}) {
+  return validateImageEndpointConfig({ config });
+}
+
+export function imageEndpointCapabilities(config = {}) {
+  return getImageEndpointCapabilities(config);
+}
+
+export async function buildImageOperationDraft({
+  editor,
+  config = {},
+  credentials = {},
+  request,
+  inputs = [],
+  fetchImpl = globalThis.fetch,
+  signal
+}) {
+  const bundle = editor?.toBundle ? editor.toBundle() : createContentBundle(editor ?? {});
+  const baseFingerprint = createAiEditSuggestions({ bundle, mode: "generate_cards", config: { cardCount: 1 }, instruction: "" }).baseFingerprint;
+  const result = await executeImageOperation({ config, credentials, request, inputs, fetchImpl, signal });
+  return { ...result, baseFingerprint };
+}
+
+export function applyImageDraftAsset({ editor, draft, outputId, asset }) {
+  if (!draft || typeof draft !== "object" || Array.isArray(draft)) throw new InterfaceError("Image draft must be an object", "image_draft_invalid");
+  const bundle = editor?.toBundle ? editor.toBundle() : createContentBundle(editor ?? {});
+  const currentFingerprint = createAiEditSuggestions({ bundle, mode: "generate_cards", config: { cardCount: 1 }, instruction: "" }).baseFingerprint;
+  if (draft.baseFingerprint !== currentFingerprint) throw new InterfaceError("Image draft is stale; generate it again before applying", "image_draft_stale");
+  const output = Array.isArray(draft.outputs) ? draft.outputs.find((entry) => entry.id === outputId) : null;
+  if (!output) throw new InterfaceError("Selected image output was not found", "image_output_not_found");
+  if (!asset || typeof asset !== "object" || Array.isArray(asset)) throw new InterfaceError("Committed image asset is required", "image_asset_invalid");
+  const applied = applyAiEditPatches({ bundle, patches: [{ op: "upsertAsset", asset }] });
+  const nextEditor = createCardEditor({ cards: applied.bundle.cards, metadata: applied.bundle.metadata, assets: applied.bundle.assets });
+  return { applied: true, outputId, asset, bundle: nextEditor.toBundle(), validation: applied.validation, playerValidation: nextEditor.validateForPlayer(), editor: nextEditor };
 }
 
 export function applyAiEditPlan({ editor, plan, proposalIds = [] }) {

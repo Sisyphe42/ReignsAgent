@@ -49,6 +49,16 @@ const AI_ENDPOINT_EDITOR_RULES = [
   "Summaries should explain the author-facing design intent and the expected narrative or balance effect."
 ];
 
+export {
+  ImagePipelineError,
+  executeImageOperation,
+  getImageEndpointCapabilities,
+  normalizeImageEndpointConfig,
+  normalizeImageOperationRequest,
+  redactImageEndpointConfig,
+  validateImageEndpointConfig
+} from "./image.js";
+
 export function createContentBundle({ cards, metadata = {}, assets = [] }) {
   const normalizedCards = normalizeCards(cards);
   const validation = validateContentBundle({ schemaVersion: CONTENT_SCHEMA_VERSION, metadata, cards: normalizedCards, assets });

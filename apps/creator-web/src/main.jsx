@@ -67,7 +67,15 @@ const ZH_HANS_COPY = {
   "Windows release": "Windows 发布", "Build Windows EXE": "生成 Windows EXE", "Release history": "发布历史",
   "No releases yet.": "尚无发布记录。", Download: "下载", "Delete release": "删除发布", Target: "目标平台",
   "WebView2 required": "需要 WebView2", "Review is optional": "审查为可选项", "Player validation must pass before release.": "发布前必须通过玩家端校验。",
-  Unavailable: "不可用", Available: "可用", Size: "大小", Created: "创建时间"
+  Unavailable: "不可用", Available: "可用", Size: "大小", Created: "创建时间",
+  "Image Endpoint": "图像端点", "Real generation, reference editing, inpainting, and outpainting.": "真实生图、参考图编辑、局部重绘与扩图。",
+  "Copy text connection": "复制文本端点连接", Credentials: "凭据", "Inherit text API key": "继承文本 API 密钥",
+  "Dedicated image API key": "独立图像 API 密钥", "Image API Key": "图像 API 密钥", "Saved; type to replace": "已保存；输入以替换",
+  "Saved in local config": "保存在本地配置中", "Hide image API key": "隐藏图像 API 密钥", "Show image API key": "显示图像 API 密钥", Clear: "清除",
+  "Declared operations": "声明的操作", Generate: "生成", "Edit / reference": "编辑 / 参考图", Inpaint: "局部重绘", Outpaint: "扩图",
+  "Generate variant": "生成变体", "Route resolution": "路由解析", "Auto detect": "自动检测", "API root": "API 根路径", "Full URL": "完整 URL",
+  "Validate image config": "验证图像配置", "Validation checks configuration without starting a paid generation.": "验证仅检查配置，不会启动付费生成。",
+  "Copied text endpoint connection settings": "已复制文本端点连接设置", "Image endpoint configuration is valid": "图像端点配置有效"
 };
 const AI_PROTOCOLS = [
   ["openai_chat", "OpenAI Chat"],
@@ -103,6 +111,24 @@ const AI_CAPABILITIES = [
   ["tools", "Tools"],
   ["reasoning", "Reasoning"],
   ["streaming", "Streaming"]
+];
+const IMAGE_PROTOCOLS = [
+  ["openai_images", "OpenAI Images-compatible"],
+  ["gemini_interactions", "Gemini Interactions"],
+  ["stability_v2", "Stability Stable Image"],
+  ["midjourney_proxy", "Midjourney Proxy / NewAPI"]
+];
+const IMAGE_PROTOCOL_OPERATIONS = {
+  openai_images: ["generate", "edit", "inpaint", "outpaint"],
+  gemini_interactions: ["generate", "edit", "inpaint", "outpaint"],
+  stability_v2: ["generate", "edit", "inpaint", "outpaint"],
+  midjourney_proxy: ["generate", "edit"]
+};
+const IMAGE_OPERATIONS = [
+  ["generate", "Generate"],
+  ["edit", "Edit / reference"],
+  ["inpaint", "Inpaint"],
+  ["outpaint", "Outpaint"]
 ];
 const DEFAULT_AI_CAPABILITIES = {
   vision: false,
@@ -607,14 +633,41 @@ function ProjectMenu({ locale, projects, activeProjectId, onOpen, onCreate, onDe
   );
 }
 
+function readOptionalStorage(key) {
+  try {
+    if (typeof window === "undefined" || !window.localStorage) return null;
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function writeOptionalStorage(key, value) {
+  try {
+    if (typeof window === "undefined" || !window.localStorage) return false;
+    window.localStorage.setItem(key, value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function removeOptionalStorage(key) {
+  try {
+    if (typeof window === "undefined" || !window.localStorage) return false;
+    window.localStorage.removeItem(key);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function readRailCollapsed() {
-  if (typeof localStorage === "undefined") return false;
-  return localStorage.getItem(RAIL_COLLAPSED_KEY) === "true";
+  return readOptionalStorage(RAIL_COLLAPSED_KEY) === "true";
 }
 
 function readRailPinned() {
-  if (typeof localStorage === "undefined") return true;
-  const stored = localStorage.getItem(RAIL_PINNED_KEY);
+  const stored = readOptionalStorage(RAIL_PINNED_KEY);
   if (stored !== null) return stored === "true";
   return !readRailCollapsed();
 }
@@ -986,6 +1039,10 @@ function App() {
   const [aiSettings, setAiSettings] = useState(() => defaultAiSettings());
   const [aiApiKey, setAiApiKey] = useState("");
   const [hasSavedApiKey, setHasSavedApiKey] = useState(false);
+  const [imageSettings, setImageSettings] = useState(() => defaultImageSettings());
+  const [imageApiKey, setImageApiKey] = useState("");
+  const [hasSavedImageApiKey, setHasSavedImageApiKey] = useState(false);
+  const [imageCapabilities, setImageCapabilities] = useState(null);
   const [projects, setProjects] = useState([]);
   const [activeProjectId, setActiveProjectId] = useState(null);
   const [configReady, setConfigReady] = useState(false);
@@ -1062,11 +1119,11 @@ function App() {
   }, []);
 
   useEffect(() => {
-    localStorage.setItem(RAIL_COLLAPSED_KEY, String(railCollapsed));
+    writeOptionalStorage(RAIL_COLLAPSED_KEY, String(railCollapsed));
   }, [railCollapsed]);
 
   useEffect(() => {
-    localStorage.setItem(RAIL_PINNED_KEY, String(railPinned));
+    writeOptionalStorage(RAIL_PINNED_KEY, String(railPinned));
   }, [railPinned]);
 
   useEffect(() => {
@@ -1089,6 +1146,19 @@ function App() {
       }
     }).then((config) => setHasSavedApiKey(config.ai.hasApiKey));
   }, [aiSettings, aiApiKey, configReady]);
+
+  useEffect(() => {
+    if (!configReady) return;
+    const normalized = normalizeImageSettings(imageSettings);
+    void api("/api/config", {
+      method: "PATCH",
+      body: { ai: { image: { endpoint: normalized.baseUrl, protocol: normalized.protocol, modelId: normalized.modelId, routeMode: normalized.routeMode, credentialMode: normalized.credentialMode, capabilities: normalized.capabilities, variant: normalized.variant, ...(imageApiKey.trim() ? { apiKey: imageApiKey } : {}) } } }
+    }).then((config) => setHasSavedImageApiKey(Boolean(config.ai.image.hasApiKey)));
+    if (!normalized.baseUrl.trim() || !normalized.modelId.trim()) { setImageCapabilities(null); return; }
+    void api("/api/ai/images/validate", { method: "POST", body: { config: buildImageEndpointConfig(normalized) } })
+      .then((result) => setImageCapabilities(result.capabilities))
+      .catch(() => setImageCapabilities(null));
+  }, [imageSettings, imageApiKey, configReady]);
 
   useEffect(() => {
     syncAiAssistUrl(aiAssistEnabled, "replace");
@@ -1126,6 +1196,8 @@ function App() {
     setReleaseState(nextReleases);
     setHasSavedApiKey(Boolean(config.ai?.hasApiKey));
     setAiSettings(aiSettingsFromConfig(config.ai));
+    setHasSavedImageApiKey(Boolean(config.ai?.image?.hasApiKey));
+    setImageSettings(imageSettingsFromConfig(config.ai?.image));
     setLocalePreference(normalizeUiLocalePreference(config.locale));
     if (!initialUrlState.skin) setSkin(resolveSkinId(config.theme) ?? DEFAULT_SKIN);
     if (!initialUrlState.hasExplicitPanel && isKnownPanel(workspaceState.activePanel)) {
@@ -1332,6 +1404,49 @@ function App() {
       setStatus(`AI Assist draft ready: ${result.proposals?.length ?? 0} proposals`);
       return result;
     });
+  }
+
+  async function stageImageFile(file, role = "input") {
+    if (!file) return null;
+    return runAction("Staging image", async () => {
+      const mimeType = file.type || "image/png";
+      const result = await api("/api/ai/images/stage", {
+        method: "POST",
+        body: {
+          draftId: `${role}-${crypto.randomUUID()}`,
+          fileName: safeStagedImageFileName(file.name, mimeType, role),
+          mimeType,
+          bytes: new Uint8Array(await file.arrayBuffer())
+        }
+      });
+      return result.uri;
+    });
+  }
+
+  async function runImageOperation(request, signal) {
+    return runAction("Generating image draft", async () => {
+      const apiKey = imageSettings.credentialMode === "inherit_text" ? aiApiKey : imageApiKey;
+      const result = await api("/api/ai/images/run", { method: "POST", signal, body: { config: buildImageEndpointConfig(imageSettings), credentials: { apiKey }, request } });
+      setStatus(`Image draft ready: ${result.outputs?.length ?? 0} result${result.outputs?.length === 1 ? "" : "s"}`);
+      return result;
+    });
+  }
+
+  async function applyImageOutput(draftId, outputId, cardId) {
+    return mutateEditor("Applying image draft", async () => api("/api/ai/images/apply", { method: "POST", body: { draftId, outputId, cardId: cardId || null } }), "Image asset applied");
+  }
+
+  async function discardImageDraft(draftId) {
+    if (!draftId) return;
+    await api(`/api/ai/images/drafts/${encodeURIComponent(draftId)}`, { method: "DELETE" });
+    setStatus("Image draft discarded");
+  }
+
+  async function clearSavedImageApiKey() {
+    await api("/api/config", { method: "PATCH", body: { clearImageApiKey: true } });
+    setImageApiKey("");
+    setHasSavedImageApiKey(false);
+    setStatus("Saved image API key cleared");
   }
 
   async function applyAiEditPlan(plan, proposalIds) {
@@ -1707,6 +1822,13 @@ function App() {
               onBuildPlan={buildAiEditPlan}
               onApplyPlan={applyAiEditPlan}
               onOpen={openPanel}
+              imageSettings={imageSettings}
+              imageCapabilities={imageCapabilities}
+              imageConfigured={Boolean(imageSettings.baseUrl.trim() && imageSettings.modelId.trim())}
+              onStageImage={stageImageFile}
+              onRunImage={runImageOperation}
+              onApplyImage={applyImageOutput}
+              onDiscardImage={discardImageDraft}
             />
           )}
           {activePanel === "preview" && (
@@ -1746,6 +1868,12 @@ function App() {
               onApiKeyClear={clearSavedApiKey}
               onRefresh={refreshEditor}
               onStatus={setStatus}
+              imageSettings={imageSettings}
+              imageApiKey={imageApiKey}
+              imageApiKeySaved={hasSavedImageApiKey}
+              onImageSettingsChange={setImageSettings}
+              onImageApiKeyChange={setImageApiKey}
+              onImageApiKeyClear={clearSavedImageApiKey}
             />
           )}
           {aiPreflight && (
@@ -2023,6 +2151,7 @@ function ContentPanel({ editor, assetsByCard, onImport, onMutate, onStatus, focu
                 onStatus={onStatus}
                 tagCatalog={tagCatalog}
                 gaugeLabels={gaugeLabels}
+                onGenerateArt={() => { const cardAsset = assetsByCard.get(activeItem.card.id); onAiAction({ source: "Content", actionId: `card-art-${activeItem.card.id}`, actionLabel: cardAsset ? "Redraw card art" : "Generate card art", mode: cardAsset ? "edit" : "generate", instruction: `${cardAsset ? "Redraw" : "Create"} card art for: ${activeItem.card.text}`, contextSummary: activeItem.card.id, targetCardId: activeItem.card.id, assetId: cardAsset?.id ?? null }); }}
               />
             </>
           ) : (
@@ -2036,7 +2165,7 @@ function ContentPanel({ editor, assetsByCard, onImport, onMutate, onStatus, focu
   );
 }
 
-function CardEditor({ card, asset, validation, onMutate, onStatus, tagCatalog, gaugeLabels }) {
+function CardEditor({ card, asset, validation, onMutate, onStatus, tagCatalog, gaugeLabels, onGenerateArt }) {
   const [text, setText] = useState(card.text ?? "");
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -2071,7 +2200,7 @@ function CardEditor({ card, asset, validation, onMutate, onStatus, tagCatalog, g
   return (
     <article className="card-editor" data-ai-target="card" data-ai-label={card.id} data-ai-context={cardExcerpt(card)} data-ai-card-id={card.id}>
       <div className="card-editor__head">
-        {asset ? <img src={`/${asset.uri}`} alt="" /> : <span className="art-placeholder" />}
+        {asset ? <ProjectAssetImage asset={asset} alt="" /> : <span className="art-placeholder" />}
         <div>
           <strong>{card.id}</strong>
           <p>{(card.choices ?? []).map((choice) => choice.id).join(" / ")}</p>
@@ -2081,6 +2210,7 @@ function CardEditor({ card, asset, validation, onMutate, onStatus, tagCatalog, g
             {invalid ? "invalid" : "player-ready"}
           </span>
           <button className="icon-button" title="Delete card" type="button" onClick={() => setConfirmDelete(true)}>x</button>
+          <button className="btn btn--ghost btn--compact" type="button" onClick={onGenerateArt}>{asset ? "Redraw art" : "Generate art"}</button>
         </div>
       </div>
       <div className="card-editor__meta">
@@ -4837,7 +4967,7 @@ function PreviewPanel({ play, assetsByCard, playerReady, onStart, onSwipe }) {
           ))}
         </div>
         <div className="play-card">
-          {asset && <img src={`/${asset.uri}`} alt="" />}
+          {asset && <ProjectAssetImage asset={asset} alt="" />}
           <p>{card?.text ?? (state?.gameOver ? "The reign has ended." : "No preview session.")}</p>
           <div className="choice-buttons">
             <button className="btn btn--choice" disabled={!card} onClick={() => void onSwipe("left")}>← {left?.label ?? "Left"}</button>
@@ -4989,11 +5119,127 @@ function AiAssistPreflight({ request, aiConfigured, diagnostics, onChange, onClo
   );
 }
 
-function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAssistEnabled, aiConfigured, draftRequest, onBuildPlan, onApplyPlan, onOpen }) {
+function ProjectAssetImage({ asset, alt = "" }) {
+  const [src, setSrc] = useState("");
+  useEffect(() => {
+    let active = true;
+    void creatorBackendPromise.then((backend) => backend.assetUrl(asset?.uri)).then((url) => { if (active) setSrc(url); }).catch(() => { if (active) setSrc(asset?.uri ? `/${asset.uri}` : ""); });
+    return () => { active = false; };
+  }, [asset?.uri]);
+  return src ? <img src={src} alt={alt} /> : <span className="art-placeholder" />;
+}
+
+async function prepareOpenAiOutpaintFiles(assetUri, edges) {
+  const backend = await creatorBackendPromise;
+  const sourceUrl = await backend.assetUrl(assetUri);
+  const response = await fetch(sourceUrl);
+  if (!response.ok) throw new Error(`Could not load source image (${response.status})`);
+  const bitmap = await createImageBitmap(await response.blob());
+  const left = Math.max(0, Number(edges?.left) || 0);
+  const right = Math.max(0, Number(edges?.right) || 0);
+  const top = Math.max(0, Number(edges?.up) || 0);
+  const bottom = Math.max(0, Number(edges?.down) || 0);
+  const width = bitmap.width + left + right;
+  const height = bitmap.height + top + bottom;
+  if (width > 4096 || height > 4096) {
+    bitmap.close();
+    throw new Error("Expanded image must not exceed 4096 × 4096 pixels");
+  }
+  const sourceCanvas = document.createElement("canvas");
+  sourceCanvas.width = width;
+  sourceCanvas.height = height;
+  sourceCanvas.getContext("2d").drawImage(bitmap, left, top);
+  bitmap.close();
+  const maskCanvas = document.createElement("canvas");
+  maskCanvas.width = width;
+  maskCanvas.height = height;
+  const maskContext = maskCanvas.getContext("2d");
+  maskContext.clearRect(0, 0, width, height);
+  maskContext.fillStyle = "#000";
+  maskContext.fillRect(left, top, width - left - right, height - top - bottom);
+  const [sourceBlob, maskBlob] = await Promise.all([
+    new Promise((resolve) => sourceCanvas.toBlob(resolve, "image/png")),
+    new Promise((resolve) => maskCanvas.toBlob(resolve, "image/png"))
+  ]);
+  if (!sourceBlob || !maskBlob) throw new Error("Could not prepare the outpaint canvas");
+  return {
+    source: new File([sourceBlob], "outpaint-source.png", { type: "image/png" }),
+    mask: new File([maskBlob], "outpaint-mask.png", { type: "image/png" })
+  };
+}
+
+function MaskCanvas({ sourceUri, protocol, onExport }) {
+  const canvasRef = useRef(null);
+  const drawingRef = useRef(false);
+  const [tool, setTool] = useState("paint");
+  const [sourceUrl, setSourceUrl] = useState("");
+  const [loadError, setLoadError] = useState("");
+  useEffect(() => {
+    let active = true;
+    if (!sourceUri) {
+      setSourceUrl("");
+      setLoadError("");
+      return () => { active = false; };
+    }
+    void creatorBackendPromise.then(async (backend) => {
+      const url = await backend.assetUrl(sourceUri);
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`Could not load source image (${response.status})`);
+      const bitmap = await createImageBitmap(await response.blob());
+      if (!active) { bitmap.close(); return; }
+      const canvas = canvasRef.current;
+      canvas.width = bitmap.width;
+      canvas.height = bitmap.height;
+      canvas.getContext("2d").clearRect(0, 0, bitmap.width, bitmap.height);
+      bitmap.close();
+      setSourceUrl(url);
+      setLoadError("");
+    }).catch((error) => {
+      if (active) setLoadError(error.message);
+    });
+    return () => { active = false; };
+  }, [sourceUri]);
+  function point(event) { const canvas = canvasRef.current; const rect = canvas.getBoundingClientRect(); return { x: (event.clientX - rect.left) * canvas.width / rect.width, y: (event.clientY - rect.top) * canvas.height / rect.height }; }
+  function start(event) { drawingRef.current = true; const context = canvasRef.current.getContext("2d"); const next = point(event); context.globalCompositeOperation = tool === "paint" ? "source-over" : "destination-out"; context.strokeStyle = "rgba(239, 68, 68, .72)"; context.lineWidth = Math.max(4, canvasRef.current.width / 24); context.lineCap = "round"; context.lineJoin = "round"; context.beginPath(); context.moveTo(next.x, next.y); context.lineTo(next.x + .01, next.y + .01); context.stroke(); event.currentTarget.setPointerCapture(event.pointerId); }
+  function move(event) { if (!drawingRef.current) return; const context = canvasRef.current.getContext("2d"); const next = point(event); context.lineTo(next.x, next.y); context.stroke(); }
+  function stop() { drawingRef.current = false; }
+  function clear() { const canvas = canvasRef.current; canvas.getContext("2d").clearRect(0, 0, canvas.width, canvas.height); }
+  function exportMask() {
+    const selection = canvasRef.current;
+    if (!sourceUri || !selection.width || !selection.height) return;
+    const selectionData = selection.getContext("2d").getImageData(0, 0, selection.width, selection.height).data;
+    const output = document.createElement("canvas");
+    output.width = selection.width;
+    output.height = selection.height;
+    const context = output.getContext("2d");
+    const mask = context.createImageData(output.width, output.height);
+    for (let index = 0; index < selectionData.length; index += 4) {
+      const selected = selectionData[index + 3] > 0;
+      const openAiMask = protocol === "openai_images";
+      mask.data[index] = openAiMask ? 255 : selected ? 255 : 0;
+      mask.data[index + 1] = openAiMask ? 255 : selected ? 255 : 0;
+      mask.data[index + 2] = openAiMask ? 255 : selected ? 255 : 0;
+      mask.data[index + 3] = openAiMask && selected ? 0 : 255;
+    }
+    context.putImageData(mask, 0, 0);
+    output.toBlob((blob) => { if (blob) onExport(new File([blob], "mask.png", { type: "image/png" })); }, "image/png");
+  }
+  return (
+    <div className="mask-editor">
+      <div className="action-row"><strong>Mask</strong><button className={tool === "paint" ? "btn btn--compact btn--primary" : "btn btn--compact"} type="button" onClick={() => setTool("paint")}>Paint</button><button className={tool === "erase" ? "btn btn--compact btn--primary" : "btn btn--compact"} type="button" onClick={() => setTool("erase")}>Erase</button><button className="btn btn--compact" type="button" onClick={clear}>Clear</button><button className="btn btn--compact" type="button" onClick={exportMask}>Use mask</button></div>
+      {sourceUri ? <div className="mask-canvas-stage">{sourceUrl && <img src={sourceUrl} alt="Mask source artwork" />}<canvas ref={canvasRef} width="1" height="1" onPointerDown={start} onPointerMove={move} onPointerUp={stop} onPointerCancel={stop} aria-label="Inpaint mask canvas" /></div> : <p className="muted">Select a card with existing artwork before drawing a mask.</p>}
+      {loadError && <small className="form-error">{loadError}</small>}
+      <small className="muted">Paint the region to redraw, then choose Use mask. The exported mask matches the source image dimensions.</small>
+    </div>
+  );
+}
+
+function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAssistEnabled, aiConfigured, draftRequest, onBuildPlan, onApplyPlan, onOpen, imageSettings, imageCapabilities, imageConfigured, onStageImage, onRunImage, onApplyImage, onDiscardImage }) {
   const [mode, setMode] = useState("generate_cards");
   const [theme, setTheme] = useState(editor?.metadata?.title ?? "small court");
   const [style, setStyle] = useState("ink wash card art");
   const [cardCount, setCardCount] = useState(2);
+  const [imageCount, setImageCount] = useState(1);
   const [targetCardId, setTargetCardId] = useState("");
   const [assetId, setAssetId] = useState("");
   const [instruction, setInstruction] = useState("");
@@ -5004,11 +5250,22 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
   const [progressStep, setProgressStep] = useState(-1);
   const [progressStatus, setProgressStatus] = useState("idle");
   const [buildError, setBuildError] = useState("");
+  const [imageDraft, setImageDraft] = useState(null);
+  const [selectedOutputId, setSelectedOutputId] = useState("");
+  const [referenceUris, setReferenceUris] = useState([]);
+  const [maskUri, setMaskUri] = useState("");
+  const [negativePrompt, setNegativePrompt] = useState("");
+  const [imageFormat, setImageFormat] = useState("png");
+  const [aspectRatio, setAspectRatio] = useState("");
+  const [outpaint, setOutpaint] = useState({ left: 0, right: 0, up: 0, down: 0 });
+  const imageAbortRef = useRef(null);
   const promptRef = useRef(null);
   const autoBuildRef = useRef(null);
   const cards = editor?.cards ?? [];
   const assets = editor?.assets ?? [];
+  const comparisonAsset = assets.find((asset) => asset.id === assetId) ?? latestAssetForCard(assets, targetCardId);
   const requiresDiagnostics = mode === "repair_diagnostics";
+  const isImageMode = IMAGE_OPERATIONS.some(([id]) => id === mode);
   const canBuild = !requiresDiagnostics || Boolean(diagnostics);
   const selectedSet = useMemo(() => new Set(selected), [selected]);
 
@@ -5020,13 +5277,15 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
 
   useEffect(() => {
     setPlan(null);
+    setImageDraft(null);
+    setSelectedOutputId("");
     setSelected([]);
     setApplyResult("");
   }, [mode]);
 
   useEffect(() => {
     if (!draftRequest) return;
-    setMode(draftRequest.mode ?? "generate_cards");
+    setMode(draftRequest.mode === "generate_asset" ? "generate" : draftRequest.mode ?? "generate_cards");
     setInstruction(draftRequest.instruction ?? "");
     setTargetCardId(draftRequest.targetCardId ?? "");
     setAssetId(draftRequest.assetId ?? "");
@@ -5049,7 +5308,7 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
     const nextInstruction = overrides?.instruction ?? instruction;
     const nextTargetCardId = overrides?.targetCardId ?? targetCardId;
     const nextAssetId = overrides?.assetId ?? assetId;
-    const nextCardCount = overrides?.cardCount ?? cardCount;
+    const nextCardCount = overrides?.cardCount ?? (IMAGE_OPERATIONS.some(([id]) => id === nextMode) ? imageCount : cardCount);
     const nextTheme = overrides?.theme ?? theme;
     const nextStyle = overrides?.style ?? style;
     const nextRequiresDiagnostics = nextMode === "repair_diagnostics";
@@ -5074,6 +5333,55 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
     setProgressStep(1);
     await wait(90);
     setProgressStep(2);
+    const nextIsImageMode = IMAGE_OPERATIONS.some(([id]) => id === nextMode);
+    if (nextIsImageMode) {
+      if (!imageConfigured) {
+        setProgressStatus("failed");
+        setBuildError("Configure an Image Endpoint in Settings before generating art.");
+        setIsBuilding(false);
+        return;
+      }
+      const targetAsset = assets.find((asset) => asset.id === nextAssetId) ?? latestAssetForCard(assets, nextTargetCardId);
+      let references = nextMode === "generate"
+        ? imageCapabilities?.generateWithReferences ? [...new Set(referenceUris)] : []
+        : [...new Set([targetAsset?.uri, ...referenceUris].filter(Boolean))];
+      let effectiveMask = maskUri || null;
+      if (nextMode === "outpaint" && imageSettings.protocol === "openai_images" && targetAsset?.uri) {
+        const prepared = await prepareOpenAiOutpaintFiles(targetAsset.uri, outpaint);
+        const [sourceStage, maskStage] = await Promise.all([
+          onStageImage(prepared.source, "outpaint-source"),
+          onStageImage(prepared.mask, "outpaint-mask")
+        ]);
+        references = [sourceStage];
+        effectiveMask = maskStage;
+      }
+      imageAbortRef.current = new AbortController();
+      const imageResult = await onRunImage({
+        operation: nextMode,
+        prompt: nextInstruction,
+        negativePrompt,
+        targetCardId: nextTargetCardId || null,
+        targetAssetId: nextMode === "generate" ? null : targetAsset?.id || null,
+        references,
+        mask: effectiveMask,
+        output: { count: Math.min(nextCardCount, imageCapabilities?.maxOutputs ?? 1), format: imageFormat, aspectRatio },
+        outpaint
+      }, imageAbortRef.current.signal);
+      imageAbortRef.current = null;
+      if (!imageResult || imageResult === true) {
+        setProgressStatus("failed");
+        setBuildError("Image generation failed. Check endpoint settings and retry.");
+        setIsBuilding(false);
+        return;
+      }
+      setImageDraft(imageResult);
+      setSelectedOutputId(imageResult.outputs?.[0]?.id ?? "");
+      setPlan(null);
+      setProgressStep(5);
+      setProgressStatus("ready");
+      setIsBuilding(false);
+      return;
+    }
     const result = await onBuildPlan({
       mode: nextMode,
       config: buildAiConnectorConfig(
@@ -5125,6 +5433,36 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
     }
   }
 
+  async function applySelectedImage() {
+    if (!imageDraft || !selectedOutputId) return;
+    const result = await onApplyImage(imageDraft.draftId, selectedOutputId, targetCardId || null);
+    if (result) {
+      setApplyResult("Applied generated image asset.");
+      setImageDraft(null);
+      setSelectedOutputId("");
+    }
+  }
+
+  async function discardCurrentImage() {
+    if (imageDraft?.draftId) await onDiscardImage(imageDraft.draftId);
+    setImageDraft(null);
+    setSelectedOutputId("");
+  }
+
+  async function stageReference(event) {
+    const files = [...(event.target.files ?? [])];
+    if (!files.length) return;
+    const uris = (await Promise.all(files.map((file) => onStageImage(file, "reference")))).filter(Boolean);
+    if (uris.length) setReferenceUris((current) => [...new Set([...current, ...uris])]);
+    event.target.value = "";
+  }
+
+  async function stageMask(file) {
+    if (!file) return;
+    const uri = await onStageImage(file, "mask");
+    if (uri) setMaskUri(uri);
+  }
+
   function toggleProposal(proposalId) {
     setSelected((current) =>
       current.includes(proposalId)
@@ -5162,11 +5500,11 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
             <select value={mode} onChange={(event) => setMode(event.target.value)}>
               <option value="generate_cards">Draft cards</option>
               <option value="repair_diagnostics">Repair review</option>
-              <option value="generate_asset">Generate visual request</option>
+              {IMAGE_OPERATIONS.filter(([id]) => !imageCapabilities || imageCapabilities.operations.includes(id)).map(([id, label]) => <option key={id} value={id}>{label} image</option>)}
               <option value="analyze_asset">Analyze visual request</option>
             </select>
             <input value={theme} onChange={(event) => setTheme(event.target.value)} placeholder="theme" />
-            <input type="number" min="1" max="12" value={cardCount} onChange={(event) => setCardCount(Number(event.target.value))} />
+            <input type="number" min="1" max={isImageMode ? imageCapabilities?.maxOutputs ?? 1 : 12} value={isImageMode ? Math.min(imageCount, imageCapabilities?.maxOutputs ?? 1) : cardCount} onChange={(event) => isImageMode ? setImageCount(Number(event.target.value)) : setCardCount(Number(event.target.value))} aria-label={isImageMode ? "Candidate count" : "Card count"} />
           </div>
           <div className="field-row field-row--compact">
             <select value={targetCardId} onChange={(event) => setTargetCardId(event.target.value)}>
@@ -5179,6 +5517,20 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
             </select>
             <input value={style} onChange={(event) => setStyle(event.target.value)} placeholder="visual style" />
           </div>
+          {isImageMode && (
+            <div className="image-operation-controls">
+              <div className="field-row field-row--compact">
+                {(mode !== "generate" || imageCapabilities?.generateWithReferences) && <label className="file-button btn">Reference images<input type="file" multiple accept="image/png,image/jpeg,image/webp" hidden onChange={(event) => void stageReference(event)} /></label>}
+                <select value={imageFormat} onChange={(event) => setImageFormat(event.target.value)}>{(imageCapabilities?.outputFormats ?? ["png", "jpeg", "webp"]).map((format) => <option key={format} value={format}>{format.toUpperCase()}</option>)}</select>
+                {imageCapabilities?.parameters?.includes("aspectRatio") && <select value={aspectRatio} onChange={(event) => setAspectRatio(event.target.value)}><option value="">Provider ratio</option><option value="1:1">1:1</option><option value="3:4">3:4</option><option value="4:3">4:3</option><option value="16:9">16:9</option><option value="9:16">9:16</option></select>}
+              </div>
+              {referenceUris.length > 0 && <small className="muted">{referenceUris.length} reference image{referenceUris.length === 1 ? "" : "s"} staged</small>}
+              {imageCapabilities?.parameters?.includes("negativePrompt") && <input value={negativePrompt} onChange={(event) => setNegativePrompt(event.target.value)} placeholder="negative prompt" />}
+              {mode === "inpaint" && imageCapabilities?.supportsMask && <MaskCanvas sourceUri={comparisonAsset?.uri ?? referenceUris.at(-1) ?? ""} protocol={imageSettings.protocol} onExport={(file) => void stageMask(file)} />}
+              {maskUri && <small className="muted">Mask ready</small>}
+              {mode === "outpaint" && imageCapabilities?.parameters?.includes("outpaint") && <div className="outpaint-grid">{["left", "right", "up", "down"].map((edge) => <label key={edge}>{edge}<input type="number" min="0" max="2000" value={outpaint[edge]} onChange={(event) => setOutpaint((current) => ({ ...current, [edge]: Number(event.target.value) }))} /></label>)}</div>}
+            </div>
+          )}
           <textarea
             ref={promptRef}
             value={instruction}
@@ -5205,6 +5557,7 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
             </button>
             <button className="btn" onClick={() => onOpen("content")}>Content</button>
             <button className="btn" onClick={() => onOpen("review")}>Review</button>
+            {isBuilding && isImageMode && <button className="btn btn--danger" type="button" onClick={() => imageAbortRef.current?.abort()}>Cancel</button>}
           </div>
           {requiresDiagnostics && !diagnostics && (
             <p className="muted">Repair proposals use the latest Review result. Run Review first, then return here.</p>
@@ -5227,8 +5580,22 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
       </div>
 
       <div className="subsection">
-        <h3>Proposals</h3>
-        {plan ? (
+        <h3>{imageDraft ? "Generated images" : "Proposals"}</h3>
+        {imageDraft ? (
+          <>
+            {comparisonAsset && mode !== "generate" && <div className="image-comparison"><figure><ProjectAssetImage asset={comparisonAsset} alt="Original artwork" /><figcaption>Original</figcaption></figure><span aria-hidden="true">→</span><strong>Choose a generated result below</strong></div>}
+            <div className="image-result-grid">
+              {(imageDraft.outputs ?? []).map((output) => (
+                <label key={output.id} className={selectedOutputId === output.id ? "image-result image-result--selected" : "image-result"}>
+                  <input type="radio" name="image-output" checked={selectedOutputId === output.id} onChange={() => setSelectedOutputId(output.id)} />
+                  <img src={output.previewUrl} alt={`Generated candidate ${output.id}`} />
+                  <span>{formatFileSize(output.byteLength)} · {output.mimeType}</span>
+                </label>
+              ))}
+            </div>
+            <div className="action-row"><button className="btn btn--primary" disabled={!selectedOutputId} onClick={() => void applySelectedImage()}>Apply selected image</button><button className="btn btn--ghost" onClick={() => void discardCurrentImage()}>Discard draft</button></div>
+          </>
+        ) : plan ? (
           <>
             <div className="action-row">
               <button className="btn" onClick={() => setSelected((plan.proposals ?? []).map((proposal) => proposal.id))}>Select all</button>
@@ -5329,7 +5696,43 @@ function HostedWorkspaceTools({ onRefresh, onStatus }) {
   );
 }
 
-function SettingsPanel({ editor, aiSettings, apiKey, apiKeySaved, locale, localePreference, followLocaleLabel, onLocaleChange, onAiSettingsChange, onApiKeyChange, onApiKeyClear, onRefresh, onStatus }) {
+function ImageEndpointSettings({ aiSettings, imageSettings, apiKey, apiKeySaved, onChange, onApiKeyChange, onApiKeyClear, onStatus }) {
+  const locale = useUiLocale();
+  const normalized = normalizeImageSettings(imageSettings);
+  const [check, setCheck] = useState({ state: "idle", message: "" });
+  const [keyVisible, setKeyVisible] = useState(false);
+  const operationOptions = IMAGE_OPERATIONS.filter(([id]) => IMAGE_PROTOCOL_OPERATIONS[normalized.protocol]?.includes(id));
+  function update(key, value) { onChange(normalizeImageSettings({ ...normalized, [key]: value })); }
+  function toggleOperation(operation) { const selected = new Set(normalized.capabilities); if (selected.has(operation)) selected.delete(operation); else selected.add(operation); update("capabilities", [...selected]); }
+  function copyTextEndpoint() { onChange(normalizeImageSettings({ ...normalized, baseUrl: aiSettings.baseUrl, routeMode: aiSettings.routeMode, credentialMode: "inherit_text" })); onStatus(tr(locale, "Copied text endpoint connection settings")); }
+  async function validate() {
+    try {
+      const result = await api("/api/ai/images/validate", { method: "POST", body: { config: buildImageEndpointConfig(normalized) } });
+      const operations = result.capabilities.operations.map((operation) => tr(locale, IMAGE_OPERATIONS.find(([id]) => id === operation)?.[1] ?? operation));
+      setCheck({ state: "success", message: `${operations.join(", ")} · ${result.capabilities.outputFormats.map((format) => format.toUpperCase()).join(", ")}` });
+      onStatus(tr(locale, "Image endpoint configuration is valid"));
+    } catch (error) { setCheck({ state: "error", message: error.message }); onStatus(error.message); }
+  }
+
+  return (
+    <div className="subsection image-endpoint-settings">
+      <div className="section-heading-row"><div><h3>{tr(locale, "Image Endpoint")}</h3><p className="muted">{tr(locale, "Real generation, reference editing, inpainting, and outpainting.")}</p></div><button className="btn btn--ghost btn--compact" type="button" onClick={copyTextEndpoint}>{tr(locale, "Copy text connection")}</button></div>
+      <div className="ai-channel-form">
+        <AiOptionGroup label={tr(locale, "Protocol")} value={normalized.protocol} options={IMAGE_PROTOCOLS.map(([id, label]) => [id, tr(locale, label)])} onChange={(value) => update("protocol", value)} />
+        <div className="ai-form-row"><label className="ai-field-label" htmlFor="image-base-url">{tr(locale, "Base URL")}</label><input id="image-base-url" value={normalized.baseUrl} onChange={(event) => update("baseUrl", event.target.value)} placeholder={normalized.protocol === "midjourney_proxy" ? "https://api.example.com" : "https://api.example.com/v1"} /></div>
+        <div className="ai-form-row"><label className="ai-field-label" htmlFor="image-model-id">{tr(locale, "Model")}</label><input id="image-model-id" value={normalized.modelId} onChange={(event) => update("modelId", event.target.value)} placeholder={normalized.protocol === "midjourney_proxy" ? "MID_JOURNEY or NIJI_JOURNEY" : "gpt-image-2, gemini-3.1-flash-image..."} /></div>
+        <div className="ai-form-row"><label className="ai-field-label">{tr(locale, "Credentials")}</label><select value={normalized.credentialMode} onChange={(event) => update("credentialMode", event.target.value)}><option value="inherit_text">{tr(locale, "Inherit text API key")}</option><option value="dedicated">{tr(locale, "Dedicated image API key")}</option></select></div>
+        {normalized.credentialMode === "dedicated" && <div className="ai-form-row"><label className="ai-field-label" htmlFor="image-api-key">{tr(locale, "Image API Key")}</label><div className="secret-input"><input id="image-api-key" type={keyVisible ? "text" : "password"} value={apiKey} onChange={(event) => onApiKeyChange(event.target.value)} placeholder={tr(locale, apiKeySaved ? "Saved; type to replace" : "Saved in local config")} /><button className="secret-input__toggle" type="button" onClick={() => setKeyVisible((value) => !value)} aria-label={tr(locale, keyVisible ? "Hide image API key" : "Show image API key")}><span className="eye-mark" aria-hidden="true" /></button>{apiKeySaved && <button className="btn btn--ghost btn--compact" type="button" onClick={() => void onApiKeyClear()}>{tr(locale, "Clear")}</button>}</div></div>}
+        <div className="ai-form-row ai-form-row--stack"><span className="ai-field-label">{tr(locale, "Declared operations")}</span><div className="capability-grid">{operationOptions.map(([id, label]) => <button key={id} className={normalized.capabilities.includes(id) ? "capability-chip capability-chip--active" : "capability-chip"} type="button" onClick={() => toggleOperation(id)}>{tr(locale, label)}</button>)}</div></div>
+        {normalized.protocol === "stability_v2" && <div className="ai-form-row"><label className="ai-field-label" htmlFor="image-variant">{tr(locale, "Generate variant")}</label><select id="image-variant" value={normalized.variant} onChange={(event) => update("variant", event.target.value)}><option value="core">Core</option><option value="ultra">Ultra</option></select></div>}
+      </div>
+      <details className="ai-advanced"><summary><span className="ai-field-label">{tr(locale, "Advanced")}</span><span>{tr(locale, "Route resolution")}</span></summary><div className="ai-advanced-grid"><AiOptionGroup label={tr(locale, "Route mode")} value={normalized.routeMode} options={AI_ROUTE_MODES.map(([id, label]) => [id, tr(locale, label)])} onChange={(value) => update("routeMode", value)} /></div></details>
+      <div className="action-row"><button className="btn btn--primary" type="button" onClick={() => void validate()}>{tr(locale, "Validate image config")}</button><span className={`endpoint-check endpoint-check--${check.state}`}>{check.message || tr(locale, "Validation checks configuration without starting a paid generation.")}</span></div>
+    </div>
+  );
+}
+
+function SettingsPanel({ editor, aiSettings, apiKey, apiKeySaved, locale, localePreference, followLocaleLabel, onLocaleChange, onAiSettingsChange, onApiKeyChange, onApiKeyClear, onRefresh, onStatus, imageSettings, imageApiKey, imageApiKeySaved, onImageSettingsChange, onImageApiKeyChange, onImageApiKeyClear }) {
   const [title, setTitle] = useState(editor?.metadata?.title ?? "");
   const [titleUrl, setTitleUrl] = useState(editor?.metadata?.titleUrl ?? "");
   const [author, setAuthor] = useState(editor?.metadata?.author ?? "");
@@ -5599,7 +6002,8 @@ function SettingsPanel({ editor, aiSettings, apiKey, apiKeySaved, locale, locale
           </div>
         </div>
       </div>
-      <div className="subsection">
+      <ImageEndpointSettings aiSettings={normalizedAiSettings} imageSettings={imageSettings} apiKey={imageApiKey} apiKeySaved={imageApiKeySaved} onChange={onImageSettingsChange} onApiKeyChange={onImageApiKeyChange} onApiKeyClear={onImageApiKeyClear} onStatus={onStatus} />
+      <div className="subsection ai-endpoint-settings">
         <h3>{tr(locale, "AI Endpoint")}</h3>
         <div className="ai-channel-form">
           <div className="ai-form-row">
@@ -6460,9 +6864,8 @@ function effectPath(cardId, choiceId, kind, target) {
 }
 
 function readStoredDraft() {
-  if (typeof localStorage === "undefined") return null;
   try {
-    const raw = localStorage.getItem(LEGACY_DRAFT_KEY);
+    const raw = readOptionalStorage(LEGACY_DRAFT_KEY);
     if (!raw) return null;
     const entry = JSON.parse(raw);
     if (!entry?.bundle || !Array.isArray(entry.bundle.cards)) return null;
@@ -6481,10 +6884,55 @@ function readDraftInfo() {
   };
 }
 
-function clearStoredDraft() {
-  if (typeof localStorage !== "undefined") {
-    localStorage.removeItem(LEGACY_DRAFT_KEY);
+function defaultImageSettings() {
+  return { baseUrl: "", protocol: "openai_images", modelId: "", routeMode: "auto", credentialMode: "inherit_text", capabilities: IMAGE_OPERATIONS.map(([id]) => id), variant: "core" };
+}
+
+function normalizeImageSettings(settings = {}) {
+  const defaults = defaultImageSettings();
+  const protocol = IMAGE_PROTOCOLS.some(([id]) => id === settings.protocol) ? settings.protocol : defaults.protocol;
+  const supportedOperations = IMAGE_PROTOCOL_OPERATIONS[protocol] ?? IMAGE_PROTOCOL_OPERATIONS.openai_images;
+  return {
+    baseUrl: typeof settings.baseUrl === "string" ? settings.baseUrl : "",
+    protocol,
+    modelId: typeof settings.modelId === "string" ? settings.modelId : "",
+    routeMode: AI_ROUTE_MODES.some(([id]) => id === settings.routeMode) ? settings.routeMode : defaults.routeMode,
+    credentialMode: settings.credentialMode === "dedicated" ? "dedicated" : "inherit_text",
+    capabilities: (Array.isArray(settings.capabilities) ? settings.capabilities : defaults.capabilities).filter((id) => supportedOperations.includes(id)),
+    variant: typeof settings.variant === "string" && settings.variant.trim() ? settings.variant : defaults.variant
+  };
+}
+
+function imageSettingsFromConfig(config = {}) {
+  return normalizeImageSettings({ baseUrl: config.endpoint, protocol: config.protocol, modelId: config.modelId, routeMode: config.routeMode, credentialMode: config.credentialMode, capabilities: config.capabilities, variant: config.variant });
+}
+
+function latestAssetForCard(assets, cardId) {
+  for (let index = (assets?.length ?? 0) - 1; index >= 0; index -= 1) {
+    if (assets[index]?.cardId === cardId) return assets[index];
   }
+  return null;
+}
+
+function safeStagedImageFileName(originalName, mimeType, role = "input") {
+  const extension = mimeType === "image/jpeg" ? "jpg" : mimeType === "image/webp" ? "webp" : "png";
+  const stem = String(originalName ?? "")
+    .replace(/\.[^.]+$/, "")
+    .normalize("NFKD")
+    .replace(/[^a-zA-Z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48);
+  const safeRole = String(role).replace(/[^a-zA-Z0-9_-]+/g, "-").slice(0, 24) || "input";
+  return `${stem || safeRole}.${extension}`;
+}
+
+function buildImageEndpointConfig(settings) {
+  const normalized = normalizeImageSettings(settings);
+  return { protocol: normalized.protocol, endpoint: normalized.baseUrl.trim(), modelId: normalized.modelId.trim(), routeMode: normalized.routeMode, credentialMode: normalized.credentialMode, capabilities: normalized.capabilities, variant: normalized.variant };
+}
+
+function clearStoredDraft() {
+  removeOptionalStorage(LEGACY_DRAFT_KEY);
 }
 
 function formatDraftTime(savedAt) {

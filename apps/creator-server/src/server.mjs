@@ -8,7 +8,9 @@ import { fileURLToPath } from "node:url";
 
 import {
   applyAiEditPlan,
+  applyImageDraftAsset,
   buildAiEditPlanAsync,
+  buildImageOperationDraft,
   buildGenerationPlan,
   createCardEditor,
   createConnectorConfig,
@@ -25,6 +27,7 @@ import {
   summarizeDiagnostics,
   summarizeFeedback,
   validateAiEditEndpointConfig,
+  inspectImageEndpointConfig,
   validatePlayerCards
 } from "../../../packages/interface/src/index.js";
 import { createWorkspaceStore } from "../../../packages/workspace/src/index.js";
@@ -98,6 +101,7 @@ const workspace = await createWorkspaceStore({
   initialBundle: initialBundle ?? await readDefaultSample()
 });
 const store = new SessionState(await workspace.readActiveBundle());
+const imageDrafts = new Map();
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
@@ -123,6 +127,20 @@ const server = createServer(async (req, res) => {
 
 async function handleApi(req, res, url) {
   const path = url.pathname;
+
+  if (path === "/api/ai/images/stage" && req.method === "POST") {
+    const bytes = await readBinaryBody(req, 50 * 1024 * 1024);
+    const draftId = url.searchParams.get("draftId") || `input-${randomId()}`;
+    const fileName = url.searchParams.get("fileName") || "input.png";
+    const staged = await workspace.stageActiveProjectAsset({ draftId, fileName, bytes, mimeType: req.headers["content-type"]?.split(";")[0] });
+    return sendJson(res, staged);
+  }
+
+  if (path.startsWith("/api/project-assets/") && req.method === "GET") {
+    const uri = decodeURIComponent(path.slice("/api/project-assets/".length));
+    return sendProjectAsset(res, uri);
+  }
+
   const body = await readJsonBody(req);
 
   if (path === "/api/config" && req.method === "GET") {
@@ -366,6 +384,87 @@ async function handleApi(req, res, url) {
       validation: result.validation,
       playerValidation: result.playerValidation
     });
+  }
+
+  if (path === "/api/ai/images/validate" && req.method === "POST") {
+    return sendJson(res, inspectImageEndpointConfig({ config: body?.config ?? {} }));
+  }
+
+  if (path === "/api/ai/images/run" && req.method === "POST") {
+    const draftId = randomId();
+    const request = body?.request ?? {};
+    const inputDraftIds = stagedInputDraftIds(request);
+    const controller = new AbortController();
+    const abortOnDisconnect = () => { if (!res.writableEnded) controller.abort(); };
+    req.once("aborted", abortOnDisconnect);
+    res.once("close", abortOnDisconnect);
+    const inputs = [];
+    let aggregateBytes = 0;
+    for (const uri of [...new Set(request.references ?? [])]) {
+      const bytes = await workspace.readActiveProjectAsset(uri);
+      if (!bytes) throw apiError(`Project image '${uri}' was not found`, "image_input_not_found");
+      aggregateBytes += bytes.byteLength;
+      if (aggregateBytes > 50 * 1024 * 1024) throw apiError("Image inputs exceed the 50 MiB request limit", "image_input_limit");
+      inputs.push({ id: uri, name: basename(uri), bytes, role: "reference" });
+    }
+    if (request.mask) {
+      const bytes = await workspace.readActiveProjectAsset(request.mask);
+      if (!bytes) throw apiError(`Project image '${request.mask}' was not found`, "image_input_not_found");
+      aggregateBytes += bytes.byteLength;
+      if (aggregateBytes > 50 * 1024 * 1024) throw apiError("Image inputs exceed the 50 MiB request limit", "image_input_limit");
+      inputs.push({ id: request.mask, name: basename(request.mask), bytes, role: "mask" });
+    }
+    const generated = await buildImageOperationDraft({
+      editor: store.editor,
+      config: body?.config ?? {},
+      credentials: await resolveImageCredentials(body?.credentials, body?.config),
+      request,
+      inputs,
+      signal: controller.signal
+    });
+    const outputs = [];
+    for (const [index, output] of generated.outputs.entries()) {
+      const extension = output.mimeType === "image/jpeg" ? "jpg" : output.mimeType.split("/")[1];
+      const staged = await workspace.stageActiveProjectAsset({ draftId, fileName: `output-${index + 1}.${extension}`, bytes: output.bytes, mimeType: output.mimeType });
+      outputs.push({ id: `output-${index + 1}`, ...staged, previewUrl: `/api/project-assets/${encodeURIComponent(staged.uri)}` });
+    }
+    const draft = { ...generated, draftId, outputs, inputDraftIds };
+    imageDrafts.set(draftId, draft);
+    return sendJson(res, draft);
+  }
+
+  if (path === "/api/ai/images/apply" && req.method === "POST") {
+    const draft = imageDrafts.get(body?.draftId);
+    if (!draft) throw apiError("Image draft was not found or has expired", "image_draft_not_found");
+    const output = draft.outputs.find((entry) => entry.id === body?.outputId);
+    if (!output) throw apiError("Selected image output was not found", "image_output_not_found");
+    const committed = await workspace.commitActiveProjectAsset(output.uri);
+    const cardId = body?.cardId || draft.request?.targetCardId || undefined;
+    const asset = {
+      id: body?.assetId || draft.request?.targetAssetId || `generated-${committed.sha256.slice(0, 12)}`,
+      ...(cardId ? { cardId } : {}),
+      uri: committed.uri,
+      title: body?.title || draft.request?.prompt || "Generated card art",
+      source: { type: "ai-image", protocol: draft.provider.protocol, model: draft.provider.model, operation: draft.operation },
+      metadata: { mimeType: committed.mimeType, sha256: committed.sha256 }
+    };
+    const result = applyImageDraftAsset({ editor: store.editor, draft, outputId: output.id, asset });
+    store.replaceEditor(result.editor);
+    await persistEditor();
+    await workspace.discardActiveProjectAssetDraft(draft.draftId);
+    for (const inputDraftId of draft.inputDraftIds ?? []) await workspace.discardActiveProjectAssetDraft(inputDraftId);
+    imageDrafts.delete(draft.draftId);
+    return sendJson(res, { applied: true, outputId: output.id, asset, bundle: result.bundle, validation: result.validation, playerValidation: result.playerValidation });
+  }
+
+  const imageDraftPath = path.match(/^\/api\/ai\/images\/drafts\/([^/]+)$/);
+  if (imageDraftPath && req.method === "DELETE") {
+    const draftId = decodeURIComponent(imageDraftPath[1]);
+    const draft = imageDrafts.get(draftId);
+    await workspace.discardActiveProjectAssetDraft(draftId);
+    for (const inputDraftId of draft?.inputDraftIds ?? []) await workspace.discardActiveProjectAssetDraft(inputDraftId);
+    imageDrafts.delete(draftId);
+    return sendJson(res, { discarded: true, draftId });
   }
 
   if (path === "/api/play/start" && req.method === "POST") {
@@ -660,6 +759,55 @@ async function resolveCredentials(credentials) {
   if (typeof credentials?.apiKey === "string" && credentials.apiKey.trim()) return credentials;
   const storedApiKey = await workspace.getStoredApiKey();
   return storedApiKey ? { ...(credentials ?? {}), apiKey: storedApiKey } : (credentials ?? {});
+}
+
+async function resolveImageCredentials(credentials, config) {
+  if (typeof credentials?.apiKey === "string" && credentials.apiKey.trim()) return credentials;
+  const storedApiKey = config?.credentialMode === "inherit_text"
+    ? await workspace.getStoredApiKey()
+    : await workspace.getStoredImageApiKey();
+  return storedApiKey ? { ...(credentials ?? {}), apiKey: storedApiKey } : (credentials ?? {});
+}
+
+async function sendProjectAsset(res, uri) {
+  const bytes = await workspace.readActiveProjectAsset(uri);
+  if (!bytes) throw apiError("Project asset was not found", "project_asset_not_found");
+  const extension = extname(uri).toLowerCase();
+  res.writeHead(200, {
+    "content-type": MIME_TYPES[extension] ?? "application/octet-stream",
+    "content-length": bytes.byteLength,
+    "cache-control": uri.includes("/.drafts/") ? "no-store" : "public, max-age=31536000, immutable"
+  });
+  res.end(bytes);
+}
+
+async function readBinaryBody(req, limit) {
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of req) {
+    size += chunk.byteLength;
+    if (size > limit) throw apiError("Request body exceeds the image size limit", "image_input_limit");
+    chunks.push(chunk);
+  }
+  if (!size) throw apiError("Image upload is empty", "image_input_required");
+  return Buffer.concat(chunks);
+}
+
+function randomId() {
+  return `img-${crypto.randomUUID()}`;
+}
+
+function stagedInputDraftIds(request) {
+  return [...new Set([...(request?.references ?? []), request?.mask]
+    .filter((uri) => typeof uri === "string" && uri.startsWith("assets/.drafts/"))
+    .map((uri) => uri.split("/")[2])
+    .filter(Boolean))];
+}
+
+function apiError(message, code) {
+  const error = new Error(message);
+  error.code = code;
+  return error;
 }
 
 async function handleReleaseAsset(req, res, url) {
