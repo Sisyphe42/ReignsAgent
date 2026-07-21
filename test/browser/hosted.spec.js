@@ -150,11 +150,11 @@ test("persists navigation density and shared interface language", async ({ page 
   const standardHoverIcon = await hoverItem.locator(".rail__icon").boundingBox();
   await page.mouse.move(standardHoverIcon.x + standardHoverIcon.width / 2, standardHoverIcon.y + standardHoverIcon.height / 2);
   await expect(page.locator(".rail")).toHaveCSS("width", "236px");
+  await expect.poll(() => page.locator(".rail").evaluate((rail) => rail.scrollTop)).toBe(0);
   const iconAfterReveal = await firstItem.locator(".rail__icon").boundingBox();
   expect(iconAfterReveal.height).toBe(iconBeforeReveal.height);
   expect(Math.abs(iconAfterReveal.x - iconBeforeReveal.x)).toBeLessThan(1);
   expect(Math.abs(iconAfterReveal.y - iconBeforeReveal.y)).toBeLessThan(1);
-  await expect.poll(() => page.locator(".rail").evaluate((rail) => rail.scrollTop)).toBe(0);
   await expect(aiAssistLabel).toHaveCSS("white-space", "nowrap");
   const aiAssistRevealed = await aiAssistLabel.boundingBox();
   expect(aiAssistRevealed.height).toBe(aiAssistExpanded.height);
@@ -316,8 +316,12 @@ async function workspaceContains(page, expected) {
       const projects = await dataRoot.getDirectoryHandle("projects");
       for await (const [, project] of projects.entries()) {
         if (project.kind !== "directory") continue;
-        const handle = await project.getFileHandle("workspace.toml");
-        if ((await (await handle.getFile()).text()).includes(text)) return true;
+        try {
+          const handle = await project.getFileHandle("workspace.toml");
+          if ((await (await handle.getFile()).text()).includes(text)) return true;
+        } catch (error) {
+          if (error?.name !== "NotFoundError" && error?.name !== "NotReadableError") throw error;
+        }
       }
     } catch (error) {
       if (error?.name === "NotFoundError" || error?.name === "NotReadableError") return false;
