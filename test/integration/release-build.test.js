@@ -12,6 +12,8 @@ import { unzipSync } from "fflate";
 
 const execFileAsync = promisify(execFile);
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
+const PRODUCT_VERSION = JSON.parse(await readFile(join(ROOT, "package.json"), "utf8").then(String)).version;
+const RELEASE_NAME = `reigns-agent-${PRODUCT_VERSION}`;
 
 describe("creator release distribution", () => {
   it("builds a minimal ZIP with cross-platform launchers and no development-only paths", async () => {
@@ -20,20 +22,22 @@ describe("creator release distribution", () => {
       await ensureCreatorBuild();
       await execFileAsync(process.execPath, ["scripts/build-release.mjs", "--output", tempRoot], { cwd: ROOT });
 
-      const archivePath = join(tempRoot, "reigns-agent-0.1.0.zip");
+      const archivePath = join(tempRoot, `${RELEASE_NAME}.zip`);
       const archive = unzipSync(new Uint8Array(await readFile(archivePath)));
       const names = Object.keys(archive).sort();
 
-      assert.ok(names.includes("reigns-agent-0.1.0/creator/index.html"));
-      assert.ok(names.includes("reigns-agent-0.1.0/start.mjs"));
-      assert.ok(names.includes("reigns-agent-0.1.0/start.cmd"));
-      assert.ok(names.includes("reigns-agent-0.1.0/start.sh"));
-      assert.ok(names.includes("reigns-agent-0.1.0/scripts/build-game.mjs"));
-      assert.ok(names.includes("reigns-agent-0.1.0/packages/interface/web/player.html"));
+      assert.ok(names.includes(`${RELEASE_NAME}/creator/index.html`));
+      assert.ok(names.includes(`${RELEASE_NAME}/start.mjs`));
+      assert.ok(names.includes(`${RELEASE_NAME}/start.cmd`));
+      assert.ok(names.includes(`${RELEASE_NAME}/start.sh`));
+      assert.ok(names.includes(`${RELEASE_NAME}/scripts/build-game.mjs`));
+      assert.ok(names.includes(`${RELEASE_NAME}/packages/interface/web/player.html`));
+      assert.ok(names.includes(`${RELEASE_NAME}/LICENSE.reigns-agent.txt`));
+      assert.ok(names.includes(`${RELEASE_NAME}/THIRD_PARTY_NOTICES.md`));
       assert.equal(names.some(isForbiddenReleasePath), false);
 
-      const shellLauncher = new TextDecoder().decode(archive["reigns-agent-0.1.0/start.sh"]);
-      const windowsLauncher = new TextDecoder().decode(archive["reigns-agent-0.1.0/start.cmd"]);
+      const shellLauncher = new TextDecoder().decode(archive[`${RELEASE_NAME}/start.sh`]);
+      const windowsLauncher = new TextDecoder().decode(archive[`${RELEASE_NAME}/start.cmd`]);
       assert.match(shellLauncher, /exec node/);
       assert.match(shellLauncher, /"\$@"/);
       assert.match(windowsLauncher, /node .*start\.mjs.*%\*/i);
@@ -49,8 +53,8 @@ describe("creator release distribution", () => {
       await ensureCreatorBuild();
       await execFileAsync(process.execPath, ["scripts/build-release.mjs", "--output", tempRoot], { cwd: ROOT });
       const extractRoot = join(tempRoot, "extracted");
-      await extractZip(join(tempRoot, "reigns-agent-0.1.0.zip"), extractRoot);
-      const releaseRoot = join(extractRoot, "reigns-agent-0.1.0");
+      await extractZip(join(tempRoot, `${RELEASE_NAME}.zip`), extractRoot);
+      const releaseRoot = join(extractRoot, RELEASE_NAME);
       const launcherCwd = join(tempRoot, "launcher-cwd");
       await mkdir(launcherCwd, { recursive: true });
 
@@ -164,6 +168,7 @@ async function extractZip(archivePath, outputRoot) {
 
 function isForbiddenReleasePath(name) {
   return name.includes("/.env")
+    || name.includes("/ReignsAgentData/")
     || name.includes("/node_modules/")
     || name.includes("/test/")
     || name.includes(".test.")

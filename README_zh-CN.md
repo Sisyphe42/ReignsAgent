@@ -196,6 +196,8 @@ npm run build:release
 
 该命令生成 `dist/reigns-agent-<version>/` 和跨平台 ZIP。目标机器需要 Node.js 22 或更高版本；解压后运行 `node start.mjs`，也可使用 Windows 的 `start.cmd` 或 macOS/Linux 的 `sh start.sh`。Creator、API 和玩家预览由同一个 loopback 服务提供，数据默认保存在解压目录旁的 `ReignsAgentData`。
 
+ZIP 根目录包含 ReignsAgent 自身的 `LICENSE.reigns-agent.txt` 和 `THIRD_PARTY_NOTICES.md`。发行校验会拒绝包含 `ReignsAgentData`、环境文件、测试源码或其他非发行内容的归档。
+
 通过发行包 Creator 发起的构建默认写入 `ReignsAgentData/Builds`，即使启动器是从其他工作目录调用也不会改变。显式 CLI 输出路径仍由调用者控制。
 
 ### Electron 便携版
@@ -211,6 +213,22 @@ npm run build:desktop
 Windows x64、macOS x64/arm64 和 Linux x64 均只生成便携 ZIP。程序名统一为 ReignsAgent；Electron profile、项目、配置和游戏构建都位于应用旁的 `ReignsAgentData/`。当前产物未签名，可能触发 SmartScreen 或 Gatekeeper 警告。
 
 桌面宿主只通过中性的 client 标记启用桌面快捷键，Creator Web 不导入 Electron API。宽屏导航的展开/折叠与固定偏好属于当前客户端；界面语言默认跟随浏览器或设备，也可显式选择英文或简体中文，并通过共享 Workspace 配置供浏览器、本地服务与桌面客户端共同使用。
+
+### 仓库 Release 与校验和
+
+手动运行 Desktop Artifacts workflow 会构建、启动验证并组装五个 Creator ZIP，但不会发布。匹配 `package.json` 版本的 `v*` tag 才会在所有原生任务成功后发布 GitHub Release。产物固定为跨平台 Node ZIP、Windows x64、macOS x64、macOS arm64、Linux x64 Electron ZIP，以及按文件名排序的 `SHA256SUMS.txt`。通用 Project EXE 不作为仓库资产发布；它由本地 Creator 根据具体项目生成。
+
+下载后应先校验再解压：
+
+```sh
+# macOS/Linux
+sha256sum -c SHA256SUMS.txt --ignore-missing
+
+# Windows PowerShell；将输出值与 SHA256SUMS.txt 对应行比较
+Get-FileHash .\ReignsAgent-win32-x64-0.1.0.zip -Algorithm SHA256
+```
+
+详见 [RELEASE_NOTES.md](RELEASE_NOTES.md)、[CHANGELOG.md](CHANGELOG.md) 与 [SECURITY.md](SECURITY.md)。首版桌面程序及 Project EXE 均未签名；Windows Project EXE 还要求系统已安装 Evergreen WebView2 Runtime，程序不会自动下载。
 
 ## 内容模型
 

@@ -78,22 +78,25 @@ describe("Electron desktop boundaries", () => {
     const desktopPackage = JSON.parse(await readFile(join(ROOT, "apps/desktop-electron/package.json"), "utf8"));
     const mainSource = await readFile(join(ROOT, "apps/desktop-electron/src/main.mjs"), "utf8");
     const playerSource = await readFile(join(ROOT, "packages/interface/web/player.html"), "utf8");
-    const forgeConfig = await import("../../apps/desktop-electron/forge.config.mjs");
+    const packagerConfig = await import("../../apps/desktop-electron/packager.config.mjs");
     assert.deepEqual(desktopPackage.dependencies, {});
     assert.equal(desktopPackage.productName, "ReignsAgent");
+    assert.equal(desktopPackage.version, "0.1.0");
     assert.equal(desktopPackage.author, "Sisyphe42");
-    assert.equal(forgeConfig.default.packagerConfig.prune, false);
-    assert.equal(forgeConfig.default.packagerConfig.asar.unpack, "**/server-child.mjs");
-    assert.equal(forgeConfig.default.packagerConfig.asar.unpackDir, "runtime");
-    assert.equal(forgeConfig.default.packagerConfig.win32metadata.CompanyName, "Sisyphe42");
-    assert.equal(forgeConfig.default.packagerConfig.win32metadata.ProductName, "ReignsAgent");
+    assert.equal(packagerConfig.default.prune, false);
+    assert.equal(packagerConfig.default.asar.unpack, "**/server-child.mjs");
+    assert.equal(packagerConfig.default.asar.unpackDir, "runtime");
+    assert.equal(packagerConfig.default.win32metadata.CompanyName, "Sisyphe42");
+    assert.equal(packagerConfig.default.win32metadata.ProductName, "ReignsAgent");
     assert.match(mainSource, /\/workbench\?client=desktop/);
     assert.match(playerSource, /backUrl\.searchParams\.set\("client", requestedClient\)/);
     assert.match(playerSource, /backUrl\.searchParams\.set\("locale", requestedLocale\)/);
-    assert.deepEqual(forgeConfig.default.makers, []);
-    assert.equal(Object.keys(desktopPackage.devDependencies).some((name) => name.includes("maker-")), false);
+    assert.equal(Object.keys(desktopPackage.devDependencies).some((name) => name.includes("forge") || name.includes("maker-")), false);
     assert.doesNotMatch(mainSource, /Squirrel|documents/);
     assert.match(mainSource, /!smokeTest && !app\.requestSingleInstanceLock\(\)/);
+    const portableBuilder = await readFile(join(ROOT, "scripts/build-portable-desktop.mjs"), "utf8");
+    assert.match(portableBuilder, /LICENSE\.reigns-agent\.txt/);
+    assert.match(portableBuilder, /THIRD_PARTY_NOTICES\.md/);
   });
 
   it("keeps the Windows release player DPI-correct and distinct from Creator preview", async () => {

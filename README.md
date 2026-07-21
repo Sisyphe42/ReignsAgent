@@ -332,6 +332,8 @@ The distribution contains:
 | `packages/interface/web` | Player preview and standalone player templates. |
 | `fixtures/content` | Example content for evaluation and player builds. |
 | `apps/player-windows/out/win-x64/ReignsAgentPlayer.exe` | Prebuilt native Project player host in Windows distributions. |
+| `LICENSE.reigns-agent.txt` | ReignsAgent's MIT license, distinct from host-runtime licenses. |
+| `THIRD_PARTY_NOTICES.md` | Notices for bundled frontend and player-host dependencies. |
 
 The package intentionally excludes tests, frontend source, caches, `.env`, `node_modules`, and AI-specific player behavior. Creator state is stored beside the extracted package under `ReignsAgentData`; set `REIGNS_AGENT_DATA_ROOT` to override that location. To generate a player site from the extracted package, run:
 
@@ -380,9 +382,25 @@ ReignsAgentData/
 
 `content.json.metadata.title` is the canonical project name; optional `author` and `description` fields provide release credits, and `titleUrl` / `authorUrl` may provide HTTP(S) links edited in Creator Settings. Project translations are authored data: `metadata.i18n` declares default/supported locales, while card and choice `i18n` entries supply localized text. Authors can provide them through imported JSON/content proposals; the bundled sample includes English and Simplified Chinese and its release player exposes a language switch. The bundled sample is immutable; choosing **Sample** clones it into an ordinary project. Global theme and AI endpoint settings live in `config.toml`; project-local panel/selection state lives in `workspace.toml`. API keys are stored as plaintext in the local config by product choice, masked in the UI, and excluded from project/player exports and logs.
 
-`.github/workflows/desktop.yml` builds portable archives only for manual runs and `v*` tags, then uploads workflow artifacts without publishing a release. The archives are unsigned and may still trigger SmartScreen or Gatekeeper warnings.
+`.github/workflows/desktop.yml` builds the Node Creator ZIP and all four native Electron ZIPs. A manual run smoke-tests and assembles the complete asset set without publishing. A matching `v*` tag additionally validates the tag against `package.json`, generates sorted `SHA256SUMS.txt`, and publishes only after every native job succeeds. Only that tag-gated publication job receives `contents: write`; it refuses to replace an existing release.
 
-`test:desktop:packaged` runs after Forge packaging and verifies both the unpacked Creator Server runtime and the packaged executable handshake. `verify-desktop-artifacts` rejects installer formats and requires a ZIP on every platform. Builders with an existing Electron ZIP may set `ELECTRON_ZIP_DIR` to its containing directory to avoid downloading the runtime again.
+`test:desktop:packaged` runs after Electron Packager and verifies both the unpacked Creator Server runtime and the packaged executable handshake. `verify-desktop-artifacts` rejects installer formats, inspects ZIP contents, requires the project legal files, and excludes portable user data. Builders with an existing Electron ZIP may set `ELECTRON_ZIP_DIR` to its containing directory to avoid downloading the runtime again.
+
+### Repository releases and checksums
+
+Repository releases contain exactly five tested Creator ZIPs: the cross-platform Node distribution plus Windows x64, macOS x64, macOS arm64, and Linux x64 portable Electron distributions. Generated Project EXEs are authored outputs and are not published as a generic repository asset. Every ZIP contains `LICENSE.reigns-agent.txt` and `THIRD_PARTY_NOTICES.md`; Electron's own generated license files remain alongside them.
+
+After downloading the ZIP for your platform and `SHA256SUMS.txt`, verify integrity before extraction:
+
+```sh
+# macOS/Linux, from the download directory
+sha256sum -c SHA256SUMS.txt --ignore-missing
+
+# Windows PowerShell: compare the printed value with the matching line
+Get-FileHash .\ReignsAgent-win32-x64-0.1.0.zip -Algorithm SHA256
+```
+
+The current release notes are maintained in [RELEASE_NOTES.md](RELEASE_NOTES.md), notable changes in [CHANGELOG.md](CHANGELOG.md), and private vulnerability reporting instructions in [SECURITY.md](SECURITY.md). All v0.1.0 desktop and Project-player binaries are unsigned; Windows Project EXEs additionally require an installed Evergreen WebView2 Runtime.
 
 Electron v1 intentionally has no preload bridge, native file dialogs, automatic updates, signing, notarization, store publishing, or database. Its persistence is the shared file workspace rather than an Electron-only store.
 

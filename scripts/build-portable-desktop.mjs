@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
-import { mkdir, readdir, readFile, rm } from "node:fs/promises";
+import { copyFile, mkdir, readdir, readFile, rm } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -23,8 +23,10 @@ const archive = join(
 );
 
 await rm(join(packageDirectory, "ReignsAgentData"), { recursive: true, force: true });
+await copyFile(join(ROOT, "LICENSE"), join(packageDirectory, "LICENSE.reigns-agent.txt"));
+await copyFile(join(ROOT, "THIRD_PARTY_NOTICES.md"), join(packageDirectory, "THIRD_PARTY_NOTICES.md"));
+await rm(archiveDirectory, { recursive: true, force: true });
 await mkdir(archiveDirectory, { recursive: true });
-await rm(archive, { force: true });
 
 if (platform === "win32") {
   const script = [
