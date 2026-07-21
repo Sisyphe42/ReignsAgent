@@ -998,6 +998,7 @@ select {
   padding: 18px var(--rail-padding-inline);
   overflow-x: hidden;
   overflow-y: auto;
+  overflow-anchor: none;
   border-right: 1px solid var(--border);
   background: color-mix(in srgb, var(--surface) 94%, var(--bg));
 }
