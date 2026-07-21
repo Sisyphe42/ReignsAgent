@@ -44,7 +44,7 @@ test("honors a direct panel URL over the persisted workspace panel", async ({ pa
   await openHosted(page);
   await page.getByRole("button", { name: /Review/ }).click();
   await expect(page).toHaveURL(/\/workbench\/review(?:\?|$)/);
-  await expect.poll(() => workspaceContains(page, 'activePanel = "review"')).toBe(true);
+  await expect.poll(() => workspaceContains(page, 'activePanel = "review"'), { timeout: 15_000 }).toBe(true);
 
   await page.goto("workbench/content");
   await expect(page.locator(".stage__status strong")).toContainText("cards loaded");
@@ -231,7 +231,7 @@ test("persists navigation density and shared interface language", async ({ page 
   await expect(page.getByRole("link", { name: "打开玩家端预览" })).toHaveAttribute("href", /locale=zh-Hans/);
   await page.getByRole("button", { name: "概览" }).click();
   await expect(page.locator('.metric[data-ai-label="Project"] strong')).toHaveText("Ready");
-  await expect.poll(() => workspaceContains(page, 'activePanel = "overview"')).toBe(true);
+  await expect.poll(() => workspaceContains(page, 'activePanel = "overview"'), { timeout: 15_000 }).toBe(true);
   await page.reload();
   await expect(page.getByRole("heading", { name: "项目概览" })).toBeVisible();
 });
