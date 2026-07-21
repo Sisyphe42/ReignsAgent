@@ -18,6 +18,7 @@ import {
   createAiEditSuggestions,
   createAiEditSuggestionsFromEndpoint,
   createDiagnosticFeedback,
+  executeImageOperation,
   generateAssetDrafts,
   generateCardDrafts,
   listAiEndpointModels,
@@ -26,7 +27,9 @@ import {
   parseCardsJson,
   stringifyContentJson,
   stringifyCardsCsv,
+  getImageEndpointCapabilities,
   validateAiEditEndpoint,
+  validateImageEndpointConfig,
   validateContentBundle,
   validateCardSet,
   writeCardsCsv,
@@ -664,6 +667,139 @@ describe("ReignsAgent pipeline", () => {
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("image endpoint adapters", () => {
+  const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
+
+  it("publishes capability-driven config without credentials", () => {
+    const validation = validateImageEndpointConfig({ config: { protocol: "openai_images", endpoint: "https://images.example/v1?token=secret", modelId: "image-model" } });
+    assert.equal(validation.valid, true);
+    assert.match(validation.config.endpoint, /%5Bredacted%5D/);
+    assert.match(validation.routes.generate, /images\/generations/);
+    assert.deepEqual(getImageEndpointCapabilities({ protocol: "gemini_interactions" }).operations, ["generate", "edit", "inpaint", "outpaint"]);
+    assert.throws(() => validateImageEndpointConfig({ config: { endpoint: "not-a-url", modelId: "image-model" } }), { code: "image_endpoint_url_invalid" });
+  });
+
+  it("maps OpenAI generation JSON and materializes base64 output", async () => {
+    let call;
+    const result = await executeImageOperation({
+      config: { protocol: "openai_images", endpoint: "https://images.example/v1", modelId: "image-model" },
+      credentials: { apiKey: "secret" },
+      request: { operation: "generate", prompt: "A court", output: { format: "png", count: 1 } },
+      fetchImpl: async (url, init) => {
+        call = { url, init, body: JSON.parse(init.body) };
+        return new Response(JSON.stringify({ data: [{ b64_json: Buffer.from(png).toString("base64") }] }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+    });
+    assert.equal(call.url, "https://images.example/v1/images/generations");
+    assert.equal(call.init.headers.authorization, "Bearer secret");
+    assert.equal(call.body.output_format, "png");
+    assert.deepEqual(result.outputs[0].bytes, png);
+    assert.doesNotMatch(JSON.stringify(result), /secret/);
+  });
+
+  it("maps OpenAI edit and mask to multipart", async () => {
+    let form;
+    await executeImageOperation({
+      config: { protocol: "openai_images", endpoint: "https://images.example/v1", modelId: "image-model" },
+      request: { operation: "inpaint", prompt: "Change the banner", output: { format: "png" } },
+      inputs: [
+        { id: "source", bytes: png, mimeType: "image/png" },
+        { id: "mask", role: "mask", bytes: png, mimeType: "image/png" }
+      ],
+      fetchImpl: async (url, init) => {
+        assert.equal(url, "https://images.example/v1/images/edits");
+        form = init.body;
+        return new Response(JSON.stringify({ data: [{ b64_json: Buffer.from(png).toString("base64") }] }), { status: 200 });
+      }
+    });
+    assert.equal(form.getAll("image[]").length, 1);
+    assert.equal(form.get("mask").type, "image/png");
+  });
+
+  it("maps Gemini inline references and image response blocks", async () => {
+    let body;
+    const result = await executeImageOperation({
+      config: { protocol: "gemini_interactions", endpoint: "https://gemini.example/v1beta", modelId: "gemini-image" },
+      credentials: { apiKey: "google-key" },
+      request: { operation: "edit", prompt: "Change the light", output: { format: "jpeg", aspectRatio: "3:4" } },
+      inputs: [{ id: "source", bytes: png, mimeType: "image/png" }],
+      fetchImpl: async (url, init) => {
+        assert.equal(url, "https://gemini.example/v1beta/interactions");
+        assert.equal(init.headers["x-goog-api-key"], "google-key");
+        body = JSON.parse(init.body);
+        return new Response(JSON.stringify({ output_image: { data: Buffer.from(png).toString("base64"), mime_type: "image/png" } }), { status: 200 });
+      }
+    });
+    assert.equal(body.input[1].type, "image");
+    assert.equal(body.response_format.aspect_ratio, "3:4");
+    assert.equal(result.outputs[0].mimeType, "image/png");
+  });
+
+  it("maps Stability outpaint parameters and direct binary output", async () => {
+    let form;
+    const result = await executeImageOperation({
+      config: { protocol: "stability_v2", endpoint: "https://stability.example/v2beta", modelId: "stable-image" },
+      request: { operation: "outpaint", prompt: "Extend the hall", outpaint: { left: 128, right: 64 }, output: { format: "png" } },
+      inputs: [{ id: "source", bytes: png, mimeType: "image/png" }],
+      fetchImpl: async (url, init) => {
+        assert.equal(url, "https://stability.example/v2beta/stable-image/edit/outpaint");
+        form = init.body;
+        return new Response(png, { status: 200, headers: { "content-type": "image/png" } });
+      }
+    });
+    assert.equal(form.get("left"), "128");
+    assert.equal(form.get("right"), "64");
+    assert.deepEqual(result.outputs[0].bytes, png);
+  });
+
+  it("routes every Gemini operation through JSON image blocks", async () => {
+    const calls = [];
+    for (const operation of ["generate", "edit", "inpaint", "outpaint"]) {
+      const inputs = operation === "generate" ? [] : [{ id: "source", bytes: png, mimeType: "image/png" }];
+      if (operation === "inpaint") inputs.push({ id: "mask", role: "mask", bytes: png, mimeType: "image/png" });
+      await executeImageOperation({
+        config: { protocol: "gemini_interactions", endpoint: "https://gemini.example/v1beta", modelId: "gemini-image" },
+        request: { operation, prompt: `${operation} image`, outpaint: { right: 32 } },
+        inputs,
+        fetchImpl: async (url, init) => { calls.push({ url, body: JSON.parse(init.body) }); return new Response(JSON.stringify({ output_image: { data: Buffer.from(png).toString("base64"), mime_type: "image/png" } }), { status: 200 }); }
+      });
+    }
+    assert.equal(calls.every((call) => call.url === "https://gemini.example/v1beta/interactions"), true);
+    assert.match(calls.at(-1).body.input[0].text, /right 32px/);
+  });
+
+  it("routes every Stability operation through multipart endpoints", async () => {
+    const routes = [];
+    for (const operation of ["generate", "edit", "inpaint", "outpaint"]) {
+      const inputs = operation === "generate" ? [] : [{ id: "source", bytes: png, mimeType: "image/png" }];
+      if (operation === "inpaint") inputs.push({ id: "mask", role: "mask", bytes: png, mimeType: "image/png" });
+      await executeImageOperation({
+        config: { protocol: "stability_v2", endpoint: "https://stability.example/v2beta", modelId: "stable-image" },
+        request: { operation, prompt: `${operation} image`, outpaint: { up: 16 } },
+        inputs,
+        fetchImpl: async (url, init) => { routes.push(url); assert.equal(init.body instanceof FormData, true); return new Response(png, { status: 200, headers: { "content-type": "image/png" } }); }
+      });
+    }
+    assert.deepEqual(routes, [
+      "https://stability.example/v2beta/stable-image/generate/core",
+      "https://stability.example/v2beta/stable-image/edit/inpaint",
+      "https://stability.example/v2beta/stable-image/edit/inpaint",
+      "https://stability.example/v2beta/stable-image/edit/outpaint"
+    ]);
+  });
+
+  it("rejects unsupported declared operations before fetch", async () => {
+    let called = false;
+    await assert.rejects(() => executeImageOperation({
+      config: { protocol: "openai_images", endpoint: "https://images.example/v1", modelId: "image-model", capabilities: ["generate"] },
+      request: { operation: "edit", prompt: "Edit" },
+      inputs: [{ id: "source", bytes: png, mimeType: "image/png" }],
+      fetchImpl: async () => { called = true; }
+    }), { code: "image_capability_unsupported" });
+    assert.equal(called, false);
   });
 });
 

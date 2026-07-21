@@ -197,6 +197,67 @@ class WorkspaceStore {
     }
   }
 
+  async getStoredImageApiKey() {
+    await this.#settled();
+    return this.config.ai.image.credentialMode === "inherit_text"
+      ? this.config.ai.apiKey || null
+      : this.config.ai.image.apiKey || null;
+  }
+
+  async stageActiveProjectAsset({ draftId, fileName, bytes, mimeType }) {
+    return this.#enqueue(async () => {
+      const normalizedDraftId = normalizeAssetDraftId(draftId);
+      const normalizedFileName = normalizeAssetFileName(fileName);
+      const value = normalizeAssetBytes(bytes, mimeType);
+      const uri = normalizeProjectAssetUri(`assets/.drafts/${normalizedDraftId}/${normalizedFileName}`);
+      const projectRoot = this.#projectRoot(this.#activeProjectId());
+      const assetPath = resolve(projectRoot, ...uri.split("/"));
+      await atomicWriteBinary(assetPath, value.bytes);
+      return {
+        uri,
+        mimeType: value.mimeType,
+        byteLength: value.bytes.byteLength,
+        sha256: createHash("sha256").update(value.bytes).digest("hex")
+      };
+    });
+  }
+
+  async commitActiveProjectAsset(uri) {
+    return this.#enqueue(async () => {
+      const normalized = normalizeProjectAssetUri(uri);
+      if (!normalized.startsWith("assets/.drafts/")) {
+        throw new WorkspaceError("Only staged project assets can be committed", "project_asset_not_staged");
+      }
+      const projectRoot = this.#projectRoot(this.#activeProjectId());
+      const source = resolve(projectRoot, ...normalized.split("/"));
+      const bytes = await readFile(source).catch((error) => {
+        if (error?.code === "ENOENT") throw new WorkspaceError("Staged project asset was not found", "project_asset_not_found");
+        throw error;
+      });
+      const mimeType = detectAssetMime(bytes);
+      if (!mimeType) throw new WorkspaceError("Staged project asset is not a supported image", "project_asset_mime_invalid");
+      const sha256 = createHash("sha256").update(bytes).digest("hex");
+      const finalUri = `assets/generated/${sha256}.${extensionForAssetMime(mimeType)}`;
+      const destination = resolve(projectRoot, ...finalUri.split("/"));
+      if (!(await exists(destination))) await atomicWriteBinary(destination, bytes);
+      return { uri: finalUri, mimeType, byteLength: bytes.byteLength, sha256 };
+    });
+  }
+
+  async discardActiveProjectAssetDraft(draftId) {
+    return this.#enqueue(async () => {
+      const normalizedDraftId = normalizeAssetDraftId(draftId);
+      const projectRoot = this.#projectRoot(this.#activeProjectId());
+      const draftRoot = resolve(projectRoot, "assets", ".drafts", normalizedDraftId);
+      const expectedRoot = resolve(projectRoot, "assets", ".drafts");
+      if (!relative(expectedRoot, draftRoot) || relative(expectedRoot, draftRoot).startsWith("..")) {
+        throw new WorkspaceError("Project asset draft path is invalid", "project_asset_path_invalid");
+      }
+      await rm(draftRoot, { recursive: true, force: true });
+      return { discarded: true, draftId: normalizedDraftId };
+    });
+  }
+
   async listReleases() {
     await this.#settled();
     return this.#listReleasesForProject(this.#activeProjectId());
@@ -435,6 +496,19 @@ async function atomicWrite(path, contents) {
   }
 }
 
+async function atomicWriteBinary(path, contents) {
+  await mkdir(dirname(path), { recursive: true });
+  temporarySequence += 1;
+  const temporaryPath = `${path}.${process.pid}.${temporarySequence}.tmp`;
+  try {
+    await writeFile(temporaryPath, contents, { mode: 0o600 });
+    await rename(temporaryPath, path);
+  } catch (error) {
+    await rm(temporaryPath, { force: true }).catch(() => {});
+    throw error;
+  }
+}
+
 async function exists(path) {
   try {
     await access(path);
@@ -474,6 +548,44 @@ function normalizeProjectAssetUri(value) {
     throw new WorkspaceError("Project asset path is invalid", "project_asset_path_invalid");
   }
   return parts.join("/");
+}
+
+function normalizeAssetDraftId(value) {
+  if (typeof value !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(value)) {
+    throw new WorkspaceError("Project asset draft id is invalid", "project_asset_draft_id_invalid");
+  }
+  return value;
+}
+
+function normalizeAssetFileName(value) {
+  if (typeof value !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}\.(?:png|jpe?g|webp)$/i.test(value)) {
+    throw new WorkspaceError("Project asset file name is invalid", "project_asset_file_name_invalid");
+  }
+  return value;
+}
+
+function normalizeAssetBytes(value, claimedMimeType) {
+  const bytes = value instanceof Uint8Array ? value : new Uint8Array(value ?? []);
+  if (bytes.byteLength === 0 || bytes.byteLength > 50 * 1024 * 1024) {
+    throw new WorkspaceError("Project asset must be between 1 byte and 50 MiB", "project_asset_size_invalid");
+  }
+  const mimeType = detectAssetMime(bytes);
+  if (!mimeType || (claimedMimeType && claimedMimeType !== mimeType)) {
+    throw new WorkspaceError("Project asset MIME does not match its bytes", "project_asset_mime_invalid");
+  }
+  return { bytes, mimeType };
+}
+
+function detectAssetMime(bytes) {
+  if (bytes.length >= 8 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return "image/png";
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "image/jpeg";
+  const ascii = (start, end) => String.fromCharCode(...bytes.subarray(start, end));
+  if (bytes.length >= 12 && ascii(0, 4) === "RIFF" && ascii(8, 12) === "WEBP") return "image/webp";
+  return null;
+}
+
+function extensionForAssetMime(mimeType) {
+  return mimeType === "image/jpeg" ? "jpg" : mimeType.split("/")[1];
 }
 
 async function assertArtifactHash(path, expected) {

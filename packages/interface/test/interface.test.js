@@ -3,8 +3,10 @@ import { describe, it } from "node:test";
 
 import {
   applyAiEditPlan,
+  applyImageDraftAsset,
   buildAiEditPlan,
   buildAiEditPlanAsync,
+  buildImageOperationDraft,
   buildGenerationPlan,
   createCardEditor,
   createConnectorConfig,
@@ -12,6 +14,7 @@ import {
   createPlaySession,
   deriveStoryGroups,
   deriveTagCatalog,
+  inspectImageEndpointConfig,
   listAiEditEndpointModels,
   loadEditorFromContent,
   localizeCard,
@@ -707,6 +710,30 @@ function sampleCard(id) {
     ]
   };
 }
+
+describe("image operation orchestration", () => {
+  it("validates, drafts, and explicitly applies a generated asset", async () => {
+    const editor = createCardEditor({ cards: [sampleCard("gate")] });
+    const config = { protocol: "openai_images", endpoint: "https://images.example/v1", modelId: "image-model" };
+    assert.equal(inspectImageEndpointConfig({ config }).valid, true);
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1]);
+    const draft = await buildImageOperationDraft({
+      editor,
+      config,
+      request: { operation: "generate", prompt: "Gate portrait", output: { format: "png" } },
+      fetchImpl: async () => new Response(JSON.stringify({ data: [{ b64_json: Buffer.from(png).toString("base64") }] }), { status: 200 })
+    });
+    assert.equal(editor.assets.length, 0);
+    const result = applyImageDraftAsset({
+      editor,
+      draft,
+      outputId: draft.outputs[0].id,
+      asset: { id: "gate-art", cardId: "gate", uri: "assets/generated/hash.png" }
+    });
+    assert.equal(result.bundle.assets[0].uri, "assets/generated/hash.png");
+    assert.equal(editor.assets.length, 0);
+  });
+});
 
 describe("deriveTagCatalog", () => {
   it("collects produced and required tags with the right attribution", () => {

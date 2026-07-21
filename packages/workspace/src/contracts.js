@@ -9,7 +9,7 @@ export function defaultConfig() {
   return {
     schemaVersion: CONFIG_SCHEMA_VERSION, theme: "github-light", locale: "system", aiAssistEnabled: false,
     activeProjectId: "", recentProjectIds: [], build: { defaultOutputDir: "Builds" },
-    ai: { endpoint: "", protocol: "openai_chat", endpointPresetId: "custom", compatibilityFamily: "custom", modelId: "", routeMode: "auto", jsonMode: "auto", capabilities: ["structuredJson"], apiKey: "" }
+    ai: { endpoint: "", protocol: "openai_chat", endpointPresetId: "custom", compatibilityFamily: "custom", modelId: "", routeMode: "auto", jsonMode: "auto", capabilities: ["structuredJson"], apiKey: "", image: { endpoint: "", protocol: "openai_images", modelId: "", routeMode: "auto", credentialMode: "inherit_text", capabilities: ["generate", "edit", "inpaint", "outpaint"], variant: "core", apiKey: "" } }
   };
 }
 
@@ -19,25 +19,27 @@ export function normalizeConfig(value) {
   const defaults = defaultConfig();
   const build = isRecord(value.build) ? value.build : {};
   const ai = isRecord(value.ai) ? value.ai : {};
+  const image = isRecord(ai.image) ? ai.image : {};
   return {
     schemaVersion: CONFIG_SCHEMA_VERSION,
     theme: string(value.theme, defaults.theme), locale: string(value.locale, defaults.locale),
     aiAssistEnabled: typeof value.aiAssistEnabled === "boolean" ? value.aiAssistEnabled : defaults.aiAssistEnabled,
     activeProjectId: string(value.activeProjectId, ""), recentProjectIds: stringArray(value.recentProjectIds),
     build: { defaultOutputDir: string(build.defaultOutputDir, defaults.build.defaultOutputDir) },
-    ai: { endpoint: string(ai.endpoint, ""), protocol: string(ai.protocol, defaults.ai.protocol), endpointPresetId: string(ai.endpointPresetId, defaults.ai.endpointPresetId), compatibilityFamily: string(ai.compatibilityFamily, defaults.ai.compatibilityFamily), modelId: string(ai.modelId, ""), routeMode: string(ai.routeMode, defaults.ai.routeMode), jsonMode: string(ai.jsonMode, defaults.ai.jsonMode), capabilities: Array.isArray(ai.capabilities) ? ai.capabilities.filter((entry) => typeof entry === "string") : defaults.ai.capabilities, apiKey: typeof ai.apiKey === "string" ? ai.apiKey : "" }
+    ai: { endpoint: string(ai.endpoint, ""), protocol: string(ai.protocol, defaults.ai.protocol), endpointPresetId: string(ai.endpointPresetId, defaults.ai.endpointPresetId), compatibilityFamily: string(ai.compatibilityFamily, defaults.ai.compatibilityFamily), modelId: string(ai.modelId, ""), routeMode: string(ai.routeMode, defaults.ai.routeMode), jsonMode: string(ai.jsonMode, defaults.ai.jsonMode), capabilities: Array.isArray(ai.capabilities) ? ai.capabilities.filter((entry) => typeof entry === "string") : defaults.ai.capabilities, apiKey: typeof ai.apiKey === "string" ? ai.apiKey : "", image: { endpoint: string(image.endpoint, ""), protocol: string(image.protocol, defaults.ai.image.protocol), modelId: string(image.modelId, ""), routeMode: string(image.routeMode, defaults.ai.image.routeMode), credentialMode: image.credentialMode === "dedicated" ? "dedicated" : "inherit_text", capabilities: Array.isArray(image.capabilities) ? image.capabilities.filter((entry) => typeof entry === "string") : defaults.ai.image.capabilities, variant: string(image.variant, defaults.ai.image.variant), apiKey: typeof image.apiKey === "string" ? image.apiKey : "" } }
   };
 }
 
 export function mergeConfig(current, patch) {
   if (!isRecord(patch)) throw contractError("Config patch must be an object", "config_patch_invalid");
-  const next = normalizeConfig({ ...current, ...patch, build: { ...current.build, ...(isRecord(patch.build) ? patch.build : {}) }, ai: { ...current.ai, ...(isRecord(patch.ai) ? patch.ai : {}) } });
+  const next = normalizeConfig({ ...current, ...patch, build: { ...current.build, ...(isRecord(patch.build) ? patch.build : {}) }, ai: { ...current.ai, ...(isRecord(patch.ai) ? patch.ai : {}), image: { ...current.ai.image, ...(isRecord(patch.ai?.image) ? patch.ai.image : {}) } } });
   if (patch.clearApiKey === true) next.ai.apiKey = "";
+  if (patch.clearImageApiKey === true) next.ai.image.apiKey = "";
   return next;
 }
 
 export function projectConfig(config) {
-  return { schemaVersion: config.schemaVersion, theme: config.theme, locale: config.locale, aiAssistEnabled: config.aiAssistEnabled, activeProjectId: config.activeProjectId || null, recentProjectIds: [...config.recentProjectIds], build: clone(config.build), ai: { endpoint: config.ai.endpoint, protocol: config.ai.protocol, endpointPresetId: config.ai.endpointPresetId, compatibilityFamily: config.ai.compatibilityFamily, modelId: config.ai.modelId, routeMode: config.ai.routeMode, jsonMode: config.ai.jsonMode, capabilities: [...config.ai.capabilities], hasApiKey: Boolean(config.ai.apiKey) } };
+  return { schemaVersion: config.schemaVersion, theme: config.theme, locale: config.locale, aiAssistEnabled: config.aiAssistEnabled, activeProjectId: config.activeProjectId || null, recentProjectIds: [...config.recentProjectIds], build: clone(config.build), ai: { endpoint: config.ai.endpoint, protocol: config.ai.protocol, endpointPresetId: config.ai.endpointPresetId, compatibilityFamily: config.ai.compatibilityFamily, modelId: config.ai.modelId, routeMode: config.ai.routeMode, jsonMode: config.ai.jsonMode, capabilities: [...config.ai.capabilities], hasApiKey: Boolean(config.ai.apiKey), image: { endpoint: config.ai.image.endpoint, protocol: config.ai.image.protocol, modelId: config.ai.image.modelId, routeMode: config.ai.image.routeMode, credentialMode: config.ai.image.credentialMode, capabilities: [...config.ai.image.capabilities], variant: config.ai.image.variant, hasApiKey: Boolean(config.ai.image.apiKey) } } };
 }
 
 export function defaultWorkspaceState() { return { schemaVersion: WORKSPACE_SCHEMA_VERSION, activePanel: "overview", selectedCardId: "", previewSkin: "" }; }
