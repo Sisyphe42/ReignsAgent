@@ -6,7 +6,7 @@ import playerHtml from "../../../packages/interface/web/standalone-player.html?r
 
 const bundledTextAssets = import.meta.glob("../../../packages/interface/web/assets/sample/*", { eager: true, query: "?raw", import: "default" });
 
-export function assemblePlayerFiles({ editor, config = null, buildId = null, logoBytes = null }) {
+export async function assemblePlayerFiles({ editor, config = null, buildId = null, logoBytes = null, assetReader = null }) {
   const validation = validatePlayerCards(editor.toCards());
   if (!validation.valid) throw new Error(`Cannot build: ${validation.errors.join("; ")}`);
   const build = prepareGameBuild({ editor, config, buildId });
@@ -21,6 +21,14 @@ export function assemblePlayerFiles({ editor, config = null, buildId = null, log
   for (const [sourcePath, contents] of Object.entries(bundledTextAssets)) {
     files[`assets/sample/${sourcePath.split("/").at(-1)}`] = strToU8(contents);
   }
+  for (const asset of build.content.assets ?? []) {
+    const uri = normalizeBuildAssetUri(asset?.uri);
+    if (files[uri]) continue;
+    if (typeof assetReader !== "function") throw new Error(`Cannot package project asset '${uri}' without an asset reader`);
+    const bytes = await assetReader(uri);
+    if (!bytes?.byteLength) throw new Error(`Project asset '${uri}' is missing from browser storage`);
+    files[uri] = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  }
   return { build, files };
 }
 
@@ -28,7 +36,7 @@ export async function downloadPlayerZip(options) {
   const logoUrl = new URL(`${import.meta.env.BASE_URL}logo-alpha.png`, location.origin);
   const logoResponse = await fetch(logoUrl);
   const logoBytes = logoResponse.ok ? new Uint8Array(await logoResponse.arrayBuffer()) : null;
-  const { build, files } = assemblePlayerFiles({ ...options, logoBytes });
+  const { build, files } = await assemblePlayerFiles({ ...options, logoBytes });
   const blob = new Blob([zipSync(files, { level: 6 })], { type: "application/zip" });
   const url = URL.createObjectURL(blob);
   try { const anchor = document.createElement("a"); anchor.href = url; anchor.download = `${build.buildId}.zip`; anchor.click(); }
@@ -37,3 +45,10 @@ export async function downloadPlayerZip(options) {
 }
 
 export { stitchPlayerRuntime };
+
+function normalizeBuildAssetUri(value) {
+  if (typeof value !== "string" || !value.startsWith("assets/") || value.includes("\\") || value.includes("\0")) throw new Error("Player asset URI is invalid");
+  const parts = value.split("/");
+  if (parts.some((part) => !part || part === "." || part === "..")) throw new Error("Player asset URI is invalid");
+  return parts.join("/");
+}

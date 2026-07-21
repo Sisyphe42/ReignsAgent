@@ -441,7 +441,7 @@ async function handleApi(req, res, url) {
     const committed = await workspace.commitActiveProjectAsset(output.uri);
     const cardId = body?.cardId || draft.request?.targetCardId || undefined;
     const asset = {
-      id: body?.assetId || `generated-${committed.sha256.slice(0, 12)}`,
+      id: body?.assetId || draft.request?.targetAssetId || `generated-${committed.sha256.slice(0, 12)}`,
       ...(cardId ? { cardId } : {}),
       uri: committed.uri,
       title: body?.title || draft.request?.prompt || "Generated card art",

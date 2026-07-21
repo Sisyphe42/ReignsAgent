@@ -367,16 +367,71 @@ test("generates and applies an OPFS-backed image through the browser backend", a
     const content = await (await project.getFileHandle("content.json")).getFile();
     return /assets\/generated\/[a-f0-9]{64}\.png/.test(await content.text());
   })).toBe(true);
+  const generatedUri = await activeGeneratedAssetUri(page);
 
+  await page.locator(".ai-edit-controls select").first().selectOption("edit");
+  const referenceInput = page.locator('.image-operation-controls input[type="file"]');
+  await expect(referenceInput).toHaveCount(1);
+  await referenceInput.setInputFiles([{ name: "court portrait 中文.png", mimeType: "image/png", buffer: Buffer.from(tinyPngBase64, "base64") }]);
+  await expect(page.locator(".image-operation-controls")).toContainText("1 reference image staged");
   await page.locator(".ai-edit-controls select").first().selectOption("inpaint");
   await expect(page.getByLabel("Inpaint mask canvas")).toBeVisible();
+  await expect.poll(() => page.getByLabel("Inpaint mask canvas").evaluate((canvas) => [canvas.width, canvas.height])).toEqual([1, 1]);
+  await page.getByLabel("Inpaint mask canvas").click({ position: { x: 10, y: 10 } });
+  await page.getByRole("button", { name: "Use mask" }).click();
+  await expect(page.locator(".image-operation-controls")).toContainText("Mask ready");
+  await expect.poll(() => activeMaskMetadata(page)).toEqual({ width: 1, height: 1, alpha: 0 });
   await page.locator(".ai-edit-controls select").first().selectOption("outpaint");
   await page.locator('.outpaint-grid label', { hasText: "left" }).locator("input").fill("32");
   await page.getByRole("button", { name: "Build draft" }).click();
   await expect(page.getByRole("heading", { name: "Generated images" })).toBeVisible({ timeout: 10_000 });
   await page.getByRole("button", { name: "Discard draft" }).click();
   await expect(page.locator(".stage__status strong")).toContainText("Image draft discarded");
+
+  await page.locator(".rail__item", { hasText: "Build" }).click();
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Export player ZIP" }).click();
+  const archive = unzipSync(new Uint8Array(await readFile(await (await downloadPromise).path())));
+  expect(archive[generatedUri]).toBeDefined();
+  expect([...archive[generatedUri]]).toEqual([...Buffer.from(tinyPngBase64, "base64")]);
 });
+
+async function activeGeneratedAssetUri(page) {
+  return page.evaluate(async () => {
+    const root = await navigator.storage.getDirectory();
+    const dataRoot = await root.getDirectoryHandle("ReignsAgentData");
+    const config = await (await dataRoot.getFileHandle("config.toml")).getFile();
+    const active = (await config.text()).match(/activeProjectId\s*=\s*"([^"]+)"/)?.[1];
+    const project = await (await dataRoot.getDirectoryHandle("projects")).getDirectoryHandle(active);
+    const content = JSON.parse(await (await project.getFileHandle("content.json")).getFile().then((file) => file.text()));
+    return content.assets.findLast((asset) => /^assets\/generated\/[a-f0-9]{64}\.png$/.test(asset.uri))?.uri ?? "";
+  });
+}
+
+async function activeMaskMetadata(page) {
+  return page.evaluate(async () => {
+    const root = await navigator.storage.getDirectory();
+    const dataRoot = await root.getDirectoryHandle("ReignsAgentData");
+    const config = await (await dataRoot.getFileHandle("config.toml")).getFile();
+    const active = (await config.text()).match(/activeProjectId\s*=\s*"([^"]+)"/)?.[1];
+    const project = await (await dataRoot.getDirectoryHandle("projects")).getDirectoryHandle(active);
+    const assets = await project.getDirectoryHandle("assets");
+    const drafts = await assets.getDirectoryHandle(".drafts");
+    for await (const [name, entry] of drafts.entries()) {
+      if (entry.kind !== "directory" || !name.startsWith("mask-")) continue;
+      const blob = await (await entry.getFileHandle("mask.png")).getFile();
+      const bitmap = await createImageBitmap(blob);
+      const canvas = document.createElement("canvas");
+      canvas.width = bitmap.width;
+      canvas.height = bitmap.height;
+      const context = canvas.getContext("2d");
+      context.drawImage(bitmap, 0, 0);
+      bitmap.close();
+      return { width: canvas.width, height: canvas.height, alpha: context.getImageData(0, 0, 1, 1).data[3] };
+    }
+    return null;
+  });
+}
 
 async function openHosted(page) {
   await page.goto("workbench");

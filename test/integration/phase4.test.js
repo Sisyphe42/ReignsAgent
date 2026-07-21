@@ -357,6 +357,9 @@ describe("Phase 4 interface integration", () => {
       assert.equal(validation.valid, true);
       assert.equal(validation.capabilities.supportsMask, true);
       await api(port, "/api/config", { method: "PATCH", body: { ai: { apiKey: "inherited-image-secret" } } });
+      const editorBefore = await api(port, "/api/editor");
+      const targetAsset = editorBefore.assets.find((asset) => asset.cardId);
+      assert.ok(targetAsset, "fixture must contain an existing card asset");
 
       const stagedResponse = await fetch(`http://127.0.0.1:${port}/api/ai/images/stage?fileName=source.png`, { method: "POST", headers: { "content-type": "image/png" }, body: png });
       assert.equal(stagedResponse.ok, true);
@@ -364,7 +367,7 @@ describe("Phase 4 interface integration", () => {
 
       const drafts = [];
       for (const operation of ["generate", "edit", "inpaint", "outpaint"]) {
-        drafts.push(await api(port, "/api/ai/images/run", { method: "POST", body: { config: { protocol: "openai_images", endpoint: `http://127.0.0.1:${mock.port}/v1`, modelId: "mock-image", credentialMode: operation === "generate" ? "inherit_text" : "dedicated" }, ...(operation === "generate" ? {} : { credentials: { apiKey: "image-secret" } }), request: { operation, prompt: `${operation} the court`, references: operation === "generate" ? [] : [staged.uri], mask: ["inpaint", "outpaint"].includes(operation) ? staged.uri : null, targetCardId: "opening", output: { format: "png", count: 1 }, outpaint: { left: 64 } } } }));
+        drafts.push(await api(port, "/api/ai/images/run", { method: "POST", body: { config: { protocol: "openai_images", endpoint: `http://127.0.0.1:${mock.port}/v1`, modelId: "mock-image", credentialMode: operation === "generate" ? "inherit_text" : "dedicated" }, ...(operation === "generate" ? {} : { credentials: { apiKey: "image-secret" } }), request: { operation, prompt: `${operation} the court`, references: operation === "generate" ? [] : [staged.uri], mask: ["inpaint", "outpaint"].includes(operation) ? staged.uri : null, targetCardId: targetAsset.cardId, targetAssetId: operation === "generate" ? null : targetAsset.id, output: { format: "png", count: 1 }, outpaint: { left: 64 } } } }));
       }
       assert.deepEqual(mock.requests.map((entry) => entry.path), ["/v1/images/generations", "/v1/images/edits", "/v1/images/edits", "/v1/images/edits"]);
       assert.equal(mock.requests[0].authorization, "Bearer inherited-image-secret");
@@ -373,14 +376,16 @@ describe("Phase 4 interface integration", () => {
       assert.equal(drafts.every((draft) => draft.outputs[0].previewUrl.startsWith("/api/project-assets/")), true);
 
       for (const draft of drafts.slice(0, -1)) await api(port, `/api/ai/images/drafts/${draft.draftId}`, { method: "DELETE" });
-      const applied = await api(port, "/api/ai/images/apply", { method: "POST", body: { draftId: drafts.at(-1).draftId, outputId: drafts.at(-1).outputs[0].id, cardId: "opening" } });
+      const applied = await api(port, "/api/ai/images/apply", { method: "POST", body: { draftId: drafts.at(-1).draftId, outputId: drafts.at(-1).outputs[0].id, cardId: targetAsset.cardId } });
       assert.equal(applied.applied, true);
+      assert.equal(applied.asset.id, targetAsset.id);
       assert.match(applied.asset.uri, /^assets\/generated\/[a-f0-9]{64}\.png$/);
       const assetResponse = await fetch(`http://127.0.0.1:${port}/api/project-assets/${encodeURIComponent(applied.asset.uri)}`);
       assert.equal(assetResponse.headers.get("content-type"), "image/png");
       assert.deepEqual(new Uint8Array(await assetResponse.arrayBuffer()), png);
       const editor = await api(port, "/api/editor");
-      assert.equal(editor.assets.some((asset) => asset.id === applied.asset.id && asset.cardId === "opening"), true);
+      assert.equal(editor.assets.length, editorBefore.assets.length);
+      assert.equal(editor.assets.filter((asset) => asset.id === targetAsset.id && asset.cardId === targetAsset.cardId).length, 1);
       const build = await api(port, "/api/build/prepare", { method: "POST", body: {} });
       assert.equal(build.build.content.assets.some((asset) => asset.uri === applied.asset.uri), true);
     } finally {

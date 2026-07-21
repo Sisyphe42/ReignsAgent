@@ -5488,7 +5488,9 @@ summary:focus-visible {
 .section-heading-row h3, .section-heading-row p { margin-top: 0; }
 .image-operation-controls { display: grid; gap: .75rem; padding: .85rem; border: 1px solid var(--line); border-radius: 12px; background: color-mix(in srgb, var(--panel) 88%, var(--accent) 12%); }
 .mask-editor { display: grid; gap: .5rem; }
-.mask-editor canvas { width: min(100%, 360px); aspect-ratio: 1; border: 1px solid var(--line); border-radius: 10px; background: white; touch-action: none; cursor: crosshair; }
+.mask-canvas-stage { position: relative; width: min(100%, 360px); overflow: hidden; border: 1px solid var(--line); border-radius: 10px; background: repeating-conic-gradient(#d9dde4 0 25%, #f4f5f7 0 50%) 50% / 20px 20px; }
+.mask-canvas-stage img { display: block; width: 100%; height: auto; }
+.mask-canvas-stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; cursor: crosshair; }
 .outpaint-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .5rem; }
 .outpaint-grid label { display: grid; gap: .25rem; text-transform: capitalize; font-size: .78rem; color: var(--muted); }
 .image-result-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin-bottom: 1rem; }

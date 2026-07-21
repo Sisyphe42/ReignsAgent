@@ -73,6 +73,10 @@
 - Built-in image protocols are `openai_images`, `gemini_interactions`, and `stability_v2`. Capability negotiation controls operations, reference count/MIME, mask UI, output count/formats, dimensions, and provider-specific fields.
 - Image routes are `POST /api/ai/images/validate`, `/stage`, `/run`, `/apply`, `DELETE /api/ai/images/drafts/:id`, and `GET /api/project-assets/*`. Validation is structural and does not start paid generation.
 - `/run` localizes base64, signed-URL, and binary results into draft storage. `/apply` alone content-addresses the selected output and performs `upsertAsset`; `/discard` removes draft outputs. No temporary remote URL or base64 payload may enter `content.json`.
+- Edit, inpaint, and outpaint requests carry the selected `targetAssetId`; apply must reuse that id so each card keeps one authoritative art binding across Creator and standalone-player projections. Generate creates a new asset unless the caller explicitly supplies an apply-time id.
+- Inpaint masks have the exact pixel dimensions of their source image. Creator keeps the interactive selection as a visual overlay, then exports transparent edit regions for OpenAI Images-compatible endpoints or white edit regions on black for Stability.
+- Uploaded image names are untrusted display metadata. Creator generates a safe internal staged filename from the validated MIME and role, and staging failures remain visible without clearing the selected inputs or canvas.
+- Hosted player ZIP assembly must read and include every safe `assets/...` URI referenced by the build from OPFS, including content-addressed `assets/generated/...` files; a missing referenced binary fails export.
 - Contextual actions in Overview, Content, Story, and Review are routing helpers only. They may enable AI Assist, open preflight, open the AI Assist panel, and prefill mode/instruction/target fields, but must not call providers or mutate cards directly.
 - Preflight request fields:
   - `source`: creator surface label such as `Overview`, `Content`, `Story`, or `Review`
@@ -132,7 +136,7 @@
   - `/api/ai/edit/plan` and `/api/ai/edit/apply` cover card generation, endpoint execution, repair routing, visual previews, and stale-plan rejection.
   - `/api/ai/edit/validate` and `/api/ai/edit/models` cover real local API routes with a mock endpoint, redaction, and no editor mutation.
   - `/api/connector/plan` remains compatible.
-  - Image API routes cover all four operations, stage/run/apply/discard, final asset serving, failure immutability, and generated-asset collection by player builds.
+  - Image API routes cover all four operations, stage/run/apply/discard, target asset replacement, final asset serving, failure immutability, and generated-asset collection by local and Hosted player builds.
 
 ### 7. Wrong vs Correct
 

@@ -1393,8 +1393,19 @@ function App() {
 
   async function stageImageFile(file, role = "input") {
     if (!file) return null;
-    const result = await api("/api/ai/images/stage", { method: "POST", body: { draftId: `${role}-${crypto.randomUUID()}`, fileName: file.name || `${role}.png`, mimeType: file.type || "image/png", bytes: new Uint8Array(await file.arrayBuffer()) } });
-    return result.uri;
+    return runAction("Staging image", async () => {
+      const mimeType = file.type || "image/png";
+      const result = await api("/api/ai/images/stage", {
+        method: "POST",
+        body: {
+          draftId: `${role}-${crypto.randomUUID()}`,
+          fileName: safeStagedImageFileName(file.name, mimeType, role),
+          mimeType,
+          bytes: new Uint8Array(await file.arrayBuffer())
+        }
+      });
+      return result.uri;
+    });
   }
 
   async function runImageOperation(request, signal) {
@@ -5142,28 +5153,68 @@ async function prepareOpenAiOutpaintFiles(assetUri, edges) {
   };
 }
 
-function MaskCanvas({ onExport }) {
+function MaskCanvas({ sourceUri, protocol, onExport }) {
   const canvasRef = useRef(null);
   const drawingRef = useRef(false);
   const [tool, setTool] = useState("paint");
+  const [sourceUrl, setSourceUrl] = useState("");
+  const [loadError, setLoadError] = useState("");
   useEffect(() => {
-    const canvas = canvasRef.current;
-    const context = canvas?.getContext("2d");
-    if (!context) return;
-    context.fillStyle = "white";
-    context.fillRect(0, 0, canvas.width, canvas.height);
-  }, []);
+    let active = true;
+    if (!sourceUri) {
+      setSourceUrl("");
+      setLoadError("");
+      return () => { active = false; };
+    }
+    void creatorBackendPromise.then(async (backend) => {
+      const url = await backend.assetUrl(sourceUri);
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`Could not load source image (${response.status})`);
+      const bitmap = await createImageBitmap(await response.blob());
+      if (!active) { bitmap.close(); return; }
+      const canvas = canvasRef.current;
+      canvas.width = bitmap.width;
+      canvas.height = bitmap.height;
+      canvas.getContext("2d").clearRect(0, 0, bitmap.width, bitmap.height);
+      bitmap.close();
+      setSourceUrl(url);
+      setLoadError("");
+    }).catch((error) => {
+      if (active) setLoadError(error.message);
+    });
+    return () => { active = false; };
+  }, [sourceUri]);
   function point(event) { const canvas = canvasRef.current; const rect = canvas.getBoundingClientRect(); return { x: (event.clientX - rect.left) * canvas.width / rect.width, y: (event.clientY - rect.top) * canvas.height / rect.height }; }
-  function start(event) { drawingRef.current = true; const context = canvasRef.current.getContext("2d"); const next = point(event); context.beginPath(); context.moveTo(next.x, next.y); event.currentTarget.setPointerCapture(event.pointerId); }
-  function move(event) { if (!drawingRef.current) return; const context = canvasRef.current.getContext("2d"); const next = point(event); context.strokeStyle = tool === "paint" ? "black" : "white"; context.lineWidth = 22; context.lineCap = "round"; context.lineJoin = "round"; context.lineTo(next.x, next.y); context.stroke(); }
+  function start(event) { drawingRef.current = true; const context = canvasRef.current.getContext("2d"); const next = point(event); context.globalCompositeOperation = tool === "paint" ? "source-over" : "destination-out"; context.strokeStyle = "rgba(239, 68, 68, .72)"; context.lineWidth = Math.max(4, canvasRef.current.width / 24); context.lineCap = "round"; context.lineJoin = "round"; context.beginPath(); context.moveTo(next.x, next.y); context.lineTo(next.x + .01, next.y + .01); context.stroke(); event.currentTarget.setPointerCapture(event.pointerId); }
+  function move(event) { if (!drawingRef.current) return; const context = canvasRef.current.getContext("2d"); const next = point(event); context.lineTo(next.x, next.y); context.stroke(); }
   function stop() { drawingRef.current = false; }
-  function clear() { const canvas = canvasRef.current; const context = canvas.getContext("2d"); context.fillStyle = "white"; context.fillRect(0, 0, canvas.width, canvas.height); }
-  function exportMask() { canvasRef.current.toBlob((blob) => { if (blob) onExport(new File([blob], "mask.png", { type: "image/png" })); }, "image/png"); }
+  function clear() { const canvas = canvasRef.current; canvas.getContext("2d").clearRect(0, 0, canvas.width, canvas.height); }
+  function exportMask() {
+    const selection = canvasRef.current;
+    if (!sourceUri || !selection.width || !selection.height) return;
+    const selectionData = selection.getContext("2d").getImageData(0, 0, selection.width, selection.height).data;
+    const output = document.createElement("canvas");
+    output.width = selection.width;
+    output.height = selection.height;
+    const context = output.getContext("2d");
+    const mask = context.createImageData(output.width, output.height);
+    for (let index = 0; index < selectionData.length; index += 4) {
+      const selected = selectionData[index + 3] > 0;
+      const openAiMask = protocol === "openai_images";
+      mask.data[index] = openAiMask ? 255 : selected ? 255 : 0;
+      mask.data[index + 1] = openAiMask ? 255 : selected ? 255 : 0;
+      mask.data[index + 2] = openAiMask ? 255 : selected ? 255 : 0;
+      mask.data[index + 3] = openAiMask && selected ? 0 : 255;
+    }
+    context.putImageData(mask, 0, 0);
+    output.toBlob((blob) => { if (blob) onExport(new File([blob], "mask.png", { type: "image/png" })); }, "image/png");
+  }
   return (
     <div className="mask-editor">
       <div className="action-row"><strong>Mask</strong><button className={tool === "paint" ? "btn btn--compact btn--primary" : "btn btn--compact"} type="button" onClick={() => setTool("paint")}>Paint</button><button className={tool === "erase" ? "btn btn--compact btn--primary" : "btn btn--compact"} type="button" onClick={() => setTool("erase")}>Erase</button><button className="btn btn--compact" type="button" onClick={clear}>Clear</button><button className="btn btn--compact" type="button" onClick={exportMask}>Use mask</button></div>
-      <canvas ref={canvasRef} width="512" height="512" onPointerDown={start} onPointerMove={move} onPointerUp={stop} onPointerCancel={stop} aria-label="Inpaint mask canvas" />
-      <small className="muted">Paint black over the region to redraw, then choose Use mask.</small>
+      {sourceUri ? <div className="mask-canvas-stage">{sourceUrl && <img src={sourceUrl} alt="Mask source artwork" />}<canvas ref={canvasRef} width="1" height="1" onPointerDown={start} onPointerMove={move} onPointerUp={stop} onPointerCancel={stop} aria-label="Inpaint mask canvas" /></div> : <p className="muted">Select a card with existing artwork before drawing a mask.</p>}
+      {loadError && <small className="form-error">{loadError}</small>}
+      <small className="muted">Paint the region to redraw, then choose Use mask. The exported mask matches the source image dimensions.</small>
     </div>
   );
 }
@@ -5277,7 +5328,7 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
       }
       const targetAsset = assets.find((asset) => asset.id === nextAssetId) ?? latestAssetForCard(assets, nextTargetCardId);
       let references = nextMode === "generate"
-        ? [...new Set(referenceUris)]
+        ? imageCapabilities?.generateWithReferences ? [...new Set(referenceUris)] : []
         : [...new Set([targetAsset?.uri, ...referenceUris].filter(Boolean))];
       let effectiveMask = maskUri || null;
       if (nextMode === "outpaint" && imageSettings.protocol === "openai_images" && targetAsset?.uri) {
@@ -5295,7 +5346,7 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
         prompt: nextInstruction,
         negativePrompt,
         targetCardId: nextTargetCardId || null,
-        targetAssetId: nextAssetId || null,
+        targetAssetId: nextMode === "generate" ? null : targetAsset?.id || null,
         references,
         mask: effectiveMask,
         output: { count: Math.min(nextCardCount, imageCapabilities?.maxOutputs ?? 1), format: imageFormat, aspectRatio },
@@ -5460,7 +5511,7 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
               </div>
               {referenceUris.length > 0 && <small className="muted">{referenceUris.length} reference image{referenceUris.length === 1 ? "" : "s"} staged</small>}
               {imageCapabilities?.parameters?.includes("negativePrompt") && <input value={negativePrompt} onChange={(event) => setNegativePrompt(event.target.value)} placeholder="negative prompt" />}
-              {mode === "inpaint" && imageCapabilities?.supportsMask && <MaskCanvas onExport={(file) => void stageMask(file)} />}
+              {mode === "inpaint" && imageCapabilities?.supportsMask && <MaskCanvas sourceUri={comparisonAsset?.uri ?? referenceUris.at(-1) ?? ""} protocol={imageSettings.protocol} onExport={(file) => void stageMask(file)} />}
               {maskUri && <small className="muted">Mask ready</small>}
               {mode === "outpaint" && imageCapabilities?.parameters?.includes("outpaint") && <div className="outpaint-grid">{["left", "right", "up", "down"].map((edge) => <label key={edge}>{edge}<input type="number" min="0" max="2000" value={outpaint[edge]} onChange={(event) => setOutpaint((current) => ({ ...current, [edge]: Number(event.target.value) }))} /></label>)}</div>}
             </div>
@@ -6841,6 +6892,18 @@ function latestAssetForCard(assets, cardId) {
     if (assets[index]?.cardId === cardId) return assets[index];
   }
   return null;
+}
+
+function safeStagedImageFileName(originalName, mimeType, role = "input") {
+  const extension = mimeType === "image/jpeg" ? "jpg" : mimeType === "image/webp" ? "webp" : "png";
+  const stem = String(originalName ?? "")
+    .replace(/\.[^.]+$/, "")
+    .normalize("NFKD")
+    .replace(/[^a-zA-Z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48);
+  const safeRole = String(role).replace(/[^a-zA-Z0-9_-]+/g, "-").slice(0, 24) || "input";
+  return `${stem || safeRole}.${extension}`;
 }
 
 function buildImageEndpointConfig(settings) {
