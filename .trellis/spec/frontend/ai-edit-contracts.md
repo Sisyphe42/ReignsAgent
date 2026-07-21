@@ -70,7 +70,7 @@
   - `setMetadata { metadata }`
   - `upsertAsset { asset }`
 - Image operations use `ImageEndpointConfig`, `ImageEndpointCapabilities`, `ImageOperationRequest`, `ImageDraftResult`, and `ImageAssetOutput`. `generate_asset` remains a compatibility alias for `generate`; `analyze_asset` retains the text-side visual analysis flow.
-- Built-in image protocols are `openai_images`, `gemini_interactions`, and `stability_v2`. Capability negotiation controls operations, reference count/MIME, mask UI, output count/formats, dimensions, and provider-specific fields.
+- Built-in image protocols are `openai_images`, `gemini_interactions`, `stability_v2`, and `midjourney_proxy`. Capability negotiation controls operations, reference count/MIME, mask UI, output count/formats, dimensions, and provider-specific fields. Midjourney Proxy/NewAPI is an asynchronous submit-and-poll adapter: it supports Generate and reference Edit through `/mj/submit/imagine` plus `/mj/task/:id/fetch`, localizes the completed result immediately, and must not expose mask/outpaint controls that require provider task context unavailable from a project asset alone.
 - Image routes are `POST /api/ai/images/validate`, `/stage`, `/run`, `/apply`, `DELETE /api/ai/images/drafts/:id`, and `GET /api/project-assets/*`. Validation is structural and does not start paid generation.
 - `/run` localizes base64, signed-URL, and binary results into draft storage. `/apply` alone content-addresses the selected output and performs `upsertAsset`; `/discard` removes draft outputs. No temporary remote URL or base64 payload may enter `content.json`.
 - Edit, inpaint, and outpaint requests carry the selected `targetAssetId`; apply must reuse that id so each card keeps one authoritative art binding across Creator and standalone-player projections. Generate creates a new asset unless the caller explicitly supplies an apply-time id.
@@ -121,7 +121,7 @@
   - Generated card proposals are deterministic and player-shape compatible.
   - Repair proposals cover low coverage, unreachable gates, missing tag producers, stalled runs, and dominant gauge pressure where unambiguous.
   - Patch application validates output and rejects unsupported operations.
-  - Image adapters cover OpenAI JSON/multipart, Gemini inline image blocks, Stability operation routes, capability rejection, reference/mask/outpaint parameters, base64/URL/binary localization, and secret-safe errors.
+  - Image adapters cover OpenAI JSON/multipart, Gemini inline image blocks, Stability operation routes, Midjourney submit/poll/reference payloads, capability rejection, reference/mask/outpaint parameters, base64/URL/binary localization, cancellation, and secret-safe errors.
   - Endpoint planning covers legacy and canonical OpenAI protocol values, route resolution, JSON-mode fallback, malformed output, patch prevalidation, and secret redaction.
   - Endpoint planning asserts provider request prompts include the ReignsAgent professional editing rules, not only generic JSON formatting instructions.
   - Endpoint validation and model listing cover redacted credentials, `/models` route derivation from API roots or full protocol routes, malformed metadata rejection, and no editor mutation.

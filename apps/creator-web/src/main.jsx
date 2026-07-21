@@ -67,7 +67,15 @@ const ZH_HANS_COPY = {
   "Windows release": "Windows 发布", "Build Windows EXE": "生成 Windows EXE", "Release history": "发布历史",
   "No releases yet.": "尚无发布记录。", Download: "下载", "Delete release": "删除发布", Target: "目标平台",
   "WebView2 required": "需要 WebView2", "Review is optional": "审查为可选项", "Player validation must pass before release.": "发布前必须通过玩家端校验。",
-  Unavailable: "不可用", Available: "可用", Size: "大小", Created: "创建时间"
+  Unavailable: "不可用", Available: "可用", Size: "大小", Created: "创建时间",
+  "Image Endpoint": "图像端点", "Real generation, reference editing, inpainting, and outpainting.": "真实生图、参考图编辑、局部重绘与扩图。",
+  "Copy text connection": "复制文本端点连接", Credentials: "凭据", "Inherit text API key": "继承文本 API 密钥",
+  "Dedicated image API key": "独立图像 API 密钥", "Image API Key": "图像 API 密钥", "Saved; type to replace": "已保存；输入以替换",
+  "Saved in local config": "保存在本地配置中", "Hide image API key": "隐藏图像 API 密钥", "Show image API key": "显示图像 API 密钥", Clear: "清除",
+  "Declared operations": "声明的操作", Generate: "生成", "Edit / reference": "编辑 / 参考图", Inpaint: "局部重绘", Outpaint: "扩图",
+  "Generate variant": "生成变体", "Route resolution": "路由解析", "Auto detect": "自动检测", "API root": "API 根路径", "Full URL": "完整 URL",
+  "Validate image config": "验证图像配置", "Validation checks configuration without starting a paid generation.": "验证仅检查配置，不会启动付费生成。",
+  "Copied text endpoint connection settings": "已复制文本端点连接设置", "Image endpoint configuration is valid": "图像端点配置有效"
 };
 const AI_PROTOCOLS = [
   ["openai_chat", "OpenAI Chat"],
@@ -107,8 +115,15 @@ const AI_CAPABILITIES = [
 const IMAGE_PROTOCOLS = [
   ["openai_images", "OpenAI Images-compatible"],
   ["gemini_interactions", "Gemini Interactions"],
-  ["stability_v2", "Stability Stable Image"]
+  ["stability_v2", "Stability Stable Image"],
+  ["midjourney_proxy", "Midjourney Proxy / NewAPI"]
 ];
+const IMAGE_PROTOCOL_OPERATIONS = {
+  openai_images: ["generate", "edit", "inpaint", "outpaint"],
+  gemini_interactions: ["generate", "edit", "inpaint", "outpaint"],
+  stability_v2: ["generate", "edit", "inpaint", "outpaint"],
+  midjourney_proxy: ["generate", "edit"]
+};
 const IMAGE_OPERATIONS = [
   ["generate", "Generate"],
   ["edit", "Edit / reference"],
@@ -5682,34 +5697,37 @@ function HostedWorkspaceTools({ onRefresh, onStatus }) {
 }
 
 function ImageEndpointSettings({ aiSettings, imageSettings, apiKey, apiKeySaved, onChange, onApiKeyChange, onApiKeyClear, onStatus }) {
+  const locale = useUiLocale();
   const normalized = normalizeImageSettings(imageSettings);
   const [check, setCheck] = useState({ state: "idle", message: "" });
   const [keyVisible, setKeyVisible] = useState(false);
+  const operationOptions = IMAGE_OPERATIONS.filter(([id]) => IMAGE_PROTOCOL_OPERATIONS[normalized.protocol]?.includes(id));
   function update(key, value) { onChange(normalizeImageSettings({ ...normalized, [key]: value })); }
   function toggleOperation(operation) { const selected = new Set(normalized.capabilities); if (selected.has(operation)) selected.delete(operation); else selected.add(operation); update("capabilities", [...selected]); }
-  function copyTextEndpoint() { onChange(normalizeImageSettings({ ...normalized, baseUrl: aiSettings.baseUrl, routeMode: aiSettings.routeMode, credentialMode: "inherit_text" })); onStatus("Copied text endpoint connection settings"); }
+  function copyTextEndpoint() { onChange(normalizeImageSettings({ ...normalized, baseUrl: aiSettings.baseUrl, routeMode: aiSettings.routeMode, credentialMode: "inherit_text" })); onStatus(tr(locale, "Copied text endpoint connection settings")); }
   async function validate() {
     try {
       const result = await api("/api/ai/images/validate", { method: "POST", body: { config: buildImageEndpointConfig(normalized) } });
-      setCheck({ state: "success", message: `${result.capabilities.operations.join(", ")} · ${result.capabilities.outputFormats.join(", ")}` });
-      onStatus("Image endpoint configuration is valid");
+      const operations = result.capabilities.operations.map((operation) => tr(locale, IMAGE_OPERATIONS.find(([id]) => id === operation)?.[1] ?? operation));
+      setCheck({ state: "success", message: `${operations.join(", ")} · ${result.capabilities.outputFormats.map((format) => format.toUpperCase()).join(", ")}` });
+      onStatus(tr(locale, "Image endpoint configuration is valid"));
     } catch (error) { setCheck({ state: "error", message: error.message }); onStatus(error.message); }
   }
 
   return (
     <div className="subsection image-endpoint-settings">
-      <div className="section-heading-row"><div><h3>Image Endpoint</h3><p className="muted">Real generation, reference editing, inpainting, and outpainting.</p></div><button className="btn btn--ghost btn--compact" type="button" onClick={copyTextEndpoint}>Copy text connection</button></div>
+      <div className="section-heading-row"><div><h3>{tr(locale, "Image Endpoint")}</h3><p className="muted">{tr(locale, "Real generation, reference editing, inpainting, and outpainting.")}</p></div><button className="btn btn--ghost btn--compact" type="button" onClick={copyTextEndpoint}>{tr(locale, "Copy text connection")}</button></div>
       <div className="ai-channel-form">
-        <div className="ai-form-row"><label className="ai-field-label">Protocol</label><AiOptionGroup label="Protocol" value={normalized.protocol} options={IMAGE_PROTOCOLS} onChange={(value) => update("protocol", value)} /></div>
-        <div className="ai-form-row"><label className="ai-field-label" htmlFor="image-base-url">Base URL</label><input id="image-base-url" value={normalized.baseUrl} onChange={(event) => update("baseUrl", event.target.value)} placeholder="https://api.example.com/v1" /></div>
-        <div className="ai-form-row"><label className="ai-field-label" htmlFor="image-model-id">Model</label><input id="image-model-id" value={normalized.modelId} onChange={(event) => update("modelId", event.target.value)} placeholder="gpt-image-2, gemini-3.1-flash-image..." /></div>
-        <div className="ai-form-row"><label className="ai-field-label">Credentials</label><select value={normalized.credentialMode} onChange={(event) => update("credentialMode", event.target.value)}><option value="inherit_text">Inherit text API key</option><option value="dedicated">Dedicated image API key</option></select></div>
-        {normalized.credentialMode === "dedicated" && <div className="ai-form-row"><label className="ai-field-label" htmlFor="image-api-key">Image API Key</label><div className="secret-input"><input id="image-api-key" type={keyVisible ? "text" : "password"} value={apiKey} onChange={(event) => onApiKeyChange(event.target.value)} placeholder={apiKeySaved ? "Saved; type to replace" : "Saved in local config"} /><button className="secret-input__toggle" type="button" onClick={() => setKeyVisible((value) => !value)} aria-label={keyVisible ? "Hide image API key" : "Show image API key"}><span className="eye-mark" aria-hidden="true" /></button>{apiKeySaved && <button className="btn btn--ghost btn--compact" type="button" onClick={() => void onApiKeyClear()}>Clear</button>}</div></div>}
-        <div className="ai-form-row ai-form-row--stack"><span className="ai-field-label">Declared operations</span><div className="capability-grid">{IMAGE_OPERATIONS.map(([id, label]) => <button key={id} className={normalized.capabilities.includes(id) ? "capability-chip capability-chip--active" : "capability-chip"} type="button" onClick={() => toggleOperation(id)}>{label}</button>)}</div></div>
-        {normalized.protocol === "stability_v2" && <div className="ai-form-row"><label className="ai-field-label" htmlFor="image-variant">Generate variant</label><select id="image-variant" value={normalized.variant} onChange={(event) => update("variant", event.target.value)}><option value="core">Core</option><option value="ultra">Ultra</option></select></div>}
+        <AiOptionGroup label={tr(locale, "Protocol")} value={normalized.protocol} options={IMAGE_PROTOCOLS.map(([id, label]) => [id, tr(locale, label)])} onChange={(value) => update("protocol", value)} />
+        <div className="ai-form-row"><label className="ai-field-label" htmlFor="image-base-url">{tr(locale, "Base URL")}</label><input id="image-base-url" value={normalized.baseUrl} onChange={(event) => update("baseUrl", event.target.value)} placeholder={normalized.protocol === "midjourney_proxy" ? "https://api.example.com" : "https://api.example.com/v1"} /></div>
+        <div className="ai-form-row"><label className="ai-field-label" htmlFor="image-model-id">{tr(locale, "Model")}</label><input id="image-model-id" value={normalized.modelId} onChange={(event) => update("modelId", event.target.value)} placeholder={normalized.protocol === "midjourney_proxy" ? "MID_JOURNEY or NIJI_JOURNEY" : "gpt-image-2, gemini-3.1-flash-image..."} /></div>
+        <div className="ai-form-row"><label className="ai-field-label">{tr(locale, "Credentials")}</label><select value={normalized.credentialMode} onChange={(event) => update("credentialMode", event.target.value)}><option value="inherit_text">{tr(locale, "Inherit text API key")}</option><option value="dedicated">{tr(locale, "Dedicated image API key")}</option></select></div>
+        {normalized.credentialMode === "dedicated" && <div className="ai-form-row"><label className="ai-field-label" htmlFor="image-api-key">{tr(locale, "Image API Key")}</label><div className="secret-input"><input id="image-api-key" type={keyVisible ? "text" : "password"} value={apiKey} onChange={(event) => onApiKeyChange(event.target.value)} placeholder={tr(locale, apiKeySaved ? "Saved; type to replace" : "Saved in local config")} /><button className="secret-input__toggle" type="button" onClick={() => setKeyVisible((value) => !value)} aria-label={tr(locale, keyVisible ? "Hide image API key" : "Show image API key")}><span className="eye-mark" aria-hidden="true" /></button>{apiKeySaved && <button className="btn btn--ghost btn--compact" type="button" onClick={() => void onApiKeyClear()}>{tr(locale, "Clear")}</button>}</div></div>}
+        <div className="ai-form-row ai-form-row--stack"><span className="ai-field-label">{tr(locale, "Declared operations")}</span><div className="capability-grid">{operationOptions.map(([id, label]) => <button key={id} className={normalized.capabilities.includes(id) ? "capability-chip capability-chip--active" : "capability-chip"} type="button" onClick={() => toggleOperation(id)}>{tr(locale, label)}</button>)}</div></div>
+        {normalized.protocol === "stability_v2" && <div className="ai-form-row"><label className="ai-field-label" htmlFor="image-variant">{tr(locale, "Generate variant")}</label><select id="image-variant" value={normalized.variant} onChange={(event) => update("variant", event.target.value)}><option value="core">Core</option><option value="ultra">Ultra</option></select></div>}
       </div>
-      <details className="ai-advanced"><summary><span className="ai-field-label">Advanced</span><span>Route resolution</span></summary><div className="ai-advanced-grid"><AiOptionGroup label="Route mode" value={normalized.routeMode} options={AI_ROUTE_MODES} onChange={(value) => update("routeMode", value)} /></div></details>
-      <div className="action-row"><button className="btn btn--primary" type="button" onClick={() => void validate()}>Validate image config</button><span className={`endpoint-check endpoint-check--${check.state}`}>{check.message || "Validation checks configuration without starting a paid generation."}</span></div>
+      <details className="ai-advanced"><summary><span className="ai-field-label">{tr(locale, "Advanced")}</span><span>{tr(locale, "Route resolution")}</span></summary><div className="ai-advanced-grid"><AiOptionGroup label={tr(locale, "Route mode")} value={normalized.routeMode} options={AI_ROUTE_MODES.map(([id, label]) => [id, tr(locale, label)])} onChange={(value) => update("routeMode", value)} /></div></details>
+      <div className="action-row"><button className="btn btn--primary" type="button" onClick={() => void validate()}>{tr(locale, "Validate image config")}</button><span className={`endpoint-check endpoint-check--${check.state}`}>{check.message || tr(locale, "Validation checks configuration without starting a paid generation.")}</span></div>
     </div>
   );
 }
@@ -5985,7 +6003,7 @@ function SettingsPanel({ editor, aiSettings, apiKey, apiKeySaved, locale, locale
         </div>
       </div>
       <ImageEndpointSettings aiSettings={normalizedAiSettings} imageSettings={imageSettings} apiKey={imageApiKey} apiKeySaved={imageApiKeySaved} onChange={onImageSettingsChange} onApiKeyChange={onImageApiKeyChange} onApiKeyClear={onImageApiKeyClear} onStatus={onStatus} />
-      <div className="subsection">
+      <div className="subsection ai-endpoint-settings">
         <h3>{tr(locale, "AI Endpoint")}</h3>
         <div className="ai-channel-form">
           <div className="ai-form-row">
@@ -6872,13 +6890,15 @@ function defaultImageSettings() {
 
 function normalizeImageSettings(settings = {}) {
   const defaults = defaultImageSettings();
+  const protocol = IMAGE_PROTOCOLS.some(([id]) => id === settings.protocol) ? settings.protocol : defaults.protocol;
+  const supportedOperations = IMAGE_PROTOCOL_OPERATIONS[protocol] ?? IMAGE_PROTOCOL_OPERATIONS.openai_images;
   return {
     baseUrl: typeof settings.baseUrl === "string" ? settings.baseUrl : "",
-    protocol: IMAGE_PROTOCOLS.some(([id]) => id === settings.protocol) ? settings.protocol : defaults.protocol,
+    protocol,
     modelId: typeof settings.modelId === "string" ? settings.modelId : "",
     routeMode: AI_ROUTE_MODES.some(([id]) => id === settings.routeMode) ? settings.routeMode : defaults.routeMode,
     credentialMode: settings.credentialMode === "dedicated" ? "dedicated" : "inherit_text",
-    capabilities: Array.isArray(settings.capabilities) ? settings.capabilities.filter((id) => IMAGE_OPERATIONS.some(([operation]) => operation === id)) : defaults.capabilities,
+    capabilities: (Array.isArray(settings.capabilities) ? settings.capabilities : defaults.capabilities).filter((id) => supportedOperations.includes(id)),
     variant: typeof settings.variant === "string" && settings.variant.trim() ? settings.variant : defaults.variant
   };
 }

@@ -2625,6 +2625,10 @@ select {
   background: color-mix(in srgb, var(--surface) 66%, transparent);
 }
 
+.subsection > h3 + .ai-channel-form {
+  margin-top: 12px;
+}
+
 .ai-form-row {
   display: grid;
   grid-template-columns: minmax(8rem, 0.22fr) minmax(0, 1fr);

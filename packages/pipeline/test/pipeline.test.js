@@ -679,6 +679,8 @@ describe("image endpoint adapters", () => {
     assert.match(validation.config.endpoint, /%5Bredacted%5D/);
     assert.match(validation.routes.generate, /images\/generations/);
     assert.deepEqual(getImageEndpointCapabilities({ protocol: "gemini_interactions" }).operations, ["generate", "edit", "inpaint", "outpaint"]);
+    assert.deepEqual(getImageEndpointCapabilities({ protocol: "midjourney_proxy" }).operations, ["generate", "edit"]);
+    assert.match(validateImageEndpointConfig({ config: { protocol: "midjourney_proxy", endpoint: "https://mj.example", modelId: "MID_JOURNEY" } }).routes.generate, /mj\/submit\/imagine/);
     assert.throws(() => validateImageEndpointConfig({ config: { endpoint: "not-a-url", modelId: "image-model" } }), { code: "image_endpoint_url_invalid" });
   });
 
@@ -753,6 +755,47 @@ describe("image endpoint adapters", () => {
     assert.equal(form.get("left"), "128");
     assert.equal(form.get("right"), "64");
     assert.deepEqual(result.outputs[0].bytes, png);
+  });
+
+  it("submits and polls Midjourney Proxy tasks with reference images", async () => {
+    const calls = [];
+    const result = await executeImageOperation({
+      config: { protocol: "midjourney_proxy", endpoint: "https://mj.example/mj/submit/imagine", modelId: "niji" },
+      credentials: { apiKey: "mj-secret" },
+      request: { operation: "edit", prompt: "Restyle the court", negativePrompt: "letters", output: { format: "png", aspectRatio: "3:4" } },
+      inputs: [{ id: "source", bytes: png, mimeType: "image/png" }],
+      fetchImpl: async (url, init) => {
+        calls.push({ url, init });
+        if (url.endsWith("/mj/submit/imagine")) {
+          return new Response(JSON.stringify({ code: 1, result: "task-42" }), { status: 200 });
+        }
+        if (url.endsWith("/mj/task/task-42/fetch")) {
+          return new Response(JSON.stringify({ status: "SUCCESS", imageUrl: "https://cdn.example/result.png" }), { status: 200 });
+        }
+        return new Response(png, { status: 200, headers: { "content-type": "image/png" } });
+      }
+    });
+    const submitted = JSON.parse(calls[0].init.body);
+    assert.equal(calls[0].url, "https://mj.example/mj/submit/imagine");
+    assert.equal(calls[0].init.headers.authorization, "Bearer mj-secret");
+    assert.equal(submitted.botType, "NIJI_JOURNEY");
+    assert.match(submitted.prompt, /--ar 3:4 --no letters$/);
+    assert.match(submitted.base64Array[0], /^data:image\/png;base64,/);
+    assert.equal(calls[1].url, "https://mj.example/mj/task/task-42/fetch");
+    assert.equal(calls[2].url, "https://cdn.example/result.png");
+    assert.deepEqual(result.outputs[0].bytes, png);
+    assert.doesNotMatch(JSON.stringify(result), /mj-secret/);
+  });
+
+  it("rejects unsupported Midjourney mask operations before submission", async () => {
+    let called = false;
+    await assert.rejects(() => executeImageOperation({
+      config: { protocol: "midjourney_proxy", endpoint: "https://mj.example", modelId: "MID_JOURNEY" },
+      request: { operation: "inpaint", prompt: "Change the banner" },
+      inputs: [{ id: "source", bytes: png, mimeType: "image/png" }],
+      fetchImpl: async () => { called = true; }
+    }), { code: "image_capability_unsupported" });
+    assert.equal(called, false);
   });
 
   it("routes every Gemini operation through JSON image blocks", async () => {

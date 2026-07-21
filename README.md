@@ -170,7 +170,7 @@ The Creator UI has two host adapters. Local Web, Node ZIP, and Electron use `Htt
 | --- | --- |
 | `packages/core` | Headless deterministic runtime. No UI, IO, AI, reviewer, pipeline, or deployment code. |
 | `packages/reviewer` | Simulation, graph diagnostics, narrative coverage, endings analysis, and balance reporting. |
-| `packages/pipeline` | Content exchange, text proposal contracts, OpenAI Images-compatible/Gemini Interactions/Stability image adapters, capability negotiation, and feedback actions. |
+| `packages/pipeline` | Content exchange, text proposal contracts, OpenAI Images-compatible/Gemini Interactions/Stability/Midjourney Proxy image adapters, capability negotiation, and feedback actions. |
 | `packages/interface` | Creator workflow orchestration, local web surfaces, play-session helpers, diagnostics projection, and build assembly. |
 | `apps/creator-web` | Vite/React creator workspace. |
 | `apps/creator-server` | Shared HTTP/static host for local Web, Node ZIP, and Electron. |
@@ -200,7 +200,7 @@ Legacy `faith`, `people`, `military`, and `treasury` keys are accepted on import
 
 ReignsAgent is designed to work with AI systems as controlled collaborators. AI output should be explicit, reviewable, and validated before it becomes authored content.
 
-Image Endpoint settings are independent from the text endpoint, but may inherit its connection credentials. The first-party adapters expose only the operations and parameters they support: OpenAI Images-compatible routes use JSON generation and multipart edit requests, Gemini Interactions uses JSON plus inline image blocks, and Stability Stable Image uses operation-specific multipart routes. Generate, Edit, Inpaint, and Outpaint all produce one to four local draft candidates; Apply commits the selected candidate and binds it to a card or saves it as an unbound asset, while Discard removes the draft. Remote result URLs are downloaded before a response is returned and are never stored in project content.
+Image Endpoint settings are independent from the text endpoint, but may inherit its connection credentials. The first-party adapters expose only the operations and parameters they support: OpenAI Images-compatible routes use JSON generation and multipart edit requests, Gemini Interactions uses JSON plus inline image blocks, Stability Stable Image uses operation-specific multipart routes, and Midjourney Proxy/NewAPI submits asynchronous Imagine tasks and polls them to completion. Midjourney exposes Generate and reference Edit in Creator; task-context operations such as mask edits and outpaint remain hidden. Generate, Edit, Inpaint, and Outpaint produce local draft candidates where supported; Apply commits the selected candidate and binds it to a card or saves it as an unbound asset, while Discard removes the draft. Remote result URLs are downloaded before a response is returned and are never stored in project content.
 
 For content generation or repair:
 

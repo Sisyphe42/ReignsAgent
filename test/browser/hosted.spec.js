@@ -263,12 +263,26 @@ test("persists navigation density and shared interface language", async ({ page 
   await expect(page.getByRole("link", { name: "GitHub repository sisyphe42/ReignsAgent" })).toHaveAttribute("href", "https://github.com/Sisyphe42/ReignsAgent");
   await expect(page.getByLabel("Language")).toHaveValue("system");
   await expect(page.getByLabel("Language").locator('option[value="system"]')).toHaveText("Follow browser");
+  await expect(page.locator(".image-endpoint-settings").getByText("Protocol", { exact: true })).toHaveCount(1);
+  const aiEndpointHeadingGap = await page.locator(".ai-endpoint-settings").evaluate((section) => {
+    const heading = section.querySelector("h3").getBoundingClientRect();
+    const form = section.querySelector(".ai-channel-form").getBoundingClientRect();
+    return form.top - heading.bottom;
+  });
+  expect(aiEndpointHeadingGap).toBeGreaterThanOrEqual(10);
+  await page.locator(".image-endpoint-settings").getByRole("button", { name: "Midjourney Proxy / NewAPI" }).click();
+  await expect(page.locator(".image-endpoint-settings .capability-chip")).toHaveText(["Generate", "Edit / reference"]);
   await page.getByPlaceholder("Deck title").fill("Ready");
   await page.getByRole("button", { name: "Save project details" }).click();
   await page.getByLabel("Language").selectOption("zh-Hans");
   await expect(page.locator("html")).toHaveAttribute("lang", "zh-Hans");
   await expect(page.getByRole("heading", { name: "设置 / 流水线" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "关于 ReignsAgent" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "图像端点" })).toBeVisible();
+  await expect(page.locator(".image-endpoint-settings").getByText("协议", { exact: true })).toHaveCount(1);
+  await expect(page.locator(".image-endpoint-settings .capability-chip")).toHaveText(["生成", "编辑 / 参考图"]);
+  await expect(page.getByRole("button", { name: "复制文本端点连接" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "验证图像配置" })).toBeVisible();
   await expect(page.getByRole("link", { name: "打开玩家端预览" })).toBeVisible();
   await expect(page.getByRole("link", { name: "打开玩家端预览" })).toHaveAttribute("href", /locale=zh-Hans/);
   await page.getByRole("button", { name: "概览" }).click();
@@ -347,7 +361,7 @@ test("generates and applies an OPFS-backed image through the browser backend", a
   await page.locator("#image-base-url").fill(aiEndpoint);
   await page.locator("#image-model-id").fill("cors-image-model");
   await page.getByRole("button", { name: "Validate image config" }).click();
-  await expect(page.locator(".image-endpoint-settings .endpoint-check--success")).toContainText("generate");
+  await expect(page.locator(".image-endpoint-settings .endpoint-check--success")).toContainText("Generate");
 
   await page.getByRole("button", { name: /AI Assist/ }).click();
   await page.locator(".ai-edit-controls select").first().selectOption("generate");

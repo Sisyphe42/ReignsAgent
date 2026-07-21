@@ -1,9 +1,11 @@
-const IMAGE_PROTOCOLS = new Set(["openai_images", "gemini_interactions", "stability_v2"]);
+const IMAGE_PROTOCOLS = new Set(["openai_images", "gemini_interactions", "stability_v2", "midjourney_proxy"]);
 const IMAGE_OPERATIONS = new Set(["generate", "edit", "inpaint", "outpaint"]);
 const IMAGE_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
 const IMAGE_FORMATS = new Set(["png", "jpeg", "webp"]);
 const IMAGE_ROUTE_MODES = new Set(["auto", "api_root", "full_url"]);
 const MAX_OUTPUTS = 4;
+const MIDJOURNEY_POLL_INTERVAL_MS = 1500;
+const MIDJOURNEY_MAX_POLLS = 200;
 
 export class ImagePipelineError extends Error {
   constructor(message, code = "image_pipeline_error") {
@@ -49,6 +51,18 @@ const CAPABILITIES = Object.freeze({
     outputFormats: ["png", "jpeg", "webp"],
     maxOutputs: 1,
     parameters: ["negativePrompt", "aspectRatio", "seed", "stylePreset", "creativity", "outpaint"]
+  }),
+  midjourney_proxy: Object.freeze({
+    protocol: "midjourney_proxy",
+    operations: ["generate", "edit"],
+    inputMimeTypes: ["image/png", "image/jpeg", "image/webp"],
+    maxInputImages: 10,
+    maxInputBytes: 50 * 1024 * 1024,
+    generateWithReferences: false,
+    supportsMask: false,
+    outputFormats: ["png", "jpeg", "webp"],
+    maxOutputs: 1,
+    parameters: ["negativePrompt", "aspectRatio"]
   })
 });
 
@@ -172,11 +186,16 @@ export async function executeImageOperation({
   validateInputs(normalizedRequest, normalizedInputs, capabilities);
   const apiKey = normalizeString(credentials.apiKey) || "";
 
-  const raw = normalizedConfig.protocol === "openai_images"
-    ? await callOpenAiImages({ config: normalizedConfig, request: normalizedRequest, inputs: normalizedInputs, apiKey, fetchImpl, signal })
-    : normalizedConfig.protocol === "gemini_interactions"
-      ? await callGeminiImages({ config: normalizedConfig, request: normalizedRequest, inputs: normalizedInputs, apiKey, fetchImpl, signal })
-      : await callStabilityImages({ config: normalizedConfig, request: normalizedRequest, inputs: normalizedInputs, apiKey, fetchImpl, signal });
+  let raw;
+  if (normalizedConfig.protocol === "openai_images") {
+    raw = await callOpenAiImages({ config: normalizedConfig, request: normalizedRequest, inputs: normalizedInputs, apiKey, fetchImpl, signal });
+  } else if (normalizedConfig.protocol === "gemini_interactions") {
+    raw = await callGeminiImages({ config: normalizedConfig, request: normalizedRequest, inputs: normalizedInputs, apiKey, fetchImpl, signal });
+  } else if (normalizedConfig.protocol === "midjourney_proxy") {
+    raw = await callMidjourneyProxy({ config: normalizedConfig, request: normalizedRequest, inputs: normalizedInputs, apiKey, fetchImpl, signal });
+  } else {
+    raw = await callStabilityImages({ config: normalizedConfig, request: normalizedRequest, inputs: normalizedInputs, apiKey, fetchImpl, signal });
+  }
   const outputs = await materializeOutputs(raw.outputs, { fetchImpl, signal, defaultFormat: normalizedRequest.output.format });
   if (outputs.length === 0) {
     throw new ImagePipelineError("Image endpoint returned no images", "image_empty_response");
@@ -308,6 +327,43 @@ async function callStabilityImages({ config, request, inputs, apiKey, fetchImpl,
   const payload = await readJsonResponse(response, "Stability image");
   const candidates = [payload.image, payload.data, ...(Array.isArray(payload.artifacts) ? payload.artifacts.map((entry) => entry?.base64) : [])].filter(Boolean);
   return { url, outputs: candidates.map((base64) => ({ base64, mimeType: mimeForFormat(request.output.format) })), usage: payload.usage };
+}
+
+async function callMidjourneyProxy({ config, request, inputs, apiKey, fetchImpl, signal }) {
+  const url = resolveImageUrl(config.endpoint, "/mj/submit/imagine", config.routeMode);
+  const headers = { "content-type": "application/json", accept: "application/json" };
+  if (apiKey) headers.authorization = `Bearer ${apiKey}`;
+  const response = await providerFetch(fetchImpl, url, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(compact({
+      prompt: buildMidjourneyPrompt(request),
+      botType: normalizeMidjourneyBotType(config.modelId),
+      base64Array: inputs.filter((entry) => entry.role !== "mask").map((entry) => `data:${entry.mimeType};base64,${bytesToBase64(entry.bytes)}`)
+    })),
+    signal
+  });
+  const submitted = await readJsonResponse(response, "Midjourney submit");
+  const immediateOutputs = findMidjourneyImageUrls(submitted).map((imageUrl) => ({ url: imageUrl }));
+  if (immediateOutputs.length) return { url, outputs: immediateOutputs };
+  if (Number(submitted.code ?? 1) !== 1) {
+    throw new ImagePipelineError(normalizeString(submitted.description) || "Midjourney task submission failed", "image_task_failed");
+  }
+  const taskId = normalizeString(submitted.result ?? submitted.taskId ?? submitted.id);
+  if (!taskId) throw new ImagePipelineError("Midjourney endpoint did not return a task id", "image_endpoint_parse_error");
+  const taskUrl = resolveMidjourneyTaskUrl(url, taskId);
+  for (let attempt = 0; attempt < MIDJOURNEY_MAX_POLLS; attempt += 1) {
+    const taskResponse = await providerFetch(fetchImpl, taskUrl, { method: "GET", headers: apiKey ? { accept: "application/json", authorization: `Bearer ${apiKey}` } : { accept: "application/json" }, signal });
+    const task = await readJsonResponse(taskResponse, "Midjourney task");
+    const status = normalizeString(task.status ?? task.state)?.toUpperCase() || "";
+    const outputs = findMidjourneyImageUrls(task).map((imageUrl) => ({ url: imageUrl }));
+    if (outputs.length && (!status || ["SUCCESS", "COMPLETED", "DONE"].includes(status))) return { url, outputs };
+    if (["FAIL", "FAILURE", "FAILED", "CANCEL", "CANCELLED", "CANCELED"].includes(status)) {
+      throw new ImagePipelineError(normalizeString(task.failReason ?? task.description ?? task.error) || "Midjourney task failed", "image_task_failed");
+    }
+    if (attempt < MIDJOURNEY_MAX_POLLS - 1) await waitForImageTask(MIDJOURNEY_POLL_INTERVAL_MS, signal);
+  }
+  throw new ImagePipelineError("Midjourney task timed out", "image_task_timeout");
 }
 
 async function materializeOutputs(outputs, { fetchImpl, signal, defaultFormat }) {
@@ -449,12 +505,65 @@ function imageRoutes(config) {
   if (config.protocol === "gemini_interactions") {
     return Object.fromEntries([...IMAGE_OPERATIONS].map((operation) => [operation, resolveImageUrl(config.endpoint, "/interactions", config.routeMode)]));
   }
+  if (config.protocol === "midjourney_proxy") {
+    return Object.fromEntries(CAPABILITIES.midjourney_proxy.operations.map((operation) => [operation, resolveImageUrl(config.endpoint, "/mj/submit/imagine", config.routeMode)]));
+  }
   return {
     generate: resolveImageUrl(config.endpoint, `/stable-image/generate/${config.variant}`, config.routeMode),
     edit: resolveImageUrl(config.endpoint, "/stable-image/edit/inpaint", config.routeMode),
     inpaint: resolveImageUrl(config.endpoint, "/stable-image/edit/inpaint", config.routeMode),
     outpaint: resolveImageUrl(config.endpoint, "/stable-image/edit/outpaint", config.routeMode)
   };
+}
+
+function resolveMidjourneyTaskUrl(submitUrl, taskId) {
+  const route = `/mj/task/${encodeURIComponent(taskId)}/fetch`;
+  const url = new URL(submitUrl);
+  if (!/\/mj\/submit\/imagine\/?$/i.test(url.pathname)) {
+    throw new ImagePipelineError("Midjourney submit URL must end with /mj/submit/imagine so task results can be fetched", "image_endpoint_url_invalid");
+  }
+  url.pathname = url.pathname.replace(/\/mj\/submit\/imagine\/?$/i, route);
+  return url.toString();
+}
+
+function buildMidjourneyPrompt(request) {
+  let prompt = request.prompt;
+  if (request.output.aspectRatio && !/(?:^|\s)--ar(?:\s|$)/i.test(prompt)) prompt += ` --ar ${request.output.aspectRatio}`;
+  if (request.negativePrompt && !/(?:^|\s)--no(?:\s|$)/i.test(prompt)) prompt += ` --no ${request.negativePrompt}`;
+  return prompt;
+}
+
+function normalizeMidjourneyBotType(value) {
+  const normalized = normalizeString(value) || "MID_JOURNEY";
+  if (/^(?:mj|midjourney|mid_journey)$/i.test(normalized)) return "MID_JOURNEY";
+  if (/^(?:niji|niji_journey)$/i.test(normalized)) return "NIJI_JOURNEY";
+  return normalized;
+}
+
+function findMidjourneyImageUrls(payload) {
+  const urls = new Set();
+  const collect = (value) => {
+    if (typeof value === "string") {
+      if (/^https?:\/\//i.test(value)) urls.add(value);
+      return;
+    }
+    if (Array.isArray(value)) { value.forEach(collect); return; }
+    if (!isRecord(value)) return;
+    for (const key of ["imageUrl", "image_url", "url", "result", "images", "imageUrls", "image_urls", "data"]) {
+      if (value[key] !== undefined) collect(value[key]);
+    }
+  };
+  collect(payload);
+  return [...urls];
+}
+
+function waitForImageTask(ms, signal) {
+  if (signal?.aborted) return Promise.reject(new ImagePipelineError("Image request was cancelled", "image_request_cancelled"));
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => { signal?.removeEventListener("abort", onAbort); resolve(); }, ms);
+    const onAbort = () => { clearTimeout(timer); reject(new ImagePipelineError("Image request was cancelled", "image_request_cancelled")); };
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
 function redactImageRequest(request) {
