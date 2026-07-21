@@ -522,3 +522,40 @@ Diagnosed PR 25 Hosted smoke failures, made OPFS assertions tolerate recoverable
 ### Next Steps
 
 - None - task complete
+
+
+## Session 16: Publish ReignsAgent v0.1.0
+
+**Date**: 2026-07-21
+**Task**: Publish ReignsAgent v0.1.0
+**Branch**: `master`
+
+### Summary
+
+Prepared and published the first repository release: stabilized Hosted navigation, normalized version and legal metadata, removed the vulnerable Forge toolchain, added verified cross-platform ZIP assembly and checksums, merged PR #26, configured repository security, published v0.1.0, and smoke-tested downloaded Node, Electron, and generated Windows Project player artifacts.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f482542` | (see git log) |
+| `0fb4e67` | (see git log) |
+| `7c11bc4` | (see git log) |
+| `ad53e69` | (see git log) |
+| `6c0251f` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

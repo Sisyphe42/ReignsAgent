@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 15
+- **Total Sessions**: 16
 - **Last Active**: 2026-07-21
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~524 | Active |
+| `journal-1.md` | ~561 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 16 | 2026-07-21 | Publish ReignsAgent v0.1.0 | `f482542`, `0fb4e67`, `7c11bc4`, `ad53e69`, `6c0251f` | `master` |
 | 15 | 2026-07-21 | Stabilize hosted CI | `d39f040`, `2ae2f2e` | `feature/project-windows-release` |
 | 14 | 2026-07-16 | Fix Phantom utility contrast | `02276ef` | `feature/project-windows-release` |
 | 13 | 2026-07-16 | Release player motion and project links | `43bd3cb` | `feature/project-windows-release` |
