@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 14
-- **Last Active**: 2026-07-16
+- **Total Sessions**: 15
+- **Last Active**: 2026-07-21
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~490 | Active |
+| `journal-1.md` | ~524 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 15 | 2026-07-21 | Stabilize hosted CI | `d39f040`, `2ae2f2e` | `feature/project-windows-release` |
 | 14 | 2026-07-16 | Fix Phantom utility contrast | `02276ef` | `feature/project-windows-release` |
 | 13 | 2026-07-16 | Release player motion and project links | `43bd3cb` | `feature/project-windows-release` |
 | 12 | 2026-07-15 | Add Windows player skins, records, and transitions | `e5e4f92` | `feature/project-windows-release` |

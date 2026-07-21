@@ -488,3 +488,37 @@ Separated raised-paper text colors from the Phantom drawer palette, visually ver
 ### Next Steps
 
 - None - task complete
+
+
+## Session 15: Stabilize hosted CI
+
+**Date**: 2026-07-21
+**Task**: Stabilize hosted CI
+**Branch**: `feature/project-windows-release`
+
+### Summary
+
+Diagnosed PR 25 Hosted smoke failures, made OPFS assertions tolerate recoverable incomplete project entries, waited for floating-rail scroll anchoring before geometry checks, and verified all local and GitHub checks.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d39f040` | (see git log) |
+| `2ae2f2e` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
