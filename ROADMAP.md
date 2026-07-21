@@ -43,6 +43,7 @@ Recent merged work established the baseline that future phases should preserve:
 - AI entry points should be contextual: selected cards, graph nodes/edges, review issue cards, and overview project state open the same action popover/drawer with context summary, recommended actions, optional prompt, draft preview, and apply controls.
 - Review should become the strongest AI-assisted diagnostics surface: coverage matrices, ending reachability, gauge pressure, issue cards, and repair proposals should be visible before AI generates fixes.
 - AI work needs explicit interaction states. Simple edits should show inline loading; longer edits should show progress stages such as context, request, model response, parse, validate, and ready. User-facing errors should offer retry; raw call details belong in Dev Mode logs.
+- Image Endpoint execution now supports capability-driven Generate, Edit, Inpaint, and Outpaint across OpenAI Images-compatible, Gemini Interactions, and Stability Stable Image adapters. Generated binaries remain drafts until explicit Apply, are committed by content hash, and stay wholly outside Core and deployable player AI dependencies.
 
 ## Data Direction
 - Do not migrate the content schema during the docs-first phase.

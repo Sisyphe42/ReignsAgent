@@ -5,6 +5,7 @@ import { strFromU8, unzipSync } from "fflate";
 
 let aiServer;
 let aiEndpoint;
+const tinyPngBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
 let productVersion;
 
 test.beforeAll(async () => {
@@ -15,6 +16,10 @@ test.beforeAll(async () => {
     response.setHeader("access-control-allow-methods", "GET,POST,OPTIONS");
     if (request.method === "OPTIONS") { response.writeHead(204); response.end(); return; }
     response.setHeader("content-type", "application/json");
+    if (request.url.includes("/images/generations") || request.url.includes("/images/edits")) {
+      response.end(JSON.stringify({ data: [{ b64_json: tinyPngBase64 }] }));
+      return;
+    }
     response.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ proposals: [] }) } }] }));
   });
   await new Promise((resolve) => aiServer.listen(0, "127.0.0.1", resolve));
@@ -334,6 +339,43 @@ test("validates a direct CORS AI endpoint through the browser backend", async ({
   await expect(page.getByLabel("Model ID")).toHaveValue("cors-smoke-model");
   await page.getByRole("button", { name: "Validate endpoint" }).click();
   await expect(page.locator(".endpoint-check--success")).toContainText("validated", { timeout: 10_000 });
+});
+
+test("generates and applies an OPFS-backed image through the browser backend", async ({ page }) => {
+  await openHosted(page);
+  await page.getByRole("button", { name: /Settings/ }).click();
+  await page.locator("#image-base-url").fill(aiEndpoint);
+  await page.locator("#image-model-id").fill("cors-image-model");
+  await page.getByRole("button", { name: "Validate image config" }).click();
+  await expect(page.locator(".image-endpoint-settings .endpoint-check--success")).toContainText("generate");
+
+  await page.getByRole("button", { name: /AI Assist/ }).click();
+  await page.locator(".ai-edit-controls select").first().selectOption("generate");
+  await page.locator(".ai-edit-controls textarea").fill("A stark ink portrait for the opening court card");
+  await page.getByRole("button", { name: "Build draft" }).click();
+  await expect(page.getByRole("heading", { name: "Generated images" })).toBeVisible({ timeout: 10_000 });
+  await expect(page.locator(".image-result img")).toBeVisible();
+  await page.getByRole("button", { name: "Apply selected image" }).click();
+  await expect(page.locator(".stage__status strong")).toContainText("Image asset applied");
+  await expect.poll(() => page.evaluate(async () => {
+    const root = await navigator.storage.getDirectory();
+    const dataRoot = await root.getDirectoryHandle("ReignsAgentData");
+    const config = await (await dataRoot.getFileHandle("config.toml")).getFile();
+    const active = (await config.text()).match(/activeProjectId\s*=\s*"([^"]+)"/)?.[1];
+    if (!active) return false;
+    const project = await (await dataRoot.getDirectoryHandle("projects")).getDirectoryHandle(active);
+    const content = await (await project.getFileHandle("content.json")).getFile();
+    return /assets\/generated\/[a-f0-9]{64}\.png/.test(await content.text());
+  })).toBe(true);
+
+  await page.locator(".ai-edit-controls select").first().selectOption("inpaint");
+  await expect(page.getByLabel("Inpaint mask canvas")).toBeVisible();
+  await page.locator(".ai-edit-controls select").first().selectOption("outpaint");
+  await page.locator('.outpaint-grid label', { hasText: "left" }).locator("input").fill("32");
+  await page.getByRole("button", { name: "Build draft" }).click();
+  await expect(page.getByRole("heading", { name: "Generated images" })).toBeVisible({ timeout: 10_000 });
+  await page.getByRole("button", { name: "Discard draft" }).click();
+  await expect(page.locator(".stage__status strong")).toContainText("Image draft discarded");
 });
 
 async function openHosted(page) {

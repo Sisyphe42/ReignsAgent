@@ -5484,6 +5484,29 @@ summary:focus-visible {
   resize: vertical;
 }
 
+.section-heading-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+.section-heading-row h3, .section-heading-row p { margin-top: 0; }
+.image-operation-controls { display: grid; gap: .75rem; padding: .85rem; border: 1px solid var(--line); border-radius: 12px; background: color-mix(in srgb, var(--panel) 88%, var(--accent) 12%); }
+.mask-editor { display: grid; gap: .5rem; }
+.mask-editor canvas { width: min(100%, 360px); aspect-ratio: 1; border: 1px solid var(--line); border-radius: 10px; background: white; touch-action: none; cursor: crosshair; }
+.outpaint-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .5rem; }
+.outpaint-grid label { display: grid; gap: .25rem; text-transform: capitalize; font-size: .78rem; color: var(--muted); }
+.image-result-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin-bottom: 1rem; }
+.image-comparison { display: flex; align-items: center; gap: 16px; margin-bottom: 14px; color: var(--muted); }
+.image-comparison figure { margin: 0; }
+.image-comparison img { width: 120px; max-height: 150px; object-fit: contain; border-radius: 8px; }
+.image-comparison figcaption { margin-top: 5px; font-size: 12px; text-align: center; }
+.image-result { display: grid; gap: .5rem; padding: .65rem; border: 1px solid var(--line); border-radius: 12px; cursor: pointer; }
+.image-result--selected { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 28%, transparent); }
+.image-result img { width: 100%; aspect-ratio: 3 / 4; object-fit: contain; border-radius: 8px; background: var(--surface); }
+.image-result span { color: var(--muted); font-size: .78rem; }
+.image-endpoint-settings .ai-option-group { min-width: 0; }
+
+@media (max-width: 720px) {
+  .outpaint-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .section-heading-row { align-items: stretch; flex-direction: column; }
+}
+
 .ai-request-source,
 .ai-build-error {
   display: flex;

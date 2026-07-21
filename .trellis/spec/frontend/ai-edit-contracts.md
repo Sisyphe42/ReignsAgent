@@ -5,8 +5,8 @@
 ### 1. Scope / Trigger
 
 - Trigger: AI Assist spans Pipeline request/proposal contracts, Interface editor orchestration, local API routes, and Creator UI state.
-- Scope: local proposal generation, optional creator-configured text endpoint execution, review repair proposals, visual request previews, patch preview, contextual creator entry points, and atomic apply.
-- Boundary: no provider SDKs, no secret storage, no binary image persistence, no provider calls in Core/Reviewer/apply/player builds, and no Core or Reviewer mutation.
+- Scope: local proposal generation, optional creator-configured text endpoint execution, review repair proposals, real image generation/edit/inpaint/outpaint drafts, patch/image preview, contextual creator entry points, and atomic apply.
+- Boundary: image execution and binary persistence are Pipeline/Creator/Workspace concerns only. Provider calls, credentials, draft tooling, and AI dependencies never enter Core, Reviewer, or deployable player code.
 
 ### 2. Signatures
 
@@ -69,7 +69,10 @@
   - `setChoiceEffects { cardId, choiceId, effects }`
   - `setMetadata { metadata }`
   - `upsertAsset { asset }`
-- Visual modes are request previews. They may create JSON asset placeholders but must not generate, upload, download, or inspect binary files in this pass.
+- Image operations use `ImageEndpointConfig`, `ImageEndpointCapabilities`, `ImageOperationRequest`, `ImageDraftResult`, and `ImageAssetOutput`. `generate_asset` remains a compatibility alias for `generate`; `analyze_asset` retains the text-side visual analysis flow.
+- Built-in image protocols are `openai_images`, `gemini_interactions`, and `stability_v2`. Capability negotiation controls operations, reference count/MIME, mask UI, output count/formats, dimensions, and provider-specific fields.
+- Image routes are `POST /api/ai/images/validate`, `/stage`, `/run`, `/apply`, `DELETE /api/ai/images/drafts/:id`, and `GET /api/project-assets/*`. Validation is structural and does not start paid generation.
+- `/run` localizes base64, signed-URL, and binary results into draft storage. `/apply` alone content-addresses the selected output and performs `upsertAsset`; `/discard` removes draft outputs. No temporary remote URL or base64 payload may enter `content.json`.
 - Contextual actions in Overview, Content, Story, and Review are routing helpers only. They may enable AI Assist, open preflight, open the AI Assist panel, and prefill mode/instruction/target fields, but must not call providers or mutate cards directly.
 - Preflight request fields:
   - `source`: creator surface label such as `Overview`, `Content`, `Story`, or `Review`
@@ -90,13 +93,17 @@
 - Configured endpoint HTTP/network failure -> API JSON error with endpoint error code; no local fallback.
 - Configured endpoint malformed JSON, missing `proposals`, unsupported patch, or missing patch target -> `PipelineError`; active editor must remain unchanged.
 - Configured endpoint model-listing HTTP/network failure or malformed model payload -> API JSON error with endpoint error code; active editor must remain unchanged.
+- Unsupported image operation/parameter/input MIME/count -> stable `image_*` error before provider execution; active editor and asset bindings remain unchanged.
+- Image endpoint failure or cancellation -> preserve creator inputs and canvas state, do not commit or bind an asset, and never include credentials or raw sensitive provider responses in logs or responses.
+- Image draft fingerprint differs from active editor -> `image_draft_stale`; the committed file and editor binding remain unchanged.
 
 ### 5. Good/Base/Bad Cases
 
 - Good: Creator runs Review, builds `repair_diagnostics`, previews patches, selects one proposal, and apply replaces the editor through the normal mutation path.
 - Base: Creator builds `generate_cards`; deterministic stub cards have unique ids and exactly left/right choices.
 - Base: Creator configures a text endpoint; provider proposals are validated and previewed before explicit apply.
-- Base: Creator builds `generate_asset` or `analyze_asset`; UI shows request context and proposal preview without provider execution.
+- Base: Creator builds `generate_asset`; it maps to real `generate`, shows one or more localized candidates, and changes no content until explicit Apply. `analyze_asset` continues to show its existing analysis proposal.
+- Good: Creator edits, masks, or expands an existing card image; only controls supported by the selected adapter are shown, the selected candidate is committed by hash, and undo can restore the prior binding.
 - Base: Creator triggers an Overview, Content, Story, or Review contextual action; the preflight surface opens with action, context, mode, output count, and editable prompt.
 - Base: Creator builds from preflight; the AI Assist panel opens, runs staged progress, previews proposals, and still requires explicit proposal apply.
 - Bad: Creator applies an old plan after editing content; apply is rejected as stale and no content is replaced.
@@ -110,7 +117,7 @@
   - Generated card proposals are deterministic and player-shape compatible.
   - Repair proposals cover low coverage, unreachable gates, missing tag producers, stalled runs, and dominant gauge pressure where unambiguous.
   - Patch application validates output and rejects unsupported operations.
-  - Visual request modes return preview contracts without provider calls.
+  - Image adapters cover OpenAI JSON/multipart, Gemini inline image blocks, Stability operation routes, capability rejection, reference/mask/outpaint parameters, base64/URL/binary localization, and secret-safe errors.
   - Endpoint planning covers legacy and canonical OpenAI protocol values, route resolution, JSON-mode fallback, malformed output, patch prevalidation, and secret redaction.
   - Endpoint planning asserts provider request prompts include the ReignsAgent professional editing rules, not only generic JSON formatting instructions.
   - Endpoint validation and model listing cover redacted credentials, `/models` route derivation from API roots or full protocol routes, malformed metadata rejection, and no editor mutation.
@@ -120,10 +127,12 @@
   - Endpoint validation and model listing pass through normalized config plus transient credentials without returning secrets.
   - Apply selected proposals only.
   - Stale fingerprints and invalid patches reject without mutating the editor.
+  - Image draft creation carries the active bundle fingerprint and explicit image apply performs only a validated `upsertAsset`.
 - Integration tests:
   - `/api/ai/edit/plan` and `/api/ai/edit/apply` cover card generation, endpoint execution, repair routing, visual previews, and stale-plan rejection.
   - `/api/ai/edit/validate` and `/api/ai/edit/models` cover real local API routes with a mock endpoint, redaction, and no editor mutation.
   - `/api/connector/plan` remains compatible.
+  - Image API routes cover all four operations, stage/run/apply/discard, final asset serving, failure immutability, and generated-asset collection by player builds.
 
 ### 7. Wrong vs Correct
 

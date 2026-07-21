@@ -16,6 +16,7 @@
 - `GET/POST /api/projects`
 - `POST /api/projects/:id/open`
 - `PATCH/DELETE /api/projects/:id`
+- `workspace.readActiveProjectAsset(uri)` / `stageActiveProjectAsset(...)` / `commitActiveProjectAsset(uri)` / `discardActiveProjectAssetDraft(id)`
 
 ### 3. Contracts
 
@@ -29,6 +30,9 @@
 - Browser APIs stay in `apps/creator-web/src/opfs-workspace.js`; `packages/workspace` exports only host-neutral contracts and the Node filesystem adapter.
 - Hosted Workspace imports validate the full snapshot before mutation, map imported project ids into active/recent config state, restore project-local workspace state, and omit `ai.apiKey` entirely unless explicitly included.
 - Nonessential client-local UI preferences may use `localStorage` only through exception-safe helpers. Unavailable or throwing storage reads use product defaults, and failed writes/removals are silent no-ops that must not block Creator startup or interaction.
+- Image inputs and outputs accept only PNG, JPEG, or WebP and share a 50 MiB request ceiling. Drafts live below `assets/.drafts/<draft-id>/`; apply writes immutable `assets/generated/<sha256>.<ext>` files without overwriting an existing content-addressed file.
+- Node and OPFS adapters expose equivalent binary methods. Hosted resolves project images asynchronously to Object URLs, caches them for the active project, and revokes them when the editor/project is replaced. Base64 image data never enters `content.json`.
+- `ai.image` is optional and defaults to unconfigured. It contains endpoint metadata plus `credentialMode: inherit_text | dedicated`; API projections return only `hasApiKey`, while raw text/image keys remain excluded from ordinary backups, project exports, player builds, and logs.
 
 ### 4. Validation & Error Matrix
 
@@ -39,6 +43,8 @@
 - Failed editor mutation -> do not enqueue or write a replacement bundle.
 - Delete active project -> select the newest remaining project; deleting the last project creates a blank project.
 - Missing or throwing `localStorage` -> default the rail to expanded and pinned; keep current-session React state interactive without reporting a persistence error.
+- Unsafe asset URI/draft id/file name -> path-specific project asset error; never resolve outside the active project.
+- Unsupported/mismatched MIME or aggregate size above 50 MiB -> reject before write/provider execution. Failed generation does not mutate `content.json` or existing asset bindings.
 
 ### 5. Good/Base/Bad Cases
 
@@ -56,6 +62,7 @@
 - Node ZIP and packaged Electron smoke tests must launch twice and assert state created by the first process is restored by the second.
 - Runtime tests assert `packages/workspace/src` is staged and no `.env`, tests, frontend source, cache, credentials, or `node_modules` enter release output.
 - Hosted browser tests inject both a throwing `window.localStorage` accessor and throwing storage methods, then assert Creator reaches its loaded state with default rail state and working rail controls.
+- Workspace and Hosted tests cover binary stage/read/commit/discard, traversal and MIME rejection, content-hash naming, OPFS result preview/application, and Object URL cleanup.
 
 ### 7. Wrong vs Correct
 
