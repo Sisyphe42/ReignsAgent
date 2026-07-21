@@ -18,15 +18,15 @@ jobs:
     name: Cross-platform Node Creator
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
       - run: npm ci
       - run: npm run build:release
       - run: npm run verify:release-artifacts
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ReignsAgent-node
           path: dist/reigns-agent-*.zip
@@ -56,8 +56,8 @@ jobs:
             arch: x64
             artifact: ReignsAgent-linux-x64
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -86,7 +86,7 @@ jobs:
         if: matrix.platform == 'linux'
         run: xvfb-run -a npm run test:desktop:packaged -- ${{ matrix.platform }} ${{ matrix.arch }} apps/desktop-electron/out/make
       - run: node scripts/verify-desktop-artifacts.mjs --platform ${{ matrix.platform }} --root apps/desktop-electron/out/make
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact }}
           path: apps/desktop-electron/out/make/zip/${{ matrix.platform }}/${{ matrix.arch }}/ReignsAgent-${{ matrix.platform }}-${{ matrix.arch }}-*.zip
@@ -97,19 +97,19 @@ jobs:
     needs: [build-node, make-desktop]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
       - run: npm ci
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         with:
           pattern: ReignsAgent-*
           path: downloaded-assets
           merge-multiple: true
       - run: node scripts/assemble-release.mjs --input downloaded-assets --output release-assets
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ReignsAgent-release-assets
           path: |
@@ -125,13 +125,13 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
       - run: npm ci
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         with:
           name: ReignsAgent-release-assets
           path: release-assets
