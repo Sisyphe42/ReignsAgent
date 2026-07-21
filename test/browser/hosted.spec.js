@@ -193,6 +193,13 @@ test("persists navigation density and shared interface language", async ({ page 
   await page.mouse.move(standardHoverIcon.x + standardHoverIcon.width / 2, standardHoverIcon.y + standardHoverIcon.height / 2);
   await expect(page.locator(".rail")).toHaveCSS("width", "236px");
   await expect.poll(() => page.locator(".rail").evaluate((rail) => rail.scrollTop)).toBe(0);
+  await expect.poll(async () => {
+    const revealed = await firstItem.locator(".rail__icon").boundingBox();
+    return Math.max(
+      Math.abs(revealed.x - iconBeforeReveal.x),
+      Math.abs(revealed.y - iconBeforeReveal.y)
+    );
+  }).toBeLessThan(1);
   const iconAfterReveal = await firstItem.locator(".rail__icon").boundingBox();
   expect(iconAfterReveal.height).toBe(iconBeforeReveal.height);
   expect(Math.abs(iconAfterReveal.x - iconBeforeReveal.x)).toBeLessThan(1);
