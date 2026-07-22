@@ -36,6 +36,13 @@ test("guides the complete workflow once and replays it from Settings", async ({ 
   await expect(tour.getByRole("heading", { name: "Tell a story, one decision at a time" })).toBeVisible();
   await expect(tour.locator(".onboarding-tour__progress")).toHaveText("1/11");
   await expect(tour.locator(".onboarding-tour__skip kbd")).toHaveText("Esc");
+  const actionsBox = await tour.locator(".onboarding-tour__actions").boundingBox();
+  const skipBox = await tour.locator(".onboarding-tour__skip").boundingBox();
+  const progressBox = await tour.locator(".onboarding-tour__progress").boundingBox();
+  const navBox = await tour.locator(".onboarding-tour__nav").boundingBox();
+  expect(skipBox.x).toBeLessThan(progressBox.x);
+  expect(progressBox.x).toBeLessThan(navBox.x);
+  expect(Math.abs(progressBox.x + progressBox.width / 2 - (actionsBox.x + actionsBox.width / 2))).toBeLessThan(2);
   await tour.getByRole("button", { name: /Hear them out/ }).click();
   await expect(tour.locator(".onboarding-demo")).toHaveClass(/onboarding-demo--right/);
   await tour.getByRole("button", { name: /Turn them away/ }).click();
@@ -83,8 +90,19 @@ test("guides the complete workflow once and replays it from Settings", async ({ 
       await expect(page.locator('[data-onboarding-link="github"]')).toBeVisible();
       await expect(tour.getByRole("link", { name: /Open GitHub/ })).toHaveAttribute("href", "https://github.com/Sisyphe42/ReignsAgent");
       await expect(tour.locator(".onboarding-tour__target-blocker")).toHaveCount(0);
+      await expectTargetCentered(page, "about-github");
+    }
+    if (title === "Come back anytime") {
+      await expectTargetCentered(page, "onboarding-replay");
     }
   }
+
+  await tour.getByRole("button", { name: "Back" }).click();
+  await expect(tour.getByRole("heading", { name: "Keep exploring on GitHub" })).toBeVisible();
+  await expectTargetCentered(page, "about-github");
+  await tour.getByRole("button", { name: "Next" }).click();
+  await expect(tour.getByRole("heading", { name: "Come back anytime" })).toBeVisible();
+  await expectTargetCentered(page, "onboarding-replay");
 
   await tour.getByRole("button", { name: "Finish" }).click();
   await expect(tour).toHaveCount(0);
@@ -689,4 +707,12 @@ async function configContains(page, expected) {
     const config = await (await dataRoot.getFileHandle("config.toml")).getFile();
     return (await config.text()).includes(text);
   }, expected);
+}
+
+async function expectTargetCentered(page, targetName) {
+  const target = page.locator(`[data-onboarding-target="${targetName}"]`);
+  await expect.poll(async () => target.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    return Math.abs(rect.top + rect.height / 2 - window.innerHeight / 2);
+  })).toBeLessThan(3);
 }

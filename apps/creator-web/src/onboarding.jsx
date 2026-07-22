@@ -176,6 +176,23 @@ function sameRect(left, right) {
   return ["top", "left", "right", "bottom"].every((key) => Math.abs(left[key] - right[key]) < 0.5);
 }
 
+function reserveTargetScrollRoom(target) {
+  if (!target) return () => {};
+  const body = document.body;
+  const previousPaddingBottom = body.style.paddingBottom;
+  const targetRect = target.getBoundingClientRect();
+  const targetCenter = window.scrollY + targetRect.top + targetRect.height / 2;
+  const desiredDocumentHeight = targetCenter + window.innerHeight / 2 + 16;
+  const missingRoom = desiredDocumentHeight - document.documentElement.scrollHeight;
+  if (missingRoom > 0) {
+    const currentPadding = Number.parseFloat(window.getComputedStyle(body).paddingBottom) || 0;
+    body.style.paddingBottom = `${Math.ceil(currentPadding + missingRoom)}px`;
+  }
+  return () => {
+    body.style.paddingBottom = previousPaddingBottom;
+  };
+}
+
 function getCardLayout(rect, height, wide = false) {
   const margin = 16;
   const gap = 16;
@@ -274,8 +291,10 @@ export function OnboardingTour({ locale, steps, stepIndex, layoutKey, onStepChan
       return undefined;
     }
     let frame = 0;
+    let settleTimer = 0;
     let observer = null;
     let activeTarget = null;
+    let releaseScrollRoom = () => {};
     const selector = `[data-onboarding-target="${step.target}"]`;
     const update = () => {
       const target = document.querySelector(selector);
@@ -287,8 +306,15 @@ export function OnboardingTour({ locale, steps, stepIndex, layoutKey, onStepChan
       activeTarget = target;
       activeTarget?.setAttribute("data-onboarding-active", "true");
       const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+      releaseScrollRoom = reserveTargetScrollRoom(target);
       target?.scrollIntoView({ block: "center", inline: "nearest", behavior: reducedMotion ? "auto" : "smooth" });
       update();
+      if (target && !reducedMotion) {
+        settleTimer = window.setTimeout(() => {
+          target.scrollIntoView({ block: "center", inline: "nearest", behavior: "auto" });
+          update();
+        }, 360);
+      }
       if (target && typeof ResizeObserver !== "undefined") {
         observer = new ResizeObserver(update);
         observer.observe(target);
@@ -298,8 +324,10 @@ export function OnboardingTour({ locale, steps, stepIndex, layoutKey, onStepChan
     window.addEventListener("scroll", update, true);
     return () => {
       window.cancelAnimationFrame(frame);
+      window.clearTimeout(settleTimer);
       observer?.disconnect();
       activeTarget?.removeAttribute("data-onboarding-active");
+      releaseScrollRoom();
       window.removeEventListener("resize", update);
       window.removeEventListener("scroll", update, true);
     };
@@ -383,15 +411,15 @@ export function OnboardingTour({ locale, steps, stepIndex, layoutKey, onStepChan
           </div>
         )}
         <div className="onboarding-tour__actions">
-          <span className="onboarding-tour__nav">
-            <button className={shortcutDirection === "back" ? "is-shortcut-active" : ""} type="button" disabled={stepIndex === 0} onClick={() => onStepChange(stepIndex - 1)} aria-label={copy.back}>←</button>
-            <span className="onboarding-tour__progress" aria-live="polite">{copy.progress(stepIndex + 1, steps.length)}</span>
-            <button className={shortcutDirection === "next" ? "is-shortcut-active" : ""} type="button" onClick={() => isLast ? onFinish() : onStepChange(stepIndex + 1)} aria-label={isLast ? copy.finish : copy.next}>→</button>
-          </span>
           <button className="onboarding-tour__skip" type="button" onClick={onSkip}>
             <span>{copy.skip}</span>
             <kbd>{copy.escapeHint}</kbd>
           </button>
+          <span className="onboarding-tour__progress" aria-live="polite">{copy.progress(stepIndex + 1, steps.length)}</span>
+          <span className="onboarding-tour__nav">
+            <button className={shortcutDirection === "back" ? "is-shortcut-active" : ""} type="button" disabled={stepIndex === 0} onClick={() => onStepChange(stepIndex - 1)} aria-label={copy.back}>←</button>
+            <button className={shortcutDirection === "next" ? "is-shortcut-active" : ""} type="button" onClick={() => isLast ? onFinish() : onStepChange(stepIndex + 1)} aria-label={isLast ? copy.finish : copy.next}>→</button>
+          </span>
         </div>
       </section>
     </div>

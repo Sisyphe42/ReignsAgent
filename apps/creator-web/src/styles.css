@@ -3469,14 +3469,14 @@ select {
 
 .onboarding-tour__actions {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   gap: 12px;
   align-items: center;
   padding-top: 2px;
 }
 
 .onboarding-tour__nav {
-  justify-self: start;
+  justify-self: end;
   padding: 3px;
   border: 1px solid var(--border);
   border-radius: calc(var(--radius) + 2px);
@@ -3490,13 +3490,15 @@ select {
   font-family: var(--font-data);
   font-size: 0.76rem;
   text-align: center;
+  align-self: center;
+  justify-self: center;
 }
 
 .onboarding-tour__skip {
   display: inline-flex;
   gap: 7px;
   align-items: center;
-  justify-self: end;
+  justify-self: start;
   padding: 7px 4px 7px 10px;
   border: 0;
   color: var(--muted);
