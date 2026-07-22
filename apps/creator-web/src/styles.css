@@ -3414,8 +3414,10 @@ select {
 }
 
 .onboarding-tour__card--intro {
+  grid-template-rows: minmax(0, 1fr) auto;
   gap: 22px;
   padding: clamp(22px, 4vw, 42px);
+  overflow: hidden;
 }
 
 .onboarding-tour__message {
@@ -3440,6 +3442,22 @@ select {
 .onboarding-intro__copy > div > p {
   color: var(--muted);
   line-height: 1.6;
+}
+
+.onboarding-tour__inline-link {
+  justify-self: start;
+  margin-top: 2px;
+  color: var(--accent);
+  font-size: 0.82rem;
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.onboarding-tour__inline-link:hover,
+.onboarding-tour__inline-link:focus-visible {
+  outline: none;
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .onboarding-tour__actions,
@@ -3527,6 +3545,9 @@ select {
   grid-template-columns: minmax(0, 0.95fr) minmax(300px, 1.05fr);
   gap: clamp(28px, 5vw, 64px);
   align-items: center;
+  min-height: 0;
+  padding-right: 3px;
+  overflow: auto;
 }
 
 .onboarding-intro__copy {
@@ -3701,6 +3722,14 @@ select {
   color: var(--muted);
   font-size: 0.68rem;
   text-align: center;
+}
+
+.about-settings[data-onboarding-active="true"] .about-settings__repo-link {
+  border-radius: var(--radius);
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+  color: var(--ink);
+  background: var(--surface-2);
 }
 
 .subsection.about-settings {
@@ -7069,17 +7098,20 @@ summary:focus-visible {
   }
 
   .onboarding-intro__features {
-    grid-template-columns: repeat(3, 1fr);
-    gap: 8px;
+    grid-template-columns: 1fr;
+    gap: 0;
   }
 
   .onboarding-intro__feature {
-    display: block;
+    display: grid;
+    grid-template-columns: 72px 1fr;
+    gap: 10px;
     padding: 8px 0 0;
   }
 
   .onboarding-intro__feature span {
-    display: none;
+    display: block;
+    font-size: 0.76rem;
   }
 
   .onboarding-demo__stage {

@@ -24,35 +24,37 @@ const STEP_DEFINITIONS = [
     id: "intro",
     kind: "intro",
     en: {
-      title: "Make card narratives, end to end",
-      body: "ReignsAgent brings writing, simulation-based review, playable preview, AI-assisted revision, and release builds into one portable Creator.",
+      title: "Tell a story, one decision at a time",
+      body: "A Reigns-style story shows one dilemma card at a time. The player chooses left or right; that decision changes gauges and story state. Push a critical gauge too high or low and the reign ends, ready to be played again.",
       features: [
-        ["Author", "Write branching cards around clear left and right decisions."],
-        ["Review", "Simulate many runs to expose dead paths, pacing, and balance issues."],
-        ["Ship", "Preview the real experience and export a focused player build."]
+        ["Author", "Write cards, two clear choices, and data-driven branches."],
+        ["Review", "Simulate many runs to expose dead paths, pacing, and balance risks."],
+        ["AI Assist", "Connect your own endpoint for reviewable drafts, repairs, and visual candidates."],
+        ["Ship", "Play the real experience and export a focused player build."]
       ],
       demo: {
-        eyebrow: "A decision in motion",
-        card: "The council asks how carefully this story should be tested.",
-        left: "Explore first",
-        right: "Publish now",
-        hint: "Try either choice"
+        eyebrow: "How a Reigns-style story plays",
+        card: "A traveler arrives with a warning from beyond the city walls.",
+        left: "Turn them away",
+        right: "Hear them out",
+        hint: "Try a choice. Gauges shift, and the next possibilities change."
       }
     },
     zh: {
-      title: "从创作到发布，一站完成",
-      body: "ReignsAgent 将卡牌叙事创作、模拟审查、可玩预览、AI 辅助修订和发布构建整合进一个便携 Creator。",
+      title: "用一次次选择讲完一个故事",
+      body: "Reigns 类玩法每次呈现一张困境卡牌，玩家只能向左或向右选择。每次决定都会改变数值与故事状态；关键数值过高或过低时，本轮统治结束，玩家可以重新开始。",
       features: [
-        ["创作", "围绕清晰的左右选择编写分支卡牌。"],
-        ["审查", "通过大量模拟发现断路、节奏和数值问题。"],
+        ["创作", "编写卡牌、两个明确选项和数据驱动的分支。"],
+        ["审查", "通过大量模拟发现断路、节奏和数值风险。"],
+        ["AI 辅助", "连接自己的端点，生成可审阅的草稿、修复与视觉候选。"],
         ["发布", "试玩真实体验，并导出专注于游玩的玩家端。"]
       ],
       demo: {
-        eyebrow: "选择正在发生",
-        card: "议会询问：这个故事应该经过多谨慎的测试？",
-        left: "先探索",
-        right: "立即发布",
-        hint: "试试任一选择"
+        eyebrow: "Reigns 类故事如何游玩",
+        card: "一位旅人带着城墙之外的警告来到宫廷。",
+        left: "拒之门外",
+        right: "听他说完",
+        hint: "试试任一选择。数值会变化，后续可能性也会随之改变。"
       }
     }
   },
@@ -87,8 +89,8 @@ const STEP_DEFINITIONS = [
     id: "ai-assist",
     panelId: "ai-edit",
     target: "ai-assist",
-    en: { title: "Draft, inspect, then apply", body: "Ask for contextual drafts or repairs, review every proposal, and keep final control." },
-    zh: { title: "先起草，再检查，最后应用", body: "生成上下文草稿或修复建议，逐项审阅，并始终保留最终控制权。" }
+    en: { title: "Use AI without giving up control", body: "AI Assist can draft cards from project context, repair Review findings, and generate or edit visual candidates through your endpoint. Every result stays a proposal until you inspect and apply it; player builds contain no AI connection or key." },
+    zh: { title: "使用 AI，但始终保留控制权", body: "AI 辅助可以根据项目上下文起草卡牌、修复审查问题，并通过你的端点生成或编辑视觉候选。所有结果在你检查并应用前都只是提案；玩家构建不会包含 AI 连接或密钥。" }
   },
   {
     id: "preview",
@@ -111,11 +113,12 @@ const STEP_DEFINITIONS = [
     zh: { title: "只看玩家会看到的内容", body: "打开纯净的选择体验，不包含 Creator 工具、诊断或端点设置。" }
   },
   {
-    id: "settings",
+    id: "about-github",
     panelId: "settings",
-    target: "settings",
-    en: { title: "Tune the Creator, not the game", body: "Manage language, project details, AI endpoints, persistence tools, and product information here." },
-    zh: { title: "调整 Creator，而不是游戏规则", body: "在这里管理语言、项目资料、AI 端点、持久化工具和产品信息。" }
+    target: "about-github",
+    interactiveTarget: true,
+    en: { title: "Keep exploring on GitHub", body: "About links to the source, detailed README, releases, license, and issue tracker. You can open the highlighted GitHub link now or return whenever you need deeper documentation.", actionHref: "https://github.com/Sisyphe42/ReignsAgent", actionLabel: "Open GitHub" },
+    zh: { title: "前往 GitHub 继续了解", body: "About 提供源码、详细 README、版本发布、许可证和问题追踪入口。你现在就可以打开高亮的 GitHub 链接，也可以之后随时回来查阅更完整的文档。", actionHref: "https://github.com/Sisyphe42/ReignsAgent", actionLabel: "打开 GitHub" }
   },
   {
     id: "replay",
@@ -149,7 +152,7 @@ export function getOnboardingSteps(locale) {
   const isChinese = locale === "zh-Hans";
   return STEP_DEFINITIONS.map((step) => {
     const content = isChinese ? step.zh : step.en;
-    return { ...content, id: step.id, kind: step.kind ?? "spotlight", panelId: step.panelId ?? null, target: step.target ?? null };
+    return { ...content, id: step.id, kind: step.kind ?? "spotlight", panelId: step.panelId ?? null, target: step.target ?? null, interactiveTarget: step.interactiveTarget === true };
   });
 }
 
@@ -218,7 +221,7 @@ export function OnboardingTour({ locale, steps, stepIndex, layoutKey, onStepChan
         return;
       }
       if (event.key !== "Tab") return;
-      const focusable = [...(dialogRef.current?.querySelectorAll("button:not([disabled])") ?? [])];
+      const focusable = [...(dialogRef.current?.querySelectorAll("a[href], button:not([disabled])") ?? [])];
       if (focusable.length === 0) return;
       const current = focusable.indexOf(document.activeElement);
       const next = event.shiftKey
@@ -244,6 +247,7 @@ export function OnboardingTour({ locale, steps, stepIndex, layoutKey, onStepChan
     }
     let frame = 0;
     let observer = null;
+    let activeTarget = null;
     const selector = `[data-onboarding-target="${step.target}"]`;
     const update = () => {
       const target = document.querySelector(selector);
@@ -252,6 +256,8 @@ export function OnboardingTour({ locale, steps, stepIndex, layoutKey, onStepChan
     };
     frame = window.requestAnimationFrame(() => {
       const target = document.querySelector(selector);
+      activeTarget = target;
+      activeTarget?.setAttribute("data-onboarding-active", "true");
       const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
       target?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: reducedMotion ? "auto" : "smooth" });
       update();
@@ -265,6 +271,7 @@ export function OnboardingTour({ locale, steps, stepIndex, layoutKey, onStepChan
     return () => {
       window.cancelAnimationFrame(frame);
       observer?.disconnect();
+      activeTarget?.removeAttribute("data-onboarding-active");
       window.removeEventListener("resize", update);
       window.removeEventListener("scroll", update, true);
     };
@@ -293,7 +300,7 @@ export function OnboardingTour({ locale, steps, stepIndex, layoutKey, onStepChan
           <div className="onboarding-tour__shade onboarding-tour__shade--left" style={{ top: targetRect.top, width: targetRect.left, height: targetRect.bottom - targetRect.top }} />
           <div className="onboarding-tour__shade onboarding-tour__shade--right" style={{ top: targetRect.top, left: targetRect.right, height: targetRect.bottom - targetRect.top }} />
           <div className="onboarding-tour__shade onboarding-tour__shade--bottom" style={{ top: targetRect.bottom }} />
-          <div className="onboarding-tour__target-blocker" style={rectStyle} />
+          {!step.interactiveTarget && <div className="onboarding-tour__target-blocker" style={rectStyle} />}
           <div className="onboarding-tour__spotlight" style={rectStyle} aria-hidden="true" />
         </>
       ) : <div className="onboarding-tour__shade onboarding-tour__shade--full" />}
@@ -344,6 +351,7 @@ export function OnboardingTour({ locale, steps, stepIndex, layoutKey, onStepChan
           <div className="onboarding-tour__message">
             <h2 id="onboarding-title">{step.title}</h2>
             <p id="onboarding-description">{step.body}</p>
+            {step.actionHref && <a className="onboarding-tour__inline-link" href={step.actionHref} target="_blank" rel="noreferrer">{step.actionLabel} <span aria-hidden="true">↗</span></a>}
           </div>
         )}
         <div className="onboarding-tour__actions">

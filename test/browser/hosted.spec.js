@@ -33,18 +33,18 @@ test("guides the complete workflow once and replays it from Settings", async ({ 
   await openHosted(page, { onboarding: "fresh" });
 
   const tour = page.getByTestId("onboarding-tour");
-  await expect(tour.getByRole("heading", { name: "Make card narratives, end to end" })).toBeVisible();
+  await expect(tour.getByRole("heading", { name: "Tell a story, one decision at a time" })).toBeVisible();
   await expect(tour.locator(".onboarding-tour__progress")).toHaveText("1/11");
-  await tour.getByRole("button", { name: "Publish now" }).click();
+  await tour.getByRole("button", { name: /Hear them out/ }).click();
   await expect(tour.locator(".onboarding-demo")).toHaveClass(/onboarding-demo--right/);
-  await tour.getByRole("button", { name: /Explore first/ }).click();
+  await tour.getByRole("button", { name: /Turn them away/ }).click();
   await expect(tour.locator(".onboarding-demo")).toHaveClass(/onboarding-demo--left/);
 
   await tour.getByRole("button", { name: "Next" }).click();
   await expect(tour.getByRole("heading", { name: "Start from the right project" })).toBeVisible();
   await expect(tour.locator(".onboarding-tour__spotlight")).toBeVisible();
   await tour.getByRole("button", { name: "Back" }).click();
-  await expect(tour.getByRole("heading", { name: "Make card narratives, end to end" })).toBeVisible();
+  await expect(tour.getByRole("heading", { name: "Tell a story, one decision at a time" })).toBeVisible();
   await tour.getByRole("button", { name: "Next" }).click();
   await expect(tour.getByRole("heading", { name: "Start from the right project" })).toBeVisible();
 
@@ -52,11 +52,11 @@ test("guides the complete workflow once and replays it from Settings", async ({ 
     "Write the decisions",
     "See how the story moves",
     "Find problems before players do",
-    "Draft, inspect, then apply",
+    "Use AI without giving up control",
     "Play what you wrote",
     "Package the player experience",
     "See only what players see",
-    "Tune the Creator, not the game",
+    "Keep exploring on GitHub",
     "Come back anytime"
   ];
   for (const title of titles) {
@@ -65,6 +65,12 @@ test("guides the complete workflow once and replays it from Settings", async ({ 
     if (title === "Write the decisions") {
       await expect(page.locator('.rail__item[aria-label="Content"]')).toHaveClass(/rail__item--active/);
       await expect.poll(() => workspaceContains(page, 'activePanel = "overview"')).toBe(true);
+    }
+    if (title === "Keep exploring on GitHub") {
+      await expect(page.locator('[data-onboarding-target="about-github"]')).toHaveAttribute("data-onboarding-active", "true");
+      await expect(page.locator('[data-onboarding-link="github"]')).toBeVisible();
+      await expect(tour.getByRole("link", { name: /Open GitHub/ })).toHaveAttribute("href", "https://github.com/Sisyphe42/ReignsAgent");
+      await expect(tour.locator(".onboarding-tour__target-blocker")).toHaveCount(0);
     }
   }
 
@@ -78,7 +84,7 @@ test("guides the complete workflow once and replays it from Settings", async ({ 
   await expect(tour).toHaveCount(0);
   await page.getByRole("button", { name: "Settings" }).click();
   await page.getByRole("button", { name: "Replay onboarding guide" }).click();
-  await expect(tour.getByRole("heading", { name: "Make card narratives, end to end" })).toBeVisible();
+  await expect(tour.getByRole("heading", { name: "Tell a story, one decision at a time" })).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(tour).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Settings" })).toHaveClass(/rail__item--active/);
@@ -101,7 +107,7 @@ test("defers first-run onboarding on an explicit panel route", async ({ page }) 
   await expect(page.getByRole("button", { name: "Content" })).toHaveClass(/rail__item--active/);
 
   await page.goto("workbench");
-  await expect(page.getByTestId("onboarding-tour").getByRole("heading", { name: "Make card narratives, end to end" })).toBeVisible();
+  await expect(page.getByTestId("onboarding-tour").getByRole("heading", { name: "Tell a story, one decision at a time" })).toBeVisible();
 });
 
 test("keeps localized onboarding inside a narrow viewport", async ({ page }) => {
@@ -112,7 +118,7 @@ test("keeps localized onboarding inside a narrow viewport", async ({ page }) => 
   });
   await openHosted(page, { onboarding: "fresh" });
   const card = page.locator(".onboarding-tour__card");
-  await expect(card.getByRole("heading", { name: "从创作到发布，一站完成" })).toBeVisible();
+  await expect(card.getByRole("heading", { name: "用一次次选择讲完一个故事" })).toBeVisible();
   await expect(card.locator(".onboarding-tour__progress")).toHaveText("1/11");
   await expect(card.getByRole("button", { name: "下一步" })).toBeVisible();
   const bounds = await card.boundingBox();
@@ -182,7 +188,7 @@ test("keeps navigation interactive when localStorage methods fail", async ({ pag
   await expect(page.locator(".workspace")).toHaveClass(/workspace--rail-expanded.*workspace--rail-pinned|workspace--rail-pinned.*workspace--rail-expanded/);
   await page.getByRole("button", { name: "Settings" }).click();
   await page.getByRole("button", { name: "Replay onboarding guide" }).click();
-  await expect(page.getByTestId("onboarding-tour").getByRole("heading", { name: "Make card narratives, end to end" })).toBeVisible();
+  await expect(page.getByTestId("onboarding-tour").getByRole("heading", { name: "Tell a story, one decision at a time" })).toBeVisible();
   await page.getByRole("button", { name: "Skip", exact: true }).click();
   await expect(page.getByRole("button", { name: "Settings" })).toHaveClass(/rail__item--active/);
   await page.getByRole("button", { name: "Collapse navigation" }).click();

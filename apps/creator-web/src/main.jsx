@@ -6161,7 +6161,7 @@ function SettingsPanel({ editor, aiSettings, apiKey, apiKeySaved, locale, locale
         </div>
         <pre className="output">{plan || tr(locale, "No connector plan generated.")}</pre>
       </div>
-      <footer className="subsection subsection--plain about-settings" aria-labelledby="about-settings-title">
+      <footer className="subsection subsection--plain about-settings" aria-labelledby="about-settings-title" data-onboarding-target="about-github">
         <div className="about-settings__identity">
           <img className="about-settings__mark" src={`${import.meta.env.BASE_URL}logo-alpha.png`} alt="" />
           <div>
@@ -6172,7 +6172,7 @@ function SettingsPanel({ editor, aiSettings, apiKey, apiKeySaved, locale, locale
                 v{import.meta.env.VITE_PRODUCT_VERSION}
               </a>
               <span className="about-settings__separator" aria-hidden="true">/</span>
-              <a className="about-settings__repo-link" href="https://github.com/Sisyphe42/ReignsAgent" target="_blank" rel="noreferrer" aria-label="GitHub repository sisyphe42/ReignsAgent">
+              <a className="about-settings__repo-link" href="https://github.com/Sisyphe42/ReignsAgent" target="_blank" rel="noreferrer" aria-label="GitHub repository sisyphe42/ReignsAgent" data-onboarding-link="github">
                 <svg className="about-settings__github-mark" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
                   <path d="M8 0.25a7.75 7.75 0 0 0-2.45 15.1c0.39 0.07 0.53-0.17 0.53-0.38v-1.35c-2.15 0.47-2.61-0.92-2.61-0.92-0.35-0.9-0.86-1.14-0.86-1.14-0.7-0.48 0.05-0.47 0.05-0.47 0.78 0.05 1.19 0.8 1.19 0.8 0.69 1.18 1.8 0.84 2.24 0.64 0.07-0.5 0.27-0.84 0.49-1.03-1.72-0.2-3.52-0.86-3.52-3.82 0-0.84 0.3-1.53 0.8-2.07-0.08-0.2-0.35-0.98 0.08-2.04 0 0 0.65-0.21 2.13 0.79A7.4 7.4 0 0 1 8 4.1c0.66 0 1.31 0.09 1.93 0.26 1.48-1 2.13-0.79 2.13-0.79 0.43 1.06 0.16 1.84 0.08 2.04 0.5 0.54 0.8 1.23 0.8 2.07 0 2.97-1.81 3.62-3.53 3.82 0.28 0.24 0.53 0.71 0.53 1.43v2.04c0 0.21 0.14 0.45 0.53 0.38A7.75 7.75 0 0 0 8 0.25Z" />
                 </svg>
