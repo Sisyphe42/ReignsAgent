@@ -554,7 +554,8 @@ select {
   min-width: 0;
 }
 
-.skin-select {
+.skin-select,
+.project-menu-field {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -601,21 +602,9 @@ select {
 
 .project-menu-field {
   position: relative;
-  display: flex;
-  align-items: center;
-  gap: 8px;
   width: min(260px, 100%);
   min-width: 0;
   justify-self: start;
-  color: var(--muted);
-  font-family: var(--font-data);
-  font-size: 0.72rem;
-}
-
-.project-menu__label {
-  display: inline-flex;
-  min-height: 38px;
-  align-items: center;
 }
 
 .project-menu {

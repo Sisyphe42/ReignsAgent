@@ -297,6 +297,8 @@ npm run build:hosted
 
 The output is `apps/creator-web/dist-hosted/`. Set `REIGNS_AGENT_BASE_PATH=/reignsagent/` when building for a reverse-proxy or static-host subpath; application URLs, manifest scope, Service Worker, and offline navigation use that prefix.
 
+The repository-level `vercel.json` deploys this output at the Vercel domain root, forces `REIGNS_AGENT_BASE_PATH=/` so generated asset URLs match Vercel's static filesystem, and rewrites SPA deep links to `index.html`. Vercel projects should leave Root Directory at the repository root; the checked-in build command and output directory are authoritative.
+
 Hosted projects and `config.toml` live in origin-scoped OPFS. Chrome and Edge are the supported v1 browsers. After the first successful load the PWA can reopen offline. Clearing site data destroys the workspace, and changing scheme, host, or port selects a different workspace, so Settings exposes persistence status plus Workspace ZIP and active-project ZIP export/import. Backups exclude the plaintext AI key by default; including it requires an explicit checkbox and confirmation.
 
 Hosted navigation is app-shell based: when a same-scope page navigation is offline or returns a non-success HTTP response, the Service Worker falls back to the cached `index.html` so direct workbench routes continue to open inside the PWA.

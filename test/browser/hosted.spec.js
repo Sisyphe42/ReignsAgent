@@ -94,6 +94,16 @@ test("keeps navigation interactive when localStorage methods fail", async ({ pag
   await expect(page.locator(".stage__status strong")).toContainText("cards loaded");
 });
 
+test("loads bundled project assets from the Hosted base path", async ({ page }) => {
+  await openHosted(page);
+  await page.locator('.rail__item[aria-label="Content"], .rail__item[aria-label="内容"]').click();
+  const artwork = page.locator(".card-editor__head img").first();
+  await expect(artwork).toBeVisible();
+  const result = await artwork.evaluate((image) => ({ pathname: new URL(image.src).pathname, width: image.naturalWidth }));
+  expect(result.pathname).toMatch(/\/assets\/sample\/.+\.svg$/);
+  expect(result.width).toBeGreaterThan(0);
+});
+
 test("does not flash the device language before the saved language loads", async ({ page }) => {
   await page.addInitScript(() => {
     Object.defineProperty(navigator, "languages", { configurable: true, get: () => ["zh-CN"] });
@@ -120,12 +130,20 @@ test("persists navigation density and shared interface language", async ({ page 
 
   await expect(page.locator(".project-menu-field > .project-menu__label")).toHaveText("Project");
   await expect(page.locator(".project-menu__trigger")).not.toContainText("Project");
-  const projectHeaderAlignment = await page.locator(".project-menu-field").evaluate((field) => {
-    const label = field.querySelector(".project-menu__label").getBoundingClientRect();
-    const trigger = field.querySelector(".project-menu__trigger").getBoundingClientRect();
-    return Math.abs((label.top + label.height / 2) - (trigger.top + trigger.height / 2));
+  const headerControlAlignment = await page.locator(".topbar").evaluate((topbar) => {
+    const centerDelta = (labelBox, controlBox) => {
+      return Math.abs((labelBox.top + labelBox.height / 2) - (controlBox.top + controlBox.height / 2));
+    };
+    const project = topbar.querySelector(".project-menu-field");
+    const skin = topbar.querySelector(".topbar__tools .skin-select");
+    const skinLabelRange = document.createRange();
+    skinLabelRange.selectNode(skin.firstChild);
+    return {
+      project: centerDelta(project.querySelector(".project-menu__label").getBoundingClientRect(), project.querySelector(".project-menu__trigger").getBoundingClientRect()),
+      skin: centerDelta(skinLabelRange.getBoundingClientRect(), skin.querySelector("select").getBoundingClientRect())
+    };
   });
-  expect(projectHeaderAlignment).toBeLessThan(1);
+  expect(Math.abs(headerControlAlignment.project - headerControlAlignment.skin)).toBeLessThan(1);
   const projectChevronPath = await page.locator(".project-menu__chevron path").getAttribute("d");
   const skinChevronPath = await page.locator(".skin-select__chevron path").getAttribute("d");
   expect(projectChevronPath).toBe(skinChevronPath);
@@ -325,9 +343,11 @@ test("persists navigation density and shared interface language", async ({ page 
   await expect(page.getByRole("button", { name: "验证图像配置" })).toBeVisible();
   await expect(page.getByRole("link", { name: "打开玩家端预览" })).toBeVisible();
   await expect(page.getByRole("link", { name: "打开玩家端预览" })).toHaveAttribute("href", /locale=zh-Hans/);
+  await page.evaluate(() => { window.__reignsAgentFullPageMarker = true; });
   await page.getByRole("link", { name: "打开玩家端预览" }).click();
   await expect(page.locator('.rail__item[aria-label="预览"]')).toHaveClass(/rail__item--active/);
   await expect(page).toHaveURL(/\/workbench\/preview(?:\?|$)/);
+  expect(await page.evaluate(() => window.__reignsAgentFullPageMarker)).toBeUndefined();
   await page.getByRole("button", { name: "概览" }).click();
   await expect(page.locator('.metric[data-ai-label="Project"] strong')).toHaveText("Ready");
   await expect.poll(() => workspaceContains(page, 'activePanel = "overview"'), { timeout: 15_000 }).toBe(true);

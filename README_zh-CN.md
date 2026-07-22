@@ -178,6 +178,8 @@ npm run build:hosted
 
 生产产物位于 `apps/creator-web/dist-hosted/`。反向代理或静态站点部署在子路径时，构建前设置 `REIGNS_AGENT_BASE_PATH=/reignsagent/`；应用 URL、Manifest scope、Service Worker 和离线导航都会使用该前缀。
 
+仓库根目录的 `vercel.json` 会把该产物部署到 Vercel 域名根路径，并强制使用 `REIGNS_AGENT_BASE_PATH=/`，确保生成的资源 URL 与 Vercel 静态文件路径一致；SPA 深层路由会重写到 `index.html`。Vercel 项目的 Root Directory 应保持为仓库根目录，并以仓库内已提交的构建命令和输出目录为准。
+
 Hosted 项目和 `config.toml` 保存在当前 Origin 的 OPFS 中。v1 正式支持桌面 Chrome/Edge；首次成功加载后可以断网重新打开。清除站点数据会删除 Workspace，更换协议、域名或端口也会进入另一个 Workspace，因此 Settings 提供持久存储状态、Workspace ZIP 和活动项目 ZIP 的导入/导出。备份默认排除明文 API Key，只有用户显式勾选并确认后才包含。
 
 Hosted 导航采用 app shell：同一 scope 内的页面导航离线或收到非成功 HTTP 响应时，Service Worker 会回退到缓存的 `index.html`，因此直接打开 Workbench 深层路由仍会进入 PWA。

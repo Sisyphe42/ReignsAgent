@@ -1,0 +1,12 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "vite",
+  "buildCommand": "REIGNS_AGENT_BASE_PATH=/ npm run build:hosted",
+  "outputDirectory": "apps/creator-web/dist-hosted",
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}

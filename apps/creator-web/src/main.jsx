@@ -1700,12 +1700,7 @@ function App() {
               <SelectChevronIcon className="select-chevron skin-select__chevron" />
             </span>
           </label>
-          <a
-            className="link-button player-launch"
-            href={playerHref}
-            aria-label={tr(locale, "Open player preview")}
-            onClick={import.meta.env.VITE_CREATOR_HOST === "browser" ? (event) => { event.preventDefault(); openPanel("preview"); } : undefined}
-          >
+          <a className="link-button player-launch" href={playerHref} aria-label={tr(locale, "Open player preview")}>
             <span>{tr(locale, "Player")}</span>
           </a>
         </div>
@@ -5141,7 +5136,7 @@ function ProjectAssetImage({ asset, alt = "" }) {
   const [src, setSrc] = useState("");
   useEffect(() => {
     let active = true;
-    void creatorBackendPromise.then((backend) => backend.assetUrl(asset?.uri)).then((url) => { if (active) setSrc(url); }).catch(() => { if (active) setSrc(asset?.uri ? `/${asset.uri}` : ""); });
+    void creatorBackendPromise.then((backend) => backend.assetUrl(asset?.uri)).then((url) => { if (active) setSrc(url); }).catch(() => { if (active) setSrc(asset?.uri ? `${import.meta.env.BASE_URL}${asset.uri}` : ""); });
     return () => { active = false; };
   }, [asset?.uri]);
   return src ? <img src={src} alt={alt} /> : <span className="art-placeholder" />;
@@ -5979,8 +5974,8 @@ function SettingsPanel({ editor, aiSettings, apiKey, apiKeySaved, locale, locale
 
   return (
     <section className="panel">
-      {import.meta.env.VITE_CREATOR_HOST === "browser" && <HostedWorkspaceTools onRefresh={onRefresh} onStatus={onStatus} />}
       <PanelHead title="Settings / Pipeline" note="Project metadata, AI endpoint posture, locale hooks, and connector planning." />
+      {import.meta.env.VITE_CREATOR_HOST === "browser" && <HostedWorkspaceTools onRefresh={onRefresh} onStatus={onStatus} />}
       <div className="subsection interface-settings">
         <div>
           <h3>{tr(locale, "Interface")}</h3>

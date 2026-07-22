@@ -1,5 +1,5 @@
 import react from "@vitejs/plugin-react";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { extname } from "node:path";
 import { defineConfig } from "vite";
@@ -7,6 +7,7 @@ import { defineConfig } from "vite";
 const apiTarget = process.env.REIGNS_AGENT_API ?? "http://127.0.0.1:4321";
 const dashboardHtml = new URL("../../packages/interface/web/dashboard.html", import.meta.url);
 const playerHtml = new URL("../../packages/interface/web/player.html", import.meta.url);
+const hostedSampleAssetRoot = new URL("../../packages/interface/web/assets/sample/", import.meta.url);
 const productVersion = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")).version;
 const MIME = {
   ".css": "text/css; charset=utf-8",
@@ -125,7 +126,11 @@ function normalizeBase(value) {
 
 function hostedPwaPlugin(base) {
   return { name: "reigns-agent-hosted-pwa", generateBundle(_options, bundle) {
-    const files = Object.keys(bundle).filter((name) => !name.endsWith(".map"));
+    const sampleAssets = readdirSync(hostedSampleAssetRoot, { withFileTypes: true })
+      .filter((entry) => entry.isFile())
+      .map((entry) => ({ fileName: `assets/sample/${entry.name}`, source: readFileSync(new URL(entry.name, hostedSampleAssetRoot)) }));
+    for (const asset of sampleAssets) this.emitFile({ type: "asset", ...asset });
+    const files = [...Object.keys(bundle).filter((name) => !name.endsWith(".map")), ...sampleAssets.map((asset) => asset.fileName)];
     const version = files.join("|").split("").reduce((hash, char) => ((hash * 31) + char.charCodeAt(0)) >>> 0, 0).toString(36);
     this.emitFile({ type: "asset", fileName: "manifest.webmanifest", source: JSON.stringify({ name: "ReignsAgent", short_name: "ReignsAgent", description: "Offline-first card narrative Creator", start_url: `${base}workbench`, scope: base, display: "standalone", background_color: "#111315", theme_color: "#111315", icons: [{ src: `${base}logo-alpha.png`, sizes: "512x512", type: "image/png", purpose: "any maskable" }] }, null, 2) });
     this.emitFile({ type: "asset", fileName: "sw.js", source: serviceWorkerSource({ base, files: ["index.html", "manifest.webmanifest", "logo-alpha.png", ...files], version }) });
