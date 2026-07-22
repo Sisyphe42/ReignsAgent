@@ -1198,12 +1198,6 @@ function App() {
     setOnboarding({ open: true, stepIndex: 0, originPanel: activePanel });
   }, [activePanel, configReady, initialUrlState.hasExplicitPanel]);
 
-  useEffect(() => {
-    if (!onboarding.open) return;
-    const panelId = onboardingSteps[onboarding.stepIndex]?.panelId;
-    if (panelId && panelId !== activePanel) setActivePanel(panelId);
-  }, [activePanel, onboarding.open, onboarding.stepIndex, onboardingSteps]);
-
   async function loadCreatorState() {
     const [nextEditor, config, projectResult, workspaceState, nextReleases] = await Promise.all([
       api("/api/editor"),
@@ -1649,6 +1643,13 @@ function App() {
     setActivePanel(originPanel);
   }
 
+  function changeOnboardingStep(stepIndex) {
+    const nextIndex = Math.max(0, Math.min(onboardingSteps.length - 1, stepIndex));
+    const panelId = onboardingSteps[nextIndex]?.panelId;
+    if (panelId) setActivePanel(panelId);
+    setOnboarding((current) => ({ ...current, stepIndex: nextIndex }));
+  }
+
   const playerHref = useMemo(() => {
     const params = new URLSearchParams();
     params.set("skin", resolveSkinId(skin) ?? DEFAULT_SKIN);
@@ -1938,8 +1939,7 @@ function App() {
           locale={locale}
           steps={onboardingSteps}
           stepIndex={onboarding.stepIndex}
-          layoutKey={activePanel}
-          onStepChange={(stepIndex) => setOnboarding((current) => ({ ...current, stepIndex }))}
+          onStepChange={changeOnboardingStep}
           onFinish={closeOnboarding}
           onSkip={closeOnboarding}
         />

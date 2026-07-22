@@ -60,49 +60,49 @@ test("guides the complete workflow once and replays it from Settings", async ({ 
   await page.keyboard.press("Space");
   await expect(tour.getByRole("heading", { name: "Start from the right project" })).toBeVisible();
 
-  const titles = [
-    "Write the decisions",
-    "See how the story moves",
-    "Find problems before players do",
-    "Use AI without giving up control",
-    "Play what you wrote",
-    "Package the player experience",
-    "See only what players see",
-    "Keep exploring on GitHub",
-    "Come back anytime"
+  const workflowSteps = [
+    { title: "Write the decisions", target: "content", centered: true },
+    { title: "See how the story moves", target: "story", centered: true },
+    { title: "Find problems before players do", target: "review", centered: true },
+    { title: "Use AI without giving up control", target: "ai-assist", centered: true },
+    { title: "Play what you wrote", target: "preview", centered: true },
+    { title: "Package the player experience", target: "build", centered: true },
+    { title: "See only what players see", target: "player-launch", centered: false },
+    { title: "Keep exploring on GitHub", target: "about-github", centered: true },
+    { title: "Come back anytime", target: "onboarding-replay", centered: true }
   ];
-  for (const title of titles) {
+  for (const step of workflowSteps) {
     await tour.getByRole("button", { name: "Next" }).click();
-    await expect(tour.getByRole("heading", { name: title })).toBeVisible();
-    const target = page.locator("[data-onboarding-active='true']");
-    if (await target.count()) {
-      await expect.poll(async () => {
-        const rect = await target.boundingBox();
-        return rect && rect.y >= 0 && rect.y + rect.height <= page.viewportSize().height;
-      }).toBe(true);
-    }
-    if (title === "Write the decisions") {
+    await expectOnboardingStep(page, tour, step);
+    if (step.title === "Write the decisions") {
       await expect(page.locator('.rail__item[aria-label="Content"]')).toHaveClass(/rail__item--active/);
       await expect.poll(() => workspaceContains(page, 'activePanel = "overview"')).toBe(true);
     }
-    if (title === "Keep exploring on GitHub") {
-      await expect(page.locator('[data-onboarding-target="about-github"]')).toHaveAttribute("data-onboarding-active", "true");
+    if (step.title === "Keep exploring on GitHub") {
       await expect(page.locator('[data-onboarding-link="github"]')).toBeVisible();
       await expect(tour.getByRole("link", { name: /Open GitHub/ })).toHaveAttribute("href", "https://github.com/Sisyphe42/ReignsAgent");
       await expect(tour.locator(".onboarding-tour__target-blocker")).toHaveCount(0);
-      await expectTargetCentered(page, "about-github");
-    }
-    if (title === "Come back anytime") {
-      await expectTargetCentered(page, "onboarding-replay");
     }
   }
 
-  await tour.getByRole("button", { name: "Back" }).click();
-  await expect(tour.getByRole("heading", { name: "Keep exploring on GitHub" })).toBeVisible();
-  await expectTargetCentered(page, "about-github");
-  await tour.getByRole("button", { name: "Next" }).click();
-  await expect(tour.getByRole("heading", { name: "Come back anytime" })).toBeVisible();
-  await expectTargetCentered(page, "onboarding-replay");
+  const reverseSteps = [
+    ...workflowSteps.slice(0, -1).reverse(),
+    { title: "Start from the right project", target: "project-menu", centered: false },
+    { title: "Tell a story, one decision at a time", target: null, centered: false }
+  ];
+  for (const step of reverseSteps) {
+    await tour.getByRole("button", { name: "Back" }).click();
+    await expectOnboardingStep(page, tour, step);
+  }
+
+  const secondForwardPass = [
+    { title: "Start from the right project", target: "project-menu", centered: false },
+    ...workflowSteps
+  ];
+  for (const step of secondForwardPass) {
+    await tour.getByRole("button", { name: "Next" }).click();
+    await expectOnboardingStep(page, tour, step);
+  }
 
   await tour.getByRole("button", { name: "Finish" }).click();
   await expect(tour).toHaveCount(0);
@@ -715,4 +715,16 @@ async function expectTargetCentered(page, targetName) {
     const rect = element.getBoundingClientRect();
     return Math.abs(rect.top + rect.height / 2 - window.innerHeight / 2);
   })).toBeLessThan(3);
+}
+
+async function expectOnboardingStep(page, tour, step) {
+  await expect(tour.getByRole("heading", { name: step.title })).toBeVisible();
+  if (!step.target) return;
+  const target = page.locator(`[data-onboarding-target="${step.target}"]`);
+  await expect(target).toHaveAttribute("data-onboarding-active", "true");
+  await expect.poll(async () => {
+    const rect = await target.boundingBox();
+    return rect && rect.y >= 0 && rect.y + rect.height <= page.viewportSize().height;
+  }).toBe(true);
+  if (step.centered) await expectTargetCentered(page, step.target);
 }

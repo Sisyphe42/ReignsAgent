@@ -162,13 +162,15 @@ function readTargetRect(target) {
   if (!target) return null;
   const rect = target.getBoundingClientRect();
   if (rect.width <= 0 || rect.height <= 0) return null;
+  if (rect.right <= 0 || rect.left >= window.innerWidth || rect.bottom <= 0 || rect.top >= window.innerHeight) return null;
   const padding = 8;
-  return {
+  const next = {
     top: Math.max(8, rect.top - padding),
     left: Math.max(8, rect.left - padding),
     right: Math.min(window.innerWidth - 8, rect.right + padding),
     bottom: Math.min(window.innerHeight - 8, rect.bottom + padding)
   };
+  return next.right > next.left && next.bottom > next.top ? next : null;
 }
 
 function sameRect(left, right) {
@@ -176,20 +178,21 @@ function sameRect(left, right) {
   return ["top", "left", "right", "bottom"].every((key) => Math.abs(left[key] - right[key]) < 0.5);
 }
 
-function reserveTargetScrollRoom(target) {
-  if (!target) return () => {};
-  const body = document.body;
-  const previousPaddingBottom = body.style.paddingBottom;
-  const targetRect = target.getBoundingClientRect();
-  const targetCenter = window.scrollY + targetRect.top + targetRect.height / 2;
-  const desiredDocumentHeight = targetCenter + window.innerHeight / 2 + 16;
-  const missingRoom = desiredDocumentHeight - document.documentElement.scrollHeight;
-  if (missingRoom > 0) {
-    const currentPadding = Number.parseFloat(window.getComputedStyle(body).paddingBottom) || 0;
-    body.style.paddingBottom = `${Math.ceil(currentPadding + missingRoom)}px`;
-  }
+function reserveTourScrollRoom() {
+  const stage = document.querySelector(".stage");
+  if (!stage) return () => {};
+  const previousPaddingTop = stage.style.paddingTop;
+  const previousPaddingBottom = stage.style.paddingBottom;
+  const computed = window.getComputedStyle(stage);
+  const room = Math.ceil(window.innerHeight / 2) + 16;
+  stage.style.paddingTop = `${(Number.parseFloat(computed.paddingTop) || 0) + room}px`;
+  stage.style.paddingBottom = `${(Number.parseFloat(computed.paddingBottom) || 0) + room}px`;
+  window.scrollBy({ top: room, behavior: "auto" });
   return () => {
-    body.style.paddingBottom = previousPaddingBottom;
+    const scrollTop = window.scrollY;
+    stage.style.paddingTop = previousPaddingTop;
+    stage.style.paddingBottom = previousPaddingBottom;
+    window.scrollTo({ top: Math.max(0, scrollTop - room), behavior: "auto" });
   };
 }
 
@@ -216,7 +219,7 @@ function getCardLayout(rect, height, wide = false) {
   return { width, left, top };
 }
 
-export function OnboardingTour({ locale, steps, stepIndex, layoutKey, onStepChange, onFinish, onSkip }) {
+export function OnboardingTour({ locale, steps, stepIndex, onStepChange, onFinish, onSkip }) {
   const normalizedLocale = locale === "zh-Hans" ? "zh-Hans" : "en";
   const copy = COPY[normalizedLocale];
   const step = steps[stepIndex];
@@ -233,6 +236,8 @@ export function OnboardingTour({ locale, steps, stepIndex, layoutKey, onStepChan
     dialogRef.current?.focus();
     return () => previousFocusRef.current?.focus?.();
   }, []);
+
+  useLayoutEffect(() => reserveTourScrollRoom(), []);
 
   useEffect(() => {
     function onKeyDown(event) {
@@ -291,47 +296,75 @@ export function OnboardingTour({ locale, steps, stepIndex, layoutKey, onStepChan
       return undefined;
     }
     let frame = 0;
-    let settleTimer = 0;
-    let observer = null;
+    let resizeObserver = null;
+    let mutationObserver = null;
     let activeTarget = null;
-    let releaseScrollRoom = () => {};
+    let connected = false;
+    let cancelled = false;
     const selector = `[data-onboarding-target="${step.target}"]`;
     const update = () => {
-      const target = document.querySelector(selector);
-      const next = readTargetRect(target);
+      const next = readTargetRect(activeTarget);
       setTargetRect((current) => sameRect(current, next) ? current : next);
     };
-    frame = window.requestAnimationFrame(() => {
-      const target = document.querySelector(selector);
+
+    const connect = (target) => {
+      if (cancelled || connected || !target) return;
+      connected = true;
       activeTarget = target;
-      activeTarget?.setAttribute("data-onboarding-active", "true");
+      activeTarget.setAttribute("data-onboarding-active", "true");
+      mutationObserver?.disconnect();
+      window.addEventListener("resize", update);
+      window.addEventListener("scroll", update, true);
+      if (typeof ResizeObserver !== "undefined") {
+        resizeObserver = new ResizeObserver(update);
+        resizeObserver.observe(activeTarget);
+      }
       const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
-      releaseScrollRoom = reserveTargetScrollRoom(target);
-      target?.scrollIntoView({ block: "center", inline: "nearest", behavior: reducedMotion ? "auto" : "smooth" });
-      update();
-      if (target && !reducedMotion) {
-        settleTimer = window.setTimeout(() => {
-          target.scrollIntoView({ block: "center", inline: "nearest", behavior: "auto" });
-          update();
-        }, 360);
-      }
-      if (target && typeof ResizeObserver !== "undefined") {
-        observer = new ResizeObserver(update);
-        observer.observe(target);
-      }
-    });
-    window.addEventListener("resize", update);
-    window.addEventListener("scroll", update, true);
+      let previousDistance = Number.POSITIVE_INFINITY;
+      let stableFrames = 0;
+      let elapsedFrames = 0;
+      const trackCentering = () => {
+        if (cancelled || !activeTarget?.isConnected) return;
+        update();
+        const rect = activeTarget.getBoundingClientRect();
+        const distance = Math.abs(rect.top + rect.height / 2 - window.innerHeight / 2);
+        stableFrames = Math.abs(distance - previousDistance) < 0.25 ? stableFrames + 1 : 0;
+        previousDistance = distance;
+        elapsedFrames += 1;
+        if (distance <= 1 || (stableFrames >= 4 && elapsedFrames >= 12) || elapsedFrames >= 90) {
+          if (distance > 1) {
+            activeTarget.scrollIntoView({ block: "center", inline: "nearest", behavior: "auto" });
+            update();
+          }
+          return;
+        }
+        frame = window.requestAnimationFrame(trackCentering);
+      };
+      frame = window.requestAnimationFrame(() => {
+        if (cancelled) return;
+        activeTarget.scrollIntoView({ block: "center", inline: "nearest", behavior: reducedMotion ? "auto" : "smooth" });
+        trackCentering();
+      });
+    };
+
+    setTargetRect(null);
+    const target = document.querySelector(selector);
+    if (target) connect(target);
+    else if (typeof MutationObserver !== "undefined") {
+      mutationObserver = new MutationObserver(() => connect(document.querySelector(selector)));
+      mutationObserver.observe(document.body, { childList: true, subtree: true });
+    }
+
     return () => {
+      cancelled = true;
       window.cancelAnimationFrame(frame);
-      window.clearTimeout(settleTimer);
-      observer?.disconnect();
+      mutationObserver?.disconnect();
+      resizeObserver?.disconnect();
       activeTarget?.removeAttribute("data-onboarding-active");
-      releaseScrollRoom();
       window.removeEventListener("resize", update);
       window.removeEventListener("scroll", update, true);
     };
-  }, [step.id, step.target, layoutKey]);
+  }, [step.id, step.target]);
 
   useLayoutEffect(() => {
     const height = dialogRef.current?.getBoundingClientRect().height;

@@ -30,6 +30,18 @@ Questions to answer:
 
 ## Required Patterns
 
+### Guided Target Lifecycle
+
+Multi-step guidance that changes Creator panels must use one direction-independent target lifecycle:
+
+- Update the guide step and its required panel in the same React event batch. Do not change the step first and repair the panel later from an effect.
+- Treat target mounting as asynchronous. Resolve the target immediately when available and otherwise wait with a scoped `MutationObserver`; always disconnect observers during step cleanup.
+- Reserve both leading and trailing scroll room once for the lifetime of the guide so targets near either document boundary can use the same centering rule.
+- Track target geometry through captured scroll events and `ResizeObserver`. Do not use a fixed timeout as the source of truth for target readiness or final spotlight placement.
+- Ignore off-screen or degenerate rectangles instead of rendering clipped spotlight geometry with negative dimensions.
+
+Hosted regression coverage must traverse every guide step forward and backward. Panel-backed targets must be asserted as active, fully visible, and centered in both directions; testing only the final pair of steps is insufficient.
+
 ### Creator Skin Changes
 
 Skin changes must stay consistent across the creator workbench, preview player, and deployable player template. Canonical IDs, labels, swatches, descriptions, and semantic tokens live in `packages/interface/web/skin-catalog.js`; surfaces may add layout treatments keyed by `data-skin` but must not duplicate the catalog.
