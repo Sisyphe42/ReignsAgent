@@ -62,6 +62,7 @@ const STEP_DEFINITIONS = [
   },
   {
     id: "projects",
+    panelId: "overview",
     target: "project-menu",
     en: { title: "Start from the right project", body: "Switch projects, begin with a blank canvas, or clone the sample without affecting the original." },
     zh: { title: "从合适的项目开始", body: "切换项目、从空白开始，或复制示例而不影响原始内容。" }
@@ -110,6 +111,7 @@ const STEP_DEFINITIONS = [
   },
   {
     id: "player",
+    panelId: "build",
     target: "player-launch",
     en: { title: "See only what players see", body: "Open the clean decision experience without Creator tools, diagnostics, or endpoint settings." },
     zh: { title: "只看玩家会看到的内容", body: "打开纯净的选择体验，不包含 Creator 工具、诊断或端点设置。" }
@@ -178,44 +180,38 @@ function sameRect(left, right) {
   return ["top", "left", "right", "bottom"].every((key) => Math.abs(left[key] - right[key]) < 0.5);
 }
 
-function reserveTourScrollRoom() {
+function reserveTourTrailingScrollRoom(viewportHeight) {
   const stage = document.querySelector(".stage");
   if (!stage) return () => {};
-  const previousPaddingTop = stage.style.paddingTop;
   const previousPaddingBottom = stage.style.paddingBottom;
   const computed = window.getComputedStyle(stage);
-  const room = Math.ceil(window.innerHeight / 2) + 16;
-  stage.style.paddingTop = `${(Number.parseFloat(computed.paddingTop) || 0) + room}px`;
+  const room = Math.ceil(viewportHeight / 2) + 16;
   stage.style.paddingBottom = `${(Number.parseFloat(computed.paddingBottom) || 0) + room}px`;
-  window.scrollBy({ top: room, behavior: "auto" });
   return () => {
-    const scrollTop = window.scrollY;
-    stage.style.paddingTop = previousPaddingTop;
     stage.style.paddingBottom = previousPaddingBottom;
-    window.scrollTo({ top: Math.max(0, scrollTop - room), behavior: "auto" });
   };
 }
 
-function getCardLayout(rect, height, wide = false) {
+function getCardLayout(rect, height, viewport, wide = false) {
   const margin = 16;
   const gap = 16;
-  const width = Math.min(wide ? 920 : 400, window.innerWidth - margin * 2);
+  const width = Math.min(wide ? 920 : 400, viewport.width - margin * 2);
   if (!rect) {
     return {
       width,
-      left: Math.max(margin, (window.innerWidth - width) / 2),
-      top: Math.max(margin, (window.innerHeight - height) / 2)
+      left: Math.max(margin, (viewport.width - width) / 2),
+      top: Math.max(margin, (viewport.height - height) / 2)
     };
   }
   const centeredLeft = rect.left + (rect.right - rect.left - width) / 2;
-  const left = Math.min(window.innerWidth - width - margin, Math.max(margin, centeredLeft));
+  const left = Math.min(viewport.width - width - margin, Math.max(margin, centeredLeft));
   const below = rect.bottom + gap;
   const above = rect.top - gap - height;
-  const top = below + height <= window.innerHeight - margin
+  const top = below + height <= viewport.height - margin
     ? below
     : above >= margin
       ? above
-      : Math.min(window.innerHeight - height - margin, Math.max(margin, below));
+      : Math.min(viewport.height - height - margin, Math.max(margin, below));
   return { width, left, top };
 }
 
@@ -230,6 +226,7 @@ export function OnboardingTour({ locale, steps, stepIndex, onStepChange, onFinis
   const [cardHeight, setCardHeight] = useState(260);
   const [demoDirection, setDemoDirection] = useState("left");
   const [shortcutDirection, setShortcutDirection] = useState(null);
+  const [viewport, setViewport] = useState(() => ({ width: window.innerWidth, height: window.innerHeight }));
 
   useEffect(() => {
     previousFocusRef.current = document.activeElement;
@@ -237,7 +234,13 @@ export function OnboardingTour({ locale, steps, stepIndex, onStepChange, onFinis
     return () => previousFocusRef.current?.focus?.();
   }, []);
 
-  useLayoutEffect(() => reserveTourScrollRoom(), []);
+  useEffect(() => {
+    const updateViewport = () => setViewport({ width: window.innerWidth, height: window.innerHeight });
+    window.addEventListener("resize", updateViewport);
+    return () => window.removeEventListener("resize", updateViewport);
+  }, []);
+
+  useLayoutEffect(() => reserveTourTrailingScrollRoom(viewport.height), [viewport.height]);
 
   useEffect(() => {
     function onKeyDown(event) {
@@ -372,7 +375,7 @@ export function OnboardingTour({ locale, steps, stepIndex, onStepChange, onFinis
   }, [step.id, targetRect, cardHeight]);
 
   const isIntro = step.kind === "intro";
-  const cardLayout = useMemo(() => getCardLayout(targetRect, cardHeight, isIntro), [targetRect, cardHeight, isIntro]);
+  const cardLayout = useMemo(() => getCardLayout(targetRect, cardHeight, viewport, isIntro), [targetRect, cardHeight, viewport, isIntro]);
   const isLast = stepIndex === steps.length - 1;
   const rectStyle = targetRect ? {
     top: targetRect.top,

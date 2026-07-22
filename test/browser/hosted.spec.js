@@ -61,15 +61,15 @@ test("guides the complete workflow once and replays it from Settings", async ({ 
   await expect(tour.getByRole("heading", { name: "Start from the right project" })).toBeVisible();
 
   const workflowSteps = [
-    { title: "Write the decisions", target: "content", centered: true },
-    { title: "See how the story moves", target: "story", centered: true },
-    { title: "Find problems before players do", target: "review", centered: true },
-    { title: "Use AI without giving up control", target: "ai-assist", centered: true },
-    { title: "Play what you wrote", target: "preview", centered: true },
-    { title: "Package the player experience", target: "build", centered: true },
-    { title: "See only what players see", target: "player-launch", centered: false },
-    { title: "Keep exploring on GitHub", target: "about-github", centered: true },
-    { title: "Come back anytime", target: "onboarding-replay", centered: true }
+    { title: "Write the decisions", target: "content", panel: "Content", preservesStageTop: true },
+    { title: "See how the story moves", target: "story", panel: "Story", preservesStageTop: true },
+    { title: "Find problems before players do", target: "review", panel: "Review", preservesStageTop: true },
+    { title: "Use AI without giving up control", target: "ai-assist", panel: "AI Assist", preservesStageTop: true },
+    { title: "Play what you wrote", target: "preview", panel: "Preview", preservesStageTop: true },
+    { title: "Package the player experience", target: "build", panel: "Build", preservesStageTop: true },
+    { title: "See only what players see", target: "player-launch", panel: "Build", centered: false },
+    { title: "Keep exploring on GitHub", target: "about-github", panel: "Settings", centered: true },
+    { title: "Come back anytime", target: "onboarding-replay", panel: "Settings", centered: true }
   ];
   for (const step of workflowSteps) {
     await tour.getByRole("button", { name: "Next" }).click();
@@ -87,7 +87,7 @@ test("guides the complete workflow once and replays it from Settings", async ({ 
 
   const reverseSteps = [
     ...workflowSteps.slice(0, -1).reverse(),
-    { title: "Start from the right project", target: "project-menu", centered: false },
+    { title: "Start from the right project", target: "project-menu", panel: "Overview", centered: false },
     { title: "Tell a story, one decision at a time", target: null, centered: false }
   ];
   for (const step of reverseSteps) {
@@ -96,7 +96,7 @@ test("guides the complete workflow once and replays it from Settings", async ({ 
   }
 
   const secondForwardPass = [
-    { title: "Start from the right project", target: "project-menu", centered: false },
+    { title: "Start from the right project", target: "project-menu", panel: "Overview", centered: false },
     ...workflowSteps
   ];
   for (const step of secondForwardPass) {
@@ -141,12 +141,12 @@ test("defers first-run onboarding on an explicit panel route", async ({ page }) 
 });
 
 test("keeps localized onboarding inside a narrow viewport", async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 720 });
   await page.addInitScript(() => {
     Object.defineProperty(navigator, "languages", { configurable: true, get: () => ["zh-CN"] });
     Object.defineProperty(navigator, "language", { configurable: true, get: () => "zh-CN" });
   });
   await openHosted(page, { onboarding: "fresh" });
+  await page.setViewportSize({ width: 390, height: 720 });
   const card = page.locator(".onboarding-tour__card");
   await expect(card.getByRole("heading", { name: "用一次次选择讲完一个故事" })).toBeVisible();
   await expect(card.locator(".onboarding-tour__progress")).toHaveText("1/11");
@@ -156,6 +156,9 @@ test("keeps localized onboarding inside a narrow viewport", async ({ page }) => 
   expect(bounds.y).toBeGreaterThanOrEqual(0);
   expect(bounds.x + bounds.width).toBeLessThanOrEqual(390);
   expect(bounds.y + bounds.height).toBeLessThanOrEqual(720);
+  expect(await card.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+  expect(await card.locator(".onboarding-intro").evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+  await expect(card.locator(".onboarding-tour__actions")).toBeInViewport();
 });
 
 test("persists an OPFS project and reopens the PWA offline", async ({ page, context }) => {
@@ -724,6 +727,7 @@ async function expectTargetCentered(page, targetName) {
 
 async function expectOnboardingStep(page, tour, step) {
   await expect(tour.getByRole("heading", { name: step.title })).toBeVisible();
+  if (step.panel) await expect(page.getByRole("button", { name: step.panel, exact: true })).toHaveClass(/rail__item--active/);
   if (!step.target) return;
   const target = page.locator(`[data-onboarding-target="${step.target}"]`);
   await expect(target).toHaveAttribute("data-onboarding-active", "true");
@@ -732,4 +736,10 @@ async function expectOnboardingStep(page, tour, step) {
     return rect && rect.y >= 0 && rect.y + rect.height <= page.viewportSize().height;
   }).toBe(true);
   if (step.centered) await expectTargetCentered(page, step.target);
+  if (step.preservesStageTop) {
+    await expect.poll(async () => {
+      const rect = await page.locator(".stage__status").boundingBox();
+      return rect?.y ?? Number.POSITIVE_INFINITY;
+    }).toBeLessThan(160);
+  }
 }

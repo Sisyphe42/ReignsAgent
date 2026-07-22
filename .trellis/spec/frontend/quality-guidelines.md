@@ -35,12 +35,14 @@ Questions to answer:
 Multi-step guidance that changes Creator panels must use one direction-independent target lifecycle:
 
 - Update the guide step and its required panel in the same React event batch. Do not change the step first and repair the panel later from an effect.
+- Give every spotlight step a deterministic panel context, including top-bar targets. A step must not inherit whichever panel happened to be active from the navigation direction.
 - Treat target mounting as asynchronous. Resolve the target immediately when available and otherwise wait with a scoped `MutationObserver`; always disconnect observers during step cleanup.
-- Reserve both leading and trailing scroll room once for the lifetime of the guide so targets near either document boundary can use the same centering rule.
+- Preserve the Creator's natural leading layout. Never add top padding or a leading spacer to force early-page targets to the mathematical viewport center; use trailing scroll room only when document-end targets need room to center.
 - Track target geometry through captured scroll events and `ResizeObserver`. Do not use a fixed timeout as the source of truth for target readiness or final spotlight placement.
+- Recompute both spotlight geometry and card layout from the current viewport. Responsive checks must resize an already-open guide and verify internal content width and controls, not only the outer dialog bounds at initial load.
 - Ignore off-screen or degenerate rectangles instead of rendering clipped spotlight geometry with negative dimensions.
 
-Hosted regression coverage must traverse every guide step forward and backward. Panel-backed targets must be asserted as active, fully visible, and centered in both directions; testing only the final pair of steps is insufficient.
+Hosted regression coverage must traverse every guide step forward and backward. Panel-backed targets must be active and fully visible in both directions; document-end targets that require centering must be checked explicitly. Early panel steps must also assert that the stage stays at its natural top position so coordinate-only checks cannot hide a large artificial blank region. Testing only the final pair of steps is insufficient.
 
 ### Creator Skin Changes
 
