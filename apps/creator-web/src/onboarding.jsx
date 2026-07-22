@@ -8,14 +8,16 @@ const COPY = {
     back: "Back",
     next: "Next",
     finish: "Finish",
-    skip: "Skip"
+    skip: "Skip",
+    escapeHint: "Esc"
   },
   "zh-Hans": {
     progress: (current, total) => `${current}/${total}`,
     back: "上一步",
     next: "下一步",
     finish: "完成",
-    skip: "跳过"
+    skip: "跳过",
+    escapeHint: "Esc"
   }
 };
 
@@ -117,8 +119,8 @@ const STEP_DEFINITIONS = [
     panelId: "settings",
     target: "about-github",
     interactiveTarget: true,
-    en: { title: "Keep exploring on GitHub", body: "About links to the source, detailed README, releases, license, and issue tracker. You can open the highlighted GitHub link now or return whenever you need deeper documentation.", actionHref: "https://github.com/Sisyphe42/ReignsAgent", actionLabel: "Open GitHub" },
-    zh: { title: "前往 GitHub 继续了解", body: "About 提供源码、详细 README、版本发布、许可证和问题追踪入口。你现在就可以打开高亮的 GitHub 链接，也可以之后随时回来查阅更完整的文档。", actionHref: "https://github.com/Sisyphe42/ReignsAgent", actionLabel: "打开 GitHub" }
+    en: { title: "Keep exploring on GitHub", body: "About gathers the source, README, releases, license, and issues. Open GitHub now or return later.", actionHref: "https://github.com/Sisyphe42/ReignsAgent", actionLabel: "Open GitHub" },
+    zh: { title: "前往 GitHub 继续了解", body: "About 汇集源码、README、版本、许可证和问题追踪。现在打开 GitHub，或稍后再来。", actionHref: "https://github.com/Sisyphe42/ReignsAgent", actionLabel: "打开 GitHub" }
   },
   {
     id: "replay",
@@ -203,9 +205,11 @@ export function OnboardingTour({ locale, steps, stepIndex, layoutKey, onStepChan
   const step = steps[stepIndex];
   const dialogRef = useRef(null);
   const previousFocusRef = useRef(null);
+  const shortcutRef = useRef(null);
   const [targetRect, setTargetRect] = useState(null);
   const [cardHeight, setCardHeight] = useState(260);
   const [demoDirection, setDemoDirection] = useState("left");
+  const [shortcutDirection, setShortcutDirection] = useState(null);
 
   useEffect(() => {
     previousFocusRef.current = document.activeElement;
@@ -220,6 +224,19 @@ export function OnboardingTour({ locale, steps, stepIndex, layoutKey, onStepChan
         onSkip();
         return;
       }
+      const isSpace = event.key === " " || event.key === "Spacebar";
+      const isInteractive = event.target instanceof Element && event.target.closest("a, button, input, select, textarea, [contenteditable='true']");
+      const direction = event.key === "ArrowLeft" ? "back" : (event.key === "ArrowRight" || (isSpace && !isInteractive)) ? "next" : null;
+      if (direction) {
+        event.preventDefault();
+        if (event.repeat || (direction === "back" && stepIndex === 0)) return;
+        shortcutRef.current = direction;
+        setShortcutDirection(direction);
+        if (direction === "back") onStepChange(stepIndex - 1);
+        else if (stepIndex === steps.length - 1) onFinish();
+        else onStepChange(stepIndex + 1);
+        return;
+      }
       if (event.key !== "Tab") return;
       const focusable = [...(dialogRef.current?.querySelectorAll("a[href], button:not([disabled])") ?? [])];
       if (focusable.length === 0) return;
@@ -230,9 +247,20 @@ export function OnboardingTour({ locale, steps, stepIndex, layoutKey, onStepChan
       event.preventDefault();
       focusable[next].focus();
     }
+    function onKeyUp(event) {
+      const direction = event.key === "ArrowLeft" ? "back" : (event.key === "ArrowRight" || event.key === " " || event.key === "Spacebar") ? "next" : null;
+      if (direction && shortcutRef.current === direction) {
+        shortcutRef.current = null;
+        setShortcutDirection(null);
+      }
+    }
     document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [onSkip]);
+    document.addEventListener("keyup", onKeyUp);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("keyup", onKeyUp);
+    };
+  }, [onFinish, onSkip, onStepChange, stepIndex, steps.length]);
 
   useEffect(() => {
     if (step.kind !== "intro" || window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches) return undefined;
@@ -259,7 +287,7 @@ export function OnboardingTour({ locale, steps, stepIndex, layoutKey, onStepChan
       activeTarget = target;
       activeTarget?.setAttribute("data-onboarding-active", "true");
       const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
-      target?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: reducedMotion ? "auto" : "smooth" });
+      target?.scrollIntoView({ block: "center", inline: "nearest", behavior: reducedMotion ? "auto" : "smooth" });
       update();
       if (target && typeof ResizeObserver !== "undefined") {
         observer = new ResizeObserver(update);
@@ -355,12 +383,15 @@ export function OnboardingTour({ locale, steps, stepIndex, layoutKey, onStepChan
           </div>
         )}
         <div className="onboarding-tour__actions">
-          <span className="onboarding-tour__progress" aria-live="polite">{copy.progress(stepIndex + 1, steps.length)}</span>
-          <button className="onboarding-tour__skip" type="button" onClick={onSkip}>{copy.skip}</button>
           <span className="onboarding-tour__nav">
-            <button type="button" disabled={stepIndex === 0} onClick={() => onStepChange(stepIndex - 1)} aria-label={copy.back}>←</button>
-            <button type="button" onClick={() => isLast ? onFinish() : onStepChange(stepIndex + 1)} aria-label={isLast ? copy.finish : copy.next}>→</button>
+            <button className={shortcutDirection === "back" ? "is-shortcut-active" : ""} type="button" disabled={stepIndex === 0} onClick={() => onStepChange(stepIndex - 1)} aria-label={copy.back}>←</button>
+            <span className="onboarding-tour__progress" aria-live="polite">{copy.progress(stepIndex + 1, steps.length)}</span>
+            <button className={shortcutDirection === "next" ? "is-shortcut-active" : ""} type="button" onClick={() => isLast ? onFinish() : onStepChange(stepIndex + 1)} aria-label={isLast ? copy.finish : copy.next}>→</button>
           </span>
+          <button className="onboarding-tour__skip" type="button" onClick={onSkip}>
+            <span>{copy.skip}</span>
+            <kbd>{copy.escapeHint}</kbd>
+          </button>
         </div>
       </section>
     </div>

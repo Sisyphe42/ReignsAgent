@@ -35,17 +35,22 @@ test("guides the complete workflow once and replays it from Settings", async ({ 
   const tour = page.getByTestId("onboarding-tour");
   await expect(tour.getByRole("heading", { name: "Tell a story, one decision at a time" })).toBeVisible();
   await expect(tour.locator(".onboarding-tour__progress")).toHaveText("1/11");
+  await expect(tour.locator(".onboarding-tour__skip kbd")).toHaveText("Esc");
   await tour.getByRole("button", { name: /Hear them out/ }).click();
   await expect(tour.locator(".onboarding-demo")).toHaveClass(/onboarding-demo--right/);
   await tour.getByRole("button", { name: /Turn them away/ }).click();
   await expect(tour.locator(".onboarding-demo")).toHaveClass(/onboarding-demo--left/);
 
-  await tour.getByRole("button", { name: "Next" }).click();
+  await page.keyboard.down("ArrowRight");
+  await expect(tour.getByRole("button", { name: "Next" })).toHaveClass(/is-shortcut-active/);
+  await page.keyboard.up("ArrowRight");
   await expect(tour.getByRole("heading", { name: "Start from the right project" })).toBeVisible();
   await expect(tour.locator(".onboarding-tour__spotlight")).toBeVisible();
-  await tour.getByRole("button", { name: "Back" }).click();
+  await page.keyboard.down("ArrowLeft");
+  await expect(tour.getByRole("button", { name: "Back" })).toHaveClass(/is-shortcut-active/);
+  await page.keyboard.up("ArrowLeft");
   await expect(tour.getByRole("heading", { name: "Tell a story, one decision at a time" })).toBeVisible();
-  await tour.getByRole("button", { name: "Next" }).click();
+  await page.keyboard.press("Space");
   await expect(tour.getByRole("heading", { name: "Start from the right project" })).toBeVisible();
 
   const titles = [
@@ -62,6 +67,13 @@ test("guides the complete workflow once and replays it from Settings", async ({ 
   for (const title of titles) {
     await tour.getByRole("button", { name: "Next" }).click();
     await expect(tour.getByRole("heading", { name: title })).toBeVisible();
+    const target = page.locator("[data-onboarding-active='true']");
+    if (await target.count()) {
+      await expect.poll(async () => {
+        const rect = await target.boundingBox();
+        return rect && rect.y >= 0 && rect.y + rect.height <= page.viewportSize().height;
+      }).toBe(true);
+    }
     if (title === "Write the decisions") {
       await expect(page.locator('.rail__item[aria-label="Content"]')).toHaveClass(/rail__item--active/);
       await expect.poll(() => workspaceContains(page, 'activePanel = "overview"')).toBe(true);
@@ -92,7 +104,7 @@ test("guides the complete workflow once and replays it from Settings", async ({ 
 
 test("treats skipping onboarding as completion", async ({ page }) => {
   await openHosted(page, { onboarding: "fresh" });
-  await page.getByRole("button", { name: "Skip", exact: true }).click();
+  await page.getByRole("button", { name: /Skip/ }).click();
   await expect(page.getByTestId("onboarding-tour")).toHaveCount(0);
   await page.reload();
   await expect(page.locator(".stage__status strong")).toContainText("cards loaded");
@@ -189,7 +201,7 @@ test("keeps navigation interactive when localStorage methods fail", async ({ pag
   await page.getByRole("button", { name: "Settings" }).click();
   await page.getByRole("button", { name: "Replay onboarding guide" }).click();
   await expect(page.getByTestId("onboarding-tour").getByRole("heading", { name: "Tell a story, one decision at a time" })).toBeVisible();
-  await page.getByRole("button", { name: "Skip", exact: true }).click();
+  await page.getByRole("button", { name: /Skip/ }).click();
   await expect(page.getByRole("button", { name: "Settings" })).toHaveClass(/rail__item--active/);
   await page.getByRole("button", { name: "Collapse navigation" }).click();
   await expect(page.locator(".workspace")).toHaveClass(/workspace--rail-collapsed.*workspace--rail-pinned|workspace--rail-pinned.*workspace--rail-collapsed/);
