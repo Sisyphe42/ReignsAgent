@@ -4,6 +4,7 @@ import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 
 const WORKFLOW = await readFile(new URL("../../.github/workflows/desktop.yml", import.meta.url), "utf8");
+const CI_WORKFLOW = await readFile(new URL("../../.github/workflows/ci.yml", import.meta.url), "utf8");
 
 describe("release workflow contract", () => {
   it("builds all five archives and assembles them on manual runs", () => {
@@ -26,5 +27,12 @@ describe("release workflow contract", () => {
     assert.match(publish, /verify-release-metadata\.mjs --tag/);
     assert.match(publish, /gh release create/);
     assert.doesNotMatch(WORKFLOW.slice(0, WORKFLOW.indexOf("  publish-release:")), /contents: write/);
+  });
+
+  it("builds and smokes the web apps when a release tag is pushed", () => {
+    assert.match(CI_WORKFLOW, /tags:\s*\["v\*"\]/);
+    assert.match(CI_WORKFLOW, /npm run verify/);
+    assert.match(CI_WORKFLOW, /npm run build:hosted/);
+    assert.match(CI_WORKFLOW, /npm run test:hosted/);
   });
 });

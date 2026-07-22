@@ -94,11 +94,38 @@ test("keeps navigation interactive when localStorage methods fail", async ({ pag
   await expect(page.locator(".stage__status strong")).toContainText("cards loaded");
 });
 
+test("does not flash the device language before the saved language loads", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "languages", { configurable: true, get: () => ["zh-CN"] });
+    Object.defineProperty(navigator, "language", { configurable: true, get: () => "zh-CN" });
+  });
+  await openHosted(page);
+  await page.getByRole("button", { name: "设置" }).click();
+  await page.getByLabel("语言").selectOption("en");
+  await expect.poll(() => configContains(page, 'locale = "en"'), { timeout: 15_000 }).toBe(true);
+
+  await page.addInitScript(() => {
+    window.__reignsAgentSawChineseUi = false;
+    new MutationObserver(() => {
+      if (/项目概览|浏览器工作区|设置 \/ 流水线/.test(document.body?.innerText ?? "")) window.__reignsAgentSawChineseUi = true;
+    }).observe(document, { childList: true, subtree: true, characterData: true });
+  });
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Settings / Pipeline" })).toBeVisible();
+  expect(await page.evaluate(() => window.__reignsAgentSawChineseUi)).toBe(false);
+});
+
 test("persists navigation density and shared interface language", async ({ page }) => {
   await openHosted(page);
 
   await expect(page.locator(".project-menu-field > .project-menu__label")).toHaveText("Project");
   await expect(page.locator(".project-menu__trigger")).not.toContainText("Project");
+  const projectHeaderAlignment = await page.locator(".project-menu-field").evaluate((field) => {
+    const label = field.querySelector(".project-menu__label").getBoundingClientRect();
+    const trigger = field.querySelector(".project-menu__trigger").getBoundingClientRect();
+    return Math.abs((label.top + label.height / 2) - (trigger.top + trigger.height / 2));
+  });
+  expect(projectHeaderAlignment).toBeLessThan(1);
   const projectChevronPath = await page.locator(".project-menu__chevron path").getAttribute("d");
   const skinChevronPath = await page.locator(".skin-select__chevron path").getAttribute("d");
   expect(projectChevronPath).toBe(skinChevronPath);
@@ -288,10 +315,19 @@ test("persists navigation density and shared interface language", async ({ page 
   await expect(page.getByRole("heading", { name: "图像端点" })).toBeVisible();
   await expect(page.locator(".image-endpoint-settings").getByText("协议", { exact: true })).toHaveCount(1);
   await expect(page.locator(".image-endpoint-settings .capability-chip")).toHaveText(["生成", "编辑 / 参考图"]);
+  await expect(page.getByRole("heading", { name: "浏览器工作区" })).toBeVisible();
+  const hostedWorkspaceSpacing = await page.locator(".hosted-workspace-tools").evaluate((section) => {
+    const next = section.nextElementSibling;
+    return next.getBoundingClientRect().top - section.getBoundingClientRect().bottom;
+  });
+  expect(hostedWorkspaceSpacing).toBeGreaterThanOrEqual(20);
   await expect(page.getByRole("button", { name: "复制文本端点连接" })).toBeVisible();
   await expect(page.getByRole("button", { name: "验证图像配置" })).toBeVisible();
   await expect(page.getByRole("link", { name: "打开玩家端预览" })).toBeVisible();
   await expect(page.getByRole("link", { name: "打开玩家端预览" })).toHaveAttribute("href", /locale=zh-Hans/);
+  await page.getByRole("link", { name: "打开玩家端预览" }).click();
+  await expect(page.locator('.rail__item[aria-label="预览"]')).toHaveClass(/rail__item--active/);
+  await expect(page).toHaveURL(/\/workbench\/preview(?:\?|$)/);
   await page.getByRole("button", { name: "概览" }).click();
   await expect(page.locator('.metric[data-ai-label="Project"] strong')).toHaveText("Ready");
   await expect.poll(() => workspaceContains(page, 'activePanel = "overview"'), { timeout: 15_000 }).toBe(true);
@@ -483,5 +519,14 @@ async function workspaceContains(page, expected) {
       throw error;
     }
     return false;
+  }, expected);
+}
+
+async function configContains(page, expected) {
+  return page.evaluate(async (text) => {
+    const root = await navigator.storage.getDirectory();
+    const dataRoot = await root.getDirectoryHandle("ReignsAgentData");
+    const config = await (await dataRoot.getFileHandle("config.toml")).getFile();
+    return (await config.text()).includes(text);
   }, expected);
 }

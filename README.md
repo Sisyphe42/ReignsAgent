@@ -517,7 +517,7 @@ console.log(diagnostics.healthScore, session.factions, build.player.choiceModel)
 
 ## CI And Verification
 
-The repository uses GitHub Actions for pull requests and `master` pushes, with duplicate runs cancelled per ref. CI runs `npm ci` and `npm run verify` on Node.js 22 and 24, then performs hosted-PWA/subpath, deployable-player, and Electron source smoke tests on Node.js 22. The Hosted job declares `needs: verify`, so every browser smoke run is gated by the shared Pipeline, Interface, Creator Server, endpoint-protocol, and integration tests rather than duplicating them inside the browser job. Native desktop artifacts remain manual or `v*` tag builds.
+The repository uses GitHub Actions for pull requests, `master` pushes, and `v*` release tags, with duplicate runs cancelled per ref. CI runs `npm ci` and `npm run verify` on Node.js 22 and 24, then performs hosted-PWA/subpath, deployable-player, and Electron source smoke tests on Node.js 22. The Hosted job declares `needs: verify`, so every browser smoke run is gated by the shared Pipeline, Interface, Creator Server, endpoint-protocol, and integration tests rather than duplicating them inside the browser job. A release tag therefore builds and smokes the web apps alongside the native portable artifacts produced by the tag-gated desktop workflow.
 
 ### Local Verification
 

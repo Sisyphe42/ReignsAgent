@@ -383,6 +383,19 @@ select {
   min-height: 100vh;
 }
 
+.creator-bootstrap {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  background: var(--bg);
+}
+
+.creator-bootstrap img {
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
+}
+
 .topbar {
   position: sticky;
   top: 0;
@@ -599,8 +612,15 @@ select {
   font-size: 0.72rem;
 }
 
+.project-menu__label {
+  display: inline-flex;
+  min-height: 38px;
+  align-items: center;
+}
+
 .project-menu {
   position: static;
+  gap: 0;
   flex: 1 1 auto;
   width: auto;
   min-width: 0;
@@ -3287,6 +3307,10 @@ select {
   grid-template-columns: minmax(0, 1fr) minmax(190px, 260px);
   gap: 22px;
   align-items: center;
+}
+
+.hosted-workspace-tools {
+  margin: 0 0 22px;
 }
 
 .interface-settings p {

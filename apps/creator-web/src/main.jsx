@@ -37,6 +37,11 @@ const ZH_HANS_COPY = {
   Release: "发布", Settings: "设置", Player: "玩家端", Skin: "皮肤", New: "新建", Sample: "示例",
   Delete: "删除", cards: "张卡牌", "player ready": "玩家端就绪", "player blocked": "玩家端受阻",
   "Browser workspace": "浏览器工作区", "Local session": "本地会话", "Desktop session": "桌面会话",
+  "Projects live in this site's private storage. Clearing site data deletes them, so keep regular backups.": "项目保存在此站点的私有存储中。清除站点数据会删除这些项目，请定期备份。",
+  "Browser storage is persistent": "浏览器存储已持久化", "Persistent storage was not granted; keep backups": "未获准使用持久化存储，请保留备份",
+  "Capacity unavailable": "容量不可用", "Persistent storage granted": "已获准持久化存储", "Storage may be reclaimed": "存储空间可能被回收",
+  "Request persistence": "请求持久化", "Include plaintext API key": "包含明文 API 密钥", "Export workspace backup": "导出工作区备份",
+  "Export active project": "导出当前项目", "Import and merge": "导入并合并",
   "Collapse navigation": "收起导航", "Expand navigation": "展开导航", "Open player preview": "打开玩家端预览",
   "Manage project": "管理项目", "New blank project": "新建空白项目", "New from sample": "从示例新建", "Delete project": "删除项目",
   "Choose project": "选择项目", "Projects": "项目列表", "Follow browser": "跟随浏览器", "Follow device": "跟随设备",
@@ -1624,6 +1629,14 @@ function App() {
       : `/play?${params.toString()}`;
   }, [skin, locale, desktopClient]);
 
+  if (!configReady) {
+    return (
+      <div className="creator-bootstrap" aria-label="Loading ReignsAgent">
+        <img src={`${import.meta.env.BASE_URL}logo-alpha.png`} alt="" />
+      </div>
+    );
+  }
+
   return (
     <LocaleContext.Provider value={locale}>
     <div className="app-shell" data-client={desktopClient ? "desktop" : "web"}>
@@ -1687,7 +1700,12 @@ function App() {
               <SelectChevronIcon className="select-chevron skin-select__chevron" />
             </span>
           </label>
-          <a className="link-button player-launch" href={playerHref} aria-label={tr(locale, "Open player preview")}>
+          <a
+            className="link-button player-launch"
+            href={playerHref}
+            aria-label={tr(locale, "Open player preview")}
+            onClick={import.meta.env.VITE_CREATOR_HOST === "browser" ? (event) => { event.preventDefault(); openPanel("preview"); } : undefined}
+          >
             <span>{tr(locale, "Player")}</span>
           </a>
         </div>
@@ -5651,6 +5669,7 @@ async function readJsonFile(file, preferredEntries = []) {
 }
 
 function HostedWorkspaceTools({ onRefresh, onStatus }) {
+  const locale = useUiLocale();
   const [storage, setStorage] = useState(null);
   const [includeApiKey, setIncludeApiKey] = useState(false);
   const fileRef = useRef(null);
@@ -5659,7 +5678,7 @@ function HostedWorkspaceTools({ onRefresh, onStatus }) {
   async function persist() {
     const result = await api("/api/workspace/persist", { method: "POST", body: {} });
     setStorage(result);
-    onStatus(result.persisted ? "Browser storage is persistent" : "Persistent storage was not granted; keep backups");
+    onStatus(tr(locale, result.persisted ? "Browser storage is persistent" : "Persistent storage was not granted; keep backups"));
   }
   async function exportWorkspace() {
     if (includeApiKey && !window.confirm("This backup will contain your API key in plaintext. Continue?")) return;
@@ -5676,20 +5695,20 @@ function HostedWorkspaceTools({ onRefresh, onStatus }) {
     try { const snapshot = await readJsonFile(file, ["workspace.json"]); await api("/api/workspace/import", { method: "POST", body: { snapshot, replace: false } }); window.location.reload(); }
     finally { event.target.value = ""; }
   }
-  const usage = storage?.usage != null && storage?.quota ? `${Math.round(storage.usage / 1048576)} MB of ${Math.round(storage.quota / 1048576)} MB` : "Capacity unavailable";
+  const usage = storage?.usage != null && storage?.quota ? `${Math.round(storage.usage / 1048576)} MB / ${Math.round(storage.quota / 1048576)} MB` : tr(locale, "Capacity unavailable");
   return (
     <div className="subsection hosted-workspace-tools">
-      <h3>Browser workspace</h3>
-      <p className="muted">Projects live in this site's private storage. Clearing site data deletes them, so keep regular backups.</p>
+      <h3>{tr(locale, "Browser workspace")}</h3>
+      <p className="muted">{tr(locale, "Projects live in this site's private storage. Clearing site data deletes them, so keep regular backups.")}</p>
       <div className="action-row">
-        <span className={`endpoint-check endpoint-check--${storage?.persisted ? "ok" : "idle"}`}>{storage?.persisted ? "Persistent storage granted" : "Storage may be reclaimed"} · {usage}</span>
-        {!storage?.persisted && <button className="btn" type="button" onClick={() => void persist()}>Request persistence</button>}
+        <span className={`endpoint-check endpoint-check--${storage?.persisted ? "ok" : "idle"}`}>{tr(locale, storage?.persisted ? "Persistent storage granted" : "Storage may be reclaimed")} · {usage}</span>
+        {!storage?.persisted && <button className="btn" type="button" onClick={() => void persist()}>{tr(locale, "Request persistence")}</button>}
       </div>
       <div className="action-row">
-        <label><input type="checkbox" checked={includeApiKey} onChange={(event) => setIncludeApiKey(event.target.checked)} /> Include plaintext API key</label>
-        <button className="btn" type="button" onClick={() => void exportWorkspace()}>Export workspace backup</button>
-        <button className="btn" type="button" onClick={() => void exportProject()}>Export active project</button>
-        <button className="btn" type="button" onClick={() => fileRef.current?.click()}>Import and merge</button>
+        <label><input type="checkbox" checked={includeApiKey} onChange={(event) => setIncludeApiKey(event.target.checked)} /> {tr(locale, "Include plaintext API key")}</label>
+        <button className="btn" type="button" onClick={() => void exportWorkspace()}>{tr(locale, "Export workspace backup")}</button>
+        <button className="btn" type="button" onClick={() => void exportProject()}>{tr(locale, "Export active project")}</button>
+        <button className="btn" type="button" onClick={() => fileRef.current?.click()}>{tr(locale, "Import and merge")}</button>
         <input ref={fileRef} type="file" accept="application/json,application/zip,.json,.zip" hidden onChange={(event) => void importWorkspace(event)} />
       </div>
     </div>
