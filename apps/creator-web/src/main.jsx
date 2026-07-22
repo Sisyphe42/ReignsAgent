@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useMemo, useRef, useState 
 import { createRoot } from "react-dom/client";
 import { SKINS as SKIN_CATALOG, DEFAULT_SKIN, applySkinTheme, resolveSkinId as resolveSharedSkinId } from "../../../packages/interface/web/skin-catalog.js";
 import { createCreatorBackend } from "./backend.js";
+import { getOnboardingSteps, markOnboardingComplete, OnboardingTour, readOnboardingCompletion } from "./onboarding.jsx";
 import "./styles.css";
 
 const creatorBackendPromise = createCreatorBackend();
@@ -56,6 +57,8 @@ const ZH_HANS_COPY = {
   "Settings / Pipeline": "设置 / 流水线", "Project metadata, AI endpoint posture, locale hooks, and connector planning.": "管理项目元数据、界面语言、AI 端点与连接器规划。",
   Interface: "界面", Language: "语言", "Interface language is shared by browser, local, and desktop clients.": "界面语言设置在浏览器、本地与桌面客户端间共用。",
   "About ReignsAgent": "关于 ReignsAgent", Version: "版本",
+  Guidance: "使用引导", "Replay onboarding guide": "重新播放新手引导",
+  "Take another guided tour of the complete Creator workflow.": "再次通过分步引导了解完整的 Creator 工作流程。",
   "Build, review, and publish card-based narrative experiences from one portable workspace.": "在一个便携工作区中创作、审查并发布卡牌叙事体验。",
   "About links": "关于链接",
   "Independent and unaffiliated with Reigns, Nerial, or Devolver Digital.": "本项目独立开发，与 Reigns、Nerial 或 Devolver Digital 无关联。",
@@ -606,7 +609,7 @@ function ProjectMenu({ locale, projects, activeProjectId, onOpen, onCreate, onDe
   const activeProject = projects.find((project) => project.id === activeProjectId) ?? null;
   const closeMenu = (element) => element.closest("details")?.removeAttribute("open");
   return (
-    <div className="project-menu-field">
+    <div className="project-menu-field" data-onboarding-target="project-menu">
       <span className="project-menu__label">{tr(locale, "Project")}</span>
       <details className="project-menu" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.removeAttribute("open"); }}>
         <summary className="project-menu__trigger" aria-label={tr(locale, "Manage project")}>
@@ -1063,6 +1066,8 @@ function App() {
   const [aiGraphSelection, setAiGraphSelection] = useState(null);
   const historyRef = useRef([]);
   const [historyDepth, setHistoryDepth] = useState(0);
+  const [onboarding, setOnboarding] = useState({ open: false, stepIndex: 0, originPanel: DEFAULT_PANEL });
+  const onboardingAutoCheckedRef = useRef(false);
 
   // Snapshot the editor bundle before a mutation so it can be undone.
   async function pushHistory() {
@@ -1101,15 +1106,16 @@ function App() {
   const aiPresenceLabel = aiPresenceState === "ready" ? "Ready" : aiPresenceState === "setup" ? "Setup" : "Off";
   const locale = localePreference === "system" ? deviceLocale : localePreference;
   const followLocaleLabel = desktopClient ? "Follow device" : "Follow browser";
+  const onboardingSteps = useMemo(() => getOnboardingSteps(locale), [locale]);
 
   useEffect(() => {
     applySkinTheme(document.documentElement, skin);
-    syncWorkbenchUrl(activePanel, skin, "replace");
-    if (configReady) {
+    if (!onboarding.open) syncWorkbenchUrl(activePanel, skin, "replace");
+    if (configReady && !onboarding.open) {
       void api("/api/config", { method: "PATCH", body: { theme: skin } });
       void api("/api/workspace", { method: "PATCH", body: { activePanel } });
     }
-  }, [activePanel, skin, configReady]);
+  }, [activePanel, skin, configReady, onboarding.open]);
 
   useEffect(() => {
     document.documentElement.lang = locale;
@@ -1184,6 +1190,19 @@ function App() {
   useEffect(() => {
     void loadCreatorState();
   }, []);
+
+  useEffect(() => {
+    if (!configReady || onboardingAutoCheckedRef.current) return;
+    onboardingAutoCheckedRef.current = true;
+    if (initialUrlState.hasExplicitPanel || readOnboardingCompletion() !== "pending") return;
+    setOnboarding({ open: true, stepIndex: 0, originPanel: activePanel });
+  }, [activePanel, configReady, initialUrlState.hasExplicitPanel]);
+
+  useEffect(() => {
+    if (!onboarding.open) return;
+    const panelId = onboardingSteps[onboarding.stepIndex]?.panelId;
+    if (panelId && panelId !== activePanel) setActivePanel(panelId);
+  }, [activePanel, onboarding.open, onboarding.stepIndex, onboardingSteps]);
 
   async function loadCreatorState() {
     const [nextEditor, config, projectResult, workspaceState, nextReleases] = await Promise.all([
@@ -1619,6 +1638,17 @@ function App() {
     setLocalePreference(normalizeUiLocalePreference(nextLocale));
   }
 
+  function startOnboarding() {
+    setOnboarding({ open: true, stepIndex: 0, originPanel: activePanel });
+  }
+
+  function closeOnboarding() {
+    markOnboardingComplete();
+    const originPanel = onboarding.originPanel;
+    setOnboarding((current) => ({ ...current, open: false, stepIndex: 0 }));
+    setActivePanel(originPanel);
+  }
+
   const playerHref = useMemo(() => {
     const params = new URLSearchParams();
     params.set("skin", resolveSkinId(skin) ?? DEFAULT_SKIN);
@@ -1700,7 +1730,7 @@ function App() {
               <SelectChevronIcon className="select-chevron skin-select__chevron" />
             </span>
           </label>
-          <a className="link-button player-launch" href={playerHref} aria-label={tr(locale, "Open player preview")}>
+          <a className="link-button player-launch" href={playerHref} aria-label={tr(locale, "Open player preview")} data-onboarding-target="player-launch">
             <span>{tr(locale, "Player")}</span>
           </a>
         </div>
@@ -1887,6 +1917,7 @@ function App() {
               onImageSettingsChange={setImageSettings}
               onImageApiKeyChange={setImageApiKey}
               onImageApiKeyClear={clearSavedImageApiKey}
+              onStartOnboarding={startOnboarding}
             />
           )}
           {aiPreflight && (
@@ -1902,6 +1933,17 @@ function App() {
           )}
         </main>
       </div>
+      {onboarding.open && (
+        <OnboardingTour
+          locale={locale}
+          steps={onboardingSteps}
+          stepIndex={onboarding.stepIndex}
+          layoutKey={activePanel}
+          onStepChange={(stepIndex) => setOnboarding((current) => ({ ...current, stepIndex }))}
+          onFinish={closeOnboarding}
+          onSkip={closeOnboarding}
+        />
+      )}
     </div>
     </LocaleContext.Provider>
   );
@@ -1915,7 +1957,7 @@ function Overview({ editor, playerReady, diagnostics, build, aiAssistEnabled, ai
 
   return (
     <section className="panel">
-      <PanelHead title="Project Overview" note="Workspace health, content readiness, and next actions." />
+      <PanelHead title="Project Overview" note="Workspace health, content readiness, and next actions." onboardingTarget="overview" />
       <div className="metric-grid">
         <Metric label="Project" value={title} />
         <Metric label="Cards" value={String(cardCount)} />
@@ -2071,7 +2113,7 @@ function ContentPanel({ editor, assetsByCard, onImport, onMutate, onStatus, focu
 
   return (
     <section className="panel panel--content">
-      <PanelHead title="Content / Cards" note="Card text, left/right choices, faction effects, tags, variables, and art bindings." />
+      <PanelHead title="Content / Cards" note="Card text, left/right choices, faction effects, tags, variables, and art bindings." onboardingTarget="content" />
       <div className="tool-strip">
         <label className="file-button">
           <input type="file" accept=".json,.zip,application/json,application/zip" onChange={(event) => void importFile(event.target.files?.[0])} />
@@ -2894,7 +2936,7 @@ function StoryPanel({ editor, diagnostics, onOpen, onFocusCard, onPushHistory, o
 
   return (
     <section className="panel panel--story">
-      <PanelHead title="Story / Graph" note="Card-to-card transitions driven by tags. Click a node to edit it; rename tags for clarity." />
+      <PanelHead title="Story / Graph" note="Card-to-card transitions driven by tags. Click a node to edit it; rename tags for clarity." onboardingTarget="story" />
       <div className="metric-grid">
         <Metric label="Narrative nodes" value={`${editor?.cards?.length ?? 0} cards`} />
         <Metric
@@ -4555,7 +4597,7 @@ function ReviewPanel({ editor, diagnostics, aiAssistEnabled, onRun, onOpen, onFo
 
   return (
     <section className="panel">
-      <PanelHead title="Review Diagnostics" note="Creator-facing Monte Carlo review with reproducible seed inputs." />
+      <PanelHead title="Review Diagnostics" note="Creator-facing Monte Carlo review with reproducible seed inputs." onboardingTarget="review" />
       <div className="field-row field-row--compact review-run-row">
         <label>Cycles <input type="number" min="1" value={cycles} onChange={(event) => setCycles(Number(event.target.value))} /></label>
         <label>Max turns <input type="number" min="1" value={maxTurns} onChange={(event) => setMaxTurns(Number(event.target.value))} /></label>
@@ -4968,7 +5010,7 @@ function PreviewPanel({ play, assetsByCard, playerReady, onStart, onSwipe }) {
 
   return (
     <section className="panel">
-      <PanelHead title="Developer Preview" note="Debuggable preview over the same headless runtime used by player builds." />
+      <PanelHead title="Developer Preview" note="Debuggable preview over the same headless runtime used by player builds." onboardingTarget="preview" />
       <div className="preview-layout">
         <div className="gauge-stack">
           {Object.entries(state?.gauges ?? {}).map(([name, gauge]) => (
@@ -5003,7 +5045,7 @@ function BuildPanel({ editor, diagnostics, playerReady, build, releaseState, bus
   const releases = releaseState?.releases ?? [];
   return (
     <section className="panel">
-      <PanelHead title="Build / Deploy" note="Prepare and export the deployable player bundle." />
+      <PanelHead title="Build / Deploy" note="Prepare and export the deployable player bundle." onboardingTarget="build" />
       <div className="release-summary">
         <Metric label="Project" value={editor?.metadata?.title ?? "Untitled"} />
         <Metric label="Version" value={editor?.metadata?.version ?? "0.0.0"} />
@@ -5486,7 +5528,7 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
 
   return (
     <section className="panel">
-      <PanelHead title="AI Assist" note="Contextual draft planning, review repair, and visual request previews." />
+      <PanelHead title="AI Assist" note="Contextual draft planning, review repair, and visual request previews." onboardingTarget="ai-assist" />
       <div className={`ai-endpoint-card ${aiConfigured ? "ai-endpoint-card--ready" : "ai-endpoint-card--setup"}`}>
         <div>
           <span>{aiAssistEnabled ? "Assist layer visible" : "Assist layer hidden"}</span>
@@ -5746,7 +5788,7 @@ function ImageEndpointSettings({ aiSettings, imageSettings, apiKey, apiKeySaved,
   );
 }
 
-function SettingsPanel({ editor, aiSettings, apiKey, apiKeySaved, locale, localePreference, followLocaleLabel, onLocaleChange, onAiSettingsChange, onApiKeyChange, onApiKeyClear, onRefresh, onStatus, imageSettings, imageApiKey, imageApiKeySaved, onImageSettingsChange, onImageApiKeyChange, onImageApiKeyClear }) {
+function SettingsPanel({ editor, aiSettings, apiKey, apiKeySaved, locale, localePreference, followLocaleLabel, onLocaleChange, onAiSettingsChange, onApiKeyChange, onApiKeyClear, onRefresh, onStatus, imageSettings, imageApiKey, imageApiKeySaved, onImageSettingsChange, onImageApiKeyChange, onImageApiKeyClear, onStartOnboarding }) {
   const [title, setTitle] = useState(editor?.metadata?.title ?? "");
   const [titleUrl, setTitleUrl] = useState(editor?.metadata?.titleUrl ?? "");
   const [author, setAuthor] = useState(editor?.metadata?.author ?? "");
@@ -5974,7 +6016,7 @@ function SettingsPanel({ editor, aiSettings, apiKey, apiKeySaved, locale, locale
 
   return (
     <section className="panel">
-      <PanelHead title="Settings / Pipeline" note="Project metadata, AI endpoint posture, locale hooks, and connector planning." />
+      <PanelHead title="Settings / Pipeline" note="Project metadata, AI endpoint posture, locale hooks, and connector planning." onboardingTarget="settings" />
       {import.meta.env.VITE_CREATOR_HOST === "browser" && <HostedWorkspaceTools onRefresh={onRefresh} onStatus={onStatus} />}
       <div className="subsection interface-settings">
         <div>
@@ -5987,6 +6029,11 @@ function SettingsPanel({ editor, aiSettings, apiKey, apiKeySaved, locale, locale
             {UI_LOCALES.map(([id, label]) => <option key={id} value={id}>{tr(locale, label ?? followLocaleLabel)}</option>)}
           </select>
         </label>
+        <div className="interface-settings__guidance" data-onboarding-target="onboarding-replay">
+          <span>{tr(locale, "Guidance")}</span>
+          <small>{tr(locale, "Take another guided tour of the complete Creator workflow.")}</small>
+          <button className="btn btn--ghost btn--compact" type="button" onClick={onStartOnboarding}>{tr(locale, "Replay onboarding guide")}</button>
+        </div>
       </div>
       <div className="subsection">
         <h3>{tr(locale, "Project")}</h3>
@@ -6835,10 +6882,10 @@ function AiProgress({ step, active, status = "idle" }) {
   );
 }
 
-function PanelHead({ title, note }) {
+function PanelHead({ title, note, onboardingTarget = null }) {
   const locale = useUiLocale();
   return (
-    <div className="panel-head">
+    <div className="panel-head" data-onboarding-target={onboardingTarget || undefined}>
       <div>
         <h2>{tr(locale, title)}</h2>
         <p>{tr(locale, note)}</p>

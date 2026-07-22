@@ -5,6 +5,7 @@ import { strFromU8, unzipSync } from "fflate";
 
 let aiServer;
 let aiEndpoint;
+const ONBOARDING_COMPLETED_KEY = "reigns-agent.creator-web.onboarding-completed";
 const tinyPngBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
 let productVersion;
 
@@ -27,6 +28,99 @@ test.beforeAll(async () => {
 });
 
 test.afterAll(async () => new Promise((resolve) => aiServer.close(resolve)));
+
+test("guides the complete workflow once and replays it from Settings", async ({ page }) => {
+  await openHosted(page, { onboarding: "fresh" });
+
+  const tour = page.getByTestId("onboarding-tour");
+  await expect(tour.getByRole("heading", { name: "Make card narratives, end to end" })).toBeVisible();
+  await expect(tour.locator(".onboarding-tour__progress")).toHaveText("1/11");
+  await tour.getByRole("button", { name: "Publish now" }).click();
+  await expect(tour.locator(".onboarding-demo")).toHaveClass(/onboarding-demo--right/);
+  await tour.getByRole("button", { name: /Explore first/ }).click();
+  await expect(tour.locator(".onboarding-demo")).toHaveClass(/onboarding-demo--left/);
+
+  await tour.getByRole("button", { name: "Next" }).click();
+  await expect(tour.getByRole("heading", { name: "Start from the right project" })).toBeVisible();
+  await expect(tour.locator(".onboarding-tour__spotlight")).toBeVisible();
+  await tour.getByRole("button", { name: "Back" }).click();
+  await expect(tour.getByRole("heading", { name: "Make card narratives, end to end" })).toBeVisible();
+  await tour.getByRole("button", { name: "Next" }).click();
+  await expect(tour.getByRole("heading", { name: "Start from the right project" })).toBeVisible();
+
+  const titles = [
+    "Write the decisions",
+    "See how the story moves",
+    "Find problems before players do",
+    "Draft, inspect, then apply",
+    "Play what you wrote",
+    "Package the player experience",
+    "See only what players see",
+    "Tune the Creator, not the game",
+    "Come back anytime"
+  ];
+  for (const title of titles) {
+    await tour.getByRole("button", { name: "Next" }).click();
+    await expect(tour.getByRole("heading", { name: title })).toBeVisible();
+    if (title === "Write the decisions") {
+      await expect(page.locator('.rail__item[aria-label="Content"]')).toHaveClass(/rail__item--active/);
+      await expect.poll(() => workspaceContains(page, 'activePanel = "overview"')).toBe(true);
+    }
+  }
+
+  await tour.getByRole("button", { name: "Finish" }).click();
+  await expect(tour).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Overview" })).toHaveClass(/rail__item--active/);
+  await expect.poll(() => page.evaluate((key) => localStorage.getItem(key), ONBOARDING_COMPLETED_KEY)).toBe("true");
+
+  await page.reload();
+  await expect(page.locator(".stage__status strong")).toContainText("cards loaded");
+  await expect(tour).toHaveCount(0);
+  await page.getByRole("button", { name: "Settings" }).click();
+  await page.getByRole("button", { name: "Replay onboarding guide" }).click();
+  await expect(tour.getByRole("heading", { name: "Make card narratives, end to end" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(tour).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Settings" })).toHaveClass(/rail__item--active/);
+});
+
+test("treats skipping onboarding as completion", async ({ page }) => {
+  await openHosted(page, { onboarding: "fresh" });
+  await page.getByRole("button", { name: "Skip", exact: true }).click();
+  await expect(page.getByTestId("onboarding-tour")).toHaveCount(0);
+  await page.reload();
+  await expect(page.locator(".stage__status strong")).toContainText("cards loaded");
+  await expect(page.getByTestId("onboarding-tour")).toHaveCount(0);
+});
+
+test("defers first-run onboarding on an explicit panel route", async ({ page }) => {
+  await prepareOnboardingStorage(page, "fresh");
+  await page.goto("workbench/content");
+  await expect(page.locator(".stage__status strong")).toContainText("cards loaded");
+  await expect(page.getByTestId("onboarding-tour")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Content" })).toHaveClass(/rail__item--active/);
+
+  await page.goto("workbench");
+  await expect(page.getByTestId("onboarding-tour").getByRole("heading", { name: "Make card narratives, end to end" })).toBeVisible();
+});
+
+test("keeps localized onboarding inside a narrow viewport", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 720 });
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "languages", { configurable: true, get: () => ["zh-CN"] });
+    Object.defineProperty(navigator, "language", { configurable: true, get: () => "zh-CN" });
+  });
+  await openHosted(page, { onboarding: "fresh" });
+  const card = page.locator(".onboarding-tour__card");
+  await expect(card.getByRole("heading", { name: "从创作到发布，一站完成" })).toBeVisible();
+  await expect(card.locator(".onboarding-tour__progress")).toHaveText("1/11");
+  await expect(card.getByRole("button", { name: "下一步" })).toBeVisible();
+  const bounds = await card.boundingBox();
+  expect(bounds.x).toBeGreaterThanOrEqual(0);
+  expect(bounds.y).toBeGreaterThanOrEqual(0);
+  expect(bounds.x + bounds.width).toBeLessThanOrEqual(390);
+  expect(bounds.y + bounds.height).toBeLessThanOrEqual(720);
+});
 
 test("persists an OPFS project and reopens the PWA offline", async ({ page, context }) => {
   await openHosted(page);
@@ -86,6 +180,11 @@ test("keeps navigation interactive when localStorage methods fail", async ({ pag
   await openHosted(page);
 
   await expect(page.locator(".workspace")).toHaveClass(/workspace--rail-expanded.*workspace--rail-pinned|workspace--rail-pinned.*workspace--rail-expanded/);
+  await page.getByRole("button", { name: "Settings" }).click();
+  await page.getByRole("button", { name: "Replay onboarding guide" }).click();
+  await expect(page.getByTestId("onboarding-tour").getByRole("heading", { name: "Make card narratives, end to end" })).toBeVisible();
+  await page.getByRole("button", { name: "Skip", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Settings" })).toHaveClass(/rail__item--active/);
   await page.getByRole("button", { name: "Collapse navigation" }).click();
   await expect(page.locator(".workspace")).toHaveClass(/workspace--rail-collapsed.*workspace--rail-pinned|workspace--rail-pinned.*workspace--rail-collapsed/);
   await page.getByRole("button", { name: "Expand navigation" }).click();
@@ -515,7 +614,25 @@ async function activeMaskMetadata(page) {
   });
 }
 
-async function openHosted(page) {
+async function prepareOnboardingStorage(page, onboarding) {
+  await page.addInitScript(({ key, mode }) => {
+    try {
+      if (mode === "complete") {
+        window.localStorage.setItem(key, "true");
+        return;
+      }
+      if (window.sessionStorage.getItem("reigns-agent.test.onboarding-initialized") !== "true") {
+        window.localStorage.removeItem(key);
+        window.sessionStorage.setItem("reigns-agent.test.onboarding-initialized", "true");
+      }
+    } catch {
+      // Storage failure behavior is covered by dedicated tests.
+    }
+  }, { key: ONBOARDING_COMPLETED_KEY, mode: onboarding });
+}
+
+async function openHosted(page, { onboarding = "complete" } = {}) {
+  await prepareOnboardingStorage(page, onboarding);
   await page.goto("workbench");
   await page.evaluate(() => navigator.serviceWorker.ready.then(() => true));
   await page.reload();
