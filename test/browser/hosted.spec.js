@@ -346,12 +346,12 @@ test("persists navigation density and shared interface language", async ({ page 
   await page.evaluate(() => { window.__reignsAgentFullPageMarker = true; });
   await page.getByRole("link", { name: "打开玩家端预览" }).click();
   await expect(page).toHaveURL(/\/play\.html(?:\?|$)/);
-  await expect(page.getByRole("heading", { name: "Ready" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "返回创作者工作区" })).toBeVisible();
-  await page.getByRole("button", { name: "开始统治" }).click();
-  await expect(page.locator("#card-text")).not.toHaveText("Start a reign to draw the first card.");
+  await expect(page.getByRole("heading", { name: "ReignsAgent Player" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Back to workbench" })).toBeVisible();
+  await page.getByRole("button", { name: "Start reign" }).click();
+  await expect(page.locator("#text")).not.toHaveText("The court is waiting.");
   expect(await page.evaluate(() => window.__reignsAgentFullPageMarker)).toBeUndefined();
-  await page.getByRole("link", { name: "返回创作者工作区" }).click();
+  await page.getByRole("link", { name: "Back to workbench" }).click();
   await expect(page.getByRole("heading", { name: "设置 / 流水线" })).toBeVisible();
   await page.getByRole("button", { name: "概览" }).click();
   await expect(page.locator('.metric[data-ai-label="Project"] strong')).toHaveText("Ready");

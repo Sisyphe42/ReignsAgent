@@ -119,7 +119,10 @@ export default defineConfig(({ mode }) => {
     rollupOptions: hosted ? {
       input: {
         index: fileURLToPath(new URL("./index.html", import.meta.url)),
-        play: fileURLToPath(new URL("./play.html", import.meta.url))
+        "hosted-player-backend": fileURLToPath(new URL("./src/hosted-player-backend.js", import.meta.url))
+      },
+      output: {
+        entryFileNames: (chunk) => chunk.name === "hosted-player-backend" ? "hosted-player-backend.js" : "assets/[name]-[hash].js"
       }
     } : undefined
   }
@@ -133,11 +136,23 @@ function normalizeBase(value) {
 
 function hostedPwaPlugin(base) {
   return { name: "reigns-agent-hosted-pwa", generateBundle(_options, bundle) {
+    const sharedPlayerSource = readFileSync(playerHtml, "utf8");
+    const playerScriptMarker = "  <script type=\"module\">";
+    if (!sharedPlayerSource.includes(playerScriptMarker)) throw new Error("Shared player HTML is missing its module script marker");
+    const hostedPlayerSource = sharedPlayerSource
+      .replaceAll("./assets/logo-alpha.png", `${base}logo-alpha.png`)
+      .replace(playerScriptMarker, `  <script type="module" src="${base}hosted-player-backend.js"></script>\n\n${playerScriptMarker}`);
+    this.emitFile({ type: "asset", fileName: "play.html", source: hostedPlayerSource });
+    const playerAssets = ["dashboard.css", "swipe-input.js"].map((name) => ({
+      fileName: `assets/${name}`,
+      source: readFileSync(new URL(`../../packages/interface/web/assets/${name}`, import.meta.url))
+    }));
+    for (const asset of playerAssets) this.emitFile({ type: "asset", ...asset });
     const sampleAssets = readdirSync(hostedSampleAssetRoot, { withFileTypes: true })
       .filter((entry) => entry.isFile())
       .map((entry) => ({ fileName: `assets/sample/${entry.name}`, source: readFileSync(new URL(entry.name, hostedSampleAssetRoot)) }));
     for (const asset of sampleAssets) this.emitFile({ type: "asset", ...asset });
-    const files = [...Object.keys(bundle).filter((name) => !name.endsWith(".map")), ...sampleAssets.map((asset) => asset.fileName)];
+    const files = ["play.html", ...playerAssets.map((asset) => asset.fileName), ...Object.keys(bundle).filter((name) => !name.endsWith(".map")), ...sampleAssets.map((asset) => asset.fileName)];
     const version = files.join("|").split("").reduce((hash, char) => ((hash * 31) + char.charCodeAt(0)) >>> 0, 0).toString(36);
     this.emitFile({ type: "asset", fileName: "manifest.webmanifest", source: JSON.stringify({ name: "ReignsAgent", short_name: "ReignsAgent", description: "Offline-first card narrative Creator", start_url: `${base}workbench`, scope: base, display: "standalone", background_color: "#111315", theme_color: "#111315", icons: [{ src: `${base}logo-alpha.png`, sizes: "512x512", type: "image/png", purpose: "any maskable" }] }, null, 2) });
     this.emitFile({ type: "asset", fileName: "sw.js", source: serviceWorkerSource({ base, files: ["index.html", "manifest.webmanifest", "logo-alpha.png", ...files], version }) });

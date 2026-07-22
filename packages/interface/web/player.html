@@ -3,9 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="icon" type="image/png" href="/assets/logo-alpha.png" />
+  <link rel="icon" type="image/png" href="./assets/logo-alpha.png" />
   <title>ReignsAgent Player</title>
-  <link rel="stylesheet" href="/assets/dashboard.css" />
+  <link rel="stylesheet" href="./assets/dashboard.css" />
   <style>
     .topbar__controls {
       display: flex;
@@ -91,7 +91,7 @@
   <header class="topbar">
     <div class="brand">
       <span class="brand__mark" aria-hidden="true">
-        <img src="/assets/logo-alpha.png" alt="" />
+        <img src="./assets/logo-alpha.png" alt="" />
       </span>
       <div>
         <h1>ReignsAgent Player</h1>
@@ -141,9 +141,12 @@
   </main>
 
   <script type="module">
-    import { attachSwipe } from "/assets/swipe-input.js";
+    import { attachSwipe } from "./assets/swipe-input.js";
 
-    const api = async (path, body, method = "POST") => {
+    const hostedPlayer = globalThis.reignsAgentHostedPlayerReady
+      ? await globalThis.reignsAgentHostedPlayerReady
+      : null;
+    const api = hostedPlayer ? hostedPlayer.request : async (path, body, method = "POST") => {
       const res = await fetch(path, {
         method,
         headers: { "content-type": "application/json" },
@@ -191,7 +194,8 @@
       url.searchParams.set("skin", skin);
       window.history[mode === "push" ? "pushState" : "replaceState"](null, "", `${url.pathname}${url.search}${url.hash}`);
 
-      const backUrl = new URL("/workbench", window.location.origin);
+      const workbenchPath = hostedPlayer ? `${hostedPlayer.basePath}workbench` : "/workbench";
+      const backUrl = new URL(workbenchPath, window.location.origin);
       backUrl.searchParams.set("skin", skin);
       backUrl.searchParams.set("locale", requestedLocale);
       if (requestedClient) backUrl.searchParams.set("client", requestedClient);
@@ -284,7 +288,7 @@
     async function startReign() {
       try {
         const editor = await api("/api/editor", undefined, "GET");
-        assetByCard = createAssetMap(editor.assets ?? []);
+        assetByCard = await createAssetMap(editor.assets ?? []);
         applyPresentation(editor.metadata?.presentation);
         const result = await api("/api/play/start", { locale: requestedLocale });
         if (result.error) throw new Error(result.error.message);
@@ -368,11 +372,11 @@
       style.textContent = presentation?.policy?.allowCssText === true ? (presentation?.css?.text ?? "") : "";
     }
 
-    function createAssetMap(assets) {
+    async function createAssetMap(assets) {
       const map = new Map();
       for (const asset of assets) {
         if (asset?.cardId && asset?.uri && !map.has(asset.cardId)) {
-          map.set(asset.cardId, asset);
+          map.set(asset.cardId, { ...asset, uri: hostedPlayer ? await hostedPlayer.assetUrl(asset.uri) : asset.uri });
         }
       }
       return map;

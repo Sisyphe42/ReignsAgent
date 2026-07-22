@@ -9,7 +9,7 @@ const ROOT = join(process.cwd(), "apps", "creator-web", "dist-hosted");
 describe("hosted Creator build", () => {
   it("contains a scoped offline shell without server or secret artifacts", async () => {
     const files = await walk(ROOT);
-    for (const required of ["index.html", "play.html", "manifest.webmanifest", "sw.js", "logo-alpha.png"]) assert.ok(files.includes(required), `missing ${required}`);
+    for (const required of ["index.html", "play.html", "manifest.webmanifest", "sw.js", "logo-alpha.png", "assets/dashboard.css", "assets/swipe-input.js"]) assert.ok(files.includes(required), `missing ${required}`);
     assert.equal(files.some((file) => /(?:^|\/)(?:node_modules|\.env|test)(?:\/|$)/.test(file)), false);
     const manifest = JSON.parse(await readFile(join(ROOT, "manifest.webmanifest"), "utf8"));
     assert.match(manifest.scope, /^\/.+\/$|^\/$/);
@@ -17,6 +17,10 @@ describe("hosted Creator build", () => {
     assert.match(serviceWorker, /index\.html/);
     assert.match(serviceWorker, /play\.html/);
     assert.doesNotMatch(serviceWorker, /apiKey|credentials/);
+    const player = await readFile(join(ROOT, "play.html"), "utf8");
+    assert.match(player, /class="player-card"/);
+    assert.match(player, />Start reign<\/button>/);
+    assert.match(player, /hosted-player-backend\.js/);
     const browserBuild = files.find((file) => /^assets\/browser-build-.*\.js$/.test(file));
     assert.ok(browserBuild, "missing browser player builder");
     const browserBuildSource = await readFile(join(ROOT, browserBuild), "utf8");

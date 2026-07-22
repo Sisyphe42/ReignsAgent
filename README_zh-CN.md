@@ -182,7 +182,7 @@ npm run build:hosted
 
 Hosted 项目和 `config.toml` 保存在当前 Origin 的 OPFS 中。v1 正式支持桌面 Chrome/Edge；首次成功加载后可以断网重新打开。清除站点数据会删除 Workspace，更换协议、域名或端口也会进入另一个 Workspace，因此 Settings 提供持久存储状态、Workspace ZIP 和活动项目 ZIP 的导入/导出。备份默认排除明文 API Key，只有用户显式勾选并确认后才包含。
 
-Hosted 的 Creator 与 Player 使用独立页面。Player 按钮打开 `play.html`，该页面从同一 Origin 的 OPFS Workspace 读取当前项目；Service Worker 会同时缓存玩家页和 Creator app shell。同一 scope 内的页面导航离线或收到非成功 HTTP 响应时会回退到对应缓存页面，而直接打开 Workbench 深层路由仍通过 `index.html` 进入 PWA。
+Hosted 的 Creator 与 Player 使用独立页面。Player 按钮打开与本地 `/play` 共用的 `packages/interface/web/player.html`；其 Hosted backend 从同一 Origin 的 OPFS Workspace 读取当前项目。Service Worker 会同时缓存玩家页和 Creator app shell。同一 scope 内的页面导航离线或收到非成功 HTTP 响应时会回退到对应缓存页面，而直接打开 Workbench 深层路由仍通过 `index.html` 进入 PWA。
 
 AI 请求从浏览器直接发送到用户配置的 endpoint。HTTPS Creator 只能连接 HTTPS endpoint，localhost 除外；endpoint 必须通过 CORS 允许 Creator Origin、`Authorization` 和 `Content-Type`。项目数据不会经过维护者服务器，也不提供公共 Relay。浏览器玩家导出会在本地组装 ZIP，并排除 AI 设置和凭据。
 
