@@ -702,10 +702,15 @@ async function workspaceContains(page, expected) {
 
 async function configContains(page, expected) {
   return page.evaluate(async (text) => {
-    const root = await navigator.storage.getDirectory();
-    const dataRoot = await root.getDirectoryHandle("ReignsAgentData");
-    const config = await (await dataRoot.getFileHandle("config.toml")).getFile();
-    return (await config.text()).includes(text);
+    try {
+      const root = await navigator.storage.getDirectory();
+      const dataRoot = await root.getDirectoryHandle("ReignsAgentData");
+      const config = await (await dataRoot.getFileHandle("config.toml")).getFile();
+      return (await config.text()).includes(text);
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "NotReadableError") return false;
+      throw error;
+    }
   }, expected);
 }
 
