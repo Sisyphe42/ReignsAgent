@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/png" href="./logo-alpha.png" />
+    <title>ReignsAgent Player</title>
+  </head>
+  <body>
+    <main class="hosted-player" aria-labelledby="player-title">
+      <header class="player-bar">
+        <a id="back-link" class="player-link" href="./workbench">Back to Creator</a>
+        <label class="player-skin">Skin <select id="skin"></select></label>
+      </header>
+
+      <section class="player-heading">
+        <p id="player-kicker">Browser player</p>
+        <h1 id="player-title">ReignsAgent Player</h1>
+        <p id="player-description">The active browser project runs here as a separate player page.</p>
+      </section>
+
+      <section id="gauges" class="player-gauges" aria-label="Gauges"></section>
+
+      <section class="decision-stage" aria-live="polite">
+        <img id="card-art" class="card-art" alt="" hidden />
+        <article id="card" class="decision-card">
+          <p id="card-text">Start a reign to draw the first card.</p>
+        </article>
+        <div class="decision-actions">
+          <button id="left" type="button" disabled>Left</button>
+          <button id="right" type="button" disabled>Right</button>
+        </div>
+      </section>
+
+      <footer class="player-footer">
+        <button id="start" class="player-primary" type="button">Start reign</button>
+        <span id="session-meta">No active reign</span>
+        <span id="status" role="status"></span>
+      </footer>
+    </main>
+    <script type="module" src="/src/hosted-player.js"></script>
+  </body>
+</html>

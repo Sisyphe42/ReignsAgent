@@ -345,9 +345,14 @@ test("persists navigation density and shared interface language", async ({ page 
   await expect(page.getByRole("link", { name: "打开玩家端预览" })).toHaveAttribute("href", /locale=zh-Hans/);
   await page.evaluate(() => { window.__reignsAgentFullPageMarker = true; });
   await page.getByRole("link", { name: "打开玩家端预览" }).click();
-  await expect(page.locator('.rail__item[aria-label="预览"]')).toHaveClass(/rail__item--active/);
-  await expect(page).toHaveURL(/\/workbench\/preview(?:\?|$)/);
+  await expect(page).toHaveURL(/\/play\.html(?:\?|$)/);
+  await expect(page.getByRole("heading", { name: "Ready" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "返回创作者工作区" })).toBeVisible();
+  await page.getByRole("button", { name: "开始统治" }).click();
+  await expect(page.locator("#card-text")).not.toHaveText("Start a reign to draw the first card.");
   expect(await page.evaluate(() => window.__reignsAgentFullPageMarker)).toBeUndefined();
+  await page.getByRole("link", { name: "返回创作者工作区" }).click();
+  await expect(page.getByRole("heading", { name: "设置 / 流水线" })).toBeVisible();
   await page.getByRole("button", { name: "概览" }).click();
   await expect(page.locator('.metric[data-ai-label="Project"] strong')).toHaveText("Ready");
   await expect.poll(() => workspaceContains(page, 'activePanel = "overview"'), { timeout: 15_000 }).toBe(true);

@@ -301,7 +301,7 @@ The repository-level `vercel.json` deploys this output at the Vercel domain root
 
 Hosted projects and `config.toml` live in origin-scoped OPFS. Chrome and Edge are the supported v1 browsers. After the first successful load the PWA can reopen offline. Clearing site data destroys the workspace, and changing scheme, host, or port selects a different workspace, so Settings exposes persistence status plus Workspace ZIP and active-project ZIP export/import. Backups exclude the plaintext AI key by default; including it requires an explicit checkbox and confirmation.
 
-Hosted navigation is app-shell based: when a same-scope page navigation is offline or returns a non-success HTTP response, the Service Worker falls back to the cached `index.html` so direct workbench routes continue to open inside the PWA.
+Hosted navigation keeps Creator and Player as separate pages. The Player button opens `play.html`, which reads the active project from the same origin-scoped OPFS workspace; the Service Worker caches both the player page and the Creator app shell. When a same-scope navigation is offline or returns a non-success HTTP response, it falls back to the matching cached page, while direct workbench routes continue to open through `index.html`.
 
 AI calls go directly to the configured endpoint. An HTTPS Creator requires an HTTPS endpoint, except localhost, and the endpoint must allow the Creator origin plus `Authorization` and `Content-Type` through CORS. ReignsAgent operates no relay. Browser player export downloads a locally assembled ZIP and excludes AI settings and credentials.
 

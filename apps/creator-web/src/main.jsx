@@ -1625,7 +1625,7 @@ function App() {
     params.set("locale", locale);
     if (desktopClient) params.set("client", "desktop");
     return import.meta.env.VITE_CREATOR_HOST === "browser"
-      ? `${withBasePath("/workbench/preview")}?${params.toString()}`
+      ? `${import.meta.env.BASE_URL}play.html?${params.toString()}`
       : `/play?${params.toString()}`;
   }, [skin, locale, desktopClient]);
 

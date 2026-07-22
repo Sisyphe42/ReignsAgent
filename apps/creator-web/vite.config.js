@@ -2,6 +2,7 @@ import react from "@vitejs/plugin-react";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { extname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 
 const apiTarget = process.env.REIGNS_AGENT_API ?? "http://127.0.0.1:4321";
@@ -114,7 +115,13 @@ export default defineConfig(({ mode }) => {
   },
   build: {
     outDir: hosted ? "dist-hosted" : "dist",
-    emptyOutDir: true
+    emptyOutDir: true,
+    rollupOptions: hosted ? {
+      input: {
+        index: fileURLToPath(new URL("./index.html", import.meta.url)),
+        play: fileURLToPath(new URL("./play.html", import.meta.url))
+      }
+    } : undefined
   }
   });
 });
@@ -138,5 +145,5 @@ function hostedPwaPlugin(base) {
 }
 
 function serviceWorkerSource({ base, files, version }) {
-  return `const CACHE=${JSON.stringify(`reigns-agent-${version}`)};const BASE=${JSON.stringify(base)};const ASSETS=${JSON.stringify([...new Set(files)].map((file) => `${base}${file}`))};self.addEventListener("install",event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(ASSETS))));self.addEventListener("activate",event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key.startsWith("reigns-agent-")&&key!==CACHE).map(key=>caches.delete(key))))));self.addEventListener("message",event=>{if(event.data?.type==="SKIP_WAITING")self.skipWaiting()});self.addEventListener("fetch",event=>{if(event.request.method!=="GET")return;const url=new URL(event.request.url);if(url.origin!==location.origin||!url.pathname.startsWith(BASE))return;if(event.request.mode==="navigate"){event.respondWith(fetch(event.request).then(response=>response.ok?response:caches.match(BASE+"index.html").then(shell=>shell||response)).catch(()=>caches.match(BASE+"index.html")));return}event.respondWith(caches.match(event.request).then(hit=>hit||fetch(event.request).then(response=>{const copy=response.clone();caches.open(CACHE).then(cache=>cache.put(event.request,copy));return response}))) });`;
+  return `const CACHE=${JSON.stringify(`reigns-agent-${version}`)};const BASE=${JSON.stringify(base)};const ASSETS=${JSON.stringify([...new Set(files)].map((file) => `${base}${file}`))};self.addEventListener("install",event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(ASSETS))));self.addEventListener("activate",event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key.startsWith("reigns-agent-")&&key!==CACHE).map(key=>caches.delete(key))))));self.addEventListener("message",event=>{if(event.data?.type==="SKIP_WAITING")self.skipWaiting()});self.addEventListener("fetch",event=>{if(event.request.method!=="GET")return;const url=new URL(event.request.url);if(url.origin!==location.origin||!url.pathname.startsWith(BASE))return;if(event.request.mode==="navigate"){const shell=url.pathname===BASE+"play.html"?BASE+"play.html":BASE+"index.html";event.respondWith(fetch(event.request).then(response=>response.ok?response:caches.match(shell).then(cached=>cached||response)).catch(()=>caches.match(shell)));return}event.respondWith(caches.match(event.request).then(hit=>hit||fetch(event.request).then(response=>{const copy=response.clone();caches.open(CACHE).then(cache=>cache.put(event.request,copy));return response}))) });`;
 }
