@@ -494,6 +494,11 @@ test("persists navigation density and shared interface language", async ({ page 
   await expect(page.getByRole("link", { name: "GitHub repository sisyphe42/ReignsAgent" })).toHaveAttribute("href", "https://github.com/Sisyphe42/ReignsAgent");
   await expect(page.getByLabel("Language")).toHaveValue("system");
   await expect(page.getByLabel("Language").locator('option[value="system"]')).toHaveText("Follow browser");
+  const endpointOrder = await page.locator(".ai-endpoint-settings").evaluate((aiSection) => {
+    const imageSection = document.querySelector(".image-endpoint-settings");
+    return Boolean(aiSection.compareDocumentPosition(imageSection) & Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+  expect(endpointOrder).toBe(true);
   await expect(page.locator(".image-endpoint-settings").getByText("Protocol", { exact: true })).toHaveCount(1);
   const aiEndpointHeadingGap = await page.locator(".ai-endpoint-settings").evaluate((section) => {
     const heading = section.querySelector("h3").getBoundingClientRect();
@@ -598,12 +603,32 @@ test("validates a direct CORS AI endpoint through the browser backend", async ({
   await page.getByRole("button", { name: /Settings/ }).click();
   await page.evaluate(({ endpoint }) => {
     const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
-    for (const [selector, value] of [["#ai-model-id", "cors-smoke-model"], ["#ai-api-key", "browser-test-key"], ["#ai-base-url", endpoint]]) {
+    for (const [selector, value] of [["#ai-model-id", "cors-smoke-model"], ["#ai-base-url", endpoint]]) {
       const element = document.querySelector(selector);
       setter.call(element, value);
       element.dispatchEvent(new Event("input", { bubbles: true }));
     }
   }, { endpoint: aiEndpoint });
+  await page.locator("#ai-api-key").fill("browser-test-key");
+  const secretInput = page.locator("#ai-api-key");
+  const visibilityToggle = page.getByRole("button", { name: "Show API key" });
+  const [inputBox, toggleBox] = await Promise.all([secretInput.boundingBox(), visibilityToggle.boundingBox()]);
+  expect(toggleBox.x).toBeGreaterThanOrEqual(inputBox.x);
+  expect(toggleBox.y).toBeGreaterThanOrEqual(inputBox.y);
+  expect(toggleBox.x + toggleBox.width).toBeLessThanOrEqual(inputBox.x + inputBox.width);
+  expect(toggleBox.y + toggleBox.height).toBeLessThanOrEqual(inputBox.y + inputBox.height);
+  await visibilityToggle.click();
+  await expect(secretInput).toHaveAttribute("type", "text");
+  await expect(page.getByRole("button", { name: "Hide API key" }).locator(".eye-icon--off")).toBeVisible();
+  await page.getByRole("button", { name: "Hide API key" }).click();
+  await expect(secretInput).toHaveAttribute("type", "password");
+  expect(await configContains(page, 'apiKey = "browser-test-key"')).toBe(false);
+  await expect(page.getByRole("button", { name: "Save API key" })).toBeEnabled();
+  await page.getByRole("button", { name: "Save API key" }).click();
+  await expect(page.locator("#ai-api-key")).toHaveValue("");
+  await expect(page.getByRole("button", { name: "Replace API key" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Clear" })).toBeVisible();
+  await expect.poll(() => configContains(page, 'apiKey = "browser-test-key"')).toBe(true);
   await expect(page.getByLabel("Endpoint base URL")).toHaveValue(aiEndpoint);
   await expect(page.getByLabel("Model ID")).toHaveValue("cors-smoke-model");
   await page.getByRole("button", { name: "Validate endpoint" }).click();

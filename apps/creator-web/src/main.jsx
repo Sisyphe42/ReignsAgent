@@ -68,6 +68,7 @@ const ZH_HANS_COPY = {
   Protocol: "协议", "Route mode": "路由模式", Compatibility: "兼容性", "JSON mode": "JSON 模式",
   "Fetch /models": "获取 /models", "Validate endpoint": "验证端点", "Build plan": "生成计划",
   "No connector plan generated.": "尚未生成连接器计划。", "Configured endpoints are used when drafting AI Assist plans.": "配置的端点将用于生成 AI 辅助草稿。",
+  "Save API key": "保存 API 密钥", "Replace API key": "替换 API 密钥", "API key saved": "API 密钥已保存",
   Setup: "设置", Off: "关闭",
   "Project metadata saved": "项目资料已保存", "Project author": "项目作者", "Project description": "项目简介", "Project title link": "项目名称链接", "Project author link": "作者链接", "Project links must use http or https": "项目链接必须使用 http 或 https", "Save project details": "保存项目资料", ready: "就绪", loading: "加载中", new: "新增", draft: "草稿",
   blocked: "受阻", set: "已设置", Valid: "有效", "Needs work": "需要处理", Ready: "就绪", Blocked: "受阻",
@@ -571,6 +572,16 @@ function tr(locale, source) {
 
 function useUiLocale() {
   return useContext(LocaleContext);
+}
+
+function VisibilityIcon({ visible }) {
+  return (
+    <svg className={visible ? "eye-icon eye-icon--off" : "eye-icon"} viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M2.75 12s3.35-5.5 9.25-5.5 9.25 5.5 9.25 5.5-3.35 5.5-9.25 5.5S2.75 12 2.75 12Z" />
+      <circle cx="12" cy="12" r="2.5" />
+      {visible && <path d="m4 4 16 16" />}
+    </svg>
+  );
 }
 
 function PanelIcon({ id }) {
@@ -1153,12 +1164,11 @@ function App() {
           modelId: normalized.modelId,
           routeMode: normalized.routeMode,
           jsonMode: normalized.jsonMode,
-          capabilities: enabledAiCapabilities(normalized),
-          ...(aiApiKey.trim() ? { apiKey: aiApiKey } : {})
+          capabilities: enabledAiCapabilities(normalized)
         }
       }
     }).then((config) => setHasSavedApiKey(config.ai.hasApiKey));
-  }, [aiSettings, aiApiKey, configReady]);
+  }, [aiSettings, configReady]);
 
   useEffect(() => {
     if (!configReady) return;
@@ -1383,6 +1393,15 @@ function App() {
     setAiApiKey("");
     setHasSavedApiKey(Boolean(config.ai.hasApiKey));
     setStatus("Saved API key cleared");
+  }
+
+  async function saveApiKey() {
+    const nextApiKey = aiApiKey;
+    if (!nextApiKey.trim()) return;
+    const config = await api("/api/config", { method: "PATCH", body: { ai: { apiKey: nextApiKey } } });
+    setAiApiKey("");
+    setHasSavedApiKey(Boolean(config.ai.hasApiKey));
+    setStatus(tr(locale, "API key saved"));
   }
 
   async function startPreview() {
@@ -1914,6 +1933,7 @@ function App() {
               onLocaleChange={changeLocale}
               onAiSettingsChange={setAiSettings}
               onApiKeyChange={setAiApiKey}
+              onApiKeySave={saveApiKey}
               onApiKeyClear={clearSavedApiKey}
               onRefresh={refreshEditor}
               onStatus={setStatus}
@@ -5783,7 +5803,7 @@ function ImageEndpointSettings({ aiSettings, imageSettings, apiKey, apiKeySaved,
         <div className="ai-form-row"><label className="ai-field-label" htmlFor="image-base-url">{tr(locale, "Base URL")}</label><input id="image-base-url" value={normalized.baseUrl} onChange={(event) => update("baseUrl", event.target.value)} placeholder={normalized.protocol === "midjourney_proxy" ? "https://api.example.com" : "https://api.example.com/v1"} /></div>
         <div className="ai-form-row"><label className="ai-field-label" htmlFor="image-model-id">{tr(locale, "Model")}</label><input id="image-model-id" value={normalized.modelId} onChange={(event) => update("modelId", event.target.value)} placeholder={normalized.protocol === "midjourney_proxy" ? "MID_JOURNEY or NIJI_JOURNEY" : "gpt-image-2, gemini-3.1-flash-image..."} /></div>
         <div className="ai-form-row"><label className="ai-field-label">{tr(locale, "Credentials")}</label><select value={normalized.credentialMode} onChange={(event) => update("credentialMode", event.target.value)}><option value="inherit_text">{tr(locale, "Inherit text API key")}</option><option value="dedicated">{tr(locale, "Dedicated image API key")}</option></select></div>
-        {normalized.credentialMode === "dedicated" && <div className="ai-form-row"><label className="ai-field-label" htmlFor="image-api-key">{tr(locale, "Image API Key")}</label><div className="secret-input"><input id="image-api-key" type={keyVisible ? "text" : "password"} value={apiKey} onChange={(event) => onApiKeyChange(event.target.value)} placeholder={tr(locale, apiKeySaved ? "Saved; type to replace" : "Saved in local config")} /><button className="secret-input__toggle" type="button" onClick={() => setKeyVisible((value) => !value)} aria-label={tr(locale, keyVisible ? "Hide image API key" : "Show image API key")}><span className="eye-mark" aria-hidden="true" /></button>{apiKeySaved && <button className="btn btn--ghost btn--compact" type="button" onClick={() => void onApiKeyClear()}>{tr(locale, "Clear")}</button>}</div></div>}
+        {normalized.credentialMode === "dedicated" && <div className="ai-form-row"><label className="ai-field-label" htmlFor="image-api-key">{tr(locale, "Image API Key")}</label><div className="secret-input"><div className="secret-input__field"><input id="image-api-key" type={keyVisible ? "text" : "password"} value={apiKey} onChange={(event) => onApiKeyChange(event.target.value)} placeholder={tr(locale, apiKeySaved ? "Saved; type to replace" : "Saved in local config")} /><button className="secret-input__toggle" type="button" onClick={() => setKeyVisible((value) => !value)} aria-label={tr(locale, keyVisible ? "Hide image API key" : "Show image API key")}><VisibilityIcon visible={keyVisible} /></button></div>{apiKeySaved && <div className="secret-input__actions"><button className="btn btn--ghost btn--compact" type="button" onClick={() => void onApiKeyClear()}>{tr(locale, "Clear")}</button></div>}</div></div>}
         <div className="ai-form-row ai-form-row--stack"><span className="ai-field-label">{tr(locale, "Declared operations")}</span><div className="capability-grid">{operationOptions.map(([id, label]) => <button key={id} className={normalized.capabilities.includes(id) ? "capability-chip capability-chip--active" : "capability-chip"} type="button" onClick={() => toggleOperation(id)}>{tr(locale, label)}</button>)}</div></div>
         {normalized.protocol === "stability_v2" && <div className="ai-form-row"><label className="ai-field-label" htmlFor="image-variant">{tr(locale, "Generate variant")}</label><select id="image-variant" value={normalized.variant} onChange={(event) => update("variant", event.target.value)}><option value="core">Core</option><option value="ultra">Ultra</option></select></div>}
       </div>
@@ -5793,7 +5813,7 @@ function ImageEndpointSettings({ aiSettings, imageSettings, apiKey, apiKeySaved,
   );
 }
 
-function SettingsPanel({ editor, aiSettings, apiKey, apiKeySaved, locale, localePreference, followLocaleLabel, onLocaleChange, onAiSettingsChange, onApiKeyChange, onApiKeyClear, onRefresh, onStatus, imageSettings, imageApiKey, imageApiKeySaved, onImageSettingsChange, onImageApiKeyChange, onImageApiKeyClear, onStartOnboarding }) {
+function SettingsPanel({ editor, aiSettings, apiKey, apiKeySaved, locale, localePreference, followLocaleLabel, onLocaleChange, onAiSettingsChange, onApiKeyChange, onApiKeySave, onApiKeyClear, onRefresh, onStatus, imageSettings, imageApiKey, imageApiKeySaved, onImageSettingsChange, onImageApiKeyChange, onImageApiKeyClear, onStartOnboarding }) {
   const [title, setTitle] = useState(editor?.metadata?.title ?? "");
   const [titleUrl, setTitleUrl] = useState(editor?.metadata?.titleUrl ?? "");
   const [author, setAuthor] = useState(editor?.metadata?.author ?? "");
@@ -6068,7 +6088,6 @@ function SettingsPanel({ editor, aiSettings, apiKey, apiKeySaved, locale, locale
           </div>
         </div>
       </div>
-      <ImageEndpointSettings aiSettings={normalizedAiSettings} imageSettings={imageSettings} apiKey={imageApiKey} apiKeySaved={imageApiKeySaved} onChange={onImageSettingsChange} onApiKeyChange={onImageApiKeyChange} onApiKeyClear={onImageApiKeyClear} onStatus={onStatus} />
       <div className="subsection ai-endpoint-settings">
         <h3>{tr(locale, "AI Endpoint")}</h3>
         <div className="ai-channel-form">
@@ -6089,23 +6108,30 @@ function SettingsPanel({ editor, aiSettings, apiKey, apiKeySaved, locale, locale
           <div className="ai-form-row">
             <label className="ai-field-label" htmlFor="ai-api-key">{tr(locale, "API Key")}</label>
             <div className="secret-input">
-              <input
-                id="ai-api-key"
-                type={apiKeyVisible ? "text" : "password"}
-                value={transientApiKey}
-                onChange={(event) => onApiKeyChange(event.target.value)}
-                placeholder={apiKeySaved ? "Saved in config.toml; type to replace" : "Saved in local config.toml"}
-              />
-              <button
-                className={apiKeyVisible ? "secret-input__toggle secret-input__toggle--active" : "secret-input__toggle"}
-                type="button"
-                onClick={() => setApiKeyVisible((visible) => !visible)}
-                aria-label={apiKeyVisible ? "Hide API key" : "Show API key"}
-                title={apiKeyVisible ? "Hide API key" : "Show API key"}
-              >
-                <span className="eye-mark" aria-hidden="true" />
-              </button>
-              {apiKeySaved && <button className="btn btn--ghost btn--compact" type="button" onClick={() => void onApiKeyClear()}>Clear</button>}
+              <div className="secret-input__field">
+                <input
+                  id="ai-api-key"
+                  type={apiKeyVisible ? "text" : "password"}
+                  value={transientApiKey}
+                  onChange={(event) => onApiKeyChange(event.target.value)}
+                  placeholder={apiKeySaved ? "Saved in config.toml; type to replace" : "Saved in local config.toml"}
+                />
+                <button
+                  className={apiKeyVisible ? "secret-input__toggle secret-input__toggle--active" : "secret-input__toggle"}
+                  type="button"
+                  onClick={() => setApiKeyVisible((visible) => !visible)}
+                  aria-label={apiKeyVisible ? "Hide API key" : "Show API key"}
+                  title={apiKeyVisible ? "Hide API key" : "Show API key"}
+                >
+                  <VisibilityIcon visible={apiKeyVisible} />
+                </button>
+              </div>
+              <div className="secret-input__actions">
+                <button className="btn btn--compact" type="button" disabled={!hasTransientApiKey} onClick={() => void onApiKeySave()}>
+                  {tr(locale, apiKeySaved ? "Replace API key" : "Save API key")}
+                </button>
+                {apiKeySaved && <button className="btn btn--ghost btn--compact" type="button" onClick={() => void onApiKeyClear()}>{tr(locale, "Clear")}</button>}
+              </div>
             </div>
           </div>
           <div className="ai-form-row">
@@ -6157,6 +6183,7 @@ function SettingsPanel({ editor, aiSettings, apiKey, apiKeySaved, locale, locale
           </span>
         </div>
       </div>
+      <ImageEndpointSettings aiSettings={normalizedAiSettings} imageSettings={imageSettings} apiKey={imageApiKey} apiKeySaved={imageApiKeySaved} onChange={onImageSettingsChange} onApiKeyChange={onImageApiKeyChange} onApiKeyClear={onImageApiKeyClear} onStatus={onStatus} />
       <div className="subsection">
         <h3>{tr(locale, "Connector Request Preview")}</h3>
         <div className="field-row field-row--compact">

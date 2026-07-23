@@ -2682,6 +2682,11 @@ select {
 }
 
 .secret-input {
+  display: grid;
+  min-width: 0;
+}
+
+.secret-input__field {
   position: relative;
   display: grid;
   min-width: 0;
@@ -2692,18 +2697,25 @@ select {
   padding-right: 42px;
 }
 
+.secret-input__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
 .secret-input__toggle {
   position: absolute;
   top: 50%;
-  right: 6px;
+  right: 7px;
   display: inline-grid;
   place-items: center;
-  width: 30px;
-  height: 30px;
+  width: 24px;
+  height: 24px;
   padding: 0;
   color: var(--muted);
-  border: 1px solid transparent;
-  border-radius: 7px;
+  border: 0;
+  border-radius: 6px;
   background: transparent;
   cursor: pointer;
   transform: translateY(-50%);
@@ -2713,35 +2725,22 @@ select {
 .secret-input__toggle:focus-visible,
 .secret-input__toggle--active {
   color: var(--ink);
-  border-color: var(--border);
-  background: color-mix(in srgb, var(--surface-2) 86%, transparent);
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
 }
 
-.eye-mark {
-  position: relative;
-  width: 18px;
-  height: 12px;
-  border: 1.5px solid currentColor;
-  border-radius: 999px 999px 8px 8px;
-  transform: rotate(-8deg);
+.secret-input__toggle:focus-visible {
+  outline: 1.5px solid currentColor;
+  outline-offset: -2px;
 }
 
-.eye-mark::before {
-  content: "";
-  position: absolute;
-  inset: 3px 6px;
-  border-radius: 999px;
-  background: currentColor;
-}
-
-.secret-input__toggle--active .eye-mark::after {
-  content: "";
-  position: absolute;
-  top: 4px;
-  left: -3px;
-  width: 24px;
-  border-top: 1.5px solid currentColor;
-  transform: rotate(38deg);
+.eye-icon {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.65;
 }
 
 .provider-logo {
