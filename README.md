@@ -19,9 +19,11 @@ The project is built for two primary audiences: creators who need a practical wo
 
 ## Contents
 
+- [Start Here: Choose And Use A Client](#start-here-choose-and-use-a-client)
+- [Learn The Product Through Onboarding](#learn-the-product-through-onboarding)
 - [Capabilities](#capabilities)
 - [Design Boundaries](#design-boundaries)
-- [Quick Start](#quick-start)
+- [Developer Quick Start](#developer-quick-start)
 - [Creator Workflow](#creator-workflow)
 - [Architecture](#architecture)
 - [Content Model](#content-model)
@@ -33,6 +35,156 @@ The project is built for two primary audiences: creators who need a practical wo
 - [CI And Verification](#ci-and-verification)
 - [Acknowledgements](#acknowledgements)
 - [License](#license)
+
+## Start Here: Choose And Use A Client
+
+ReignsAgent has two kinds of application. **Creator** is the authoring workspace used to make, inspect, test, and publish projects. **Player** is the deliberately smaller application that runs one published project and exposes only the left/right game experience. A Player build cannot edit its own content, run reviews, or connect to an AI endpoint.
+
+Most release users should download a portable desktop Creator ZIP. The other clients exist for zero-install browser use, a system-Node workflow, development, and deployment-specific needs.
+
+| Client | Best for | Installation and storage | Important trade-offs |
+| --- | --- | --- | --- |
+| **Portable desktop Creator** | Most creators; offline local work | Extract the platform ZIP and run `ReignsAgent`. No system Node.js or installer is required. `ReignsAgentData` stays beside the extracted application. | Unsigned in v0.1.0; the operating system may show a warning. Keep the application and `ReignsAgentData` together when moving or backing it up. |
+| **Local Node Creator** | Server-style local use and users who already have Node.js | Extract `reigns-agent-<version>.zip`, install Node.js 22+, then run `node start.mjs`. It opens the Creator in the default browser and stores data beside the archive. | A terminal process remains open while Creator is running. |
+| **Hosted PWA** | Evaluation, Chromebook-style use, or a static deployment | Open the hosted URL in current Chrome or Edge. Projects are stored in origin-scoped browser storage and the app can reopen offline after a successful first load. | Clearing site data or changing the origin selects a different workspace. Export backups regularly. AI endpoints must support browser CORS and HTTPS. |
+| **Source checkout** | Contributors and integrators | Run the Creator Server and Vite client from this repository. The default development workspace is `.reigns-agent-data/`. | Requires Node.js 22+, npm dependencies, and two development processes. |
+| **Published Player** | People playing a finished project | Open the exported Web Player or the project-specific Windows EXE supplied by its author. | It is intentionally not a Creator client and never contains Creator, Reviewer, Pipeline, endpoint settings, or credentials. |
+
+![ReignsAgent Creator overview showing project readiness and the complete navigation rail](docs/images/creator-overview.png)
+
+_The Creator overview is the hand-off point between project setup, card editing, review, preview, and release. The screenshots in this guide use the bundled Open Court sample and the Famicom skin; content and appearance are project/client choices._
+
+### Launch A Release Build
+
+The [Releases](https://github.com/Sisyphe42/ReignsAgent/releases) page contains five Creator archives plus `SHA256SUMS.txt`:
+
+| Download | Target | Start it after extraction |
+| --- | --- | --- |
+| `ReignsAgent-win32-x64-<version>.zip` | Windows 10/11 x64 | Run `ReignsAgent.exe`. |
+| `ReignsAgent-darwin-arm64-<version>.zip` | Apple Silicon macOS | Open `ReignsAgent.app`. |
+| `ReignsAgent-darwin-x64-<version>.zip` | Intel macOS | Open `ReignsAgent.app`. |
+| `ReignsAgent-linux-x64-<version>.zip` | Linux x64 | Run the `ReignsAgent` executable. |
+| `reigns-agent-<version>.zip` | Any platform with Node.js 22+ | Run `node start.mjs`; Windows also includes `start.cmd`, and macOS/Linux include `start.sh`. |
+
+Do not run the application from inside the ZIP. Extract it into a writable directory first so the portable `ReignsAgentData` workspace can be created beside it. Desktop archives are unsigned: Windows SmartScreen, macOS Gatekeeper, or Linux desktop policy may ask you to confirm the first launch. The current release has no installer, automatic updater, code signing, or notarization.
+
+Verify the downloaded archive before extraction:
+
+```sh
+# macOS/Linux, from the directory containing the ZIP and SHA256SUMS.txt
+sha256sum -c SHA256SUMS.txt --ignore-missing
+```
+
+```powershell
+# Windows PowerShell: compare the result with the matching SHA256SUMS.txt line
+Get-FileHash .\ReignsAgent-win32-x64-0.1.0.zip -Algorithm SHA256
+```
+
+The desktop Creator starts its shared local server automatically and opens `/workbench` inside the application window. The Node Creator prints its loopback address, normally `http://127.0.0.1:4321/workbench`, and opens that address in the default browser. Closing the desktop window stops its server; stop the Node Creator with `Ctrl+C`.
+
+### Learn The Product Through Onboarding
+
+The onboarding guide is a 12-step, localized walkthrough of the actual Creator rather than a separate tutorial project. Its first screen explains the Reigns-style loop with an interactive left/right dilemma; the remaining spotlight steps move through the live workspace:
+
+| Steps | What the guide introduces |
+| --- | --- |
+| Introduction | One card, two decisions, four gauges, story-state changes, and what ends a reign. |
+| Project → Content → Story | Starting from a blank or cloned sample project, authoring binary choices, and reading tag-driven narrative structure. |
+| Review → AI Assist | Reproducible simulation diagnostics and controlled, reviewable AI proposals. |
+| Preview → Build → Player | Playing with the production rules, checking release readiness, and separating the player-only surface from Creator. |
+| Settings → GitHub → Replay | Workspace preferences and persistence, project documentation, releases, issue tracking, and where to restart the tour. |
+
+![The onboarding introduction explaining the complete author, review, AI Assist, and release loop](docs/images/creator-onboarding.png)
+
+The guide starts automatically only on the first ordinary `/workbench` visit for the current client. An explicit deep link such as `/workbench/content` wins over onboarding so shared links remain deterministic. Completion is stored in guarded client-local storage: **Finish**, **Skip**, or `Esc` suppresses the next automatic launch, while unavailable or throwing `localStorage` falls back safely and does not block Creator startup.
+
+Use the on-screen arrows, `Left`/`Right`, or `Space` to move between steps; `Esc` exits. The introductory card remains interactive, while later targets are highlighted without triggering editor, AI, Review, or Build actions. When the guide changes panels it restores the panel from which the tour began when closed, and it never changes projects or shared settings. Open **Settings → Guidance → Replay onboarding guide** at any time to start again immediately.
+
+### Create Or Open Your First Project
+
+Use the **Project** menu in the top bar to choose one of these starting points:
+
+1. **New from sample** clones the bundled Open Court sample into an editable project. This is the recommended first run because it demonstrates branching requirements, story groups, localized content, custom gauge labels, art bindings, endings, and a player-ready deck.
+2. **New blank project** creates an empty project for original work.
+3. **Import project** in **Content** imports a project/content bundle from a local file. The Hosted PWA also exposes workspace and active-project ZIP import/export under **Settings → Browser Persistence**.
+4. Selecting an existing project switches the active workspace. Deletion is project-scoped and requires confirmation.
+
+The bundled sample itself is immutable; **New from sample** creates an ordinary editable copy. The title shown in the top bar and releases comes from `content.json.metadata.title`, while author, description, links, version, localization, and gauge presentation remain project-authored metadata.
+
+### Complete One Creator Workflow
+
+The numbered rail is ordered as a practical production loop. You can move freely between panels, but a first project is easiest to understand in this order.
+
+#### 1. Author Cards In Content
+
+Open **Content** to import a bundle, search and filter the deck, add or select a card, and edit the dilemma text. Every playable card has exactly one left choice and one right choice. Choice effects can change the four gauge slots and set author-owned tags or variables; requirements decide when a card is eligible. Use the author summary above the fields to inspect the current gate and both outcomes before changing low-level values.
+
+Save actions validate the edited shape before it becomes the current project state. A card marked **player-ready** satisfies the Player contract; invalid cards remain visible to the author but block a release. Use assets relative to the project, and confirm art bindings in Preview rather than relying on a file name alone.
+
+#### 2. Inspect Narrative Structure In Story
+
+Open **Story** after the first branch exists. The graph projects card-to-card possibilities from requirements and effects; its summary distinguishes reachable, unreachable, and isolated cards. Story groups can label chapters, themes, arcs, or endings without adding built-in gameplay systems. Click a graph node to return to its card, filter by a story group to isolate a thread, and rename tags carefully because they connect authored state across multiple cards.
+
+![Story panel showing reachable nodes, story-group filters, and the narrative graph](docs/images/creator-story.png)
+
+Graph reachability is structural. It tells you whether a path can exist, not how often a player will see it. **Review** adds simulation evidence: run it after meaningful content changes, then inspect coverage, pacing, endings, dead paths, gauge pressure, and story-group health. Review findings are diagnostics, not automatic edits; return to Content or Story to make deliberate changes and rerun the review.
+
+#### 3. Use AI Assist As An Optional Proposal Layer
+
+AI Assist is an optional Creator-side collaboration layer, not an autonomous author and not part of the game runtime. Turning on the AI control exposes contextual actions around the current Overview, card, Story selection, or Review finding. Without an endpoint it can still assemble and preview a local request plan; with a configured endpoint it executes that plan and returns proposals for inspection.
+
+| Workflow | Input and result |
+| --- | --- |
+| Project or card drafting | Combines the current project snapshot with a premise, tone, branch depth, ending goal, constraints, target card, and requested card count. The endpoint returns explicit patch proposals rather than a replacement project. |
+| Review repair | Requires a completed Review result, targets the selected diagnostic and affected cards, and proposes the smallest relevant repair. Rerun Review after applying changes to measure the result. |
+| Context actions | Explain, translate, or branch from the selected card/graph context while preserving ids, tags, variables, and left/right meaning unless the instruction explicitly changes them. |
+| Visual generation | Generate new art or, when the chosen adapter supports it, use reference images, edit, inpaint, outpaint, masks, aspect ratios, negative prompts, and multiple output candidates. Results remain binary drafts until applied. |
+
+Text endpoint configuration lives under **Settings → AI Endpoint**. Choose a channel preset or custom endpoint, supply the base URL and model ID, declare capabilities such as structured JSON or vision, then use the advanced controls only when protocol, route, compatibility, or JSON-mode overrides are needed. **Fetch `/models`** queries compatible model discovery routes. **Validate endpoint** sends a compatibility request and does not edit the project.
+
+Image configuration is independent under **Settings → Image Endpoint**, but it may inherit the text credential. First-party adapters cover OpenAI Images-compatible routes, Gemini Interactions, Stability Stable Image, and Midjourney Proxy/NewAPI. Creator shows only the operations and parameters advertised by the selected adapter; validating image configuration does not start a paid generation.
+
+Building a text plan captures a fingerprint of the current content. Inspect each proposal summary and JSON patch, select only the proposals you want, and choose **Apply selected**. If the project changed since the plan was built, the stale-plan guard rejects it and requires a new plan. Patch prevalidation and Player validation still apply. For images, choose one generated result and **Apply selected image** to commit a content-addressed local asset and optionally bind it to a card; **Discard draft** removes the staged candidate. Neither text nor image output silently becomes authored or published content.
+
+Local and desktop clients call endpoints through the Creator Server. Hosted calls them directly from the browser, so the endpoint must allow the Creator origin, `Authorization`, and `Content-Type` through CORS; an HTTPS Creator also requires an HTTPS endpoint except for localhost. ReignsAgent does not operate an AI relay.
+
+Saved local endpoint keys are plaintext local configuration by product choice, masked in the interface, and excluded from Player builds, logs, and ordinary project exports. Hosted backup export excludes the plaintext key by default and requires an explicit confirmation to include it. Never put a private key in a `VITE_*` build variable.
+
+#### 4. Preview The Actual Choice Loop
+
+Use **Preview** for an embedded session or the top-right **Player** button for the dedicated Player page. Start a reign, then choose by clicking the left/right decree, pressing the arrow keys, dragging with a pointer, or swiping on touch. Watch the gauge response and subsequent card selection. Reaching a critical gauge ends the current reign and offers an immediate restart.
+
+![Dedicated Player preview with four gauges and one binary-choice card](docs/images/player-preview.png)
+
+The Player link carries the current skin, interface locale, desktop marker, and return context. A published Player has its own appearance, language, game-record, and about controls, but no authoring surface. Always test the dedicated Player before publishing because it is closer to the shipped experience than reading card JSON or using only the embedded preview.
+
+#### 5. Prepare And Publish
+
+Open **Build** when every card is player-ready. **Preview build** validates and assembles the deployable content/runtime boundary. Running Review first is recommended, but Player validation is the release blocker.
+
+![Build panel showing player readiness, target capability, and release history](docs/images/creator-build.png)
+
+Output depends on the client:
+
+| Creator host | Publish path |
+| --- | --- |
+| Local Node or desktop Creator on Windows x64 | **Build Windows EXE** creates or reuses a deterministic project release and records it in release history. The target machine needs Windows 10/11 x64 and Microsoft Edge WebView2 Evergreen Runtime. |
+| Hosted PWA | Export a Web Player ZIP assembled in the browser. |
+| Source or extracted Node distribution on any supported platform | Run `npm run build:game -- <content.json> <output-dir>` in a checkout, or `node scripts/build-game.mjs <content.json> <output-dir>` in the Node distribution, to create a static Player site. |
+
+Windows project EXEs are unsigned in v0.1.0 and contain only the project bundle, Player assets, stitched Core runtime, and restricted native host. They do not contain Creator Web, Creator Server, Pipeline, Reviewer, AI connectors, endpoint settings, or credentials.
+
+### Know Where Your Work Lives
+
+| Client | Durable workspace | Backup and portability |
+| --- | --- | --- |
+| Portable desktop Creator | `ReignsAgentData/` beside the extracted application. | Move or copy the application and data directory together. Project releases are under `ReignsAgentData/Builds/<project-id>/`. |
+| Local Node Creator | `ReignsAgentData/` beside the extracted Node distribution, unless `REIGNS_AGENT_DATA_ROOT` is set. | Stop the server before copying the directory. Workspace and project data use the same layout as desktop. |
+| Source checkout | `.reigns-agent-data/` at the repository root by default, unless `REIGNS_AGENT_DATA_ROOT` is set. | Treat it as local runtime data, not source to commit. |
+| Hosted PWA | Origin-scoped OPFS in the browser profile. | Use **Settings → Browser Persistence** to export a workspace backup or active-project ZIP. Clearing site data destroys the local workspace; a different scheme, host, or port is a different workspace. |
+| Published Player | Browser/native local preferences and bounded play records only. | It does not own or modify the Creator project from which it was built. |
+
+For repository contributors, this README owns product usage, release behavior, architecture, and verification entry points. Durable implementation boundaries, agent conduct, Git policy, and change-specific test requirements live in [AGENTS.md](AGENTS.md); read both before changing the system.
 
 ## Capabilities
 
@@ -53,7 +205,7 @@ The product does not ship built-in equipment, pets, inventory, shops, rarity, cr
 
 AI Assist is creator-side tooling. Deployable player builds do not include provider SDKs, API keys, network AI calls, generated-edit tooling, or AI-specific gameplay behavior.
 
-## Quick Start
+## Developer Quick Start
 
 Install dependencies and run the full verification gate:
 
@@ -211,12 +363,7 @@ For content generation or repair:
 - Use only the default four gauge slots for built-in balance.
 - Return proposals or patches that can be reviewed and applied deliberately.
 
-For code changes:
-
-- Keep core runtime changes headless and deterministic.
-- Keep endpoint calls and prompt/proposal handling in creator-side workflows.
-- Keep deployable player output free of credentials, provider SDKs, network AI calls, and editor-only tooling.
-- Run `npm run verify` before considering changes ready.
+Implementation and review rules for code changes are maintained in [AGENTS.md](AGENTS.md). The architecture section below explains the same boundaries from a product and contributor perspective without duplicating the agent workflow policy.
 
 ### Endpoint Proposal Flow
 
