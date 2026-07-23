@@ -307,6 +307,27 @@ export function createCardEditor(options = {}) {
       return cloneJsonSafe(metadata, "Editor metadata");
     },
 
+    setAssetDisplay(assetId, display) {
+      assertPlainRecord(display, "Asset display");
+      const index = assets.findIndex((candidate) => candidate.id === assetId);
+      if (index === -1) {
+        throw new InterfaceError(`Asset '${assetId}' was not found`, "asset_not_found");
+      }
+      const current = assets[index];
+      const currentMetadata = isPlainRecordValue(current.metadata) ? current.metadata : {};
+      const candidate = {
+        ...current,
+        metadata: {
+          ...currentMetadata,
+          display: cloneJsonSafe(display, `Asset '${assetId}' display`)
+        }
+      };
+      const nextAssets = assets.map((asset, assetIndex) => assetIndex === index ? candidate : asset);
+      createContentBundle({ cards, metadata, assets: nextAssets });
+      assets[index] = candidate;
+      return cloneJsonSafe(candidate, `Asset '${assetId}'`);
+    },
+
     validate() {
       return validateCardSet(cards);
     },
@@ -825,9 +846,18 @@ export function applyImageDraftAsset({ editor, draft, outputId, asset }) {
   const output = Array.isArray(draft.outputs) ? draft.outputs.find((entry) => entry.id === outputId) : null;
   if (!output) throw new InterfaceError("Selected image output was not found", "image_output_not_found");
   if (!asset || typeof asset !== "object" || Array.isArray(asset)) throw new InterfaceError("Committed image asset is required", "image_asset_invalid");
-  const applied = applyAiEditPatches({ bundle, patches: [{ op: "upsertAsset", asset }] });
+  const previous = bundle.assets.find((candidate) => candidate.id === asset.id);
+  const previousMetadata = isPlainRecordValue(previous?.metadata) ? previous.metadata : {};
+  const nextMetadata = isPlainRecordValue(asset.metadata) ? asset.metadata : {};
+  const committedAsset = {
+    ...asset,
+    ...(Object.keys(previousMetadata).length > 0 || Object.keys(nextMetadata).length > 0
+      ? { metadata: { ...previousMetadata, ...nextMetadata } }
+      : {})
+  };
+  const applied = applyAiEditPatches({ bundle, patches: [{ op: "upsertAsset", asset: committedAsset }] });
   const nextEditor = createCardEditor({ cards: applied.bundle.cards, metadata: applied.bundle.metadata, assets: applied.bundle.assets });
-  return { applied: true, outputId, asset, bundle: nextEditor.toBundle(), validation: applied.validation, playerValidation: nextEditor.validateForPlayer(), editor: nextEditor };
+  return { applied: true, outputId, asset: committedAsset, bundle: nextEditor.toBundle(), validation: applied.validation, playerValidation: nextEditor.validateForPlayer(), editor: nextEditor };
 }
 
 export function applyAiEditPlan({ editor, plan, proposalIds = [] }) {
@@ -1320,6 +1350,10 @@ function assertPlainRecord(value, context) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new InterfaceError(`${context} must be an object`);
   }
+}
+
+function isPlainRecordValue(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function isNonEmptyString(value) {

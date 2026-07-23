@@ -4529,11 +4529,68 @@ select {
   overflow-wrap: anywhere;
 }
 
-.card-editor__head img,
-.art-placeholder {
+.card-artwork {
+  --card-art-focus-x: 50%;
+  --card-art-focus-y: 50%;
+  --card-art-padding: 8px;
+  position: relative;
+  display: block;
+  overflow: hidden;
+  aspect-ratio: 1;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface-2) 78%, var(--bg));
+  isolation: isolate;
+}
+
+.card-artwork img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-position: var(--card-art-focus-x) var(--card-art-focus-y);
+}
+
+.card-artwork__backdrop {
+  position: absolute;
+  inset: -8%;
+  width: 116% !important;
+  height: 116% !important;
+  object-fit: cover;
+  filter: blur(12px) saturate(0.88);
+  opacity: 0.58;
+  transform: scale(1.04);
+}
+
+.card-artwork__image {
+  position: absolute;
+  inset: 0;
+  object-fit: contain;
+  padding: var(--card-art-padding);
+}
+
+.card-artwork[data-fit="contain"] .card-artwork__backdrop,
+.card-artwork[data-fit="cover"] .card-artwork__backdrop {
+  display: none;
+}
+
+.card-artwork[data-fit="cover"] .card-artwork__image {
+  object-fit: cover;
+  padding: 0;
+}
+
+.card-artwork--thumbnail,
+.card-editor__head > .art-placeholder {
   width: 50px;
   height: 50px;
-  object-fit: contain;
+  flex: 0 0 50px;
+  --card-art-padding: 6px;
+  border-radius: calc(var(--radius) - 1px);
+}
+
+.art-placeholder {
+  display: block;
+  width: 50px;
+  height: 50px;
   padding: 6px;
   border: 1px solid var(--border);
   border-radius: calc(var(--radius) - 1px);
@@ -4548,6 +4605,85 @@ select {
   height: 100%;
   border: 1px dashed var(--border-strong);
   content: "";
+}
+
+.art-display-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px 22px;
+  align-items: end;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface-2) 58%, transparent);
+}
+
+.art-display-controls > div {
+  display: grid;
+  gap: 6px;
+}
+
+.art-display-controls > div > span {
+  color: var(--muted);
+  font-family: var(--font-data);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.art-fit-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.art-fit-option {
+  min-height: 32px;
+  padding: 5px 9px;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) - 2px);
+  background: var(--surface-2);
+  cursor: pointer;
+}
+
+.art-fit-option--active {
+  color: var(--ink);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, var(--surface-2));
+}
+
+.art-focal-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 11px);
+  gap: 4px;
+  padding: 5px;
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) - 2px);
+  background: var(--surface-2);
+}
+
+.art-focal-point {
+  width: 11px;
+  height: 11px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+}
+
+.art-focal-point--active {
+  border-color: var(--accent);
+  background: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 24%, transparent);
+}
+
+.art-focal-point:disabled {
+  cursor: not-allowed;
+  opacity: 0.28;
 }
 
 .icon-button {
@@ -5888,15 +6024,19 @@ summary:focus-visible {
   background: linear-gradient(90deg, #d71920 0 34%, #f7f2e9 34% 66%, #00a66a 66%);
 }
 
-.play-card img {
-  width: 100%;
-  max-height: 162px;
-  object-fit: contain;
-  margin-bottom: 12px;
+.card-artwork--preview {
+  width: min(100%, 162px);
+  height: auto;
+  margin: 0 auto 12px;
+  --card-art-padding: 8px;
+}
+
+.play-card > .art-placeholder {
+  width: min(100%, 162px);
+  aspect-ratio: 1;
+  height: auto;
+  margin: 0 auto 12px;
   padding: 8px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: color-mix(in srgb, var(--bg) 52%, transparent);
 }
 
 .play-card p {

@@ -54,15 +54,47 @@
       background: linear-gradient(160deg, #13251b, #0d1712);
     }
     .player-art {
+      --card-art-focus-x: 50%;
+      --card-art-focus-y: 50%;
+      position: relative;
+      display: block;
+      overflow: hidden;
       width: min(160px, 48%);
       aspect-ratio: 1;
       align-self: center;
-      object-fit: contain;
       background: rgba(0, 0, 0, 0.18);
       border: 1px solid var(--border);
       border-radius: var(--radius);
-      padding: 14px;
       margin-bottom: 18px;
+      isolation: isolate;
+    }
+    .player-art img {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-position: var(--card-art-focus-x) var(--card-art-focus-y);
+    }
+    .player-art__backdrop {
+      position: absolute;
+      inset: -8%;
+      width: 116% !important;
+      height: 116% !important;
+      object-fit: cover;
+      filter: blur(12px) saturate(0.88);
+      opacity: 0.58;
+      transform: scale(1.04);
+    }
+    .player-art__image {
+      position: absolute;
+      inset: 0;
+      object-fit: contain;
+      padding: 14px;
+    }
+    .player-art[data-fit="contain"] .player-art__backdrop,
+    .player-art[data-fit="cover"] .player-art__backdrop { display: none; }
+    .player-art[data-fit="cover"] .player-art__image {
+      object-fit: cover;
+      padding: 0;
     }
     .player-text { font-size: 19px; line-height: 1.5; }
     .player-swipes { display: flex; gap: 12px; margin-top: 24px; }
@@ -120,7 +152,10 @@
   <main class="stage">
     <div class="gauges" id="gauges"></div>
     <div class="player-card" id="card" role="group" aria-label="Current card">
-      <img id="art" class="player-art" alt="" hidden />
+      <span id="art-frame" class="player-art" hidden>
+        <img id="art-backdrop" class="player-art__backdrop" alt="" aria-hidden="true" />
+        <img id="art" class="player-art__image" alt="" />
+      </span>
       <p class="player-text" id="text" aria-live="polite">The court is waiting.</p>
       <div class="player-swipes">
         <button id="left" class="btn btn--choice" disabled aria-label="Swipe left">◀ Left</button>
@@ -142,6 +177,7 @@
 
   <script type="module">
     import { attachSwipe } from "./assets/swipe-input.js";
+    import { applyCardArtworkDisplay } from "./assets/card-artwork.js";
 
     const hostedPlayer = globalThis.reignsAgentHostedPlayerReady
       ? await globalThis.reignsAgentHostedPlayerReady
@@ -198,6 +234,7 @@
         "Game over": "游戏结束"
       }
     };
+    el("art").addEventListener("error", clearArtwork);
     const copy = (source) => UI_COPY[uiLocale]?.[source] ?? source;
 
     let session = null;
@@ -293,11 +330,9 @@
       if (state.currentCard) {
         const asset = assetByCard.get(state.currentCard.id);
         if (asset) {
-          el("art").src = asset.uri;
-          el("art").hidden = false;
+          renderArtwork(asset);
         } else {
-          el("art").removeAttribute("src");
-          el("art").hidden = true;
+          clearArtwork();
         }
         el("text").textContent = state.currentCard.text ?? state.currentCard.id;
         setChoiceButtonLabels(state.currentCard);
@@ -305,8 +340,7 @@
         el("right").disabled = false;
         el("summary").hidden = true;
       } else {
-        el("art").removeAttribute("src");
-        el("art").hidden = true;
+        clearArtwork();
         el("text").textContent = copy(state.gameOver ? "Your reign has ended." : "No card available.");
         resetChoiceButtonLabels();
         el("left").disabled = true;
@@ -315,6 +349,19 @@
           renderSummary(state);
         }
       }
+    }
+
+    function renderArtwork(asset) {
+      applyCardArtworkDisplay(el("art-frame"), asset);
+      el("art-backdrop").src = asset.uri;
+      el("art").src = asset.uri;
+      el("art-frame").hidden = false;
+    }
+
+    function clearArtwork() {
+      el("art").removeAttribute("src");
+      el("art-backdrop").removeAttribute("src");
+      el("art-frame").hidden = true;
     }
 
     function renderSummary(state) {

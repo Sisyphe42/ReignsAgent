@@ -347,8 +347,12 @@ Cards and metadata are the product contract.
 | `metadata.story.groups` | Describe chapters, themes, arcs, endings, or other authoring groups. |
 | `metadata.presentation.gauges` | Rename, describe, or hide the default gauge displays. |
 | `metadata.i18n` and card-level `i18n` | Provide localized card text and choice labels. |
+| `assets[].metadata.display.fit` | Select `adaptive` (default), `contain`, or `cover` for a card's fixed 1:1 artwork frame. |
+| `assets[].metadata.display.focalPoint` | Set normalized `{ x, y }` focus coordinates from `0` through `1`; the default is centered at `{ "x": 0.5, "y": 0.5 }`. |
 
 Legacy `faith`, `people`, `military`, and `treasury` keys are accepted on import and normalized to neutral `gauge0` through `gauge3` slots.
+
+Card artwork keeps its original bytes, dimensions, format, and URI. **Adaptive** places the complete image over a blurred fill background, **Full image** uses `contain`, and **Fill frame** uses `cover` around the selected nine-position focal point. Missing display metadata uses centered Adaptive without requiring a content migration. Creator, Shared/Hosted Player, and Standalone Player consume the same authored settings; no derived or manually cropped image is generated.
 
 ## AI-Assisted Workflows
 
@@ -712,7 +716,7 @@ For deployable player changes, template changes, content bundle changes, or stat
 npm run build:game -- fixtures/content/oss-court.cards.json <temporary-output-dir>
 ```
 
-Confirm the output includes `player.html`, `player-runtime.js`, a `*.game.json` content bundle, `assets/logo-alpha.png`, and any local sample assets referenced by the bundle.
+Confirm the output includes `player.html`, `player-runtime.js`, `assets/card-artwork.js`, a `*.game.json` content bundle, `assets/logo-alpha.png`, and any local sample assets referenced by the bundle.
 
 ### Frontend Smoke Testing
 
