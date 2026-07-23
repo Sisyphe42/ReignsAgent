@@ -143,7 +143,7 @@ function hostedPwaPlugin(base) {
       .replaceAll("./assets/logo-alpha.png", `${base}logo-alpha.png`)
       .replace(playerScriptMarker, `  <script type="module" src="${base}hosted-player-backend.js"></script>\n\n${playerScriptMarker}`);
     this.emitFile({ type: "asset", fileName: "play.html", source: hostedPlayerSource });
-    const playerAssets = ["dashboard.css", "swipe-input.js"].map((name) => ({
+    const playerAssets = ["card-artwork.js", "dashboard.css", "swipe-input.js"].map((name) => ({
       fileName: `assets/${name}`,
       source: readFileSync(new URL(`../../packages/interface/web/assets/${name}`, import.meta.url))
     }));

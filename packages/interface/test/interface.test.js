@@ -29,8 +29,28 @@ import {
   validateAiEditEndpointConfig,
   validatePlayerCards
 } from "../src/index.js";
+import { cardArtworkStyle, normalizeCardArtworkDisplay } from "../web/assets/card-artwork.js";
 
 describe("ReignsAgent interface controller", () => {
+  it("normalizes the shared card artwork runtime contract defensively", () => {
+    assert.deepEqual(normalizeCardArtworkDisplay({}), {
+      fit: "adaptive",
+      focalPoint: { x: 0.5, y: 0.5 }
+    });
+    assert.deepEqual(normalizeCardArtworkDisplay({
+      metadata: { display: { fit: "cover", focalPoint: { x: 1, y: 0 } } }
+    }), {
+      fit: "cover",
+      focalPoint: { x: 1, y: 0 }
+    });
+    assert.deepEqual(cardArtworkStyle({
+      metadata: { display: { fit: "stretch", focalPoint: { x: -1, y: 2 } } }
+    }), {
+      display: { fit: "adaptive", focalPoint: { x: 0.5, y: 0.5 } },
+      style: { "--card-art-focus-x": "50%", "--card-art-focus-y": "50%" }
+    });
+  });
+
   it("rejects player cards that are not pure binary left/right swipe cards", () => {
     const invalid = validatePlayerCards([
       {

@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { SKINS as SKIN_CATALOG, DEFAULT_SKIN, applySkinTheme, resolveSkinId as resolveSharedSkinId } from "../../../packages/interface/web/skin-catalog.js";
+import { cardArtworkStyle, normalizeCardArtworkDisplay } from "../../../packages/interface/web/assets/card-artwork.js";
 import { createCreatorBackend } from "./backend.js";
 import { getOnboardingSteps, markOnboardingComplete, OnboardingTour, readOnboardingCompletion } from "./onboarding.jsx";
 import "./styles.css";
@@ -30,6 +31,16 @@ const UI_LOCALES = [
   ["system", null],
   ["en", "English"],
   ["zh-Hans", "简体中文"]
+];
+const ARTWORK_FITS = [
+  ["adaptive", "Adaptive"],
+  ["contain", "Full image"],
+  ["cover", "Fill frame"]
+];
+const ARTWORK_FOCAL_POINTS = [
+  [0, 0, "Top left"], [0.5, 0, "Top"], [1, 0, "Top right"],
+  [0, 0.5, "Left"], [0.5, 0.5, "Center"], [1, 0.5, "Right"],
+  [0, 1, "Bottom left"], [0.5, 1, "Bottom"], [1, 1, "Bottom right"]
 ];
 const LocaleContext = createContext("en");
 const ZH_HANS_COPY = {
@@ -2274,13 +2285,26 @@ function CardEditor({ card, asset, validation, onMutate, onStatus, tagCatalog, g
     );
   }
 
+  async function saveAssetDisplay(display) {
+    if (!asset) return;
+    await onMutate(
+      `Updating artwork display for ${card.id}`,
+      async () => api(`/api/editor/assets/${encodeURIComponent(asset.id)}`, {
+        method: "PATCH",
+        body: { display }
+      }),
+      `Updated artwork display for ${card.id}`
+    );
+  }
+
   const invalid = validation.invalid;
   const messages = validation.messages;
+  const artworkDisplay = normalizeCardArtworkDisplay(asset);
 
   return (
     <article className="card-editor" data-ai-target="card" data-ai-label={card.id} data-ai-context={cardExcerpt(card)} data-ai-card-id={card.id}>
       <div className="card-editor__head">
-        {asset ? <ProjectAssetImage asset={asset} alt="" /> : <span className="art-placeholder" />}
+        {asset ? <CardArtwork asset={asset} className="card-artwork--thumbnail" alt="" /> : <span className="art-placeholder" />}
         <div>
           <strong>{card.id}</strong>
           <p>{(card.choices ?? []).map((choice) => choice.id).join(" / ")}</p>
@@ -2303,6 +2327,45 @@ function CardEditor({ card, asset, validation, onMutate, onStatus, tagCatalog, g
           <input value={asset?.uri ?? "none"} readOnly />
         </label>
       </div>
+      {asset && (
+        <section className="art-display-controls" aria-label={`${card.id} artwork display`}>
+          <div>
+            <span>Artwork fit</span>
+            <div className="art-fit-options" role="group" aria-label="Artwork fit">
+              {ARTWORK_FITS.map(([fit, label]) => (
+                <button
+                  className={artworkDisplay.fit === fit ? "art-fit-option art-fit-option--active" : "art-fit-option"}
+                  type="button"
+                  aria-pressed={artworkDisplay.fit === fit}
+                  key={fit}
+                  onClick={() => void saveAssetDisplay({ ...artworkDisplay, fit })}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <span>Focal point</span>
+            <div className="art-focal-grid" role="group" aria-label="Artwork focal point">
+              {ARTWORK_FOCAL_POINTS.map(([x, y, label]) => {
+                const selected = artworkDisplay.focalPoint.x === x && artworkDisplay.focalPoint.y === y;
+                return (
+                  <button
+                    className={selected ? "art-focal-point art-focal-point--active" : "art-focal-point"}
+                    type="button"
+                    aria-label={label}
+                    aria-pressed={selected}
+                    disabled={artworkDisplay.fit === "contain"}
+                    key={`${x}-${y}`}
+                    onClick={() => void saveAssetDisplay({ ...artworkDisplay, focalPoint: { x, y } })}
+                  />
+                );
+              })}
+            </div>
+          </div>
+        </section>
+      )}
       {messages.length > 0 && (
         <ul className="validation-list">
           {messages.map((message, index) => (
@@ -5047,7 +5110,7 @@ function PreviewPanel({ play, assetsByCard, playerReady, onStart, onSwipe }) {
           ))}
         </div>
         <div className="play-card">
-          {asset && <ProjectAssetImage asset={asset} alt="" />}
+          {asset && <CardArtwork asset={asset} className="card-artwork--preview" alt="" />}
           <p>{card?.text ?? (state?.gameOver ? "The reign has ended." : "No preview session.")}</p>
           <div className="choice-buttons">
             <button className="btn btn--choice" disabled={!card} onClick={() => void onSwipe("left")}>← {left?.label ?? "Left"}</button>
@@ -5199,14 +5262,38 @@ function AiAssistPreflight({ request, aiConfigured, diagnostics, onChange, onClo
   );
 }
 
-function ProjectAssetImage({ asset, alt = "" }) {
+function useProjectAssetUrl(asset) {
   const [src, setSrc] = useState("");
   useEffect(() => {
     let active = true;
+    setSrc("");
     void creatorBackendPromise.then((backend) => backend.assetUrl(asset?.uri)).then((url) => { if (active) setSrc(url); }).catch(() => { if (active) setSrc(asset?.uri ? `${import.meta.env.BASE_URL}${asset.uri}` : ""); });
     return () => { active = false; };
   }, [asset?.uri]);
+  return src;
+}
+
+function ProjectAssetImage({ asset, alt = "" }) {
+  const src = useProjectAssetUrl(asset);
   return src ? <img src={src} alt={alt} /> : <span className="art-placeholder" />;
+}
+
+function CardArtwork({ asset, alt = "", className = "" }) {
+  const src = useProjectAssetUrl(asset);
+  const [failed, setFailed] = useState(false);
+  const normalized = cardArtworkStyle(asset);
+  useEffect(() => setFailed(false), [src]);
+  if (!src || failed) return <span className={`art-placeholder ${className}`.trim()} />;
+  return (
+    <span
+      className={`card-artwork ${className}`.trim()}
+      data-fit={normalized.display.fit}
+      style={normalized.style}
+    >
+      <img className="card-artwork__backdrop" src={src} alt="" aria-hidden="true" />
+      <img className="card-artwork__image" src={src} alt={alt} onError={() => setFailed(true)} />
+    </span>
+  );
 }
 
 async function prepareOpenAiOutpaintFiles(assetUri, edges) {

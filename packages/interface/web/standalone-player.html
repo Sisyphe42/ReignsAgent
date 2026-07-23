@@ -274,15 +274,46 @@
     }
     .card__content { align-self: center; }
     .card__art {
+      --card-art-focus-x: 50%;
+      --card-art-focus-y: 50%;
+      position: relative;
+      overflow: hidden;
       width: min(176px, 48%);
       aspect-ratio: 1;
       display: block;
       margin: 0 auto 24px;
-      object-fit: contain;
-      padding: 16px;
       border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
       background: color-mix(in srgb, var(--bg) 45%, transparent);
       border-radius: calc(var(--radius) * 0.72);
+      isolation: isolate;
+    }
+    .card__art img {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-position: var(--card-art-focus-x) var(--card-art-focus-y);
+    }
+    .card__art-backdrop {
+      position: absolute;
+      inset: -8%;
+      width: 116% !important;
+      height: 116% !important;
+      object-fit: cover;
+      filter: blur(12px) saturate(0.88);
+      opacity: 0.58;
+      transform: scale(1.04);
+    }
+    .card__art-image {
+      position: absolute;
+      inset: 0;
+      object-fit: contain;
+      padding: 16px;
+    }
+    .card__art[data-fit="contain"] .card__art-backdrop,
+    .card__art[data-fit="cover"] .card__art-backdrop { display: none; }
+    .card__art[data-fit="cover"] .card__art-image {
+      object-fit: cover;
+      padding: 0;
     }
     .card__text {
       max-width: 26ch;
@@ -543,7 +574,10 @@
         <div class="transition-seal" id="transition-seal" aria-hidden="true">✓</div>
         <article class="card" id="card" role="group" aria-label="Current card">
           <div class="card__content">
-            <img id="art" class="card__art" alt="" hidden />
+            <span id="art-frame" class="card__art" hidden>
+              <img id="art-backdrop" class="card__art-backdrop" alt="" aria-hidden="true" />
+              <img id="art" class="card__art-image" alt="" />
+            </span>
             <p class="card__text" id="text" aria-live="polite">Open a build to begin.</p>
             <div class="summary" id="summary" hidden aria-live="polite"></div>
           </div>
@@ -637,6 +671,7 @@
   <script type="module">
     import { createPlayer } from "./player-runtime.js";
     import { SKINS, DEFAULT_SKIN, applySkinTheme, resolveSkinId } from "./skin-catalog.js";
+    import { applyCardArtworkDisplay } from "./assets/card-artwork.js";
 
     const el = (id) => document.getElementById(id);
     const params = new URLSearchParams(window.location.search);
@@ -648,6 +683,7 @@
     const REIGN_PREFIX = "reigns-agent.player.reign.v1:";
     const LOCALE_PREFIX = "reigns-agent.player.locale.v1:";
     const MAX_HISTORY = 200;
+    el("art").addEventListener("error", clearArtwork);
     const requestedSkin = resolveSkinId(params.get("skin"));
 
     const PLAYER_COPY = Object.freeze({
@@ -1138,24 +1174,35 @@
       if (card) {
         const asset = assetByCard.get(card.id);
         if (asset) {
-          el("art").src = asset.uri;
-          el("art").alt = asset.title || "Card illustration";
-          el("art").hidden = false;
+          renderArtwork(asset);
         } else {
-          el("art").removeAttribute("src");
-          el("art").hidden = true;
+          clearArtwork();
         }
         el("text").textContent = card.text ?? card.id;
         updateChoiceLabels(card);
         el("summary").hidden = true;
       } else {
-        el("art").removeAttribute("src");
-        el("art").hidden = true;
+        clearArtwork();
         el("text").textContent = snapshot?.gameOver ? "The reign has reached its end." : "No decree is available.";
         updateChoiceLabels(null);
         if (snapshot?.gameOver) renderSummary(snapshot);
       }
       syncControls();
+    }
+
+    function renderArtwork(asset) {
+      applyCardArtworkDisplay(el("art-frame"), asset);
+      el("art-backdrop").src = asset.uri;
+      el("art").src = asset.uri;
+      el("art").alt = asset.title || "Card illustration";
+      el("art-frame").hidden = false;
+    }
+
+    function clearArtwork() {
+      el("art").removeAttribute("src");
+      el("art-backdrop").removeAttribute("src");
+      el("art").alt = "";
+      el("art-frame").hidden = true;
     }
 
     function renderGauges(factions) {
