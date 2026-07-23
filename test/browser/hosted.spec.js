@@ -296,6 +296,17 @@ test("authors adaptive artwork display and reuses it in the Hosted Player", asyn
   await expect(reloadedArtwork).toHaveAttribute("data-fit", "adaptive");
   await expect(page.getByRole("button", { name: "Center" })).toBeEnabled();
 
+  await page.locator('.rail__item[aria-label="Preview"], .rail__item[aria-label="预览"]').click();
+  await page.getByRole("button", { name: "Start preview" }).click();
+  const previewArtwork = page.locator(".card-artwork--preview");
+  for (let attempt = 0; attempt < 12 && !await previewArtwork.isVisible(); attempt += 1) {
+    const left = page.locator(".play-card .btn--choice").first();
+    if (await left.isDisabled()) break;
+    await left.click();
+  }
+  await expect(previewArtwork).toBeVisible();
+  await expect(previewArtwork).toHaveAttribute("data-fit", "adaptive");
+
   await setAllAssetDisplay(page, { fit: "cover", focalPoint: { x: 1, y: 1 } });
   await page.goto("play.html");
   await page.getByRole("button", { name: "Start reign" }).click();
@@ -313,6 +324,49 @@ test("authors adaptive artwork display and reuses it in the Hosted Player", asyn
     foregroundFit: getComputedStyle(element.querySelector(".player-art__image")).objectFit,
     backdropDisplay: getComputedStyle(element.querySelector(".player-art__backdrop")).display
   }))).toEqual({ x: "100%", y: "100%", foregroundFit: "cover", backdropDisplay: "none" });
+});
+
+test("keeps landscape, portrait, and square artwork inside the same square frame", async ({ page }) => {
+  await openHosted(page);
+  const measurements = await page.evaluate(async () => {
+    const { applyCardArtworkDisplay } = await import(new URL("assets/card-artwork.js", document.baseURI));
+    const dimensions = [[320, 120], [120, 320], [200, 200]];
+    const frames = dimensions.map(([width, height]) => {
+      const frame = document.createElement("span");
+      frame.className = "card-artwork card-artwork--thumbnail";
+      const backdrop = document.createElement("img");
+      backdrop.className = "card-artwork__backdrop";
+      backdrop.alt = "";
+      backdrop.setAttribute("aria-hidden", "true");
+      const foreground = document.createElement("img");
+      foreground.className = "card-artwork__image";
+      foreground.alt = "";
+      const source = `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect width="100%" height="100%" fill="red"/></svg>`)}`;
+      backdrop.src = source;
+      foreground.src = source;
+      frame.append(backdrop, foreground);
+      document.body.append(frame);
+      applyCardArtworkDisplay(frame, { fit: "adaptive", focalPoint: { x: 0.5, y: 0.5 } });
+      return { frame, foreground };
+    });
+    await Promise.all(frames.map(({ foreground }) => foreground.decode()));
+    return frames.map(({ frame, foreground }) => {
+      const rect = frame.getBoundingClientRect();
+      return {
+        frameWidth: rect.width,
+        frameHeight: rect.height,
+        naturalWidth: foreground.naturalWidth,
+        naturalHeight: foreground.naturalHeight,
+        objectFit: getComputedStyle(foreground).objectFit
+      };
+    });
+  });
+
+  expect(measurements).toEqual([
+    { frameWidth: 50, frameHeight: 50, naturalWidth: 320, naturalHeight: 120, objectFit: "contain" },
+    { frameWidth: 50, frameHeight: 50, naturalWidth: 120, naturalHeight: 320, objectFit: "contain" },
+    { frameWidth: 50, frameHeight: 50, naturalWidth: 200, naturalHeight: 200, objectFit: "contain" }
+  ]);
 });
 
 test("does not flash the device language before the saved language loads", async ({ page }) => {

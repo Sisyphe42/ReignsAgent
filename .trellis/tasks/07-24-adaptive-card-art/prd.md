@@ -29,14 +29,14 @@ Make square card-art slots present landscape, portrait, and square images well w
 
 ## Acceptance Criteria
 
-- [ ] A legacy asset without display metadata validates and renders as centered `adaptive`.
-- [ ] Landscape, portrait, and square artwork remain inside the existing 1:1 slot without source mutation.
-- [ ] `adaptive` shows the complete foreground over a filled blurred backdrop.
-- [ ] `contain` shows the complete image without a backdrop, and `cover` fills the frame around the selected focal point.
-- [ ] Invalid fit values, malformed focal points, and coordinates outside `0..1` fail content validation.
-- [ ] Creator mode and focal changes persist through local and Hosted backends, project reload, export, and deployable builds.
-- [ ] Updating display settings preserves unrelated asset metadata.
-- [ ] AI redraw/edit of an existing asset preserves its display settings.
-- [ ] Backdrop images are ignored by assistive technology and failed image loads do not leave broken artwork chrome.
-- [ ] Unit, integration, Hosted browser, deployable Player build, visible smoke, and `npm run verify` checks pass.
+- [x] A legacy asset without display metadata validates and renders as centered `adaptive`.
+- [x] Landscape, portrait, and square artwork remain inside the existing 1:1 slot without source mutation.
+- [x] `adaptive` shows the complete foreground over a filled blurred backdrop.
+- [x] `contain` shows the complete image without a backdrop, and `cover` fills the frame around the selected focal point.
+- [x] Invalid fit values, malformed focal points, and coordinates outside `0..1` fail content validation.
+- [x] Creator mode and focal changes persist through local and Hosted backends, project reload, export, and deployable builds.
+- [x] Updating display settings preserves unrelated asset metadata.
+- [x] AI redraw/edit of an existing asset preserves its display settings.
+- [x] Backdrop images are ignored by assistive technology and failed image loads do not leave broken artwork chrome.
+- [x] Unit, integration, Hosted browser, deployable Player build, visible smoke, and `npm run verify` checks pass.
 - [ ] Changes are committed in reviewable phases on `feature/adaptive-card-art`, pushed, and submitted as a ready PR without merge.

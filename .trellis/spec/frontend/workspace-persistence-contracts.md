@@ -96,6 +96,71 @@ try {
 }
 ```
 
+## Scenario: Asset artwork display persistence
+
+### 1. Scope / Trigger
+
+- Trigger: changes to card-art rendering, asset metadata validation, editor asset mutations, AI image replacement, or deployable Player asset packaging.
+- Scope: Pipeline validates the authored contract; Interface performs the host-neutral mutation; local Creator Server and Hosted BrowserBackend expose equivalent APIs; Creator, Shared/Hosted Player, and Standalone Player render the same fixed 1:1 semantics.
+
+### 2. Signatures
+
+- `normalizeAssetDisplay(display?) -> { fit, focalPoint }`
+- `validateContentBundle(bundle)`
+- `editor.setAssetDisplay(assetId, display)`
+- `PATCH /api/editor/assets/:assetId`
+- `applyCardArtworkDisplay(frame, display)`
+
+### 3. Contracts
+
+- The request body is `{ "display": { "fit": "adaptive|contain|cover", "focalPoint": { "x": 0..1, "y": 0..1 } } }`.
+- A successful mutation replaces only `asset.metadata.display`, preserves every unrelated metadata field, validates the resulting bundle, persists it, and returns the updated asset plus editor validation projections.
+- Missing display metadata normalizes at render/read time to `{ "fit": "adaptive", "focalPoint": { "x": 0.5, "y": 0.5 } }`; legacy bundles require no migration.
+- `adaptive` renders an assistive-technology-hidden blurred `cover` background and a complete `contain` foreground. `contain` hides the background and shows the complete image. `cover` hides the background and maps the focal point to `object-position`.
+- The frame stays 1:1. Source bytes, dimensions, format, and URI are never transformed, and no derived image is generated.
+- AI edit/redraw applying to an existing asset id must merge the prior metadata before updating binary MIME/hash/source fields so authored display settings survive.
+- `assets/card-artwork.js` is a player runtime asset and must be packaged in Hosted, Node ZIP, Windows release, and standalone game builds.
+
+### 4. Validation & Error Matrix
+
+- Unknown `fit` -> content validation error at the asset display fit path; no persistence.
+- Missing, non-object, non-finite, or out-of-range focal coordinate -> content validation error at the corresponding focal-point path; no persistence.
+- Unknown asset id -> `asset_not_found`; active content remains unchanged.
+- Malformed legacy/runtime metadata that bypasses authored validation -> renderer falls back to centered `adaptive` without throwing.
+- Foreground image load failure -> hide the Player artwork frame or show Creator's safe placeholder; the background never remains as misleading standalone content.
+
+### 5. Good/Base/Bad Cases
+
+- Good: set a portrait asset to `cover` with `{ "x": 1, "y": 0 }`, reload the project, and see the top-right focus in Creator and both Player surfaces.
+- Base: open a legacy landscape asset without display metadata and receive centered `adaptive` rendering automatically.
+- Bad: generate a cropped derivative, overwrite `metadata` when changing display, or let local and Hosted backends accept different payloads.
+
+### 6. Tests Required
+
+- Pipeline unit tests assert defaults, valid modes, finite normalized coordinates, and path-specific rejection.
+- Interface tests assert `setAssetDisplay` preservation, validation projections, undo behavior, and AI replacement metadata preservation.
+- Creator Server and Hosted browser tests assert matching PATCH responses, persistence after reload, and export/build metadata retention.
+- Player runtime tests assert defensive fallback, mode/backdrop behavior, focal CSS mapping, accessibility exclusion, and load-failure handling.
+- Build/release tests assert `assets/card-artwork.js` and unchanged referenced asset bytes are present.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```js
+asset.metadata = { display };
+image.style.objectFit = display.fit;
+```
+
+#### Correct
+
+```js
+asset.metadata = { ...asset.metadata, display };
+applyCardArtworkDisplay(frame, normalizeAssetDisplay(asset.metadata.display));
+```
+
+Preserve authoritative asset metadata at mutation time and normalize again at the presentation boundary so malformed legacy input cannot break Player startup.
+
 ## Scenario: Windows Project release persistence
 
 ### 1. Scope / Trigger

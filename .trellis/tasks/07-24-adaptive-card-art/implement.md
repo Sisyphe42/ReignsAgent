@@ -20,6 +20,13 @@
 
 Inspect the temporary Player build for its bundle, referenced assets, and adaptive artwork markup. Smoke Creator Preview, Shared Player, and Standalone Player at desktop and mobile widths.
 
+## Validation Results
+
+- `npm run verify`: passed (112 unit tests, 30 integration tests).
+- `npm run test:hosted`: passed (19 browser tests), including Creator controls, reload persistence, Developer Preview, Shared Player, and landscape/portrait/square artwork.
+- `npm run build:game -- fixtures/content/oss-court.cards.json <temporary-output-dir>`: passed; emitted `assets/card-artwork.js` and all referenced source assets.
+- Standalone Player browser smoke: passed at 1440×1000 and 390×844; artwork frames remained square, adaptive foreground used `contain`, the background was `aria-hidden`, and no page errors occurred.
+
 ## Git Review Gates
 
 - Branch: `feature/adaptive-card-art`.
