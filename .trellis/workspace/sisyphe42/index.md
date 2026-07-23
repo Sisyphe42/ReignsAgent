@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 18
-- **Last Active**: 2026-07-21
+- **Total Sessions**: 19
+- **Last Active**: 2026-07-24
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~628 | Active |
+| `journal-1.md` | ~663 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 19 | 2026-07-24 | Adaptive card artwork display | `41974f0`, `d3e0b7f`, `f80f66b` | `feature/adaptive-card-art` |
 | 18 | 2026-07-21 | Image generation API | `40189db`, `e55d783` | `feature/image-generation-api` |
 | 17 | 2026-07-21 | Creator Web optional storage resilience | `9e8a8de` | `master` |
 | 16 | 2026-07-21 | Publish ReignsAgent v0.1.0 | `f482542`, `0fb4e67`, `7c11bc4`, `ad53e69`, `6c0251f` | `master` |

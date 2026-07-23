@@ -626,3 +626,38 @@ Added capability-driven image provider adapters, safe binary draft storage, Crea
 ### Next Steps
 
 - None - task complete
+
+
+## Session 19: Adaptive card artwork display
+
+**Date**: 2026-07-24
+**Task**: Adaptive card artwork display
+**Branch**: `feature/adaptive-card-art`
+
+### Summary
+
+Added validated per-asset fit and focal-point settings, local and Hosted persistence APIs, shared adaptive rendering across Creator and Players, browser/build coverage, and documentation; pushed a ready PR without merging.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `41974f0` | (see git log) |
+| `d3e0b7f` | (see git log) |
+| `f80f66b` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
