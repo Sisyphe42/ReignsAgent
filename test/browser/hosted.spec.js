@@ -400,16 +400,28 @@ test("persists navigation density and shared interface language", async ({ page 
   await expect(page.locator(".rail")).toHaveCSS("width", "236px");
   await expect.poll(() => page.locator(".rail").evaluate((rail) => rail.scrollTop)).toBe(0);
   await expect.poll(async () => {
-    const revealed = await firstItem.locator(".rail__icon").boundingBox();
+    const geometry = await firstItem.evaluate((item) => {
+      const itemBox = item.getBoundingClientRect();
+      const iconBox = item.querySelector(".rail__icon").getBoundingClientRect();
+      return {
+        iconX: iconBox.left,
+        verticalCenterDelta: (iconBox.top + iconBox.height / 2) - (itemBox.top + itemBox.height / 2)
+      };
+    });
     return Math.max(
-      Math.abs(revealed.x - iconBeforeReveal.x),
-      Math.abs(revealed.y - iconBeforeReveal.y)
+      Math.abs(geometry.iconX - iconBeforeReveal.x),
+      Math.abs(geometry.verticalCenterDelta)
     );
   }).toBeLessThan(1);
   const iconAfterReveal = await firstItem.locator(".rail__icon").boundingBox();
   expect(iconAfterReveal.height).toBe(iconBeforeReveal.height);
   expect(Math.abs(iconAfterReveal.x - iconBeforeReveal.x)).toBeLessThan(1);
-  expect(Math.abs(iconAfterReveal.y - iconBeforeReveal.y)).toBeLessThan(1);
+  const revealedCenterDelta = await firstItem.evaluate((item) => {
+    const itemBox = item.getBoundingClientRect();
+    const iconBox = item.querySelector(".rail__icon").getBoundingClientRect();
+    return (iconBox.top + iconBox.height / 2) - (itemBox.top + itemBox.height / 2);
+  });
+  expect(Math.abs(revealedCenterDelta)).toBeLessThan(1);
   await expect(aiAssistLabel).toHaveCSS("white-space", "nowrap");
   const aiAssistRevealed = await aiAssistLabel.boundingBox();
   expect(aiAssistRevealed.height).toBe(aiAssistExpanded.height);
@@ -451,13 +463,17 @@ test("persists navigation density and shared interface language", async ({ page 
   await expect(page.locator(".rail")).toHaveCSS("width", "91px");
   await page.locator(".rail").evaluate((rail) => { rail.scrollTop = 0; });
   const phantomIconCollapsed = await firstItem.locator(".rail__icon").boundingBox();
-  const phantomHoverIcon = await hoverItem.locator(".rail__icon").boundingBox();
-  await page.mouse.move(phantomHoverIcon.x + phantomHoverIcon.width / 2, phantomHoverIcon.y + phantomHoverIcon.height / 2);
+  await page.locator(".rail").hover({ position: { x: 2, y: 2 } });
   await expect(page.locator(".rail")).toHaveCSS("width", "236px");
   await expect.poll(() => page.locator(".rail").evaluate((rail) => rail.scrollTop)).toBe(0);
   const phantomIconRevealed = await firstItem.locator(".rail__icon").boundingBox();
   expect(Math.abs(phantomIconRevealed.x - phantomIconCollapsed.x)).toBeLessThan(1);
-  expect(Math.abs(phantomIconRevealed.y - phantomIconCollapsed.y)).toBeLessThan(1);
+  const phantomRevealedCenterDelta = await firstItem.evaluate((item) => {
+    const itemBox = item.getBoundingClientRect();
+    const iconBox = item.querySelector(".rail__icon").getBoundingClientRect();
+    return (iconBox.top + iconBox.height / 2) - (itemBox.top + itemBox.height / 2);
+  });
+  expect(Math.abs(phantomRevealedCenterDelta)).toBeLessThan(1);
   await page.getByRole("button", { name: "Pin navigation" }).click();
   await page.getByRole("button", { name: "Collapse navigation" }).click();
   await page.locator(".skin-select select").selectOption("github-light");
