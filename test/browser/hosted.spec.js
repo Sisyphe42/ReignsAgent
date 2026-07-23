@@ -378,8 +378,7 @@ test("persists navigation density and shared interface language", async ({ page 
   await expect(page.locator(".rail")).toHaveCSS("width", "79px");
   await page.locator(".rail").evaluate((rail) => { rail.scrollTop = 0; });
   const iconBeforeReveal = await firstItem.locator(".rail__icon").boundingBox();
-  const standardHoverIcon = await hoverItem.locator(".rail__icon").boundingBox();
-  await page.mouse.move(standardHoverIcon.x + standardHoverIcon.width / 2, standardHoverIcon.y + standardHoverIcon.height / 2);
+  await page.locator(".rail").hover({ position: { x: 2, y: 2 } });
   await expect(page.locator(".rail")).toHaveCSS("width", "236px");
   await expect.poll(() => page.locator(".rail").evaluate((rail) => rail.scrollTop)).toBe(0);
   await expect.poll(async () => {
@@ -396,6 +395,8 @@ test("persists navigation density and shared interface language", async ({ page 
   await expect(aiAssistLabel).toHaveCSS("white-space", "nowrap");
   const aiAssistRevealed = await aiAssistLabel.boundingBox();
   expect(aiAssistRevealed.height).toBe(aiAssistExpanded.height);
+  await hoverItem.hover();
+  await page.waitForTimeout(250);
   const floatingHoverStyle = await hoverItem.evaluate((item) => ({ background: getComputedStyle(item).backgroundColor, border: getComputedStyle(item).borderColor, height: getComputedStyle(item).height }));
   await page.getByRole("button", { name: "Pin navigation" }).click();
   await expect(page.locator(".workspace")).toHaveClass(/workspace--rail-expanded.*workspace--rail-pinned|workspace--rail-pinned.*workspace--rail-expanded/);
