@@ -39,4 +39,4 @@ Make square card-art slots present landscape, portrait, and square images well w
 - [x] AI redraw/edit of an existing asset preserves its display settings.
 - [x] Backdrop images are ignored by assistive technology and failed image loads do not leave broken artwork chrome.
 - [x] Unit, integration, Hosted browser, deployable Player build, visible smoke, and `npm run verify` checks pass.
-- [ ] Changes are committed in reviewable phases on `feature/adaptive-card-art`, pushed, and submitted as a ready PR without merge.
+- [x] Changes are committed in reviewable phases on `feature/adaptive-card-art`, pushed, and submitted as a ready PR without merge.
