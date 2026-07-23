@@ -5,6 +5,7 @@ import { strFromU8, unzipSync } from "fflate";
 
 let aiServer;
 let aiEndpoint;
+const ONBOARDING_COMPLETED_KEY = "reigns-agent.creator-web.onboarding-completed";
 const tinyPngBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
 let productVersion;
 
@@ -27,6 +28,162 @@ test.beforeAll(async () => {
 });
 
 test.afterAll(async () => new Promise((resolve) => aiServer.close(resolve)));
+
+test("guides the complete workflow once and replays it from Settings", async ({ page }) => {
+  await openHosted(page, { onboarding: "fresh" });
+
+  const tour = page.getByTestId("onboarding-tour");
+  await expect(tour.getByRole("heading", { name: "Tell a story, one decision at a time" })).toBeVisible();
+  await expect(tour.locator(".onboarding-tour__progress")).toHaveText("1/12");
+  await expect(tour.locator(".onboarding-tour__skip kbd")).toHaveText("Esc");
+  const actionsBox = await tour.locator(".onboarding-tour__actions").boundingBox();
+  const skipBox = await tour.locator(".onboarding-tour__skip").boundingBox();
+  const progressBox = await tour.locator(".onboarding-tour__progress").boundingBox();
+  const navBox = await tour.locator(".onboarding-tour__nav").boundingBox();
+  expect(skipBox.x).toBeLessThan(progressBox.x);
+  expect(progressBox.x).toBeLessThan(navBox.x);
+  expect(Math.abs(progressBox.x + progressBox.width / 2 - (actionsBox.x + actionsBox.width / 2))).toBeLessThan(2);
+  const demo = tour.locator(".onboarding-demo");
+  const demoCard = demo.locator(".onboarding-demo__card");
+  await expect(demo).toHaveClass(/onboarding-demo--left/);
+  const leftTransform = await demoCard.evaluate((element) => getComputedStyle(element).transform);
+  await expect(demo).toHaveClass(/onboarding-demo--right/, { timeout: 4_000 });
+  await expect.poll(() => demoCard.evaluate((element) => getComputedStyle(element).transform)).not.toBe(leftTransform);
+  await expect(tour.getByRole("button", { name: /Hear them out/ })).toHaveAttribute("aria-pressed", "true");
+  await tour.getByRole("button", { name: /Turn them away/ }).hover();
+  await expect(demo).toHaveClass(/onboarding-demo--left/);
+  await tour.getByRole("button", { name: /Hear them out/ }).hover();
+  await expect(tour.locator(".onboarding-demo")).toHaveClass(/onboarding-demo--right/);
+  await tour.getByRole("button", { name: /Turn them away/ }).click();
+  await expect(tour.locator(".onboarding-demo")).toHaveClass(/onboarding-demo--left/);
+
+  await page.keyboard.down("ArrowRight");
+  await expect(tour.getByRole("button", { name: "Next" })).toHaveClass(/is-shortcut-active/);
+  await page.keyboard.up("ArrowRight");
+  await expect(tour.getByRole("heading", { name: "Start from the right project" })).toBeVisible();
+  await expect(tour.locator(".onboarding-tour__spotlight")).toBeVisible();
+  await page.keyboard.down("ArrowLeft");
+  await expect(tour.getByRole("button", { name: "Back" })).toHaveClass(/is-shortcut-active/);
+  await page.keyboard.up("ArrowLeft");
+  await expect(tour.getByRole("heading", { name: "Tell a story, one decision at a time" })).toBeVisible();
+  await page.keyboard.press("Space");
+  await expect(tour.getByRole("heading", { name: "Start from the right project" })).toBeVisible();
+
+  const workflowSteps = [
+    { title: "Write the decisions", target: "content", panel: "Content", surfaceAtOrigin: true },
+    { title: "See how the story moves", target: "story", panel: "Story", surfaceAtOrigin: true },
+    { title: "Find problems before players do", target: "review", panel: "Review", surfaceAtOrigin: true },
+    { title: "Use AI without giving up control", target: "ai-assist", panel: "AI Assist", surfaceAtOrigin: true },
+    { title: "Play what you wrote", target: "preview", panel: "Preview", surfaceAtOrigin: true },
+    { title: "Package the player experience", target: "build", panel: "Build", surfaceAtOrigin: true },
+    { title: "See only what players see", target: "player-launch", panel: "Build", centered: false, surfaceAtOrigin: true },
+    { title: "Set up your workspace", target: "settings", panel: "Settings", surfaceAtOrigin: true },
+    { title: "Keep exploring on GitHub", target: "about-github", panel: "Settings", centered: true },
+    { title: "Come back anytime", target: "onboarding-replay", panel: "Settings", centered: true }
+  ];
+  for (const step of workflowSteps) {
+    await tour.getByRole("button", { name: "Next" }).click();
+    await expectOnboardingStep(page, tour, step);
+    if (step.title === "Write the decisions") {
+      await expect(page.locator('.rail__item[aria-label="Content"]')).toHaveClass(/rail__item--active/);
+      await expect.poll(() => workspaceContains(page, 'activePanel = "overview"')).toBe(true);
+    }
+    if (step.title === "Keep exploring on GitHub") {
+      await expect(page.locator('[data-onboarding-link="github"]')).toBeVisible();
+      await expect(tour.getByRole("link", { name: /Open GitHub/ })).toHaveAttribute("href", "https://github.com/Sisyphe42/ReignsAgent");
+      await expect(tour.locator(".onboarding-tour__target-blocker")).toHaveCount(0);
+    }
+  }
+
+  const reverseSteps = [
+    ...workflowSteps.slice(0, -1).reverse(),
+    { title: "Start from the right project", target: "project-menu", panel: "Overview", centered: false, surfaceAtOrigin: true },
+    { title: "Tell a story, one decision at a time", target: null, centered: false }
+  ];
+  for (const step of reverseSteps) {
+    await tour.getByRole("button", { name: "Back" }).click();
+    await expectOnboardingStep(page, tour, step);
+  }
+
+  const secondForwardPass = [
+    { title: "Start from the right project", target: "project-menu", panel: "Overview", centered: false, surfaceAtOrigin: true },
+    ...workflowSteps
+  ];
+  for (const step of secondForwardPass) {
+    await tour.getByRole("button", { name: "Next" }).click();
+    await expectOnboardingStep(page, tour, step);
+  }
+
+  await tour.getByRole("button", { name: "Finish" }).click();
+  await expect(tour).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Overview" })).toHaveClass(/rail__item--active/);
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+  await expect.poll(() => page.evaluate((key) => localStorage.getItem(key), ONBOARDING_COMPLETED_KEY)).toBe("true");
+
+  await page.reload();
+  await expect(page.locator(".stage__status strong")).toContainText("cards loaded");
+  await expect(tour).toHaveCount(0);
+  await page.getByRole("button", { name: "Settings" }).click();
+  await page.getByRole("button", { name: "Replay onboarding guide" }).click();
+  await expect(tour.getByRole("heading", { name: "Tell a story, one decision at a time" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(tour).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Settings" })).toHaveClass(/rail__item--active/);
+});
+
+test("treats skipping onboarding as completion", async ({ page }) => {
+  await openHosted(page, { onboarding: "fresh" });
+  await page.getByRole("button", { name: /Skip/ }).click();
+  await expect(page.getByTestId("onboarding-tour")).toHaveCount(0);
+  await page.reload();
+  await expect(page.locator(".stage__status strong")).toContainText("cards loaded");
+  await expect(page.getByTestId("onboarding-tour")).toHaveCount(0);
+});
+
+test("defers first-run onboarding on an explicit panel route", async ({ page }) => {
+  await prepareOnboardingStorage(page, "fresh");
+  await page.goto("workbench/content");
+  await expect(page.locator(".stage__status strong")).toContainText("cards loaded");
+  await expect(page.getByTestId("onboarding-tour")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Content" })).toHaveClass(/rail__item--active/);
+
+  await page.goto("workbench");
+  await expect(page.getByTestId("onboarding-tour").getByRole("heading", { name: "Tell a story, one decision at a time" })).toBeVisible();
+});
+
+test("keeps localized onboarding inside a narrow viewport", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "languages", { configurable: true, get: () => ["zh-CN"] });
+    Object.defineProperty(navigator, "language", { configurable: true, get: () => "zh-CN" });
+  });
+  await openHosted(page, { onboarding: "fresh" });
+  await page.setViewportSize({ width: 390, height: 720 });
+  const card = page.locator(".onboarding-tour__card");
+  await expect(card.getByRole("heading", { name: "用一次次选择讲完一个故事" })).toBeVisible();
+  await expect(card.locator(".onboarding-tour__progress")).toHaveText("1/12");
+  await expect(card.getByRole("button", { name: "下一步" })).toBeVisible();
+  const bounds = await card.boundingBox();
+  expect(bounds.x).toBeGreaterThanOrEqual(0);
+  expect(bounds.y).toBeGreaterThanOrEqual(0);
+  expect(bounds.x + bounds.width).toBeLessThanOrEqual(390);
+  expect(bounds.y + bounds.height).toBeLessThanOrEqual(720);
+  expect(await card.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+  expect(await card.locator(".onboarding-intro").evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+  await expect(card.locator(".onboarding-tour__actions")).toBeInViewport();
+});
+
+test("keeps the intro demo visibly cycling when reduced motion is requested", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await openHosted(page, { onboarding: "fresh" });
+  const demo = page.locator(".onboarding-demo");
+  const card = demo.locator(".onboarding-demo__card");
+  await expect(demo).toHaveClass(/onboarding-demo--left/);
+  const leftTransform = await card.evaluate((element) => getComputedStyle(element).transform);
+  await expect(demo).toHaveClass(/onboarding-demo--right/, { timeout: 4_000 });
+  await expect.poll(() => card.evaluate((element) => getComputedStyle(element).transform)).not.toBe(leftTransform);
+  await expect(page.getByRole("button", { name: /Hear them out/ })).toHaveAttribute("aria-pressed", "true");
+  await expect(demo).toHaveClass(/onboarding-demo--left/, { timeout: 4_000 });
+});
 
 test("persists an OPFS project and reopens the PWA offline", async ({ page, context }) => {
   await openHosted(page);
@@ -86,6 +243,11 @@ test("keeps navigation interactive when localStorage methods fail", async ({ pag
   await openHosted(page);
 
   await expect(page.locator(".workspace")).toHaveClass(/workspace--rail-expanded.*workspace--rail-pinned|workspace--rail-pinned.*workspace--rail-expanded/);
+  await page.getByRole("button", { name: "Settings" }).click();
+  await page.getByRole("button", { name: "Replay onboarding guide" }).click();
+  await expect(page.getByTestId("onboarding-tour").getByRole("heading", { name: "Tell a story, one decision at a time" })).toBeVisible();
+  await page.getByRole("button", { name: /Skip/ }).click();
+  await expect(page.getByRole("button", { name: "Settings" })).toHaveClass(/rail__item--active/);
   await page.getByRole("button", { name: "Collapse navigation" }).click();
   await expect(page.locator(".workspace")).toHaveClass(/workspace--rail-collapsed.*workspace--rail-pinned|workspace--rail-pinned.*workspace--rail-collapsed/);
   await page.getByRole("button", { name: "Expand navigation" }).click();
@@ -234,24 +396,37 @@ test("persists navigation density and shared interface language", async ({ page 
   await expect(page.locator(".rail")).toHaveCSS("width", "79px");
   await page.locator(".rail").evaluate((rail) => { rail.scrollTop = 0; });
   const iconBeforeReveal = await firstItem.locator(".rail__icon").boundingBox();
-  const standardHoverIcon = await hoverItem.locator(".rail__icon").boundingBox();
-  await page.mouse.move(standardHoverIcon.x + standardHoverIcon.width / 2, standardHoverIcon.y + standardHoverIcon.height / 2);
+  await page.locator(".rail").hover({ position: { x: 2, y: 2 } });
   await expect(page.locator(".rail")).toHaveCSS("width", "236px");
   await expect.poll(() => page.locator(".rail").evaluate((rail) => rail.scrollTop)).toBe(0);
   await expect.poll(async () => {
-    const revealed = await firstItem.locator(".rail__icon").boundingBox();
+    const geometry = await firstItem.evaluate((item) => {
+      const itemBox = item.getBoundingClientRect();
+      const iconBox = item.querySelector(".rail__icon").getBoundingClientRect();
+      return {
+        iconX: iconBox.left,
+        verticalCenterDelta: (iconBox.top + iconBox.height / 2) - (itemBox.top + itemBox.height / 2)
+      };
+    });
     return Math.max(
-      Math.abs(revealed.x - iconBeforeReveal.x),
-      Math.abs(revealed.y - iconBeforeReveal.y)
+      Math.abs(geometry.iconX - iconBeforeReveal.x),
+      Math.abs(geometry.verticalCenterDelta)
     );
   }).toBeLessThan(1);
   const iconAfterReveal = await firstItem.locator(".rail__icon").boundingBox();
   expect(iconAfterReveal.height).toBe(iconBeforeReveal.height);
   expect(Math.abs(iconAfterReveal.x - iconBeforeReveal.x)).toBeLessThan(1);
-  expect(Math.abs(iconAfterReveal.y - iconBeforeReveal.y)).toBeLessThan(1);
+  const revealedCenterDelta = await firstItem.evaluate((item) => {
+    const itemBox = item.getBoundingClientRect();
+    const iconBox = item.querySelector(".rail__icon").getBoundingClientRect();
+    return (iconBox.top + iconBox.height / 2) - (itemBox.top + itemBox.height / 2);
+  });
+  expect(Math.abs(revealedCenterDelta)).toBeLessThan(1);
   await expect(aiAssistLabel).toHaveCSS("white-space", "nowrap");
   const aiAssistRevealed = await aiAssistLabel.boundingBox();
   expect(aiAssistRevealed.height).toBe(aiAssistExpanded.height);
+  await hoverItem.hover();
+  await page.waitForTimeout(250);
   const floatingHoverStyle = await hoverItem.evaluate((item) => ({ background: getComputedStyle(item).backgroundColor, border: getComputedStyle(item).borderColor, height: getComputedStyle(item).height }));
   await page.getByRole("button", { name: "Pin navigation" }).click();
   await expect(page.locator(".workspace")).toHaveClass(/workspace--rail-expanded.*workspace--rail-pinned|workspace--rail-pinned.*workspace--rail-expanded/);
@@ -288,13 +463,17 @@ test("persists navigation density and shared interface language", async ({ page 
   await expect(page.locator(".rail")).toHaveCSS("width", "91px");
   await page.locator(".rail").evaluate((rail) => { rail.scrollTop = 0; });
   const phantomIconCollapsed = await firstItem.locator(".rail__icon").boundingBox();
-  const phantomHoverIcon = await hoverItem.locator(".rail__icon").boundingBox();
-  await page.mouse.move(phantomHoverIcon.x + phantomHoverIcon.width / 2, phantomHoverIcon.y + phantomHoverIcon.height / 2);
+  await page.locator(".rail").hover({ position: { x: 2, y: 2 } });
   await expect(page.locator(".rail")).toHaveCSS("width", "236px");
   await expect.poll(() => page.locator(".rail").evaluate((rail) => rail.scrollTop)).toBe(0);
   const phantomIconRevealed = await firstItem.locator(".rail__icon").boundingBox();
   expect(Math.abs(phantomIconRevealed.x - phantomIconCollapsed.x)).toBeLessThan(1);
-  expect(Math.abs(phantomIconRevealed.y - phantomIconCollapsed.y)).toBeLessThan(1);
+  const phantomRevealedCenterDelta = await firstItem.evaluate((item) => {
+    const itemBox = item.getBoundingClientRect();
+    const iconBox = item.querySelector(".rail__icon").getBoundingClientRect();
+    return (iconBox.top + iconBox.height / 2) - (itemBox.top + itemBox.height / 2);
+  });
+  expect(Math.abs(phantomRevealedCenterDelta)).toBeLessThan(1);
   await page.getByRole("button", { name: "Pin navigation" }).click();
   await page.getByRole("button", { name: "Collapse navigation" }).click();
   await page.locator(".skin-select select").selectOption("github-light");
@@ -515,7 +694,25 @@ async function activeMaskMetadata(page) {
   });
 }
 
-async function openHosted(page) {
+async function prepareOnboardingStorage(page, onboarding) {
+  await page.addInitScript(({ key, mode }) => {
+    try {
+      if (mode === "complete") {
+        window.localStorage.setItem(key, "true");
+        return;
+      }
+      if (window.sessionStorage.getItem("reigns-agent.test.onboarding-initialized") !== "true") {
+        window.localStorage.removeItem(key);
+        window.sessionStorage.setItem("reigns-agent.test.onboarding-initialized", "true");
+      }
+    } catch {
+      // Storage failure behavior is covered by dedicated tests.
+    }
+  }, { key: ONBOARDING_COMPLETED_KEY, mode: onboarding });
+}
+
+async function openHosted(page, { onboarding = "complete" } = {}) {
+  await prepareOnboardingStorage(page, onboarding);
   await page.goto("workbench");
   await page.evaluate(() => navigator.serviceWorker.ready.then(() => true));
   await page.reload();
@@ -549,9 +746,41 @@ async function workspaceContains(page, expected) {
 
 async function configContains(page, expected) {
   return page.evaluate(async (text) => {
-    const root = await navigator.storage.getDirectory();
-    const dataRoot = await root.getDirectoryHandle("ReignsAgentData");
-    const config = await (await dataRoot.getFileHandle("config.toml")).getFile();
-    return (await config.text()).includes(text);
+    try {
+      const root = await navigator.storage.getDirectory();
+      const dataRoot = await root.getDirectoryHandle("ReignsAgentData");
+      const config = await (await dataRoot.getFileHandle("config.toml")).getFile();
+      return (await config.text()).includes(text);
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "NotReadableError") return false;
+      throw error;
+    }
   }, expected);
+}
+
+async function expectTargetCentered(page, targetName) {
+  const target = page.locator(`[data-onboarding-target="${targetName}"]`);
+  await expect.poll(async () => target.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    return Math.abs(rect.top + rect.height / 2 - window.innerHeight / 2);
+  })).toBeLessThan(3);
+}
+
+async function expectOnboardingStep(page, tour, step) {
+  await expect(tour.getByRole("heading", { name: step.title })).toBeVisible();
+  if (step.panel) await expect(page.getByRole("button", { name: step.panel, exact: true })).toHaveClass(/rail__item--active/);
+  if (!step.target) return;
+  const target = page.locator(`[data-onboarding-target="${step.target}"]`);
+  await expect(target).toHaveAttribute("data-onboarding-active", "true");
+  await expect.poll(async () => {
+    const rect = await target.boundingBox();
+    return rect && rect.y >= 0 && rect.y + rect.height <= page.viewportSize().height;
+  }).toBe(true);
+  if (step.centered) await expectTargetCentered(page, step.target);
+  if (step.surfaceAtOrigin) {
+    await expect.poll(async () => {
+      const rect = await page.locator(".stage__status").boundingBox();
+      return rect?.y ?? Number.POSITIVE_INFINITY;
+    }).toBeLessThan(160);
+  }
 }

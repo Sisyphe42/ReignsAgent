@@ -30,6 +30,23 @@ Questions to answer:
 
 ## Required Patterns
 
+### Guided Target Lifecycle
+
+Multi-step guidance that changes Creator panels must use one direction-independent target lifecycle:
+
+- Update the guide step and its required panel in the same React event batch. Do not change the step first and repair the panel later from an effect.
+- Give every spotlight step a deterministic panel context, including top-bar targets. A step must not inherit whichever panel happened to be active from the navigation direction.
+- Treat target mounting as asynchronous. Resolve the target immediately when available and otherwise wait with a scoped `MutationObserver`; always disconnect observers during step cleanup.
+- Define an explicit placement policy for every guided step. Panel headers and fixed top-bar controls return the guided surface to its natural start; only lower-page targets that need it use centered scrolling. Do not infer that every spotlight must be mathematically centered.
+- Add trailing scroll room only when lower-page targets need room to become visible or centered. Do not add leading padding that shifts the normal panel layout.
+- Track target geometry through captured scroll events and `ResizeObserver`. Do not use a fixed timeout as the source of truth for target readiness or final spotlight placement.
+- Use deterministic `auto` scrolling when a step changes. Do not leave a smooth-scroll animation running across the next step transition; it can make adjacent targets depend on navigation timing and direction.
+- Reconcile the declared placement for multiple animation frames after a step or panel change, and restart reconciliation when the target, guided surface, viewport, or document fonts change. Updating spotlight geometry without reapplying the step's placement policy is not sufficient.
+- Recompute both spotlight geometry and card layout from the current viewport. Responsive checks must resize an already-open guide and verify internal content width and controls, not only the outer dialog bounds at initial load.
+- Ignore off-screen or degenerate rectangles instead of rendering clipped spotlight geometry with negative dimensions.
+
+Hosted regression coverage must traverse every guide step forward and backward. Panel-backed targets must be active and fully visible in both directions; document-end targets that require centering must be checked explicitly. Early panel steps must also assert that the stage stays at its natural top position so coordinate-only checks cannot hide a large artificial blank region. Testing only the final pair of steps is insufficient.
+
 ### Creator Skin Changes
 
 Skin changes must stay consistent across the creator workbench, preview player, and deployable player template. Canonical IDs, labels, swatches, descriptions, and semantic tokens live in `packages/interface/web/skin-catalog.js`; surfaces may add layout treatments keyed by `data-skin` but must not duplicate the catalog.
