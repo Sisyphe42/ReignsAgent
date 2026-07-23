@@ -44,8 +44,12 @@ test("guides the complete workflow once and replays it from Settings", async ({ 
   expect(progressBox.x).toBeLessThan(navBox.x);
   expect(Math.abs(progressBox.x + progressBox.width / 2 - (actionsBox.x + actionsBox.width / 2))).toBeLessThan(2);
   const demo = tour.locator(".onboarding-demo");
+  const demoCard = demo.locator(".onboarding-demo__card");
   await expect(demo).toHaveClass(/onboarding-demo--left/);
+  const leftTransform = await demoCard.evaluate((element) => getComputedStyle(element).transform);
   await expect(demo).toHaveClass(/onboarding-demo--right/, { timeout: 4_000 });
+  await expect.poll(() => demoCard.evaluate((element) => getComputedStyle(element).transform)).not.toBe(leftTransform);
+  await expect(tour.getByRole("button", { name: /Hear them out/ })).toHaveAttribute("aria-pressed", "true");
   await tour.getByRole("button", { name: /Turn them away/ }).hover();
   await expect(demo).toHaveClass(/onboarding-demo--left/);
   await tour.getByRole("button", { name: /Hear them out/ }).hover();
@@ -66,14 +70,14 @@ test("guides the complete workflow once and replays it from Settings", async ({ 
   await expect(tour.getByRole("heading", { name: "Start from the right project" })).toBeVisible();
 
   const workflowSteps = [
-    { title: "Write the decisions", target: "content", panel: "Content", centered: true },
-    { title: "See how the story moves", target: "story", panel: "Story", centered: true },
-    { title: "Find problems before players do", target: "review", panel: "Review", centered: true },
-    { title: "Use AI without giving up control", target: "ai-assist", panel: "AI Assist", centered: true },
-    { title: "Play what you wrote", target: "preview", panel: "Preview", centered: true },
-    { title: "Package the player experience", target: "build", panel: "Build", centered: true },
+    { title: "Write the decisions", target: "content", panel: "Content", surfaceAtOrigin: true },
+    { title: "See how the story moves", target: "story", panel: "Story", surfaceAtOrigin: true },
+    { title: "Find problems before players do", target: "review", panel: "Review", surfaceAtOrigin: true },
+    { title: "Use AI without giving up control", target: "ai-assist", panel: "AI Assist", surfaceAtOrigin: true },
+    { title: "Play what you wrote", target: "preview", panel: "Preview", surfaceAtOrigin: true },
+    { title: "Package the player experience", target: "build", panel: "Build", surfaceAtOrigin: true },
     { title: "See only what players see", target: "player-launch", panel: "Build", centered: false, surfaceAtOrigin: true },
-    { title: "Set up your workspace", target: "settings", panel: "Settings", centered: true },
+    { title: "Set up your workspace", target: "settings", panel: "Settings", surfaceAtOrigin: true },
     { title: "Keep exploring on GitHub", target: "about-github", panel: "Settings", centered: true },
     { title: "Come back anytime", target: "onboarding-replay", panel: "Settings", centered: true }
   ];
@@ -168,12 +172,16 @@ test("keeps localized onboarding inside a narrow viewport", async ({ page }) => 
   await expect(card.locator(".onboarding-tour__actions")).toBeInViewport();
 });
 
-test("keeps the intro demo cycling when reduced motion is requested", async ({ page }) => {
+test("keeps the intro demo visibly cycling when reduced motion is requested", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await openHosted(page, { onboarding: "fresh" });
   const demo = page.locator(".onboarding-demo");
+  const card = demo.locator(".onboarding-demo__card");
   await expect(demo).toHaveClass(/onboarding-demo--left/);
+  const leftTransform = await card.evaluate((element) => getComputedStyle(element).transform);
   await expect(demo).toHaveClass(/onboarding-demo--right/, { timeout: 4_000 });
+  await expect.poll(() => card.evaluate((element) => getComputedStyle(element).transform)).not.toBe(leftTransform);
+  await expect(page.getByRole("button", { name: /Hear them out/ })).toHaveAttribute("aria-pressed", "true");
   await expect(demo).toHaveClass(/onboarding-demo--left/, { timeout: 4_000 });
 });
 

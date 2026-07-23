@@ -37,10 +37,11 @@ Multi-step guidance that changes Creator panels must use one direction-independe
 - Update the guide step and its required panel in the same React event batch. Do not change the step first and repair the panel later from an effect.
 - Give every spotlight step a deterministic panel context, including top-bar targets. A step must not inherit whichever panel happened to be active from the navigation direction.
 - Treat target mounting as asynchronous. Resolve the target immediately when available and otherwise wait with a scoped `MutationObserver`; always disconnect observers during step cleanup.
-- Give the guided surface temporary leading and trailing scroll room while a tour is open so every in-surface target can reach the same viewport center in both directions. Compensate the initial padding change to preserve the visible page position, and restore the original padding and scroll position when the tour closes.
+- Define an explicit placement policy for every guided step. Panel headers and fixed top-bar controls return the guided surface to its natural start; only lower-page targets that need it use centered scrolling. Do not infer that every spotlight must be mathematically centered.
+- Add trailing scroll room only when lower-page targets need room to become visible or centered. Do not add leading padding that shifts the normal panel layout.
 - Track target geometry through captured scroll events and `ResizeObserver`. Do not use a fixed timeout as the source of truth for target readiness or final spotlight placement.
 - Use deterministic `auto` scrolling when a step changes. Do not leave a smooth-scroll animation running across the next step transition; it can make adjacent targets depend on navigation timing and direction.
-- Reconcile target position for multiple animation frames after a step or panel change, and restart reconciliation when the target, guided surface, viewport, or document fonts change. Updating spotlight geometry without re-centering is not sufficient.
+- Reconcile the declared placement for multiple animation frames after a step or panel change, and restart reconciliation when the target, guided surface, viewport, or document fonts change. Updating spotlight geometry without reapplying the step's placement policy is not sufficient.
 - Recompute both spotlight geometry and card layout from the current viewport. Responsive checks must resize an already-open guide and verify internal content width and controls, not only the outer dialog bounds at initial load.
 - Ignore off-screen or degenerate rectangles instead of rendering clipped spotlight geometry with negative dimensions.
 

@@ -64,6 +64,7 @@ const STEP_DEFINITIONS = [
     id: "projects",
     panelId: "overview",
     target: "project-menu",
+    placement: "surface-start",
     en: { title: "Start from the right project", body: "Switch projects, begin with a blank canvas, or clone the sample without affecting the original." },
     zh: { title: "从合适的项目开始", body: "切换项目、从空白开始，或复制示例而不影响原始内容。" }
   },
@@ -71,6 +72,7 @@ const STEP_DEFINITIONS = [
     id: "content",
     panelId: "content",
     target: "content",
+    placement: "surface-start",
     en: { title: "Write the decisions", body: "Shape each card, its two choices, state changes, and artwork from one focused editor." },
     zh: { title: "写下每一次选择", body: "在一个专注的编辑器中完成卡牌、左右选项、状态变化和美术。" }
   },
@@ -78,6 +80,7 @@ const STEP_DEFINITIONS = [
     id: "story",
     panelId: "story",
     target: "story",
+    placement: "surface-start",
     en: { title: "See how the story moves", body: "Follow tag-driven connections, inspect branches, and spot cards the player cannot reach." },
     zh: { title: "看清故事如何流动", body: "沿着标签驱动的连接检查分支，并发现玩家无法到达的卡牌。" }
   },
@@ -85,6 +88,7 @@ const STEP_DEFINITIONS = [
     id: "review",
     panelId: "review",
     target: "review",
+    placement: "surface-start",
     en: { title: "Find problems before players do", body: "Run reproducible simulations to reveal coverage, pacing, ending, and balance risks." },
     zh: { title: "在玩家之前发现问题", body: "运行可复现模拟，揭示覆盖度、节奏、结局和数值风险。" }
   },
@@ -92,6 +96,7 @@ const STEP_DEFINITIONS = [
     id: "ai-assist",
     panelId: "ai-edit",
     target: "ai-assist",
+    placement: "surface-start",
     en: { title: "Use AI without giving up control", body: "AI Assist can draft cards from project context, repair Review findings, and generate or edit visual candidates through your endpoint. Every result stays a proposal until you inspect and apply it; player builds contain no AI connection or key." },
     zh: { title: "使用 AI，但始终保留控制权", body: "AI 辅助可以根据项目上下文起草卡牌、修复审查问题，并通过你的端点生成或编辑视觉候选。所有结果在你检查并应用前都只是提案；玩家构建不会包含 AI 连接或密钥。" }
   },
@@ -99,6 +104,7 @@ const STEP_DEFINITIONS = [
     id: "preview",
     panelId: "preview",
     target: "preview",
+    placement: "surface-start",
     en: { title: "Play what you wrote", body: "Try the current deck with the same deterministic rules used by published builds." },
     zh: { title: "亲自试玩你的创作", body: "使用与发布构建相同的确定性规则体验当前卡组。" }
   },
@@ -106,6 +112,7 @@ const STEP_DEFINITIONS = [
     id: "build",
     panelId: "build",
     target: "build",
+    placement: "surface-start",
     en: { title: "Package the player experience", body: "Check readiness, prepare the release, and export the player format supported by this host." },
     zh: { title: "打包玩家体验", body: "检查就绪状态、准备发布，并导出当前宿主支持的玩家端格式。" }
   },
@@ -113,6 +120,7 @@ const STEP_DEFINITIONS = [
     id: "player",
     panelId: "build",
     target: "player-launch",
+    placement: "surface-start",
     en: { title: "See only what players see", body: "Open the clean decision experience without Creator tools, diagnostics, or endpoint settings." },
     zh: { title: "只看玩家会看到的内容", body: "打开纯净的选择体验，不包含 Creator 工具、诊断或端点设置。" }
   },
@@ -120,6 +128,7 @@ const STEP_DEFINITIONS = [
     id: "settings",
     panelId: "settings",
     target: "settings",
+    placement: "surface-start",
     en: { title: "Set up your workspace", body: "Manage project details, interface preferences, local storage, and AI endpoints here." },
     zh: { title: "设置你的创作环境", body: "在这里管理项目资料、界面偏好、本地存储与 AI 端点。" }
   },
@@ -127,6 +136,7 @@ const STEP_DEFINITIONS = [
     id: "about-github",
     panelId: "settings",
     target: "about-github",
+    placement: "center",
     interactiveTarget: true,
     en: { title: "Keep exploring on GitHub", body: "Find the README, releases, and issue tracker on GitHub.", actionHref: "https://github.com/Sisyphe42/ReignsAgent", actionLabel: "Open GitHub" },
     zh: { title: "前往 GitHub 继续了解", body: "在 GitHub 查看 README、版本与问题追踪。", actionHref: "https://github.com/Sisyphe42/ReignsAgent", actionLabel: "打开 GitHub" }
@@ -135,6 +145,7 @@ const STEP_DEFINITIONS = [
     id: "replay",
     panelId: "settings",
     target: "onboarding-replay",
+    placement: "center",
     en: { title: "Come back anytime", body: "Replay the tour from here. The guide never changes your projects or shared settings." },
     zh: { title: "随时回来再看", body: "从这里重新播放引导。导览绝不会修改项目或共享设置。" }
   }
@@ -163,7 +174,15 @@ export function getOnboardingSteps(locale) {
   const isChinese = locale === "zh-Hans";
   return STEP_DEFINITIONS.map((step) => {
     const content = isChinese ? step.zh : step.en;
-    return { ...content, id: step.id, kind: step.kind ?? "spotlight", panelId: step.panelId ?? null, target: step.target ?? null, interactiveTarget: step.interactiveTarget === true };
+    return {
+      ...content,
+      id: step.id,
+      kind: step.kind ?? "spotlight",
+      panelId: step.panelId ?? null,
+      target: step.target ?? null,
+      placement: step.placement ?? "surface-start",
+      interactiveTarget: step.interactiveTarget === true
+    };
   });
 }
 
@@ -187,41 +206,35 @@ function sameRect(left, right) {
   return ["top", "left", "right", "bottom"].every((key) => Math.abs(left[key] - right[key]) < 0.5);
 }
 
-function reserveTourScrollRoom() {
+function reserveTourTrailingScrollRoom() {
   const stage = document.querySelector(".stage");
   if (!stage) return () => {};
   const originalScrollY = window.scrollY;
-  const previousPaddingTop = stage.style.paddingTop;
+  const originalStageScrollTop = stage.scrollTop;
   const previousPaddingBottom = stage.style.paddingBottom;
-  const previousAnchorTop = stage.dataset.onboardingAnchorTop;
   const computed = window.getComputedStyle(stage);
-  const basePaddingTop = Number.parseFloat(computed.paddingTop) || 0;
   const basePaddingBottom = Number.parseFloat(computed.paddingBottom) || 0;
-  const anchor = stage.firstElementChild;
-  const naturalAnchorTop = anchor?.getBoundingClientRect().top;
-  if (Number.isFinite(naturalAnchorTop)) stage.dataset.onboardingAnchorTop = String(naturalAnchorTop);
 
   const applyRoom = () => {
-    const anchorTop = anchor?.getBoundingClientRect().top;
     const room = Math.ceil(window.innerHeight / 2) + 16;
-    stage.style.paddingTop = `${basePaddingTop + room}px`;
     stage.style.paddingBottom = `${basePaddingBottom + room}px`;
-    if (Number.isFinite(anchorTop)) {
-      const nextAnchorTop = anchor.getBoundingClientRect().top;
-      window.scrollBy({ top: nextAnchorTop - anchorTop, behavior: "auto" });
-    }
   };
 
   applyRoom();
   window.addEventListener("resize", applyRoom);
   return () => {
     window.removeEventListener("resize", applyRoom);
-    stage.style.paddingTop = previousPaddingTop;
     stage.style.paddingBottom = previousPaddingBottom;
-    if (previousAnchorTop === undefined) delete stage.dataset.onboardingAnchorTop;
-    else stage.dataset.onboardingAnchorTop = previousAnchorTop;
-    window.requestAnimationFrame(() => window.scrollTo({ top: originalScrollY, behavior: "auto" }));
+    window.requestAnimationFrame(() => {
+      stage.scrollTo({ top: originalStageScrollTop, behavior: "auto" });
+      window.scrollTo({ top: originalScrollY, behavior: "auto" });
+    });
   };
+}
+
+function scrollGuidedSurfaceToStart(stage) {
+  if (stage) stage.scrollTo({ top: 0, behavior: "auto" });
+  window.scrollTo({ top: 0, behavior: "auto" });
 }
 
 function getCardLayout(rect, height, viewport, wide = false) {
@@ -272,7 +285,7 @@ export function OnboardingTour({ locale, steps, stepIndex, onStepChange, onFinis
     return () => window.removeEventListener("resize", updateViewport);
   }, []);
 
-  useLayoutEffect(() => reserveTourScrollRoom(), []);
+  useLayoutEffect(() => reserveTourTrailingScrollRoom(), []);
 
   useEffect(() => {
     function onKeyDown(event) {
@@ -321,9 +334,9 @@ export function OnboardingTour({ locale, steps, stepIndex, onStepChange, onFinis
 
   useEffect(() => {
     if (step.kind !== "intro") return undefined;
-    const timeout = window.setTimeout(() => setDemoDirection((current) => current === "left" ? "right" : "left"), 2600);
-    return () => window.clearTimeout(timeout);
-  }, [step.kind, demoDirection]);
+    const interval = window.setInterval(() => setDemoDirection((current) => current === "left" ? "right" : "left"), 2600);
+    return () => window.clearInterval(interval);
+  }, [step.kind]);
 
   useLayoutEffect(() => {
     if (!step.target) {
@@ -347,15 +360,11 @@ export function OnboardingTour({ locale, steps, stepIndex, onStepChange, onFinis
     const settle = () => {
       if (cancelled || !activeTarget?.isConnected) return;
       const stage = document.querySelector(".stage");
-      const shouldCenter = stage?.contains(activeTarget);
+      const shouldCenter = step.placement === "center";
       if (shouldCenter) {
         activeTarget.scrollIntoView({ block: "center", inline: "nearest", behavior: "auto" });
-      } else if (stage?.firstElementChild) {
-        const naturalAnchorTop = Number.parseFloat(stage.dataset.onboardingAnchorTop);
-        const anchorTop = stage.firstElementChild.getBoundingClientRect().top;
-        if (Number.isFinite(naturalAnchorTop)) {
-          window.scrollBy({ top: anchorTop - naturalAnchorTop, behavior: "auto" });
-        }
+      } else {
+        scrollGuidedSurfaceToStart(stage);
       }
       const rect = activeTarget.getBoundingClientRect();
       update();
@@ -364,8 +373,10 @@ export function OnboardingTour({ locale, steps, stepIndex, onStepChange, onFinis
         && Math.abs(rect.left - previousRect.left) < 0.5
         && Math.abs(rect.width - previousRect.width) < 0.5
         && Math.abs(rect.height - previousRect.height) < 0.5;
-      const centered = !shouldCenter || Math.abs(rect.top + rect.height / 2 - window.innerHeight / 2) < 1;
-      stableFrames = stable && centered ? stableFrames + 1 : 0;
+      const positioned = shouldCenter
+        ? Math.abs(rect.top + rect.height / 2 - window.innerHeight / 2) < 1
+        : window.scrollY < 1 && (!stage || stage.scrollTop < 1);
+      stableFrames = stable && positioned ? stableFrames + 1 : 0;
       previousRect = rect;
       settleAttempts += 1;
       if (stableFrames < 2 && settleAttempts < 30) {
@@ -417,7 +428,7 @@ export function OnboardingTour({ locale, steps, stepIndex, onStepChange, onFinis
       window.removeEventListener("resize", scheduleSettle);
       window.removeEventListener("scroll", update, true);
     };
-  }, [step.id, step.target]);
+  }, [step.id, step.placement, step.target]);
 
   useLayoutEffect(() => {
     const height = dialogRef.current?.getBoundingClientRect().height;
@@ -483,8 +494,8 @@ export function OnboardingTour({ locale, steps, stepIndex, onStepChange, onFinis
                 </div>
               </div>
               <div className="onboarding-demo__choices">
-                <button type="button" className={demoDirection === "left" ? "is-active" : ""} onMouseEnter={() => setDemoDirection("left")} onFocus={() => setDemoDirection("left")} onClick={() => setDemoDirection("left")}>← {step.demo.left}</button>
-                <button type="button" className={demoDirection === "right" ? "is-active" : ""} onMouseEnter={() => setDemoDirection("right")} onFocus={() => setDemoDirection("right")} onClick={() => setDemoDirection("right")}>{step.demo.right} →</button>
+                <button type="button" className={demoDirection === "left" ? "is-active" : ""} aria-pressed={demoDirection === "left"} onMouseEnter={() => setDemoDirection("left")} onFocus={() => setDemoDirection("left")} onClick={() => setDemoDirection("left")}>← {step.demo.left}</button>
+                <button type="button" className={demoDirection === "right" ? "is-active" : ""} aria-pressed={demoDirection === "right"} onMouseEnter={() => setDemoDirection("right")} onFocus={() => setDemoDirection("right")} onClick={() => setDemoDirection("right")}>{step.demo.right} →</button>
               </div>
               <small>{step.demo.hint}</small>
             </div>

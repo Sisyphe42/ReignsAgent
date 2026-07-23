@@ -3735,6 +3735,7 @@ select {
   background: var(--surface);
   font: 0.76rem var(--font-ui);
   cursor: pointer;
+  transition: color 180ms ease, background 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
 }
 
 .onboarding-demo__choices button:hover,
@@ -3743,6 +3744,8 @@ select {
   border-color: var(--accent);
   outline: none;
   color: var(--ink);
+  background: color-mix(in srgb, var(--accent) 16%, var(--surface));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent);
 }
 
 .onboarding-demo > small {
