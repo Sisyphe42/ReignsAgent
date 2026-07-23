@@ -22,6 +22,7 @@ import {
   generateAssetDrafts,
   generateCardDrafts,
   listAiEndpointModels,
+  normalizeAssetDisplay,
   parseContentJson,
   parseCardsCsv,
   parseCardsJson,
@@ -78,6 +79,42 @@ describe("ReignsAgent pipeline", () => {
     assert.equal(parsed.metadata.title, "Court Test");
     assert.equal(parsed.assets[0].cardId, "opening");
     assert.deepEqual(validateContentBundle(parsed), { valid: true, errors: [], warnings: [] });
+  });
+
+  it("validates and defensively normalizes card asset display settings", () => {
+    const legacy = { id: "legacy", cardId: "opening", uri: "memory://legacy" };
+    assert.deepEqual(normalizeAssetDisplay(legacy), {
+      fit: "adaptive",
+      focalPoint: { x: 0.5, y: 0.5 }
+    });
+
+    const configured = {
+      ...legacy,
+      metadata: { display: { fit: "cover", focalPoint: { x: 0, y: 1 } } }
+    };
+    assert.deepEqual(normalizeAssetDisplay(configured), configured.metadata.display);
+    assert.equal(validateContentBundle({ schemaVersion: 1, metadata: {}, cards: sampleCards(), assets: [configured] }).valid, true);
+
+    for (const display of [
+      { fit: "stretch" },
+      { fit: "cover", focalPoint: null },
+      { fit: "cover", focalPoint: { x: -0.1, y: 0.5 } },
+      { fit: "cover", focalPoint: { x: 0.5, y: 2 } }
+    ]) {
+      const validation = validateContentBundle({
+        schemaVersion: 1,
+        metadata: {},
+        cards: sampleCards(),
+        assets: [{ ...legacy, metadata: { display } }]
+      });
+      assert.equal(validation.valid, false);
+      assert.match(validation.errors.join("\n"), /metadata\.display/);
+    }
+
+    assert.deepEqual(normalizeAssetDisplay({ ...legacy, metadata: { display: { fit: "stretch", focalPoint: { x: 3, y: "bad" } } } }), {
+      fit: "adaptive",
+      focalPoint: { x: 0.5, y: 0.5 }
+    });
   });
 
   it("uses connector boundaries for card and asset generation", async () => {

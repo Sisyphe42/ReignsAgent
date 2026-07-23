@@ -712,6 +712,37 @@ function sampleCard(id) {
 }
 
 describe("image operation orchestration", () => {
+  it("updates asset display settings without replacing unrelated metadata", () => {
+    const editor = createCardEditor({
+      cards: [sampleCard("gate")],
+      assets: [{
+        id: "gate-art",
+        cardId: "gate",
+        uri: "assets/generated/hash.png",
+        metadata: { mimeType: "image/png", sha256: "hash" }
+      }]
+    });
+    const asset = editor.setAssetDisplay("gate-art", {
+      fit: "cover",
+      focalPoint: { x: 1, y: 0 }
+    });
+    assert.deepEqual(asset.metadata, {
+      mimeType: "image/png",
+      sha256: "hash",
+      display: { fit: "cover", focalPoint: { x: 1, y: 0 } }
+    });
+    assert.deepEqual(editor.assets[0], asset);
+    assert.throws(
+      () => editor.setAssetDisplay("gate-art", { fit: "stretch", focalPoint: { x: 0.5, y: 0.5 } }),
+      /metadata\.display\.fit/
+    );
+    assert.deepEqual(editor.assets[0], asset);
+    assert.throws(
+      () => editor.setAssetDisplay("missing", { fit: "adaptive", focalPoint: { x: 0.5, y: 0.5 } }),
+      { code: "asset_not_found" }
+    );
+  });
+
   it("validates, drafts, and explicitly applies a generated asset", async () => {
     const editor = createCardEditor({ cards: [sampleCard("gate")] });
     const config = { protocol: "openai_images", endpoint: "https://images.example/v1", modelId: "image-model" };
@@ -732,6 +763,46 @@ describe("image operation orchestration", () => {
     });
     assert.equal(result.bundle.assets[0].uri, "assets/generated/hash.png");
     assert.equal(editor.assets.length, 0);
+  });
+
+  it("preserves display metadata when an image draft replaces an existing asset", async () => {
+    const editor = createCardEditor({
+      cards: [sampleCard("gate")],
+      assets: [{
+        id: "gate-art",
+        cardId: "gate",
+        uri: "assets/generated/old.png",
+        metadata: {
+          mimeType: "image/png",
+          sha256: "old",
+          display: { fit: "cover", focalPoint: { x: 0, y: 1 } }
+        }
+      }]
+    });
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1]);
+    const draft = await buildImageOperationDraft({
+      editor,
+      config: { protocol: "openai_images", endpoint: "https://images.example/v1", modelId: "image-model" },
+      request: { operation: "edit", prompt: "Redraw gate", targetAssetId: "gate-art", output: { format: "png" } },
+      inputs: [{ id: "gate-art", bytes: png, mimeType: "image/png" }],
+      fetchImpl: async () => new Response(JSON.stringify({ data: [{ b64_json: Buffer.from(png).toString("base64") }] }), { status: 200 })
+    });
+    const result = applyImageDraftAsset({
+      editor,
+      draft,
+      outputId: draft.outputs[0].id,
+      asset: {
+        id: "gate-art",
+        cardId: "gate",
+        uri: "assets/generated/new.png",
+        metadata: { mimeType: "image/png", sha256: "new" }
+      }
+    });
+    assert.deepEqual(result.asset.metadata, {
+      mimeType: "image/png",
+      sha256: "new",
+      display: { fit: "cover", focalPoint: { x: 0, y: 1 } }
+    });
   });
 });
 
