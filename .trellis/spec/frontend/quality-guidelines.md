@@ -37,9 +37,10 @@ Multi-step guidance that changes Creator panels must use one direction-independe
 - Update the guide step and its required panel in the same React event batch. Do not change the step first and repair the panel later from an effect.
 - Give every spotlight step a deterministic panel context, including top-bar targets. A step must not inherit whichever panel happened to be active from the navigation direction.
 - Treat target mounting as asynchronous. Resolve the target immediately when available and otherwise wait with a scoped `MutationObserver`; always disconnect observers during step cleanup.
-- Preserve the Creator's natural leading layout. Never add top padding or a leading spacer to force early-page targets to the mathematical viewport center; use trailing scroll room only when document-end targets need room to center.
+- Give the guided surface temporary leading and trailing scroll room while a tour is open so every in-surface target can reach the same viewport center in both directions. Compensate the initial padding change to preserve the visible page position, and restore the original padding and scroll position when the tour closes.
 - Track target geometry through captured scroll events and `ResizeObserver`. Do not use a fixed timeout as the source of truth for target readiness or final spotlight placement.
 - Use deterministic `auto` scrolling when a step changes. Do not leave a smooth-scroll animation running across the next step transition; it can make adjacent targets depend on navigation timing and direction.
+- Reconcile target position for multiple animation frames after a step or panel change, and restart reconciliation when the target, guided surface, viewport, or document fonts change. Updating spotlight geometry without re-centering is not sufficient.
 - Recompute both spotlight geometry and card layout from the current viewport. Responsive checks must resize an already-open guide and verify internal content width and controls, not only the outer dialog bounds at initial load.
 - Ignore off-screen or degenerate rectangles instead of rendering clipped spotlight geometry with negative dimensions.
 

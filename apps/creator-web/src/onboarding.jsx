@@ -187,15 +187,40 @@ function sameRect(left, right) {
   return ["top", "left", "right", "bottom"].every((key) => Math.abs(left[key] - right[key]) < 0.5);
 }
 
-function reserveTourTrailingScrollRoom(viewportHeight) {
+function reserveTourScrollRoom() {
   const stage = document.querySelector(".stage");
   if (!stage) return () => {};
+  const originalScrollY = window.scrollY;
+  const previousPaddingTop = stage.style.paddingTop;
   const previousPaddingBottom = stage.style.paddingBottom;
+  const previousAnchorTop = stage.dataset.onboardingAnchorTop;
   const computed = window.getComputedStyle(stage);
-  const room = Math.ceil(viewportHeight / 2) + 16;
-  stage.style.paddingBottom = `${(Number.parseFloat(computed.paddingBottom) || 0) + room}px`;
+  const basePaddingTop = Number.parseFloat(computed.paddingTop) || 0;
+  const basePaddingBottom = Number.parseFloat(computed.paddingBottom) || 0;
+  const anchor = stage.firstElementChild;
+  const naturalAnchorTop = anchor?.getBoundingClientRect().top;
+  if (Number.isFinite(naturalAnchorTop)) stage.dataset.onboardingAnchorTop = String(naturalAnchorTop);
+
+  const applyRoom = () => {
+    const anchorTop = anchor?.getBoundingClientRect().top;
+    const room = Math.ceil(window.innerHeight / 2) + 16;
+    stage.style.paddingTop = `${basePaddingTop + room}px`;
+    stage.style.paddingBottom = `${basePaddingBottom + room}px`;
+    if (Number.isFinite(anchorTop)) {
+      const nextAnchorTop = anchor.getBoundingClientRect().top;
+      window.scrollBy({ top: nextAnchorTop - anchorTop, behavior: "auto" });
+    }
+  };
+
+  applyRoom();
+  window.addEventListener("resize", applyRoom);
   return () => {
+    window.removeEventListener("resize", applyRoom);
+    stage.style.paddingTop = previousPaddingTop;
     stage.style.paddingBottom = previousPaddingBottom;
+    if (previousAnchorTop === undefined) delete stage.dataset.onboardingAnchorTop;
+    else stage.dataset.onboardingAnchorTop = previousAnchorTop;
+    window.requestAnimationFrame(() => window.scrollTo({ top: originalScrollY, behavior: "auto" }));
   };
 }
 
@@ -247,7 +272,7 @@ export function OnboardingTour({ locale, steps, stepIndex, onStepChange, onFinis
     return () => window.removeEventListener("resize", updateViewport);
   }, []);
 
-  useLayoutEffect(() => reserveTourTrailingScrollRoom(viewport.height), [viewport.height]);
+  useLayoutEffect(() => reserveTourScrollRoom(), []);
 
   useEffect(() => {
     function onKeyDown(event) {
@@ -295,7 +320,7 @@ export function OnboardingTour({ locale, steps, stepIndex, onStepChange, onFinis
   }, [onFinish, onSkip, onStepChange, stepIndex, steps.length]);
 
   useEffect(() => {
-    if (step.kind !== "intro" || window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches) return undefined;
+    if (step.kind !== "intro") return undefined;
     const timeout = window.setTimeout(() => setDemoDirection((current) => current === "left" ? "right" : "left"), 2600);
     return () => window.clearTimeout(timeout);
   }, [step.kind, demoDirection]);
@@ -311,10 +336,48 @@ export function OnboardingTour({ locale, steps, stepIndex, onStepChange, onFinis
     let activeTarget = null;
     let connected = false;
     let cancelled = false;
+    let settleAttempts = 0;
+    let stableFrames = 0;
+    let previousRect = null;
     const selector = `[data-onboarding-target="${step.target}"]`;
     const update = () => {
       const next = readTargetRect(activeTarget);
       setTargetRect((current) => sameRect(current, next) ? current : next);
+    };
+    const settle = () => {
+      if (cancelled || !activeTarget?.isConnected) return;
+      const stage = document.querySelector(".stage");
+      const shouldCenter = stage?.contains(activeTarget);
+      if (shouldCenter) {
+        activeTarget.scrollIntoView({ block: "center", inline: "nearest", behavior: "auto" });
+      } else if (stage?.firstElementChild) {
+        const naturalAnchorTop = Number.parseFloat(stage.dataset.onboardingAnchorTop);
+        const anchorTop = stage.firstElementChild.getBoundingClientRect().top;
+        if (Number.isFinite(naturalAnchorTop)) {
+          window.scrollBy({ top: anchorTop - naturalAnchorTop, behavior: "auto" });
+        }
+      }
+      const rect = activeTarget.getBoundingClientRect();
+      update();
+      const stable = previousRect
+        && Math.abs(rect.top - previousRect.top) < 0.5
+        && Math.abs(rect.left - previousRect.left) < 0.5
+        && Math.abs(rect.width - previousRect.width) < 0.5
+        && Math.abs(rect.height - previousRect.height) < 0.5;
+      const centered = !shouldCenter || Math.abs(rect.top + rect.height / 2 - window.innerHeight / 2) < 1;
+      stableFrames = stable && centered ? stableFrames + 1 : 0;
+      previousRect = rect;
+      settleAttempts += 1;
+      if (stableFrames < 2 && settleAttempts < 30) {
+        frame = window.requestAnimationFrame(settle);
+      }
+    };
+    const scheduleSettle = () => {
+      window.cancelAnimationFrame(frame);
+      settleAttempts = 0;
+      stableFrames = 0;
+      previousRect = null;
+      frame = window.requestAnimationFrame(settle);
     };
 
     const connect = (target) => {
@@ -323,16 +386,17 @@ export function OnboardingTour({ locale, steps, stepIndex, onStepChange, onFinis
       activeTarget = target;
       activeTarget.setAttribute("data-onboarding-active", "true");
       mutationObserver?.disconnect();
-      window.addEventListener("resize", update);
+      window.addEventListener("resize", scheduleSettle);
       window.addEventListener("scroll", update, true);
       if (typeof ResizeObserver !== "undefined") {
-        resizeObserver = new ResizeObserver(update);
+        resizeObserver = new ResizeObserver(scheduleSettle);
         resizeObserver.observe(activeTarget);
+        const stage = document.querySelector(".stage");
+        if (stage) resizeObserver.observe(stage);
       }
-      frame = window.requestAnimationFrame(() => {
-        if (cancelled) return;
-        activeTarget.scrollIntoView({ block: "center", inline: "nearest", behavior: "auto" });
-        frame = window.requestAnimationFrame(update);
+      scheduleSettle();
+      document.fonts?.ready?.then(() => {
+        if (!cancelled) scheduleSettle();
       });
     };
 
@@ -350,7 +414,7 @@ export function OnboardingTour({ locale, steps, stepIndex, onStepChange, onFinis
       mutationObserver?.disconnect();
       resizeObserver?.disconnect();
       activeTarget?.removeAttribute("data-onboarding-active");
-      window.removeEventListener("resize", update);
+      window.removeEventListener("resize", scheduleSettle);
       window.removeEventListener("scroll", update, true);
     };
   }, [step.id, step.target]);
