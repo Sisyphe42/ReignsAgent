@@ -34,7 +34,7 @@ test("guides the complete workflow once and replays it from Settings", async ({ 
 
   const tour = page.getByTestId("onboarding-tour");
   await expect(tour.getByRole("heading", { name: "Tell a story, one decision at a time" })).toBeVisible();
-  await expect(tour.locator(".onboarding-tour__progress")).toHaveText("1/11");
+  await expect(tour.locator(".onboarding-tour__progress")).toHaveText("1/12");
   await expect(tour.locator(".onboarding-tour__skip kbd")).toHaveText("Esc");
   const actionsBox = await tour.locator(".onboarding-tour__actions").boundingBox();
   const skipBox = await tour.locator(".onboarding-tour__skip").boundingBox();
@@ -43,7 +43,12 @@ test("guides the complete workflow once and replays it from Settings", async ({ 
   expect(skipBox.x).toBeLessThan(progressBox.x);
   expect(progressBox.x).toBeLessThan(navBox.x);
   expect(Math.abs(progressBox.x + progressBox.width / 2 - (actionsBox.x + actionsBox.width / 2))).toBeLessThan(2);
-  await tour.getByRole("button", { name: /Hear them out/ }).click();
+  const demo = tour.locator(".onboarding-demo");
+  await expect(demo).toHaveClass(/onboarding-demo--left/);
+  await expect(demo).toHaveClass(/onboarding-demo--right/, { timeout: 4_000 });
+  await tour.getByRole("button", { name: /Turn them away/ }).hover();
+  await expect(demo).toHaveClass(/onboarding-demo--left/);
+  await tour.getByRole("button", { name: /Hear them out/ }).hover();
   await expect(tour.locator(".onboarding-demo")).toHaveClass(/onboarding-demo--right/);
   await tour.getByRole("button", { name: /Turn them away/ }).click();
   await expect(tour.locator(".onboarding-demo")).toHaveClass(/onboarding-demo--left/);
@@ -68,6 +73,7 @@ test("guides the complete workflow once and replays it from Settings", async ({ 
     { title: "Play what you wrote", target: "preview", panel: "Preview", preservesStageTop: true },
     { title: "Package the player experience", target: "build", panel: "Build", preservesStageTop: true },
     { title: "See only what players see", target: "player-launch", panel: "Build", centered: false },
+    { title: "Set up your workspace", target: "settings", panel: "Settings", preservesStageTop: true },
     { title: "Keep exploring on GitHub", target: "about-github", panel: "Settings", centered: true },
     { title: "Come back anytime", target: "onboarding-replay", panel: "Settings", centered: true }
   ];
@@ -149,7 +155,7 @@ test("keeps localized onboarding inside a narrow viewport", async ({ page }) => 
   await page.setViewportSize({ width: 390, height: 720 });
   const card = page.locator(".onboarding-tour__card");
   await expect(card.getByRole("heading", { name: "用一次次选择讲完一个故事" })).toBeVisible();
-  await expect(card.locator(".onboarding-tour__progress")).toHaveText("1/11");
+  await expect(card.locator(".onboarding-tour__progress")).toHaveText("1/12");
   await expect(card.getByRole("button", { name: "下一步" })).toBeVisible();
   const bounds = await card.boundingBox();
   expect(bounds.x).toBeGreaterThanOrEqual(0);

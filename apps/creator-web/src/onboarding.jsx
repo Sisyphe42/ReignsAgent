@@ -117,12 +117,19 @@ const STEP_DEFINITIONS = [
     zh: { title: "只看玩家会看到的内容", body: "打开纯净的选择体验，不包含 Creator 工具、诊断或端点设置。" }
   },
   {
+    id: "settings",
+    panelId: "settings",
+    target: "settings",
+    en: { title: "Set up your workspace", body: "Manage project details, interface preferences, local storage, and AI endpoints here." },
+    zh: { title: "设置你的创作环境", body: "在这里管理项目资料、界面偏好、本地存储与 AI 端点。" }
+  },
+  {
     id: "about-github",
     panelId: "settings",
     target: "about-github",
     interactiveTarget: true,
-    en: { title: "Keep exploring on GitHub", body: "About gathers the source, README, releases, license, and issues. Open GitHub now or return later.", actionHref: "https://github.com/Sisyphe42/ReignsAgent", actionLabel: "Open GitHub" },
-    zh: { title: "前往 GitHub 继续了解", body: "About 汇集源码、README、版本、许可证和问题追踪。现在打开 GitHub，或稍后再来。", actionHref: "https://github.com/Sisyphe42/ReignsAgent", actionLabel: "打开 GitHub" }
+    en: { title: "Keep exploring on GitHub", body: "Find the README, releases, and issue tracker on GitHub.", actionHref: "https://github.com/Sisyphe42/ReignsAgent", actionLabel: "Open GitHub" },
+    zh: { title: "前往 GitHub 继续了解", body: "在 GitHub 查看 README、版本与问题追踪。", actionHref: "https://github.com/Sisyphe42/ReignsAgent", actionLabel: "打开 GitHub" }
   },
   {
     id: "replay",
@@ -289,9 +296,9 @@ export function OnboardingTour({ locale, steps, stepIndex, onStepChange, onFinis
 
   useEffect(() => {
     if (step.kind !== "intro" || window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches) return undefined;
-    const interval = window.setInterval(() => setDemoDirection((current) => current === "left" ? "right" : "left"), 2200);
-    return () => window.clearInterval(interval);
-  }, [step.kind]);
+    const timeout = window.setTimeout(() => setDemoDirection((current) => current === "left" ? "right" : "left"), 2600);
+    return () => window.clearTimeout(timeout);
+  }, [step.kind, demoDirection]);
 
   useLayoutEffect(() => {
     if (!step.target) {
@@ -322,31 +329,10 @@ export function OnboardingTour({ locale, steps, stepIndex, onStepChange, onFinis
         resizeObserver = new ResizeObserver(update);
         resizeObserver.observe(activeTarget);
       }
-      const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
-      let previousDistance = Number.POSITIVE_INFINITY;
-      let stableFrames = 0;
-      let elapsedFrames = 0;
-      const trackCentering = () => {
-        if (cancelled || !activeTarget?.isConnected) return;
-        update();
-        const rect = activeTarget.getBoundingClientRect();
-        const distance = Math.abs(rect.top + rect.height / 2 - window.innerHeight / 2);
-        stableFrames = Math.abs(distance - previousDistance) < 0.25 ? stableFrames + 1 : 0;
-        previousDistance = distance;
-        elapsedFrames += 1;
-        if (distance <= 1 || (stableFrames >= 4 && elapsedFrames >= 12) || elapsedFrames >= 90) {
-          if (distance > 1) {
-            activeTarget.scrollIntoView({ block: "center", inline: "nearest", behavior: "auto" });
-            update();
-          }
-          return;
-        }
-        frame = window.requestAnimationFrame(trackCentering);
-      };
       frame = window.requestAnimationFrame(() => {
         if (cancelled) return;
-        activeTarget.scrollIntoView({ block: "center", inline: "nearest", behavior: reducedMotion ? "auto" : "smooth" });
-        trackCentering();
+        activeTarget.scrollIntoView({ block: "center", inline: "nearest", behavior: "auto" });
+        frame = window.requestAnimationFrame(update);
       });
     };
 
@@ -433,8 +419,8 @@ export function OnboardingTour({ locale, steps, stepIndex, onStepChange, onFinis
                 </div>
               </div>
               <div className="onboarding-demo__choices">
-                <button type="button" className={demoDirection === "left" ? "is-active" : ""} onClick={() => setDemoDirection("left")}>← {step.demo.left}</button>
-                <button type="button" className={demoDirection === "right" ? "is-active" : ""} onClick={() => setDemoDirection("right")}>{step.demo.right} →</button>
+                <button type="button" className={demoDirection === "left" ? "is-active" : ""} onMouseEnter={() => setDemoDirection("left")} onFocus={() => setDemoDirection("left")} onClick={() => setDemoDirection("left")}>← {step.demo.left}</button>
+                <button type="button" className={demoDirection === "right" ? "is-active" : ""} onMouseEnter={() => setDemoDirection("right")} onFocus={() => setDemoDirection("right")} onClick={() => setDemoDirection("right")}>{step.demo.right} →</button>
               </div>
               <small>{step.demo.hint}</small>
             </div>

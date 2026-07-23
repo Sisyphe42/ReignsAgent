@@ -39,6 +39,7 @@ Multi-step guidance that changes Creator panels must use one direction-independe
 - Treat target mounting as asynchronous. Resolve the target immediately when available and otherwise wait with a scoped `MutationObserver`; always disconnect observers during step cleanup.
 - Preserve the Creator's natural leading layout. Never add top padding or a leading spacer to force early-page targets to the mathematical viewport center; use trailing scroll room only when document-end targets need room to center.
 - Track target geometry through captured scroll events and `ResizeObserver`. Do not use a fixed timeout as the source of truth for target readiness or final spotlight placement.
+- Use deterministic `auto` scrolling when a step changes. Do not leave a smooth-scroll animation running across the next step transition; it can make adjacent targets depend on navigation timing and direction.
 - Recompute both spotlight geometry and card layout from the current viewport. Responsive checks must resize an already-open guide and verify internal content width and controls, not only the outer dialog bounds at initial load.
 - Ignore off-screen or degenerate rectangles instead of rendering clipped spotlight geometry with negative dimensions.
 
