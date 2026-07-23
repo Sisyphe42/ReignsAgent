@@ -525,18 +525,26 @@ test("persists navigation density and shared interface language", async ({ page 
   await page.evaluate(() => { window.__reignsAgentFullPageMarker = true; });
   await page.getByRole("link", { name: "打开玩家端预览" }).click();
   await expect(page).toHaveURL(/\/play\.html(?:\?|$)/);
-  await expect(page.getByRole("heading", { name: "ReignsAgent Player" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Back to workbench" })).toBeVisible();
-  await page.getByRole("button", { name: "Start reign" }).click();
+  await expect(page.locator("html")).toHaveAttribute("lang", "zh-Hans");
+  await expect(page.getByRole("heading", { name: "ReignsAgent 玩家端" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "返回创作台" })).toBeVisible();
+  await page.getByRole("button", { name: "开始统治" }).click();
   await expect(page.locator("#text")).not.toHaveText("The court is waiting.");
   expect(await page.evaluate(() => window.__reignsAgentFullPageMarker)).toBeUndefined();
-  await page.getByRole("link", { name: "Back to workbench" }).click();
+  await page.getByRole("link", { name: "返回创作台" }).click();
   await expect(page.getByRole("heading", { name: "设置 / 流水线" })).toBeVisible();
   await page.getByRole("button", { name: "概览" }).click();
   await expect(page.locator('.metric[data-ai-label="Project"] strong')).toHaveText("Ready");
   await expect.poll(() => workspaceContains(page, 'activePanel = "overview"'), { timeout: 15_000 }).toBe(true);
   await page.reload();
   await expect(page.getByRole("heading", { name: "项目概览" })).toBeVisible();
+});
+
+test("uses an explicit locale query as the Creator interface locale", async ({ page }) => {
+  await openHosted(page, { path: "workbench?skin=classic&locale=zh-Hans" });
+  await expect(page.locator("html")).toHaveAttribute("lang", "zh-Hans");
+  await expect(page.getByRole("heading", { name: "项目概览" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "打开玩家端预览" })).toHaveAttribute("href", /locale=zh-Hans/);
 });
 
 test("cycles panels only when the host marks the client as desktop", async ({ page }) => {
@@ -711,9 +719,9 @@ async function prepareOnboardingStorage(page, onboarding) {
   }, { key: ONBOARDING_COMPLETED_KEY, mode: onboarding });
 }
 
-async function openHosted(page, { onboarding = "complete" } = {}) {
+async function openHosted(page, { onboarding = "complete", path = "workbench" } = {}) {
   await prepareOnboardingStorage(page, onboarding);
-  await page.goto("workbench");
+  await page.goto(path);
   await page.evaluate(() => navigator.serviceWorker.ready.then(() => true));
   await page.reload();
   await page.waitForFunction(() => Boolean(navigator.serviceWorker.controller));

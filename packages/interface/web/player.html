@@ -95,12 +95,12 @@
       </span>
       <div>
         <h1>ReignsAgent Player</h1>
-        <p class="brand__tag">Preview</p>
+        <p class="brand__tag" id="preview-label">Preview</p>
       </div>
     </div>
     <div class="topbar__controls">
       <label class="skin-select">
-        Skin
+        <span id="skin-label">Skin</span>
         <select id="skin">
           <option value="github-light">Github Light</option>
           <option value="catppuccin-latte">Catppuccin Latte</option>
@@ -166,13 +166,58 @@
     const SKIN_ALIASES = { workbench: "classic" };
     const params = new URLSearchParams(window.location.search);
     const requestedLocale = params.get("locale") || navigator.language || "en";
+    const uiLocale = String(requestedLocale).toLowerCase().startsWith("zh") ? "zh-Hans" : "en";
     const requestedClient = params.get("client") === "desktop" ? "desktop" : null;
     const requestedSkin = params.get("skin");
+    const UI_COPY = {
+      "zh-Hans": {
+        "ReignsAgent Player": "ReignsAgent 玩家端",
+        Preview: "预览",
+        Skin: "皮肤",
+        "Back to workbench": "返回创作台",
+        "Current card": "当前卡牌",
+        "The court is waiting.": "宫廷正在等待。",
+        "Swipe left": "向左选择",
+        "Swipe right": "向右选择",
+        Left: "左",
+        Right: "右",
+        "Drag the card or use ← → keys": "拖动卡牌或使用 ← → 键",
+        "Start reign": "开始统治",
+        "Restart reign": "重新开始",
+        Turn: "回合",
+        Session: "对局",
+        "No active reign": "无进行中的统治",
+        "Reign running": "统治进行中",
+        "Confirm restart": "确认重新开始",
+        "Your reign has ended.": "你的统治已经结束。",
+        "No card available.": "没有可用卡牌。",
+        "Reign ended": "统治结束",
+        "Turns survived": "坚持回合数",
+        "Reign started": "统治已开始",
+        "Click restart again to confirm": "再次点击重新开始以确认",
+        "Game over": "游戏结束"
+      }
+    };
+    const copy = (source) => UI_COPY[uiLocale]?.[source] ?? source;
 
     let session = null;
     let assetByCard = new Map();
     let lastResult = null;
     let awaitingRestartConfirm = false;
+
+    function applyUiLocale() {
+      document.documentElement.lang = uiLocale;
+      document.title = copy("ReignsAgent Player");
+      document.querySelector(".brand h1").textContent = copy("ReignsAgent Player");
+      el("preview-label").textContent = copy("Preview");
+      el("skin-label").textContent = copy("Skin");
+      el("back-link").textContent = copy("Back to workbench");
+      el("card").setAttribute("aria-label", copy("Current card"));
+      el("text").textContent = copy("The court is waiting.");
+      el("left").setAttribute("aria-label", copy("Swipe left"));
+      el("right").setAttribute("aria-label", copy("Swipe right"));
+      el("swipe-hint").textContent = copy("Drag the card or use ← → keys");
+    }
 
     function resolveSkinId(value) {
       const skin = SKIN_ALIASES[value] ?? value;
@@ -202,6 +247,7 @@
       el("back-link").href = `${backUrl.pathname}${backUrl.search}`;
     }
 
+    applyUiLocale();
     applySkin(resolveSkin());
     el("skin").addEventListener("change", (event) => applySkin(event.target.value));
 
@@ -217,16 +263,16 @@
 
     function updateSessionMeta(state) {
       const turn = state?.turn ?? 0;
-      el("turn-label").textContent = `Turn ${turn}`;
-      el("session-label").textContent = session ? `Session ${session}` : "No active reign";
+      el("turn-label").textContent = `${copy("Turn")} ${turn}`;
+      el("session-label").textContent = session ? `${copy("Session")} ${session}` : copy("No active reign");
     }
 
     function updateActionButtons(state) {
       const running = Boolean(session) && !state?.gameOver;
-      el("start").textContent = running ? "Reign running" : "Start reign";
+      el("start").textContent = copy(running ? "Reign running" : "Start reign");
       el("start").disabled = running;
       el("restart").hidden = !session;
-      el("restart").textContent = awaitingRestartConfirm ? "Confirm restart" : "Restart reign";
+      el("restart").textContent = copy(awaitingRestartConfirm ? "Confirm restart" : "Restart reign");
     }
 
     function render(state) {
@@ -261,7 +307,7 @@
       } else {
         el("art").removeAttribute("src");
         el("art").hidden = true;
-        el("text").textContent = state.gameOver ? "Your reign has ended." : "No card available.";
+        el("text").textContent = copy(state.gameOver ? "Your reign has ended." : "No card available.");
         resetChoiceButtonLabels();
         el("left").disabled = true;
         el("right").disabled = true;
@@ -278,8 +324,8 @@
         .map(([name, value]) => `<div class="summary__line">${escapeHtml(name)}: ${value}</div>`)
         .join("");
       summary.innerHTML = `
-        <p class="summary__title">Reign ended · ${escapeHtml(faction)}</p>
-        <div class="summary__line">Turns survived: ${state.turn ?? 0}</div>
+        <p class="summary__title">${copy("Reign ended")} · ${escapeHtml(faction)}</p>
+        <div class="summary__line">${copy("Turns survived")}: ${state.turn ?? 0}</div>
         ${lines}
       `;
       summary.hidden = false;
@@ -295,7 +341,7 @@
         session = result.sessionId;
         awaitingRestartConfirm = false;
         render(result);
-        setStatus("Reign started", "ok");
+        setStatus(copy("Reign started"), "ok");
       } catch (error) {
         setStatus(error.message, "err");
       }
@@ -310,7 +356,7 @@
       if (!awaitingRestartConfirm) {
         awaitingRestartConfirm = true;
         updateActionButtons(lastResult);
-        setStatus("Click restart again to confirm", "err");
+        setStatus(copy("Click restart again to confirm"), "err");
         return;
       }
       await startReign();
@@ -322,7 +368,7 @@
         awaitingRestartConfirm = false;
         const result = await api("/api/play/swipe", { sessionId: session, direction });
         render(result);
-        if (result.gameOver) setStatus(`Game over: ${result.gameOver.faction}`, "err");
+        if (result.gameOver) setStatus(`${copy("Game over")}: ${result.gameOver.faction}`, "err");
       } catch (error) {
         setStatus(error.message, "err");
       }
@@ -333,13 +379,13 @@
     function setChoiceButtonLabels(card) {
       const left = card.choices?.find((choice) => choice.id === "left");
       const right = card.choices?.find((choice) => choice.id === "right");
-      el("left").textContent = `◀ ${left?.label ?? "Left"}`;
-      el("right").textContent = `${right?.label ?? "Right"} ▶`;
+      el("left").textContent = `◀ ${left?.label ?? copy("Left")}`;
+      el("right").textContent = `${right?.label ?? copy("Right")} ▶`;
     }
 
     function resetChoiceButtonLabels() {
-      el("left").textContent = "◀ Left";
-      el("right").textContent = "Right ▶";
+      el("left").textContent = `◀ ${copy("Left")}`;
+      el("right").textContent = `${copy("Right")} ▶`;
     }
 
     function applyPresentation(presentation = {}) {

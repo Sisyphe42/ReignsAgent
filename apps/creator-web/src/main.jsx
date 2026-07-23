@@ -686,7 +686,7 @@ function resolveSkinId(value) {
 
 function readUrlState() {
   if (typeof window === "undefined") {
-    return { panel: DEFAULT_PANEL, hasExplicitPanel: false, skin: null, aiAssist: null, client: "web" };
+    return { panel: DEFAULT_PANEL, hasExplicitPanel: false, skin: null, localePreference: null, aiAssist: null, client: "web" };
   }
 
   const url = new URL(window.location.href);
@@ -698,6 +698,7 @@ function readUrlState() {
   const explicitPanel = [directPanel, queryPanel].find(isKnownPanel) ?? null;
   const panel = explicitPanel ?? DEFAULT_PANEL;
   const skin = url.searchParams.get("skin");
+  const requestedLocale = url.searchParams.get("locale");
   const ai = url.searchParams.get("ai");
   const aiAssist = ai === null ? null : ["1", "true", "on"].includes(ai.toLowerCase());
 
@@ -705,6 +706,7 @@ function readUrlState() {
     panel,
     hasExplicitPanel: explicitPanel !== null,
     skin: resolveSkinId(skin),
+    localePreference: requestedLocale === null ? null : normalizeUiLocalePreference(requestedLocale),
     aiAssist,
     client: url.searchParams.get("client") === "desktop" ? "desktop" : "web"
   };
@@ -1039,7 +1041,7 @@ function App() {
   const [editor, setEditor] = useState(null);
   const [status, setStatus] = useState("Loading project...");
   const [skin, setSkin] = useState(() => initialUrlState.skin ?? DEFAULT_SKIN);
-  const [localePreference, setLocalePreference] = useState("system");
+  const [localePreference, setLocalePreference] = useState(() => initialUrlState.localePreference ?? "system");
   const [deviceLocale, setDeviceLocale] = useState(readDeviceUiLocale);
   const [railCollapsed, setRailCollapsed] = useState(readRailCollapsed);
   const [railPinned, setRailPinned] = useState(readRailPinned);
@@ -1181,6 +1183,7 @@ function App() {
       const next = readUrlState();
       setActivePanel(next.panel);
       setSkin(next.skin ?? DEFAULT_SKIN);
+      if (next.localePreference !== null) setLocalePreference(next.localePreference);
       if (next.aiAssist !== null) setAiAssistEnabled(next.aiAssist);
     }
     window.addEventListener("popstate", onPopState);
@@ -1216,7 +1219,9 @@ function App() {
     setAiSettings(aiSettingsFromConfig(config.ai));
     setHasSavedImageApiKey(Boolean(config.ai?.image?.hasApiKey));
     setImageSettings(imageSettingsFromConfig(config.ai?.image));
-    setLocalePreference(normalizeUiLocalePreference(config.locale));
+    if (initialUrlState.localePreference === null) {
+      setLocalePreference(normalizeUiLocalePreference(config.locale));
+    }
     if (!initialUrlState.skin) setSkin(resolveSkinId(config.theme) ?? DEFAULT_SKIN);
     if (!initialUrlState.hasExplicitPanel && isKnownPanel(workspaceState.activePanel)) {
       setActivePanel(workspaceState.activePanel);
