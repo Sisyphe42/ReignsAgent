@@ -10,6 +10,7 @@ const smokeTest = process.argv.includes("--smoke-test");
 let mainWindow = null;
 let serverProcess = null;
 let serverOrigin = null;
+let serverCapability = null;
 let quitting = false;
 const portablePaths = desktopPortablePaths({
   appPath: app.getAppPath(),
@@ -54,26 +55,28 @@ if (!smokeTest && !app.requestSingleInstanceLock()) {
 
 async function startDesktop() {
   session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
-  serverOrigin = await startCreatorServer();
+  const serverAddress = await startCreatorServer();
+  serverOrigin = serverAddress.origin;
+  serverCapability = serverAddress.capability;
 
   if (smokeTest) {
-    const editorResponse = await fetch(`${serverOrigin}/api/editor`);
+    const editorResponse = await creatorApiFetch("/api/editor");
     const editor = await editorResponse.json();
     if (!editorResponse.ok || !Array.isArray(editor.cards)) {
       throw new Error("Electron smoke test could not read the Creator API.");
     }
     if (process.env.REIGNS_AGENT_SMOKE_EXPECT_PERSISTENCE === "1") {
-      const config = await fetch(`${serverOrigin}/api/config`).then((response) => response.json());
+      const config = await creatorApiFetch("/api/config").then((response) => response.json());
       if (editor.metadata?.title !== "Desktop persistence smoke" || config.theme !== "phantom") {
         throw new Error("Electron smoke test could not restore portable Creator state.");
       }
     } else {
-      await fetch(`${serverOrigin}/api/editor/metadata`, {
+      await creatorApiFetch("/api/editor/metadata", {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ metadata: { title: "Desktop persistence smoke" } })
       });
-      await fetch(`${serverOrigin}/api/config`, {
+      await creatorApiFetch("/api/config", {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ theme: "phantom" })
@@ -154,9 +157,16 @@ function startCreatorServer() {
       if (message?.type === "ready") {
         clearTimeout(timeout);
         serverProcess?.off("exit", onExit);
-        resolveStart(message.address.origin);
+        resolveStart(message.address);
       }
     });
+  });
+}
+
+function creatorApiFetch(path, options = {}) {
+  return fetch(`${serverOrigin}${path}`, {
+    ...options,
+    headers: { ...options.headers, "x-reigns-agent-capability": serverCapability }
   });
 }
 

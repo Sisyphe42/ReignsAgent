@@ -1,9 +1,10 @@
 import { attachSwipe } from "/assets/swipe-input.js";
 
 const api = async (path, options = {}) => {
+  const capability = await creatorApiCapability();
   const res = await fetch(path, {
     method: options.method ?? "GET",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", "x-reigns-agent-capability": capability },
     body: options.body !== undefined ? JSON.stringify(options.body) : undefined
   });
   const text = await res.text();
@@ -13,6 +14,21 @@ const api = async (path, options = {}) => {
   }
   return json;
 };
+
+let creatorApiCapabilityPromise;
+function creatorApiCapability() {
+  creatorApiCapabilityPromise ??= fetch("/api/session", { headers: { accept: "application/json" } })
+    .then(async (response) => {
+      const payload = await response.json();
+      if (!response.ok || typeof payload?.capability !== "string") throw new Error(payload?.error?.message ?? "Creator API session could not be established");
+      return payload.capability;
+    })
+    .catch((error) => {
+      creatorApiCapabilityPromise = undefined;
+      throw error;
+    });
+  return creatorApiCapabilityPromise;
+}
 
 const el = (id) => document.getElementById(id);
 const requestedLocale = new URLSearchParams(window.location.search).get("locale") || navigator.language || "en";

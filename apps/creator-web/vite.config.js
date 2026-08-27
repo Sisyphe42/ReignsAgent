@@ -105,12 +105,12 @@ export default defineConfig(({ mode }) => {
   server: {
     port: 5173,
     strictPort: false,
-    allowedHosts: true,
+    allowedHosts: ["127.0.0.1", "localhost", "::1"],
     fs: {
       allow: [".."]
     },
     proxy: {
-      "/api": apiTarget
+      "/api": { target: apiTarget, changeOrigin: true }
     }
   },
   build: {

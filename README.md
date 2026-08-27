@@ -483,7 +483,9 @@ start.cmd
 sh start.sh
 ```
 
-The launcher serves the compiled Creator, local API, and player preview from one process at `http://127.0.0.1:4321/workbench`, then opens the browser. Use `--no-open` to suppress browser launch, or set `HOST` and `PORT` to override the listener.
+The launcher serves the compiled Creator, local API, and player preview from one process at `http://127.0.0.1:4321/workbench`, then opens the browser. Use `--no-open` to suppress browser launch, or set `PORT` to override the listener. `HOST` may select only a loopback address (`127.0.0.1`, `localhost`, or `::1`); the Creator API is not a LAN service.
+
+Each Creator Server process issues an in-memory API capability to its same-origin UI. Protected routes validate the exact backend Host, any browser Origin, and that capability before dispatch or body parsing; JSON mutation routes also require `application/json`. The capability is never written to workspace configuration, browser storage, player builds, or logs. Persisted AI credentials are used only with the matching persisted endpoint, while an explicitly supplied transient request key can still be used with a different endpoint.
 
 The distribution contains:
 
