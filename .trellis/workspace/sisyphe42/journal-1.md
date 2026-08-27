@@ -661,3 +661,36 @@ Added validated per-asset fit and focal-point settings, local and Hosted persist
 ### Next Steps
 
 - None - task complete
+
+
+## Session 20: Commit Creator API request trust remediation
+
+**Date**: 2026-08-27
+**Task**: Commit Creator API request trust remediation
+**Branch**: `fix/creator-api-request-trust`
+
+### Summary
+
+Committed the generated Creator API request-trust remediation on fix/creator-api-request-trust after npm run verify passed; preserved the original feature/adaptive-card-art checkout and did not apply, verify, close, merge, push, or open a PR.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `5cd3798` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
