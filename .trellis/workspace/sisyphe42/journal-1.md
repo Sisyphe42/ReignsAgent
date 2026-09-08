@@ -661,3 +661,36 @@ Added validated per-asset fit and focal-point settings, local and Hosted persist
 ### Next Steps
 
 - None - task complete
+
+
+## Session 20: Complete adaptive artwork experience
+
+**Date**: 2026-09-08
+**Task**: Complete adaptive artwork experience
+**Branch**: `feature/adaptive-card-art`
+
+### Summary
+
+Localized larger artwork previews, guarded saves and retry feedback, fixed hidden-frame and foreground-focus behavior, and added real three-surface browser coverage. Verify, 31 browser tests, and standalone build passed. Preserved unrelated dependency edits.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `001b160` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
