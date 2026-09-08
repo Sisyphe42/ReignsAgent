@@ -95,7 +95,7 @@ try {
  * self-contained (no repo-relative imports) and only exposes the player surface.
  */
 async function copyStaticBuildAssets(outputDir) {
-  const staticAssets = ["skin-catalog.js", "assets/logo-alpha.png"];
+  const staticAssets = ["skin-catalog.js", "assets/card-artwork.js", "assets/logo-alpha.png"];
   for (const assetPath of staticAssets) {
     const source = resolve(WEB_ROOT, assetPath);
     assertWithin(WEB_ROOT, source, `Static asset '${assetPath}'`);

@@ -3,6 +3,7 @@ import { prepareGameBuild, serializeBuild, stitchPlayerRuntime, validatePlayerCa
 import coreSource from "../../../packages/core/src/index.js?raw";
 import playerRuntimeTemplate from "../../../packages/interface/web/player-runtime.js?raw";
 import playerHtml from "../../../packages/interface/web/standalone-player.html?raw";
+import cardArtworkRuntime from "../../../packages/interface/web/assets/card-artwork.js?raw";
 
 const bundledTextAssets = import.meta.glob("../../../packages/interface/web/assets/sample/*", { eager: true, query: "?raw", import: "default" });
 
@@ -14,6 +15,7 @@ export async function assemblePlayerFiles({ editor, config = null, buildId = nul
   const deployable = { ...build, player: { ...build.player, runtime, entry: "player-runtime.js" } };
   const files = {
     [`${build.buildId}.game.json`]: strToU8(serializeBuild(deployable)),
+    "assets/card-artwork.js": strToU8(cardArtworkRuntime),
     "player-runtime.js": strToU8(runtime),
     "player.html": strToU8(playerHtml)
   };

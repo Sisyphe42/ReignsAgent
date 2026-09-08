@@ -18,6 +18,11 @@ const LEGACY_FACTION_KEYS = Object.freeze({
 });
 const REQUIREMENT_KEYS = new Set(["allTags", "anyTags", "noneTags", "variables", "factions"]);
 const EFFECT_KEYS = new Set(["tags", "variables", "factions", "activateHooks", "dismissHooks"]);
+const ASSET_DISPLAY_FITS = new Set(["adaptive", "contain", "cover"]);
+const DEFAULT_ASSET_DISPLAY = Object.freeze({
+  fit: "adaptive",
+  focalPoint: Object.freeze({ x: 0.5, y: 0.5 })
+});
 const AI_EDIT_SCHEMA_VERSION = 1;
 const AI_EDIT_MODES = new Set(["generate_cards", "repair_diagnostics", "generate_asset", "analyze_asset"]);
 const AI_EDIT_PATCH_OPS = new Set(["addCard", "updateCard", "setChoiceLabel", "setChoiceEffects", "setMetadata", "upsertAsset"]);
@@ -72,6 +77,21 @@ export function createContentBundle({ cards, metadata = {}, assets = [] }) {
     metadata: normalizeMetadata(metadata),
     cards: normalizedCards,
     assets: normalizeAssets(assets)
+  };
+}
+
+export function normalizeAssetDisplay(asset) {
+  const display = isPlainRecord(asset?.metadata?.display) ? asset.metadata.display : {};
+  const focalPoint = isPlainRecord(display.focalPoint) ? display.focalPoint : {};
+  const x = Number.isFinite(focalPoint.x) && focalPoint.x >= 0 && focalPoint.x <= 1
+    ? focalPoint.x
+    : DEFAULT_ASSET_DISPLAY.focalPoint.x;
+  const y = Number.isFinite(focalPoint.y) && focalPoint.y >= 0 && focalPoint.y <= 1
+    ? focalPoint.y
+    : DEFAULT_ASSET_DISPLAY.focalPoint.y;
+  return {
+    fit: ASSET_DISPLAY_FITS.has(display.fit) ? display.fit : DEFAULT_ASSET_DISPLAY.fit,
+    focalPoint: { x, y }
   };
 }
 
@@ -979,6 +999,31 @@ function validateAssets(assets, errors) {
 
     if (asset.uri !== undefined && !isNonEmptyString(asset.uri)) {
       errors.push(`${context}.uri must be a non-empty string`);
+    }
+
+    validateAssetDisplay(asset, context, errors);
+  }
+}
+
+function validateAssetDisplay(asset, context, errors) {
+  if (!isPlainRecord(asset.metadata) || asset.metadata.display === undefined) return;
+  const display = asset.metadata.display;
+  if (!isPlainRecord(display)) {
+    errors.push(`${context}.metadata.display must be an object`);
+    return;
+  }
+  if (display.fit !== undefined && !ASSET_DISPLAY_FITS.has(display.fit)) {
+    errors.push(`${context}.metadata.display.fit must be adaptive, contain, or cover`);
+  }
+  if (display.focalPoint === undefined) return;
+  if (!isPlainRecord(display.focalPoint)) {
+    errors.push(`${context}.metadata.display.focalPoint must be an object`);
+    return;
+  }
+  for (const coordinate of ["x", "y"]) {
+    const value = display.focalPoint[coordinate];
+    if (!Number.isFinite(value) || value < 0 || value > 1) {
+      errors.push(`${context}.metadata.display.focalPoint.${coordinate} must be a number from 0 through 1`);
     }
   }
 }

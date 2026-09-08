@@ -39,6 +39,18 @@ describe("Phase 4 interface integration", () => {
 
       const editor = await api(port, "/api/editor");
       assert.equal(editor.playerValidation.valid, true);
+      const displayAsset = editor.assets.find((asset) => asset.cardId);
+      const displayed = await api(port, `/api/editor/assets/${encodeURIComponent(displayAsset.id)}`, {
+        method: "PATCH",
+        body: { display: { fit: "cover", focalPoint: { x: 1, y: 0 } } }
+      });
+      assert.equal(displayed.asset.metadata.display.fit, "cover");
+      assert.deepEqual(displayed.asset.metadata.display.focalPoint, { x: 1, y: 0 });
+      const editorWithDisplay = await api(port, "/api/editor");
+      assert.deepEqual(
+        editorWithDisplay.assets.find((asset) => asset.id === displayAsset.id).metadata.display,
+        { fit: "cover", focalPoint: { x: 1, y: 0 } }
+      );
 
       const started = await api(port, "/api/play/start", { method: "POST", body: { locale: "zh-Hans" } });
       assert.match(started.sessionId, /^s_/);
@@ -360,6 +372,11 @@ describe("Phase 4 interface integration", () => {
       const editorBefore = await api(port, "/api/editor");
       const targetAsset = editorBefore.assets.find((asset) => asset.cardId);
       assert.ok(targetAsset, "fixture must contain an existing card asset");
+      const displayed = await api(port, `/api/editor/assets/${encodeURIComponent(targetAsset.id)}`, {
+        method: "PATCH",
+        body: { display: { fit: "cover", focalPoint: { x: 0, y: 1 } } }
+      });
+      assert.deepEqual(displayed.asset.metadata.display, { fit: "cover", focalPoint: { x: 0, y: 1 } });
 
       const stagedResponse = await fetch(`http://127.0.0.1:${port}/api/ai/images/stage?fileName=source.png`, { method: "POST", headers: { "content-type": "image/png" }, body: png });
       assert.equal(stagedResponse.ok, true);
@@ -386,6 +403,7 @@ describe("Phase 4 interface integration", () => {
       assert.equal(applied.applied, true);
       assert.equal(applied.asset.id, targetAsset.id);
       assert.match(applied.asset.uri, /^assets\/generated\/[a-f0-9]{64}\.png$/);
+      assert.deepEqual(applied.asset.metadata.display, { fit: "cover", focalPoint: { x: 0, y: 1 } });
       const assetResponse = await fetch(`http://127.0.0.1:${port}/api/project-assets/${encodeURIComponent(applied.asset.uri)}`);
       assert.equal(assetResponse.headers.get("content-type"), "image/png");
       assert.deepEqual(new Uint8Array(await assetResponse.arrayBuffer()), png);
@@ -394,6 +412,10 @@ describe("Phase 4 interface integration", () => {
       assert.equal(editor.assets.filter((asset) => asset.id === targetAsset.id && asset.cardId === targetAsset.cardId).length, 1);
       const build = await api(port, "/api/build/prepare", { method: "POST", body: {} });
       assert.equal(build.build.content.assets.some((asset) => asset.uri === applied.asset.uri), true);
+      assert.deepEqual(
+        build.build.content.assets.find((asset) => asset.id === targetAsset.id).metadata.display,
+        { fit: "cover", focalPoint: { x: 0, y: 1 } }
+      );
     } finally {
       await stopServer(server);
       await mock.close();

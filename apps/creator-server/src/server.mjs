@@ -260,6 +260,18 @@ async function handleApi(req, res, url) {
     return sendJson(res, { metadata });
   }
 
+  const assetMatch = path.match(/^\/api\/editor\/assets\/([^/]+)$/);
+  if (assetMatch && req.method === "PATCH") {
+    const asset = store.editor.setAssetDisplay(decodeURIComponent(assetMatch[1]), body?.display);
+    store.markEdited();
+    await persistEditor();
+    return sendJson(res, {
+      asset,
+      validation: store.editor.validate(),
+      playerValidation: store.editor.validateForPlayer()
+    });
+  }
+
   if (path === "/api/editor/snapshot" && req.method === "GET") {
     return sendJson(res, { bundle: store.editor.toBundle(), validation: store.editor.validate() });
   }
@@ -454,7 +466,7 @@ async function handleApi(req, res, url) {
     await workspace.discardActiveProjectAssetDraft(draft.draftId);
     for (const inputDraftId of draft.inputDraftIds ?? []) await workspace.discardActiveProjectAssetDraft(inputDraftId);
     imageDrafts.delete(draft.draftId);
-    return sendJson(res, { applied: true, outputId: output.id, asset, bundle: result.bundle, validation: result.validation, playerValidation: result.playerValidation });
+    return sendJson(res, { applied: true, outputId: output.id, asset: result.asset, bundle: result.bundle, validation: result.validation, playerValidation: result.playerValidation });
   }
 
   const imageDraftPath = path.match(/^\/api\/ai\/images\/drafts\/([^/]+)$/);

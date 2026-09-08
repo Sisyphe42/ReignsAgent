@@ -71,6 +71,7 @@ export async function assembleWindowsPlayerFiles({ build, interfaceWebRoot, core
     ["player.html", playerHtml],
     ["player-runtime.js", runtime],
     ["skin-catalog.js", await readFile(resolve(interfaceWebRoot, "skin-catalog.js"))],
+    ["assets/card-artwork.js", await readFile(resolve(interfaceWebRoot, "assets/card-artwork.js"))],
     ["game.game.json", serializeBuild(build)]
   ]);
   const logoPath = resolve(interfaceWebRoot, "assets/logo-alpha.png");

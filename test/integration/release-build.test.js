@@ -131,6 +131,7 @@ describe("creator release distribution", () => {
       ], { cwd: releaseRoot });
       assert.match(await readFile(join(playerOutput, "player.html"), "utf8"), /ReignsAgent/);
       assert.match(await readFile(join(playerOutput, "player-runtime.js"), "utf8"), /createCoreRuntime/);
+      assert.match(await readFile(join(playerOutput, "assets", "card-artwork.js"), "utf8"), /normalizeCardArtworkDisplay/);
     } finally {
       await stopChild(server);
       await rm(tempRoot, { recursive: true, force: true });
