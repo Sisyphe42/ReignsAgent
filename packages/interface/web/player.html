@@ -68,6 +68,7 @@
       margin-bottom: 18px;
       isolation: isolate;
     }
+    .player-art[hidden] { display: none; }
     .player-art img {
       display: block;
       width: 100%;
@@ -84,16 +85,18 @@
       opacity: 0.58;
       transform: scale(1.04);
     }
-    .player-art__image {
+    .player-art .player-art__image {
       position: absolute;
       inset: 0;
       object-fit: contain;
+      object-position: center;
       padding: 14px;
     }
     .player-art[data-fit="contain"] .player-art__backdrop,
     .player-art[data-fit="cover"] .player-art__backdrop { display: none; }
     .player-art[data-fit="cover"] .player-art__image {
       object-fit: cover;
+      object-position: var(--card-art-focus-x) var(--card-art-focus-y);
       padding: 0;
     }
     .player-text { font-size: 19px; line-height: 1.5; }

@@ -4561,10 +4561,11 @@ select {
   transform: scale(1.04);
 }
 
-.card-artwork__image {
+.card-artwork .card-artwork__image {
   position: absolute;
   inset: 0;
   object-fit: contain;
+  object-position: center;
   padding: var(--card-art-padding);
 }
 
@@ -4575,6 +4576,7 @@ select {
 
 .card-artwork[data-fit="cover"] .card-artwork__image {
   object-fit: cover;
+  object-position: var(--card-art-focus-x) var(--card-art-focus-y);
   padding: 0;
 }
 
@@ -4622,7 +4624,14 @@ select {
 .art-display-controls > div {
   display: grid;
   gap: 6px;
+  min-width: 0;
 }
+
+.art-display-preview { margin: 0; width: min(100%, 180px); flex-shrink: 0; }
+.card-artwork--editor { width: 100%; height: auto; aspect-ratio: 1; --card-art-padding: 8px; }
+.art-display-preview figcaption { margin-top: 6px; color: var(--muted); font-size: .75rem; }
+.art-display-help { max-width: 32ch; margin: 4px 0 0; color: var(--muted); font-size: .8rem; line-height: 1.5; }
+.art-fit-option:disabled { opacity: .55; cursor: wait; }
 
 .art-display-controls > div > span {
   color: var(--muted);

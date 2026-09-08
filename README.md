@@ -354,6 +354,8 @@ Legacy `faith`, `people`, `military`, and `treasury` keys are accepted on import
 
 Card artwork keeps its original bytes, dimensions, format, and URI. **Adaptive** places the complete image over a blurred fill background, **Full image** uses `contain`, and **Fill frame** uses `cover` around the selected nine-position focal point. Missing display metadata uses centered Adaptive without requiring a content migration. Creator, Shared/Hosted Player, and Standalone Player consume the same authored settings; no derived or manually cropped image is generated.
 
+The card editor includes a larger square preview with English/Chinese display controls. In Adaptive mode, focus moves only the blurred background; Full image disables focus. Controls pause while a setting saves, and a failed save keeps the last authored setting with a retry message. Player artwork frames disappear when an image cannot load.
+
 ## AI-Assisted Workflows
 
 ReignsAgent is designed to work with AI systems as controlled collaborators. AI output should be explicit, reviewable, and validated before it becomes authored content.

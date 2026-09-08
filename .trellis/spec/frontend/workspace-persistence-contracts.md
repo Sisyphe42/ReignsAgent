@@ -109,7 +109,7 @@ try {
 - `validateContentBundle(bundle)`
 - `editor.setAssetDisplay(assetId, display)`
 - `PATCH /api/editor/assets/:assetId`
-- `applyCardArtworkDisplay(frame, display)`
+- `applyCardArtworkDisplay(frame, asset)` (reads `asset.metadata.display`, not a bare display object)
 
 ### 3. Contracts
 
@@ -128,6 +128,8 @@ try {
 - Unknown asset id -> `asset_not_found`; active content remains unchanged.
 - Malformed legacy/runtime metadata that bypasses authored validation -> renderer falls back to centered `adaptive` without throwing.
 - Foreground image load failure -> hide the Player artwork frame or show Creator's safe placeholder; the background never remains as misleading standalone content.
+- Explicit artwork `display` styles must not override the `hidden` attribute. Assert actual browser visibility after an image error, not just the attribute.
+- Creator display mutations lock their controls until the mutation and editor refresh finish; an unsuccessful mutation keeps the authored display and exposes an inline retry message.
 
 ### 5. Good/Base/Bad Cases
 
@@ -141,6 +143,7 @@ try {
 - Interface tests assert `setAssetDisplay` preservation, validation projections, undo behavior, and AI replacement metadata preservation.
 - Creator Server and Hosted browser tests assert matching PATCH responses, persistence after reload, and export/build metadata retention.
 - Player runtime tests assert defensive fallback, mode/backdrop behavior, focal CSS mapping, accessibility exclusion, and load-failure handling.
+- Browser rendering tests pass a full asset containing `metadata.display` and test non-default fit/focal values; a bare display object would silently exercise the default fallback instead. Include all three source ratios and modes on actual Creator and Player pages.
 - Build/release tests assert `assets/card-artwork.js` and unchanged referenced asset bytes are present.
 
 ### 7. Wrong vs Correct
@@ -156,7 +159,7 @@ image.style.objectFit = display.fit;
 
 ```js
 asset.metadata = { ...asset.metadata, display };
-applyCardArtworkDisplay(frame, normalizeAssetDisplay(asset.metadata.display));
+applyCardArtworkDisplay(frame, asset);
 ```
 
 Preserve authoritative asset metadata at mutation time and normalize again at the presentation boundary so malformed legacy input cannot break Player startup.
