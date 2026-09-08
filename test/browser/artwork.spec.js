@@ -2,8 +2,9 @@ import { expect, test } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import { cp, mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { createServer } from "node:http";
+import { build as buildVite } from "vite";
 import { createCreatorServer } from "../../apps/creator-server/src/server.mjs";
 
 test.use({ serviceWorkers: "block" });
@@ -16,10 +17,21 @@ let creatorUrl;
 
 test.beforeAll(async () => {
   outputDir = await mkdtemp(join(tmpdir(), "reigns-artwork-browser-"));
+  // CI builds only Hosted. Keep the local HTTP fixture independent of any
+  // previous dashboard build and of Hosted's deployment base path.
+  const dashboardDir = join(outputDir, "dashboard");
+  await buildVite({
+    root: resolve("apps/creator-web"),
+    configFile: resolve("apps/creator-web/vite.config.js"),
+    mode: "production",
+    base: "/",
+    logLevel: "silent",
+    build: { outDir: dashboardDir }
+  });
   execFileSync(process.execPath, ["scripts/build-game.mjs", "fixtures/content/oss-court.cards.json", outputDir]);
   const buildFile = (await readdir(outputDir)).find((name) => name.endsWith(".game.json"));
   build = JSON.parse(await readFile(join(outputDir, buildFile), "utf8"));
-  creatorServer = await createCreatorServer({ staticRoot: "apps/creator-web/dist", dataRoot: join(outputDir, "creator-data"), initialBundle: build.content });
+  creatorServer = await createCreatorServer({ staticRoot: dashboardDir, dataRoot: join(outputDir, "creator-data"), initialBundle: build.content });
   const projectsPath = join(outputDir, "creator-data/projects");
   for (const project of await readdir(projectsPath, { withFileTypes: true })) {
     if (project.isDirectory()) await cp(join(outputDir, "assets"), join(projectsPath, project.name, "assets"), { recursive: true });
@@ -134,9 +146,7 @@ for (const [shape, width, height] of [["landscape", 320, 120], ["portrait", 120,
       await page.locator(".art-display-controls").screenshot({ path: testInfo.outputPath("creator.png") });
       await page.goto("play.html?locale=en");
       await page.getByRole("button", { name: "Start reign" }).click();
-      for (let turn = 0; turn < 12 && !await page.locator("#art-frame").isVisible(); turn++) {
-        await page.getByRole("button", { name: "Swipe left" }).click();
-      }
+      await expect(page.locator("#status")).toHaveText("Reign started");
       await assertArtwork(page.locator("#art-frame"), fit, width, height);
       const customized = structuredClone(build);
       customized.content.assets.forEach((asset) => { asset.metadata = { ...asset.metadata, display }; });
@@ -174,10 +184,12 @@ test("Players recover from a missing image when a valid build is loaded", async 
   await openCreator(page);
   await page.goto("play.html?locale=en");
   await page.getByRole("button", { name: "Start reign" }).click();
+  await expect(page.locator("#status")).toHaveText("Reign started");
   await expect(page.locator("#art-frame")).toBeHidden();
   await page.unroute("**/assets/sample/*.svg");
   await page.reload();
   await page.getByRole("button", { name: "Start reign" }).click();
+  await expect(page.locator("#status")).toHaveText("Reign started");
   await expect(page.locator("#art-frame")).toBeVisible();
   await page.goto(standaloneUrl);
   const broken = structuredClone(build);
