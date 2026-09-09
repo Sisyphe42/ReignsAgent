@@ -694,3 +694,36 @@ Committed the generated Creator API request-trust remediation on fix/creator-api
 ### Next Steps
 
 - None - task complete
+
+
+## Session 21: Complete Codex Security remediations
+
+**Date**: 2026-09-09
+**Task**: Complete Codex Security remediations
+**Branch**: `fix/creator-api-request-trust`
+
+### Summary
+
+Verified the existing Creator API trust control, bounded Creator and Reviewer workloads, blocked TOML prototype pollution, and added bounded provider response streaming with deadlines. Full npm run verify passed; unrelated thinking-orbs manifest changes were preserved.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `4c46950` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
