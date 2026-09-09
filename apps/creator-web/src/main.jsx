@@ -44,6 +44,14 @@ const ARTWORK_FOCAL_POINTS = [
 ];
 const LocaleContext = createContext("en");
 const ZH_HANS_COPY = {
+  "Artwork fit": "图片显示", "Artwork preview": "图片预览", "Artwork focal point": "图片焦点", "Focal point": "焦点",
+  Adaptive: "自适应", "Full image": "完整图片", "Fill frame": "填满画框",
+  "Top left": "左上", Top: "上", "Top right": "右上", Center: "居中", Left: "左", Right: "右",
+  "Bottom left": "左下", Bottom: "下", "Bottom right": "右下",
+  "Full image over a blurred background. Focus moves the background only.": "完整图片叠加模糊背景。焦点仅移动背景。",
+  "Show the complete image. Focus is not used in this mode.": "显示完整图片。此模式不使用焦点。",
+  "Fill the square frame. Focus chooses which part stays visible.": "填满方形画框。焦点决定保留哪部分画面。",
+  "Saving artwork display…": "正在保存图片显示…", "Could not save artwork display. Please try again.": "无法保存图片显示，请重试。",
   Overview: "概览", Project: "项目", Content: "内容", Authoring: "创作", Story: "叙事",
   Review: "审查", Quality: "质量", "AI Assist": "AI 辅助", Preview: "预览", Build: "构建",
   Release: "发布", Settings: "设置", Player: "玩家端", Skin: "皮肤", New: "新建", Sample: "示例",
@@ -2257,6 +2265,10 @@ function ContentPanel({ editor, assetsByCard, onImport, onMutate, onStatus, focu
 }
 
 function CardEditor({ card, asset, validation, onMutate, onStatus, tagCatalog, gaugeLabels, onGenerateArt }) {
+  const locale = useUiLocale();
+  const displaySaveLock = useRef(false);
+  const [displaySaving, setDisplaySaving] = useState(false);
+  const [displaySaveFailed, setDisplaySaveFailed] = useState(false);
   const [text, setText] = useState(card.text ?? "");
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -2286,15 +2298,26 @@ function CardEditor({ card, asset, validation, onMutate, onStatus, tagCatalog, g
   }
 
   async function saveAssetDisplay(display) {
-    if (!asset) return;
-    await onMutate(
-      `Updating artwork display for ${card.id}`,
-      async () => api(`/api/editor/assets/${encodeURIComponent(asset.id)}`, {
-        method: "PATCH",
-        body: { display }
-      }),
-      `Updated artwork display for ${card.id}`
-    );
+    if (!asset || displaySaveLock.current) return;
+    displaySaveLock.current = true;
+    setDisplaySaving(true);
+    setDisplaySaveFailed(false);
+    try {
+      const saved = await onMutate(
+        `Updating artwork display for ${card.id}`,
+        async () => api(`/api/editor/assets/${encodeURIComponent(asset.id)}`, {
+          method: "PATCH",
+          body: { display }
+        }),
+        `Updated artwork display for ${card.id}`
+      );
+      setDisplaySaveFailed(saved === false);
+    } catch {
+      setDisplaySaveFailed(true);
+    } finally {
+      displaySaveLock.current = false;
+      setDisplaySaving(false);
+    }
   }
 
   const invalid = validation.invalid;
@@ -2328,35 +2351,47 @@ function CardEditor({ card, asset, validation, onMutate, onStatus, tagCatalog, g
         </label>
       </div>
       {asset && (
-        <section className="art-display-controls" aria-label={`${card.id} artwork display`}>
+        <section className="art-display-controls" aria-label={tr(locale, "Artwork fit")} aria-busy={displaySaving}>
+          <figure className="art-display-preview">
+            <CardArtwork asset={asset} className="card-artwork--editor" alt={tr(locale, "Artwork preview")} />
+            <figcaption>{tr(locale, "Artwork preview")}</figcaption>
+          </figure>
           <div>
-            <span>Artwork fit</span>
-            <div className="art-fit-options" role="group" aria-label="Artwork fit">
+            <span>{tr(locale, "Artwork fit")}</span>
+            <div className="art-fit-options" role="group" aria-label={tr(locale, "Artwork fit")}>
               {ARTWORK_FITS.map(([fit, label]) => (
                 <button
                   className={artworkDisplay.fit === fit ? "art-fit-option art-fit-option--active" : "art-fit-option"}
                   type="button"
                   aria-pressed={artworkDisplay.fit === fit}
                   key={fit}
+                  disabled={displaySaving}
                   onClick={() => void saveAssetDisplay({ ...artworkDisplay, fit })}
                 >
-                  {label}
+                  {tr(locale, label)}
                 </button>
               ))}
             </div>
+            <p className="art-display-help">{tr(locale, artworkDisplay.fit === "adaptive"
+              ? "Full image over a blurred background. Focus moves the background only."
+              : artworkDisplay.fit === "contain"
+                ? "Show the complete image. Focus is not used in this mode."
+                : "Fill the square frame. Focus chooses which part stays visible.")}</p>
+            {displaySaving && <p role="status">{tr(locale, "Saving artwork display…")}</p>}
+            {displaySaveFailed && <p role="alert">{tr(locale, "Could not save artwork display. Please try again.")}</p>}
           </div>
           <div>
-            <span>Focal point</span>
-            <div className="art-focal-grid" role="group" aria-label="Artwork focal point">
+            <span>{tr(locale, "Focal point")}</span>
+            <div className="art-focal-grid" role="group" aria-label={tr(locale, "Artwork focal point")}>
               {ARTWORK_FOCAL_POINTS.map(([x, y, label]) => {
                 const selected = artworkDisplay.focalPoint.x === x && artworkDisplay.focalPoint.y === y;
                 return (
                   <button
                     className={selected ? "art-focal-point art-focal-point--active" : "art-focal-point"}
                     type="button"
-                    aria-label={label}
+                    aria-label={tr(locale, label)}
                     aria-pressed={selected}
-                    disabled={artworkDisplay.fit === "contain"}
+                    disabled={displaySaving || artworkDisplay.fit === "contain"}
                     key={`${x}-${y}`}
                     onClick={() => void saveAssetDisplay({ ...artworkDisplay, focalPoint: { x, y } })}
                   />

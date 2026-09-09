@@ -346,7 +346,7 @@ test("keeps landscape, portrait, and square artwork inside the same square frame
       foreground.src = source;
       frame.append(backdrop, foreground);
       document.body.append(frame);
-      applyCardArtworkDisplay(frame, { fit: "adaptive", focalPoint: { x: 0.5, y: 0.5 } });
+      applyCardArtworkDisplay(frame, { metadata: { display: { fit: "adaptive", focalPoint: { x: 0.5, y: 0.5 } } } });
       return { frame, foreground };
     });
     await Promise.all(frames.map(({ foreground }) => foreground.decode()));
