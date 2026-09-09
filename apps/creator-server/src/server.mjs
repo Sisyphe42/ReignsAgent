@@ -38,6 +38,9 @@ const DEFAULT_ROOT = fileURLToPath(new URL("../../..", import.meta.url));
 const API_CAPABILITY_HEADER = "x-reigns-agent-capability";
 const API_CAPABILITY_QUERY = "_reignsAgentCapability";
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
+const MAX_JSON_BODY_BYTES = 10 * 1024 * 1024;
+const MAX_CREATOR_DIAGNOSTIC_CYCLES = 10000;
+const MAX_DIAGNOSTIC_TURNS = 200;
 const MIME_TYPES = {
   ".css": "text/css; charset=utf-8",
   ".html": "text/html; charset=utf-8",
@@ -330,8 +333,8 @@ async function handleApi(req, res, url) {
     const projection = runDiagnostics({
       cards,
       metadata: store.editor.metadata,
-      cycles: Number(body?.cycles ?? 1000),
-      maxTurns: Number(body?.maxTurns ?? 50),
+      cycles: normalizeDiagnosticLimit(body?.cycles ?? 1000, "cycles", MAX_CREATOR_DIAGNOSTIC_CYCLES),
+      maxTurns: normalizeDiagnosticLimit(body?.maxTurns ?? 50, "maxTurns", MAX_DIAGNOSTIC_TURNS),
       seed: Number(body?.seed ?? 1)
     });
     store.lastDiagnostics = projection;
@@ -707,11 +710,12 @@ async function readJsonBody(req) {
   if (req.method === "GET" || req.method === "DELETE") {
     return null;
   }
-  const chunks = [];
-  for await (const chunk of req) {
-    chunks.push(chunk);
-  }
-  const text = Buffer.concat(chunks).toString("utf8").trim();
+  const bytes = await readBodyBytes(req, MAX_JSON_BODY_BYTES, {
+    message: "Request body exceeds the 10 MiB JSON limit",
+    code: "request_body_too_large",
+    statusCode: 413
+  });
+  const text = bytes.toString("utf8").trim();
   if (text === "") {
     return null;
   }
@@ -815,15 +819,57 @@ async function sendProjectAsset(res, uri) {
 }
 
 async function readBinaryBody(req, limit) {
-  const chunks = [];
-  let size = 0;
-  for await (const chunk of req) {
-    size += chunk.byteLength;
-    if (size > limit) throw apiError("Request body exceeds the image size limit", "image_input_limit");
-    chunks.push(chunk);
+  const bytes = await readBodyBytes(req, limit, {
+    message: "Request body exceeds the image size limit",
+    code: "image_input_limit",
+    statusCode: 413
+  });
+  if (!bytes.byteLength) throw apiError("Image upload is empty", "image_input_required");
+  return bytes;
+}
+
+async function readBodyBytes(req, limit, { message, code, statusCode }) {
+  const declaredLength = String(req.headers["content-length"] ?? "").trim();
+  if (/^\d+$/.test(declaredLength) && Number(declaredLength) > limit) {
+    req.resume();
+    throw apiError(message, code, statusCode);
   }
-  if (!size) throw apiError("Image upload is empty", "image_input_required");
-  return Buffer.concat(chunks);
+  return new Promise((resolve, reject) => {
+    let chunks = [];
+    let size = 0;
+    let failure = null;
+    req.on("data", (chunk) => {
+      if (failure) return;
+      size += chunk.byteLength;
+      if (size > limit) {
+        chunks = [];
+        failure = apiError(message, code, statusCode);
+        reject(failure);
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.once("end", () => {
+      if (!failure) resolve(Buffer.concat(chunks, size));
+    });
+    req.once("aborted", () => {
+      if (!failure) reject(apiError("Request body was aborted", "request_body_aborted", 400));
+    });
+    req.once("error", (error) => {
+      if (!failure) reject(error);
+    });
+  });
+}
+
+function normalizeDiagnosticLimit(value, name, limit) {
+  const normalized = Number(value);
+  if (!Number.isInteger(normalized) || normalized <= 0) {
+    throw apiError(`Diagnostics ${name} must be a positive integer`, "diagnostics_option_invalid", 400);
+  }
+  if (normalized > limit) {
+    throw apiError(`Diagnostics ${name} must not exceed ${limit}`, "diagnostics_limit_exceeded", 400);
+  }
+  return normalized;
 }
 
 function randomId() {

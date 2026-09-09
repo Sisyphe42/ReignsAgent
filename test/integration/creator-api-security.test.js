@@ -142,6 +142,67 @@ describe("Creator API request trust boundary", () => {
   });
 });
 
+describe("Creator API resource boundaries", () => {
+  it("rejects declared and streamed JSON bodies above 10 MiB before mutation", async () => {
+    const creator = await createCreatorServer({ rootDir: ROOT, initialBundle: { cards: [], metadata: { title: "Original" } } });
+    cleanup.push(() => creator.close());
+    const address = await creator.start({ port: 0 });
+    const headers = {
+      "content-type": "application/json",
+      "x-reigns-agent-capability": address.capability
+    };
+
+    const oversizedJson = `{"metadata":{"title":"${"x".repeat(10 * 1024 * 1024)}"}}`;
+    const declared = await fetch(`${address.origin}/api/editor/metadata`, {
+      method: "POST",
+      headers,
+      body: oversizedJson
+    });
+    assert.equal(declared.status, 413);
+    assert.equal((await declared.json()).error.code, "request_body_too_large");
+
+    const encoder = new TextEncoder();
+    const streamed = await fetch(`${address.origin}/api/editor/metadata`, {
+      method: "POST",
+      headers,
+      body: new ReadableStream({
+        start(controller) {
+          controller.enqueue(encoder.encode('{"metadata":{"title":"'));
+          controller.enqueue(encoder.encode("x".repeat(10 * 1024 * 1024)));
+          controller.enqueue(encoder.encode('"}}'));
+          controller.close();
+        }
+      }),
+      duplex: "half"
+    });
+    assert.equal(streamed.status, 413);
+    assert.equal((await streamed.json()).error.code, "request_body_too_large");
+
+    const editor = await apiRequest(address, "/api/editor");
+    assert.equal(editor.metadata.title, "Original");
+  });
+
+  it("bounds Creator diagnostics while preserving ordinary reviews", async () => {
+    const creator = await createCreatorServer({ rootDir: ROOT, initialBundle: { cards: [] } });
+    cleanup.push(() => creator.close());
+    const address = await creator.start({ port: 0 });
+
+    const excessive = await rawRequest(address.port, "/api/diagnostics/run", {
+      host: `127.0.0.1:${address.port}`,
+      "content-type": "application/json",
+      "x-reigns-agent-capability": address.capability
+    }, true, JSON.stringify({ cycles: 10001, maxTurns: 200, seed: 1 }));
+    assert.equal(excessive.status, 400);
+    assert.equal(excessive.body.error.code, "diagnostics_limit_exceeded");
+
+    const ordinary = await apiRequest(address, "/api/diagnostics/run", {
+      method: "POST",
+      body: { cycles: 2, maxTurns: 2, seed: 1 }
+    });
+    assert.equal(ordinary.sampleSize, 2);
+  });
+});
+
 async function apiRequest(address, path, { method = "GET", body } = {}) {
   const response = await fetch(`${address.origin}${path}`, {
     method,
@@ -156,9 +217,9 @@ async function apiRequest(address, path, { method = "GET", body } = {}) {
   return text ? JSON.parse(text) : null;
 }
 
-function rawRequest(port, path, headers, parseJson = true) {
+function rawRequest(port, path, headers, parseJson = true, body) {
   return new Promise((resolve, reject) => {
-    const request = httpRequest({ host: "127.0.0.1", port, path, headers }, (response) => {
+    const request = httpRequest({ host: "127.0.0.1", port, path, method: body === undefined ? "GET" : "POST", headers }, (response) => {
       const chunks = [];
       response.on("data", (chunk) => chunks.push(chunk));
       response.on("end", () => {
@@ -167,7 +228,12 @@ function rawRequest(port, path, headers, parseJson = true) {
       });
     });
     request.on("error", reject);
-    request.end();
+    if (Array.isArray(body)) {
+      for (const chunk of body) request.write(chunk);
+      request.end();
+    } else {
+      request.end(body);
+    }
   });
 }
 

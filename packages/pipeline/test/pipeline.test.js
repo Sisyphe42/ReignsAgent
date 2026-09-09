@@ -883,6 +883,131 @@ describe("image endpoint adapters", () => {
   });
 });
 
+describe("AI endpoint response limits", () => {
+  it("rejects oversized model metadata by declared length", async () => {
+    await assert.rejects(
+      () => listAiEndpointModels({
+        config: { endpoint: "https://ai.example/v1", provider: "openai_chat" },
+        fetchImpl: async () => ({
+          ok: true,
+          status: 200,
+          headers: new Headers({ "content-length": String(1024 * 1024 + 1) }),
+          text: async () => "{}"
+        })
+      }),
+      { code: "endpoint_response_limit" }
+    );
+
+    await assert.rejects(
+      () => createAiEditSuggestionsFromEndpoint({
+        bundle: createContentBundle({ cards: binaryCards() }),
+        config: { endpoint: "https://ai.example/v1", provider: "openai_chat", modelId: "draft-model" },
+        fetchImpl: async () => ({
+          ok: true,
+          status: 200,
+          headers: new Headers({ "content-length": String(1024 * 1024 + 1) }),
+          text: async () => "{}"
+        })
+      }),
+      { code: "endpoint_response_limit" }
+    );
+  });
+
+  it("rejects chunked text responses that cross the byte ceiling", async () => {
+    const chunk = new Uint8Array(512 * 1024 + 1);
+    await assert.rejects(
+      () => listAiEndpointModels({
+        config: { endpoint: "https://ai.example/v1", provider: "openai_chat" },
+        fetchImpl: async () => new Response(new ReadableStream({
+          start(controller) {
+            controller.enqueue(chunk);
+            controller.enqueue(chunk);
+            controller.close();
+          }
+        }), { status: 200, headers: { "content-type": "application/json", "content-length": "1" } })
+      }),
+      { code: "endpoint_response_limit" }
+    );
+  });
+
+  it("rejects oversized direct and fetched image responses", async () => {
+    const oversizedImage = {
+      ok: true,
+      status: 200,
+      headers: new Headers({
+        "content-type": "image/png",
+        "content-length": String(50 * 1024 * 1024 + 1)
+      }),
+      arrayBuffer: async () => new ArrayBuffer(0)
+    };
+
+    await assert.rejects(
+      () => executeImageOperation({
+        config: { protocol: "stability_v2", endpoint: "https://images.example/v2", modelId: "core" },
+        request: { operation: "generate", prompt: "A court", output: { format: "png" } },
+        fetchImpl: async () => oversizedImage
+      }),
+      { code: "image_output_limit" }
+    );
+
+    await assert.rejects(
+      () => executeImageOperation({
+        config: { protocol: "openai_images", endpoint: "https://images.example/v1", modelId: "image-model" },
+        request: { operation: "generate", prompt: "A court", output: { format: "png" } },
+        fetchImpl: async () => ({
+          ok: true,
+          status: 200,
+          headers: new Headers({
+            "content-type": "application/json",
+            "content-length": String(Math.ceil(50 * 1024 * 1024 * 4 / 3) + 1024 * 1024 + 1)
+          }),
+          text: async () => "{}"
+        })
+      }),
+      { code: "image_output_limit" }
+    );
+
+    let call = 0;
+    await assert.rejects(
+      () => executeImageOperation({
+        config: { protocol: "openai_images", endpoint: "https://images.example/v1", modelId: "image-model" },
+        request: { operation: "generate", prompt: "A court", output: { format: "png" } },
+        fetchImpl: async () => {
+          call += 1;
+          if (call === 1) return new Response(JSON.stringify({ data: [{ url: "https://cdn.example/output.png" }] }), { status: 200 });
+          return oversizedImage;
+        }
+      }),
+      { code: "image_output_limit" }
+    );
+  });
+
+  it("attaches provider deadlines and reports timeout errors", async () => {
+    await assert.rejects(
+      () => listAiEndpointModels({
+        config: { endpoint: "https://ai.example/v1", provider: "openai_chat" },
+        fetchImpl: async (_url, init) => {
+          assert.equal(init.signal instanceof AbortSignal, true);
+          throw new DOMException("timed out", "TimeoutError");
+        }
+      }),
+      { code: "endpoint_timeout" }
+    );
+
+    await assert.rejects(
+      () => executeImageOperation({
+        config: { protocol: "openai_images", endpoint: "https://images.example/v1", modelId: "image-model" },
+        request: { operation: "generate", prompt: "A court", output: { format: "png" } },
+        fetchImpl: async (_url, init) => {
+          assert.equal(init.signal instanceof AbortSignal, true);
+          throw new DOMException("timed out", "TimeoutError");
+        }
+      }),
+      { code: "image_request_timeout" }
+    );
+  });
+});
+
 function sampleCards() {
   return [
     {

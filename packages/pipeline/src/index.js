@@ -1,3 +1,5 @@
+import { readBoundedResponseText } from "./response.js";
+
 const CONTENT_SCHEMA_VERSION = 1;
 const NODE_FS_MODULE = "node:fs/" + "promises";
 const CSV_COLUMNS = [
@@ -24,6 +26,8 @@ const DEFAULT_ASSET_DISPLAY = Object.freeze({
   focalPoint: Object.freeze({ x: 0.5, y: 0.5 })
 });
 const AI_EDIT_SCHEMA_VERSION = 1;
+const MAX_AI_TEXT_RESPONSE_BYTES = 1024 * 1024;
+const AI_ENDPOINT_TIMEOUT_MS = 60 * 1000;
 const AI_EDIT_MODES = new Set(["generate_cards", "repair_diagnostics", "generate_asset", "analyze_asset"]);
 const AI_EDIT_PATCH_OPS = new Set(["addCard", "updateCard", "setChoiceLabel", "setChoiceEffects", "setMetadata", "upsertAsset"]);
 const AI_ENDPOINT_ROUTES = {
@@ -851,13 +855,15 @@ export async function listAiEndpointModels({
   try {
     response = await fetchImpl(url, {
       method: "GET",
-      headers
+      headers,
+      signal: AbortSignal.timeout(AI_ENDPOINT_TIMEOUT_MS)
     });
   } catch (error) {
+    if (isTimeoutError(error)) throw new PipelineError("AI endpoint model listing timed out", "endpoint_timeout");
     throw new PipelineError(`AI endpoint model listing failed: ${error.message}`, "endpoint_network_error");
   }
 
-  const text = typeof response?.text === "function" ? await response.text() : "";
+  const text = await readAiEndpointResponse(response);
   if (!response?.ok) {
     throw new PipelineError(`AI endpoint model listing failed with status ${response?.status ?? "unknown"}`, "endpoint_http_error");
   }
@@ -1444,18 +1450,36 @@ async function postAiEditEndpoint({ fetchImpl, url, headers, body }) {
     response = await fetchImpl(url, {
       method: "POST",
       headers,
-      body: JSON.stringify(body)
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(AI_ENDPOINT_TIMEOUT_MS)
     });
   } catch (error) {
+    if (isTimeoutError(error)) throw new PipelineError("AI endpoint request timed out", "endpoint_timeout");
     throw new PipelineError(`AI endpoint request failed: ${error.message}`, "endpoint_network_error");
   }
 
-  const text = typeof response?.text === "function" ? await response.text() : "";
+  const text = await readAiEndpointResponse(response);
   return {
     ok: Boolean(response?.ok),
     status: response?.status,
     text
   };
+}
+
+async function readAiEndpointResponse(response) {
+  try {
+    return await readBoundedResponseText(response, {
+      maxBytes: MAX_AI_TEXT_RESPONSE_BYTES,
+      createLimitError: () => new PipelineError("AI endpoint response exceeds the 1 MiB limit", "endpoint_response_limit")
+    });
+  } catch (error) {
+    if (isTimeoutError(error)) throw new PipelineError("AI endpoint response timed out", "endpoint_timeout");
+    throw error;
+  }
+}
+
+function isTimeoutError(error) {
+  return error?.name === "TimeoutError" || error?.name === "AbortError";
 }
 
 function resolveAiEndpointUrl(endpoint, protocol, routeMode = "auto") {

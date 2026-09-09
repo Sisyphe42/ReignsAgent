@@ -487,6 +487,8 @@ The launcher serves the compiled Creator, local API, and player preview from one
 
 Each Creator Server process issues an in-memory API capability to its same-origin UI. Protected routes validate the exact backend Host, any browser Origin, and that capability before dispatch or body parsing; JSON mutation routes also require `application/json`. The capability is never written to workspace configuration, browser storage, player builds, or logs. Persisted AI credentials are used only with the matching persisted endpoint, while an explicitly supplied transient request key can still be used with a different endpoint.
 
+Creator JSON requests are limited to 10 MiB. Local Creator diagnostics accept at most 10,000 cycles and 200 turns per run; direct Reviewer use accepts the production 100,000-cycle ceiling and the same 200-turn ceiling. AI endpoint metadata and proposal responses are limited to 1 MiB and a 60-second request deadline. Generated image responses retain the existing 50 MiB asset boundary (with bounded JSON overhead for base64 transport) and use a five-minute per-request deadline.
+
 The distribution contains:
 
 | Path | Purpose |

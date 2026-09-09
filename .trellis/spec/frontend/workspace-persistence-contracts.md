@@ -31,6 +31,9 @@
 - Hosted Workspace imports validate the full snapshot before mutation, map imported project ids into active/recent config state, restore project-local workspace state, and omit `ai.apiKey` entirely unless explicitly included.
 - Nonessential client-local UI preferences may use `localStorage` only through exception-safe helpers. Unavailable or throwing storage reads use product defaults, and failed writes/removals are silent no-ops that must not block Creator startup or interaction.
 - Image inputs and outputs accept only PNG, JPEG, or WebP and share a 50 MiB request ceiling. Drafts live below `assets/.drafts/<draft-id>/`; apply writes immutable `assets/generated/<sha256>.<ext>` files without overwriting an existing content-addressed file.
+- Creator JSON request bodies have a 10 MiB ceiling enforced before mutation against declared and streamed bytes. The binary image-stage route retains its separate 50 MiB ceiling.
+- Creator diagnostics accept at most 10,000 cycles and 200 turns. The Reviewer public boundary independently accepts at most 100,000 cycles and 200 turns so direct callers cannot bypass the local API limit.
+- TOML parsing traverses own properties only and rejects `__proto__`, `prototype`, and `constructor` in every section segment or assignment key while preserving ordinary plain-object output.
 - Node and OPFS adapters expose equivalent binary methods. Hosted resolves project images asynchronously to Object URLs, caches them for the active project, and revokes them when the editor/project is replaced. Base64 image data never enters `content.json`.
 - `ai.image` is optional and defaults to unconfigured. It contains endpoint metadata plus `credentialMode: inherit_text | dedicated`; API projections return only `hasApiKey`, while raw text/image keys remain excluded from ordinary backups, project exports, player builds, and logs.
 
@@ -45,6 +48,9 @@
 - Missing or throwing `localStorage` -> default the rail to expanded and pinned; keep current-session React state interactive without reporting a persistence error.
 - Unsafe asset URI/draft id/file name -> path-specific project asset error; never resolve outside the active project.
 - Unsupported/mismatched MIME or aggregate size above 50 MiB -> reject before write/provider execution. Failed generation does not mutate `content.json` or existing asset bindings.
+- JSON body above 10 MiB -> HTTP 413 with `request_body_too_large`; no route mutation occurs.
+- Creator diagnostics above 10,000 cycles or 200 turns -> HTTP 400 with `diagnostics_limit_exceeded`; invalid non-positive or non-integer values -> `diagnostics_option_invalid`.
+- Prototype-sensitive TOML key -> parse failure before any inherited object can be traversed or mutated; `Object.prototype` remains unchanged.
 
 ### 5. Good/Base/Bad Cases
 
@@ -52,6 +58,8 @@
 - Base: choose Sample, clone the immutable fixture into a normal project, then edit it independently.
 - Bad: persist theme, endpoint metadata, project content, or API keys only in `localStorage`; Electron random-port origins make that state unstable.
 - Bad: import a new package from Creator Server without adding it to the shared runtime allowlist; source tests pass but extracted releases fail at module resolution.
+- Bad: accumulate JSON request chunks without a byte count, or treat a loopback caller as permission to request unlimited synchronous diagnostics.
+- Bad: use `table[key]` to decide whether a TOML table exists; inherited prototype members are not parsed data.
 - Bad: call `localStorage.getItem`, `setItem`, or `removeItem` directly for optional UI state; privacy modes and restricted origins may throw even when the property exists.
 
 ### 6. Tests Required
@@ -63,6 +71,7 @@
 - Runtime tests assert `packages/workspace/src` is staged and no `.env`, tests, frontend source, cache, credentials, or `node_modules` enter release output.
 - Hosted browser tests inject both a throwing `window.localStorage` accessor and throwing storage methods, then assert Creator reaches its loaded state with default rail state and working rail controls.
 - Workspace and Hosted tests cover binary stage/read/commit/discard, traversal and MIME rejection, content-hash naming, OPFS result preview/application, and Object URL cleanup.
+- Security-focused tests cover declared and chunked JSON overflow before mutation, ordinary JSON and binary-stage controls, Creator and Reviewer diagnostic ceilings, and `__proto__` / `constructor.prototype` TOML inputs followed by a plain-object compatibility control.
 
 ### 7. Wrong vs Correct
 
