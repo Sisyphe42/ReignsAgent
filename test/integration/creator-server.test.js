@@ -128,7 +128,9 @@ describe("Creator Server factory", () => {
       assert.equal(result.release.target, "windows-x64");
       const repeated = await request(address.origin, "/api/releases/windows-x64", { method: "POST", body: {} });
       assert.equal(repeated.release.id, result.release.id);
-      assert.equal((await request(address.origin, "/api/releases")).releases.length, 1);
+      const listed = await request(address.origin, "/api/releases");
+      assert.equal(listed.releases.length, 1);
+      assert.match(listed.releases[0].downloadUrl, new RegExp(`^/api/releases/${result.release.id}/artifact\\?_reignsAgentCapability=`));
       const artifactPath = join(dataRoot, "Builds", ...result.release.artifactRelativePath.split("/"));
       await writeFile(playerHostPath, "MZ-updated-player-host");
       const rebuilt = await request(address.origin, "/api/releases/windows-x64", { method: "POST", body: {} });
@@ -144,9 +146,9 @@ describe("Creator Server factory", () => {
       assert.match(parsed.files.get("player.html").toString("utf8"), /from "\.\/assets\/card-artwork\.js"/);
       assert.doesNotMatch(parsed.files.get("game.game.json").toString("utf8"), /apiKey|credentials/);
 
-      const download = await fetch(`${address.origin}/api/releases/${result.release.id}/artifact`, {
-        headers: { "x-reigns-agent-capability": address.capability }
-      });
+      const unauthenticatedDownload = await fetch(`${address.origin}/api/releases/${result.release.id}/artifact`);
+      assert.equal(unauthenticatedDownload.status, 401);
+      const download = await fetch(new URL(listed.releases[0].downloadUrl, address.origin));
       assert.equal(download.status, 200);
       assert.match(download.headers.get("content-disposition"), /attachment/);
       assert.equal(Buffer.from(await download.arrayBuffer()).equals(await readFile(artifactPath)), true);
