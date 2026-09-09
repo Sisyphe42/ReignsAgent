@@ -3,6 +3,8 @@ import { FACTIONS, createRuntime, normalizeCards, normalizeFactionKey } from "..
 const REPORT_SCHEMA_VERSION = 1;
 const DEFAULT_CYCLES = 100000;
 const DEFAULT_MAX_TURNS = 100;
+const MAX_CYCLES = 100000;
+const MAX_TURNS = 200;
 const DEFAULT_SAMPLE_LIMIT = 3;
 const DEFAULT_FACTION_VALUE = 50;
 const DEFAULT_THRESHOLDS = Object.freeze({
@@ -61,7 +63,7 @@ export function runMonteCarloReview(options = {}) {
 
 export function runSimulationCycle(options = {}) {
   const cards = options.cards ?? [];
-  const maxTurns = normalizePositiveInteger(options.maxTurns ?? DEFAULT_MAX_TURNS, "maxTurns");
+  const maxTurns = normalizeBoundedPositiveInteger(options.maxTurns ?? DEFAULT_MAX_TURNS, "maxTurns", MAX_TURNS);
   const seed = normalizeSeed(options.seed ?? 1);
   const rng = options.rng ?? createSeededRng(seed);
   const choose = options.choose ?? chooseRandomChoice;
@@ -182,8 +184,8 @@ export function analyzeCardGraph(cards, initialState = {}) {
 function normalizeReviewOptions(options) {
   return {
     cards: normalizeCards(options.cards ?? []),
-    cycles: normalizePositiveInteger(options.cycles ?? DEFAULT_CYCLES, "cycles"),
-    maxTurns: normalizePositiveInteger(options.maxTurns ?? DEFAULT_MAX_TURNS, "maxTurns"),
+    cycles: normalizeBoundedPositiveInteger(options.cycles ?? DEFAULT_CYCLES, "cycles", MAX_CYCLES),
+    maxTurns: normalizeBoundedPositiveInteger(options.maxTurns ?? DEFAULT_MAX_TURNS, "maxTurns", MAX_TURNS),
     seed: normalizeSeed(options.seed ?? 1),
     choose: options.choose ?? chooseRandomChoice,
     initialState: cloneInitialState(options.initialState ?? {}),
@@ -868,6 +870,14 @@ function normalizePositiveInteger(value, name) {
   }
 
   return value;
+}
+
+function normalizeBoundedPositiveInteger(value, name, limit) {
+  const normalized = normalizePositiveInteger(value, name);
+  if (normalized > limit) {
+    throw new ReviewerError(`${name} must not exceed ${limit}`);
+  }
+  return normalized;
 }
 
 function normalizeNonNegativeInteger(value, name) {

@@ -57,6 +57,8 @@
   - Creator settings present endpoint presets as a NewAPI-style channel type selector inside a compact row form. Preset data stays frontend-owned, can use official/brand logos for recognition, and must still emit only normalized endpoint/protocol/model/capability config to Interface/Pipeline.
   - Endpoint validation is a real provider call through the same protocol, route resolution, auth header, response extraction, and JSON-mode fallback path as planning. It requests `{ proposals: [] }`, may prevalidate returned proposals if present, never mutates the editor, and never returns raw credentials.
   - Endpoint model listing is a creator settings metadata probe only: local API posts transient credentials to Pipeline, Pipeline performs a GET against the resolved OpenAI-compatible `/models` endpoint, returns `{ models: [{ id, label }] }`, and never mutates the editor or returns raw credentials.
+  - Text endpoint and model-list responses have a 1 MiB decoded-byte ceiling and a 60-second request deadline. Image binaries have a 50 MiB ceiling, image JSON has only enough bounded overhead for base64 transport, and every image provider request has a five-minute deadline.
+  - Pipeline response limits must be enforced against both declared `Content-Length` and bytes consumed from the Web `ReadableStream`; never call unbounded `text()` or `arrayBuffer()` on a real provider response.
   - Endpoint draft prompts must include ReignsAgent-specific editing rules: preserve tense binary left/right card decisions, use only author-owned tags/variables/metadata/default gauges, avoid built-in RPG or management loops, prefer small reviewable patches, and prioritize reachable story flow, missing producers, stalled runs, ending coverage, and gauge pressure when repairing diagnostics.
   - provider output must parse to `{ proposals: [...] }`
   - returned `config` may include redacted `apiKeyRef`, endpoint/model preset ids, icon keys, compatibility family, route mode, and JSON mode, but must never include raw `apiKey` or `credentials`
@@ -97,6 +99,8 @@
 - Configured endpoint HTTP/network failure -> API JSON error with endpoint error code; no local fallback.
 - Configured endpoint malformed JSON, missing `proposals`, unsupported patch, or missing patch target -> `PipelineError`; active editor must remain unchanged.
 - Configured endpoint model-listing HTTP/network failure or malformed model payload -> API JSON error with endpoint error code; active editor must remain unchanged.
+- Text/model response above 1 MiB -> `endpoint_response_limit`; provider deadline -> `endpoint_timeout`; active editor remains unchanged.
+- Image binary/JSON response above its bounded ceiling -> `image_output_limit`; provider deadline -> `image_request_timeout`; no draft is staged or applied.
 - Unsupported image operation/parameter/input MIME/count -> stable `image_*` error before provider execution; active editor and asset bindings remain unchanged.
 - Image endpoint failure or cancellation -> preserve creator inputs and canvas state, do not commit or bind an asset, and never include credentials or raw sensitive provider responses in logs or responses.
 - Image draft fingerprint differs from active editor -> `image_draft_stale`; the committed file and editor binding remain unchanged.
@@ -113,6 +117,7 @@
 - Bad: Creator applies an old plan after editing content; apply is rejected as stale and no content is replaced.
 - Bad: Proposal contains an unsupported patch operation; validation rejects the proposal and no partial edit is stored.
 - Bad: Endpoint returns malformed JSON or a proposal targeting a missing card; plan creation fails and no content is replaced.
+- Bad: Trust `Content-Length` alone or fully buffer a chunked provider response before checking its size.
 
 ### 6. Tests Required
 
@@ -122,6 +127,7 @@
   - Repair proposals cover low coverage, unreachable gates, missing tag producers, stalled runs, and dominant gauge pressure where unambiguous.
   - Patch application validates output and rejects unsupported operations.
   - Image adapters cover OpenAI JSON/multipart, Gemini inline image blocks, Stability operation routes, Midjourney submit/poll/reference payloads, capability rejection, reference/mask/outpaint parameters, base64/URL/binary localization, cancellation, and secret-safe errors.
+  - Provider response tests cover oversized declared lengths, missing or understated lengths with streamed overflow, text/model and image JSON/binary paths, attached deadline signals, and ordinary responses through the same reader.
   - Endpoint planning covers legacy and canonical OpenAI protocol values, route resolution, JSON-mode fallback, malformed output, patch prevalidation, and secret redaction.
   - Endpoint planning asserts provider request prompts include the ReignsAgent professional editing rules, not only generic JSON formatting instructions.
   - Endpoint validation and model listing cover redacted credentials, `/models` route derivation from API roots or full protocol routes, malformed metadata rejection, and no editor mutation.

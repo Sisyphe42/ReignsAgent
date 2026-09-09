@@ -185,10 +185,25 @@
     const hostedPlayer = globalThis.reignsAgentHostedPlayerReady
       ? await globalThis.reignsAgentHostedPlayerReady
       : null;
+    let creatorApiCapabilityPromise;
+    const creatorApiCapability = () => {
+      creatorApiCapabilityPromise ??= fetch("/api/session", { headers: { accept: "application/json" } })
+        .then(async (response) => {
+          const payload = await response.json();
+          if (!response.ok || typeof payload?.capability !== "string") throw new Error(payload?.error?.message ?? "Creator API session could not be established");
+          return payload.capability;
+        })
+        .catch((error) => {
+          creatorApiCapabilityPromise = undefined;
+          throw error;
+        });
+      return creatorApiCapabilityPromise;
+    };
     const api = hostedPlayer ? hostedPlayer.request : async (path, body, method = "POST") => {
+      const capability = await creatorApiCapability();
       const res = await fetch(path, {
         method,
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", "x-reigns-agent-capability": capability },
         body: body !== undefined ? JSON.stringify(body) : undefined
       });
       const text = await res.text();

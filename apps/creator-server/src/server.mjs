@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { randomBytes, timingSafeEqual } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { readFile, writeFile, mkdir, mkdtemp, rm, stat } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -34,6 +35,12 @@ import { createWorkspaceStore } from "../../../packages/workspace/src/index.js";
 import { buildWindowsPlayerRelease, windowsReleaseCapability } from "./windows-release.mjs";
 
 const DEFAULT_ROOT = fileURLToPath(new URL("../../..", import.meta.url));
+const API_CAPABILITY_HEADER = "x-reigns-agent-capability";
+const API_CAPABILITY_QUERY = "_reignsAgentCapability";
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
+const MAX_JSON_BODY_BYTES = 10 * 1024 * 1024;
+const MAX_CREATOR_DIAGNOSTIC_CYCLES = 10000;
+const MAX_DIAGNOSTIC_TURNS = 200;
 const MIME_TYPES = {
   ".css": "text/css; charset=utf-8",
   ".html": "text/html; charset=utf-8",
@@ -102,13 +109,22 @@ const workspace = await createWorkspaceStore({
 });
 const store = new SessionState(await workspace.readActiveBundle());
 const imageDrafts = new Map();
+const apiCapability = randomBytes(32).toString("base64url");
+let trustedRequestHosts = new Set();
 
 const server = createServer(async (req, res) => {
-  const url = new URL(req.url, `http://${req.headers.host}`);
-  const path = url.pathname;
-
   try {
+    assertTrustedHost(req.headers.host);
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    const path = url.pathname;
+
     if (path.startsWith("/api/")) {
+      assertLocalOrigin(req.headers.origin);
+      if (path === "/api/session" && req.method === "GET") {
+        return sendJson(res, { capability: apiCapability });
+      }
+      assertApiCapability(req, url);
+      assertJsonContentType(req, path);
       return await handleApi(req, res, url);
     }
 
@@ -120,7 +136,7 @@ const server = createServer(async (req, res) => {
     res.writeHead(404, { "content-type": "application/json" });
     res.end(JSON.stringify({ error: { message: `Not found: ${path}` } }));
   } catch (error) {
-    res.writeHead(500, { "content-type": "application/json" });
+    res.writeHead(error.statusCode ?? 500, { "content-type": "application/json", "cache-control": "no-store" });
     res.end(JSON.stringify({ error: { name: error.name, message: error.message, code: error.code ?? "internal_error" } }));
   }
 });
@@ -317,8 +333,8 @@ async function handleApi(req, res, url) {
     const projection = runDiagnostics({
       cards,
       metadata: store.editor.metadata,
-      cycles: Number(body?.cycles ?? 1000),
-      maxTurns: Number(body?.maxTurns ?? 50),
+      cycles: normalizeDiagnosticLimit(body?.cycles ?? 1000, "cycles", MAX_CREATOR_DIAGNOSTIC_CYCLES),
+      maxTurns: normalizeDiagnosticLimit(body?.maxTurns ?? 50, "maxTurns", MAX_DIAGNOSTIC_TURNS),
       seed: Number(body?.seed ?? 1)
     });
     store.lastDiagnostics = projection;
@@ -353,7 +369,7 @@ async function handleApi(req, res, url) {
     const plan = await buildAiEditPlanAsync({
       editor: store.editor,
       config: body?.config ?? {},
-      credentials: await resolveCredentials(body?.credentials),
+      credentials: await resolveCredentials(body?.credentials, body?.config),
       mode,
       instruction: body?.instruction ?? "",
       targetCardId: body?.targetCardId ?? null,
@@ -367,7 +383,7 @@ async function handleApi(req, res, url) {
     const result = await validateAiEditEndpointConfig({
       editor: store.editor,
       config: body?.config ?? {},
-      credentials: await resolveCredentials(body?.credentials)
+      credentials: await resolveCredentials(body?.credentials, body?.config)
     });
     return sendJson(res, result);
   }
@@ -375,7 +391,7 @@ async function handleApi(req, res, url) {
   if (path === "/api/ai/edit/models" && req.method === "POST") {
     const result = await listAiEditEndpointModels({
       config: body?.config ?? {},
-      credentials: await resolveCredentials(body?.credentials)
+      credentials: await resolveCredentials(body?.credentials, body?.config)
     });
     return sendJson(res, result);
   }
@@ -438,7 +454,7 @@ async function handleApi(req, res, url) {
     for (const [index, output] of generated.outputs.entries()) {
       const extension = output.mimeType === "image/jpeg" ? "jpg" : output.mimeType.split("/")[1];
       const staged = await workspace.stageActiveProjectAsset({ draftId, fileName: `output-${index + 1}.${extension}`, bytes: output.bytes, mimeType: output.mimeType });
-      outputs.push({ id: `output-${index + 1}`, ...staged, previewUrl: `/api/project-assets/${encodeURIComponent(staged.uri)}` });
+      outputs.push({ id: `output-${index + 1}`, ...staged, previewUrl: projectAssetUrl(staged.uri) });
     }
     const draft = { ...generated, draftId, outputs, inputDraftIds };
     imageDrafts.set(draftId, draft);
@@ -694,11 +710,12 @@ async function readJsonBody(req) {
   if (req.method === "GET" || req.method === "DELETE") {
     return null;
   }
-  const chunks = [];
-  for await (const chunk of req) {
-    chunks.push(chunk);
-  }
-  const text = Buffer.concat(chunks).toString("utf8").trim();
+  const bytes = await readBodyBytes(req, MAX_JSON_BODY_BYTES, {
+    message: "Request body exceeds the 10 MiB JSON limit",
+    code: "request_body_too_large",
+    statusCode: 413
+  });
+  const text = bytes.toString("utf8").trim();
   if (text === "") {
     return null;
   }
@@ -713,7 +730,8 @@ function sendJson(res, payload) {
   const body = JSON.stringify(payload, null, 2);
   res.writeHead(200, {
     "content-type": "application/json; charset=utf-8",
-    "cache-control": "no-store"
+    "cache-control": "no-store",
+    "x-content-type-options": "nosniff"
   });
   res.end(body);
 }
@@ -767,14 +785,21 @@ async function persistEditor() {
   return workspace.saveActiveBundle(store.editor.toBundle());
 }
 
-async function resolveCredentials(credentials) {
+async function resolveCredentials(credentials, config) {
   if (typeof credentials?.apiKey === "string" && credentials.apiKey.trim()) return credentials;
+  const persisted = await workspace.getConfig();
+  if (!sameEndpoint(config?.endpoint, persisted.ai.endpoint)) return credentials ?? {};
   const storedApiKey = await workspace.getStoredApiKey();
   return storedApiKey ? { ...(credentials ?? {}), apiKey: storedApiKey } : (credentials ?? {});
 }
 
 async function resolveImageCredentials(credentials, config) {
   if (typeof credentials?.apiKey === "string" && credentials.apiKey.trim()) return credentials;
+  const persisted = await workspace.getConfig();
+  const trustedEndpoint = config?.credentialMode === "inherit_text"
+    ? persisted.ai.endpoint
+    : persisted.ai.image.endpoint;
+  if (!sameEndpoint(config?.endpoint, trustedEndpoint)) return credentials ?? {};
   const storedApiKey = config?.credentialMode === "inherit_text"
     ? await workspace.getStoredApiKey()
     : await workspace.getStoredImageApiKey();
@@ -794,19 +819,128 @@ async function sendProjectAsset(res, uri) {
 }
 
 async function readBinaryBody(req, limit) {
-  const chunks = [];
-  let size = 0;
-  for await (const chunk of req) {
-    size += chunk.byteLength;
-    if (size > limit) throw apiError("Request body exceeds the image size limit", "image_input_limit");
-    chunks.push(chunk);
+  const bytes = await readBodyBytes(req, limit, {
+    message: "Request body exceeds the image size limit",
+    code: "image_input_limit",
+    statusCode: 413
+  });
+  if (!bytes.byteLength) throw apiError("Image upload is empty", "image_input_required");
+  return bytes;
+}
+
+async function readBodyBytes(req, limit, { message, code, statusCode }) {
+  const declaredLength = String(req.headers["content-length"] ?? "").trim();
+  if (/^\d+$/.test(declaredLength) && Number(declaredLength) > limit) {
+    req.resume();
+    throw apiError(message, code, statusCode);
   }
-  if (!size) throw apiError("Image upload is empty", "image_input_required");
-  return Buffer.concat(chunks);
+  return new Promise((resolve, reject) => {
+    let chunks = [];
+    let size = 0;
+    let failure = null;
+    req.on("data", (chunk) => {
+      if (failure) return;
+      size += chunk.byteLength;
+      if (size > limit) {
+        chunks = [];
+        failure = apiError(message, code, statusCode);
+        reject(failure);
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.once("end", () => {
+      if (!failure) resolve(Buffer.concat(chunks, size));
+    });
+    req.once("aborted", () => {
+      if (!failure) reject(apiError("Request body was aborted", "request_body_aborted", 400));
+    });
+    req.once("error", (error) => {
+      if (!failure) reject(error);
+    });
+  });
+}
+
+function normalizeDiagnosticLimit(value, name, limit) {
+  const normalized = Number(value);
+  if (!Number.isInteger(normalized) || normalized <= 0) {
+    throw apiError(`Diagnostics ${name} must be a positive integer`, "diagnostics_option_invalid", 400);
+  }
+  if (normalized > limit) {
+    throw apiError(`Diagnostics ${name} must not exceed ${limit}`, "diagnostics_limit_exceeded", 400);
+  }
+  return normalized;
 }
 
 function randomId() {
   return `img-${crypto.randomUUID()}`;
+}
+
+function projectAssetUrl(uri) {
+  const query = new URLSearchParams({ [API_CAPABILITY_QUERY]: apiCapability });
+  return `/api/project-assets/${encodeURIComponent(uri)}?${query}`;
+}
+
+function assertTrustedHost(hostHeader) {
+  if (typeof hostHeader !== "string" || !trustedRequestHosts.has(hostHeader.toLowerCase())) {
+    throw apiError("Request Host is not allowed", "request_host_forbidden", 403);
+  }
+}
+
+function assertLocalOrigin(originHeader) {
+  if (originHeader === undefined) return;
+  let origin;
+  try {
+    origin = new URL(originHeader);
+  } catch {
+    throw apiError("Request Origin is not allowed", "request_origin_forbidden", 403);
+  }
+  if (origin.protocol !== "http:" || origin.username || origin.password || origin.pathname !== "/" || origin.search || origin.hash || !LOOPBACK_HOSTS.has(origin.hostname.toLowerCase())) {
+    throw apiError("Request Origin is not allowed", "request_origin_forbidden", 403);
+  }
+}
+
+function assertApiCapability(req, url) {
+  const header = req.headers[API_CAPABILITY_HEADER];
+  const query = url.pathname.startsWith("/api/project-assets/")
+    ? url.searchParams.get(API_CAPABILITY_QUERY)
+    : null;
+  const supplied = typeof header === "string" ? header : query;
+  if (!safeTokenEqual(supplied, apiCapability)) {
+    throw apiError("Creator API capability is missing or invalid", "api_capability_required", 401);
+  }
+}
+
+function assertJsonContentType(req, path) {
+  if (["GET", "HEAD", "DELETE"].includes(req.method) || path === "/api/ai/images/stage") return;
+  const contentType = String(req.headers["content-type"] ?? "").split(";", 1)[0].trim().toLowerCase();
+  if (contentType !== "application/json") {
+    throw apiError("Creator API mutation requests require application/json", "json_content_type_required", 415);
+  }
+}
+
+function safeTokenEqual(left, right) {
+  if (typeof left !== "string" || typeof right !== "string") return false;
+  const leftBytes = Buffer.from(left);
+  const rightBytes = Buffer.from(right);
+  return leftBytes.byteLength === rightBytes.byteLength && timingSafeEqual(leftBytes, rightBytes);
+}
+
+function sameEndpoint(left, right) {
+  const normalizedLeft = normalizeEndpoint(left);
+  const normalizedRight = normalizeEndpoint(right);
+  return normalizedLeft !== null && normalizedLeft === normalizedRight;
+}
+
+function normalizeEndpoint(value) {
+  try {
+    const url = new URL(String(value ?? "").trim());
+    if (!url.protocol || !url.hostname || url.username || url.password) return null;
+    url.hash = "";
+    return url.toString().replace(/\/$/, "");
+  } catch {
+    return null;
+  }
 }
 
 function stagedInputDraftIds(request) {
@@ -816,9 +950,10 @@ function stagedInputDraftIds(request) {
     .filter(Boolean))];
 }
 
-function apiError(message, code) {
+function apiError(message, code, statusCode) {
   const error = new Error(message);
   error.code = code;
+  if (statusCode) error.statusCode = statusCode;
   return error;
 }
 
@@ -879,10 +1014,13 @@ async function sendFile(req, res, root, relativePath) {
 }
 
 function start({ host = "127.0.0.1", port = 4321 } = {}) {
+  if (!LOOPBACK_HOSTS.has(String(host).toLowerCase())) {
+    return Promise.reject(apiError("Creator Server must bind to a loopback host", "creator_host_not_loopback"));
+  }
   if (server.listening) {
     const address = server.address();
     const actualPort = typeof address === "object" && address ? address.port : port;
-    return Promise.resolve({ host, port: actualPort, origin: formatOrigin(host, actualPort) });
+    return Promise.resolve({ host, port: actualPort, origin: formatOrigin(host, actualPort), capability: apiCapability });
   }
   return new Promise((resolveStart, rejectStart) => {
     const onError = (error) => rejectStart(error);
@@ -892,11 +1030,12 @@ function start({ host = "127.0.0.1", port = 4321 } = {}) {
       const address = server.address();
       const actualPort = typeof address === "object" && address ? address.port : port;
       const origin = formatOrigin(host, actualPort);
+      trustedRequestHosts = trustedHostsForPort(actualPort);
       console.log(`ReignsAgent backend API: ${origin}/api/editor`);
       if (resolvedStaticRoot) {
         console.log(`ReignsAgent: ${origin}/workbench`);
       }
-      resolveStart({ host, port: actualPort, origin });
+      resolveStart({ host, port: actualPort, origin, capability: apiCapability });
     });
   });
 }
@@ -921,4 +1060,9 @@ return { server, start, close };
 function formatOrigin(host, port) {
   const displayHost = host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
   return `http://${displayHost}:${port}`;
+}
+
+function trustedHostsForPort(port) {
+  const suffix = port === 80 ? "" : `:${port}`;
+  return new Set([`127.0.0.1${suffix}`, `localhost${suffix}`, `[::1]${suffix}`]);
 }

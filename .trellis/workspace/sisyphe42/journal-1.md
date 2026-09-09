@@ -663,7 +663,40 @@ Added validated per-asset fit and focal-point settings, local and Hosted persist
 - None - task complete
 
 
-## Session 20: Complete adaptive artwork experience
+## Session 20: Commit Creator API request trust remediation
+
+**Date**: 2026-08-27
+**Task**: Commit Creator API request trust remediation
+**Branch**: `fix/creator-api-request-trust`
+
+### Summary
+
+Committed the generated Creator API request-trust remediation on fix/creator-api-request-trust after npm run verify passed; preserved the original feature/adaptive-card-art checkout and did not apply, verify, close, merge, push, or open a PR.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `5cd3798` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 21: Complete adaptive artwork experience
 
 **Date**: 2026-09-08
 **Task**: Complete adaptive artwork experience
@@ -682,6 +715,39 @@ Localized larger artwork previews, guarded saves and retry feedback, fixed hidde
 | Hash | Message |
 |------|---------|
 | `001b160` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 22: Complete Codex Security remediations
+
+**Date**: 2026-09-09
+**Task**: Complete Codex Security remediations
+**Branch**: `fix/creator-api-request-trust`
+
+### Summary
+
+Verified the existing Creator API trust control, bounded Creator and Reviewer workloads, blocked TOML prototype pollution, and added bounded provider response streaming with deadlines. Full npm run verify passed; unrelated thinking-orbs manifest changes were preserved.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `4c46950` | (see git log) |
 
 ### Testing
 

@@ -144,7 +144,9 @@ describe("Creator Server factory", () => {
       assert.match(parsed.files.get("player.html").toString("utf8"), /from "\.\/assets\/card-artwork\.js"/);
       assert.doesNotMatch(parsed.files.get("game.game.json").toString("utf8"), /apiKey|credentials/);
 
-      const download = await fetch(`${address.origin}/api/releases/${result.release.id}/artifact`);
+      const download = await fetch(`${address.origin}/api/releases/${result.release.id}/artifact`, {
+        headers: { "x-reigns-agent-capability": address.capability }
+      });
       assert.equal(download.status, 200);
       assert.match(download.headers.get("content-disposition"), /attachment/);
       assert.equal(Buffer.from(await download.arrayBuffer()).equals(await readFile(artifactPath)), true);
@@ -187,7 +189,10 @@ describe("Creator Server factory", () => {
     });
     try {
       const address = await server.start({ port: 0 });
-      const response = await fetch(`${address.origin}/api/releases/windows-x64`, { method: "POST" });
+      const response = await fetch(`${address.origin}/api/releases/windows-x64`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-reigns-agent-capability": address.capability }
+      });
       assert.equal(response.status, 500);
       assert.deepEqual((await request(address.origin, "/api/releases")).releases, []);
     } finally {
@@ -198,12 +203,30 @@ describe("Creator Server factory", () => {
 });
 
 async function request(origin, path, { method = "GET", body } = {}) {
+  const capability = await capabilityFor(origin);
   const response = await fetch(`${origin}${path}`, {
     method,
-    headers: body === undefined ? undefined : { "content-type": "application/json" },
+    headers: {
+      "x-reigns-agent-capability": capability,
+      ...(body === undefined ? {} : { "content-type": "application/json" })
+    },
     body: body === undefined ? undefined : JSON.stringify(body)
   });
   const text = await response.text();
   assert.equal(response.status, 200, text);
   return JSON.parse(text);
+}
+
+const capabilityByOrigin = new Map();
+async function capabilityFor(origin) {
+  if (!capabilityByOrigin.has(origin)) {
+    capabilityByOrigin.set(origin, fetch(`${origin}/api/session`)
+      .then(async (response) => {
+        const payload = await response.json();
+        assert.equal(response.status, 200, JSON.stringify(payload));
+        assert.equal(typeof payload.capability, "string");
+        return payload.capability;
+      }));
+  }
+  return capabilityByOrigin.get(origin);
 }

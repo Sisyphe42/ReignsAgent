@@ -29,7 +29,10 @@ const server = await createCreatorServer({
 
 try {
   const address = await server.start({ port: 0 });
-  const response = await fetch(`${address.origin}/api/releases/windows-x64`, { method: "POST" });
+  const response = await fetch(`${address.origin}/api/releases/windows-x64`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-reigns-agent-capability": address.capability }
+  });
   const body = await response.json();
   assert.equal(response.status, 200, JSON.stringify(body));
   const artifactPath = join(dataRoot, "Builds", ...body.release.artifactRelativePath.split("/"));

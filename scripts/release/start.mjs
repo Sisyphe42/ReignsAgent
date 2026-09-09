@@ -25,14 +25,10 @@ const creatorServer = await createCreatorServer({
   defaultBuildOutputDir: join(dataRoot, "Builds")
 });
 const address = await creatorServer.start({ host, port: requestedPort });
-const url = `http://${displayHost(address.host)}:${address.port}/workbench`;
+const url = `${address.origin}/workbench`;
 
 if (shouldOpen) {
   openBrowser(url);
-}
-
-function displayHost(value) {
-  return value === "0.0.0.0" || value === "::" ? "127.0.0.1" : value;
 }
 
 function openBrowser(url) {

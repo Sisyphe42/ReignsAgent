@@ -312,6 +312,10 @@ describe("ReignsAgent reviewer", () => {
 
   it("rejects invalid reviewer configuration and invalid choices", () => {
     assert.throws(() => runMonteCarloReview({ cards: [], cycles: 0 }), ReviewerError);
+    assert.throws(() => runMonteCarloReview({ cards: [], cycles: 100001 }), /cycles must not exceed 100000/);
+    assert.throws(() => runMonteCarloReview({ cards: [], cycles: 1, maxTurns: 201 }), /maxTurns must not exceed 200/);
+    assert.throws(() => runSimulationCycle({ cards: [], maxTurns: 201 }), /maxTurns must not exceed 200/);
+    assert.equal(runMonteCarloReview({ cards: [], cycles: 1, maxTurns: 200 }).parameters.maxTurns, 200);
     assert.throws(() => runMonteCarloReview({ cards: [], thresholds: { highGameOverRate: 2 } }), ReviewerError);
     assert.throws(
       () =>

@@ -1,9 +1,14 @@
+import { readBoundedResponseBytes, readBoundedResponseText } from "./response.js";
+
 const IMAGE_PROTOCOLS = new Set(["openai_images", "gemini_interactions", "stability_v2", "midjourney_proxy"]);
 const IMAGE_OPERATIONS = new Set(["generate", "edit", "inpaint", "outpaint"]);
 const IMAGE_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
 const IMAGE_FORMATS = new Set(["png", "jpeg", "webp"]);
 const IMAGE_ROUTE_MODES = new Set(["auto", "api_root", "full_url"]);
 const MAX_OUTPUTS = 4;
+const MAX_IMAGE_OUTPUT_BYTES = 50 * 1024 * 1024;
+const MAX_IMAGE_JSON_RESPONSE_BYTES = Math.ceil(MAX_IMAGE_OUTPUT_BYTES * 4 / 3) + 1024 * 1024;
+const IMAGE_ENDPOINT_TIMEOUT_MS = 5 * 60 * 1000;
 const MIDJOURNEY_POLL_INTERVAL_MS = 1500;
 const MIDJOURNEY_MAX_POLLS = 200;
 
@@ -322,7 +327,7 @@ async function callStabilityImages({ config, request, inputs, apiKey, fetchImpl,
   const response = await providerFetch(fetchImpl, url, { method: "POST", headers, body, signal });
   const contentType = response.headers?.get?.("content-type")?.split(";")[0]?.trim() || "";
   if (IMAGE_MIME_TYPES.has(contentType)) {
-    return { url, outputs: [{ bytes: new Uint8Array(await response.arrayBuffer()), mimeType: contentType }] };
+    return { url, outputs: [{ bytes: await readImageBytes(response), mimeType: contentType }] };
   }
   const payload = await readJsonResponse(response, "Stability image");
   const candidates = [payload.image, payload.data, ...(Array.isArray(payload.artifacts) ? payload.artifacts.map((entry) => entry?.base64) : [])].filter(Boolean);
@@ -372,7 +377,7 @@ async function materializeOutputs(outputs, { fetchImpl, signal, defaultFormat })
     if (output.url) {
       const response = await providerFetch(fetchImpl, output.url, { method: "GET", signal }, "image_result_fetch_failed");
       const mimeType = response.headers?.get?.("content-type")?.split(";")[0]?.trim() || mimeForFormat(defaultFormat);
-      const bytes = new Uint8Array(await response.arrayBuffer());
+      const bytes = await readImageBytes(response);
       materialized.push({ id: `output-${index + 1}`, ...normalizeOutputBytes(bytes, mimeType) });
     } else if (output.base64) {
       materialized.push({ id: `output-${index + 1}`, ...normalizeOutputBytes(base64ToBytes(output.base64), output.mimeType || mimeForFormat(defaultFormat)) });
@@ -391,6 +396,7 @@ function normalizeOutputBytes(bytes, mimeType) {
     throw new ImagePipelineError(`Unsupported generated image MIME '${normalizedMime || "unknown"}'`, "image_mime_unsupported");
   }
   if (value.byteLength === 0) throw new ImagePipelineError("Generated image is empty", "image_empty_response");
+  if (value.byteLength > MAX_IMAGE_OUTPUT_BYTES) throw imageResponseLimitError();
   return { bytes: value, mimeType: normalizedMime, byteLength: value.byteLength };
 }
 
@@ -464,9 +470,12 @@ function findGeminiImages(payload) {
 async function providerFetch(fetchImpl, url, init, errorCode = "image_endpoint_network_error") {
   let response;
   try {
-    response = await fetchImpl(url, init);
+    const timeoutSignal = AbortSignal.timeout(IMAGE_ENDPOINT_TIMEOUT_MS);
+    const signal = init.signal ? AbortSignal.any([init.signal, timeoutSignal]) : timeoutSignal;
+    response = await fetchImpl(url, { ...init, signal });
   } catch (error) {
     if (error?.name === "AbortError") throw new ImagePipelineError("Image request was cancelled", "image_request_cancelled");
+    if (error?.name === "TimeoutError") throw new ImagePipelineError("Image endpoint request timed out", "image_request_timeout");
     throw new ImagePipelineError(`Image endpoint request failed: ${error.message}`, errorCode);
   }
   if (!response?.ok) {
@@ -476,12 +485,41 @@ async function providerFetch(fetchImpl, url, init, errorCode = "image_endpoint_n
 }
 
 async function readJsonResponse(response, label) {
-  const text = typeof response.text === "function" ? await response.text() : "";
+  let text;
+  try {
+    text = await readBoundedResponseText(response, {
+      maxBytes: MAX_IMAGE_JSON_RESPONSE_BYTES,
+      createLimitError: imageResponseLimitError
+    });
+  } catch (error) {
+    throw normalizeImageResponseError(error);
+  }
   try {
     return text ? JSON.parse(text) : {};
   } catch (error) {
     throw new ImagePipelineError(`${label} response was not valid JSON: ${error.message}`, "image_endpoint_parse_error");
   }
+}
+
+async function readImageBytes(response) {
+  try {
+    return await readBoundedResponseBytes(response, {
+      maxBytes: MAX_IMAGE_OUTPUT_BYTES,
+      createLimitError: imageResponseLimitError
+    });
+  } catch (error) {
+    throw normalizeImageResponseError(error);
+  }
+}
+
+function imageResponseLimitError() {
+  return new ImagePipelineError("Image endpoint response exceeds the output size limit", "image_output_limit");
+}
+
+function normalizeImageResponseError(error) {
+  if (error?.name === "AbortError") return new ImagePipelineError("Image request was cancelled", "image_request_cancelled");
+  if (error?.name === "TimeoutError") return new ImagePipelineError("Image endpoint response timed out", "image_request_timeout");
+  return error;
 }
 
 function resolveImageUrl(endpoint, route, routeMode) {

@@ -19,4 +19,19 @@ describe("workspace host-neutral contracts", () => {
     assert.deepEqual(normalizeWorkspaceState({ activePanel: "review" }), { schemaVersion: 1, activePanel: "review", selectedCardId: "", previewSkin: "" });
     assert.throws(() => parseBundle({ metadata: {} }, "broken"), { code: "project_content_invalid" });
   });
+
+  it("rejects prototype-sensitive TOML paths without polluting plain objects", () => {
+    for (const source of [
+      "[__proto__]\npolluted = true\n",
+      "[constructor.prototype]\npolluted = true\n",
+      "prototype = true\n"
+    ]) {
+      assert.throws(() => parseToml(source), /Unsafe TOML key/);
+      assert.equal({}.polluted, undefined);
+    }
+
+    const valid = parseToml("[ai.image]\nendpoint = \"https://images.example/v1\"\n");
+    assert.deepEqual(valid, { ai: { image: { endpoint: "https://images.example/v1" } } });
+    assert.equal(Object.getPrototypeOf(valid), Object.prototype);
+  });
 });

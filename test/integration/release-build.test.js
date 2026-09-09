@@ -70,7 +70,7 @@ describe("creator release distribution", () => {
       const [workbench, play, editor] = await Promise.all([
         fetch(`${baseUrl}/workbench`),
         fetch(`${baseUrl}/play`),
-        fetch(`${baseUrl}/api/editor`)
+        releaseApiFetch(baseUrl, "/api/editor")
       ]);
       assert.equal(workbench.status, 200);
       const workbenchHtml = await workbench.text();
@@ -84,7 +84,7 @@ describe("creator release distribution", () => {
       assert.equal(editor.status, 200);
       assert.equal((await editor.json()).cards.length > 0, true);
 
-      const exportedResponse = await fetch(`${baseUrl}/api/build/export`, {
+      const exportedResponse = await releaseApiFetch(baseUrl, "/api/build/export", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: "{}"
@@ -95,7 +95,7 @@ describe("creator release distribution", () => {
       await access(exported.outputPath);
 
       const sample = JSON.parse(await readFile(join(releaseRoot, "fixtures/content/minimal.cards.json"), "utf8"));
-      const imported = await fetch(`${baseUrl}/api/editor/import`, {
+      const imported = await releaseApiFetch(baseUrl, "/api/editor/import", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ bundle: sample })
@@ -103,7 +103,7 @@ describe("creator release distribution", () => {
       assert.equal(imported.status, 200);
       assert.equal((await imported.json()).imported, true);
 
-      const edited = await fetch(`${baseUrl}/api/editor/metadata`, {
+      const edited = await releaseApiFetch(baseUrl, "/api/editor/metadata", {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ metadata: { title: "Release smoke test" } })
@@ -119,7 +119,8 @@ describe("creator release distribution", () => {
       });
       const restartedOutput = await waitForOutput(server, /ReignsAgent: http:\/\/127\.0\.0\.1:(\d+)\/workbench/);
       const restartedPort = Number(restartedOutput.match(/ReignsAgent: http:\/\/127\.0\.0\.1:(\d+)\/workbench/)[1]);
-      const restoredEditor = await fetch(`http://127.0.0.1:${restartedPort}/api/editor`).then((response) => response.json());
+      const restoredBaseUrl = `http://127.0.0.1:${restartedPort}`;
+      const restoredEditor = await releaseApiFetch(restoredBaseUrl, "/api/editor").then((response) => response.json());
       assert.equal(restoredEditor.metadata.title, "Release smoke test");
       await access(join(releaseRoot, "ReignsAgentData", "config.toml"));
 
@@ -140,6 +141,24 @@ describe("creator release distribution", () => {
 });
 
 let creatorBuildPromise;
+const releaseCapabilityByOrigin = new Map();
+
+async function releaseApiFetch(baseUrl, path, options = {}) {
+  if (!releaseCapabilityByOrigin.has(baseUrl)) {
+    releaseCapabilityByOrigin.set(baseUrl, fetch(`${baseUrl}/api/session`)
+      .then(async (response) => {
+        const payload = await response.json();
+        assert.equal(response.status, 200, JSON.stringify(payload));
+        return payload.capability;
+      }));
+  }
+  const capability = await releaseCapabilityByOrigin.get(baseUrl);
+  return fetch(`${baseUrl}${path}`, {
+    ...options,
+    headers: { ...options.headers, "x-reigns-agent-capability": capability }
+  });
+}
+
 function ensureCreatorBuild() {
   creatorBuildPromise ??= execFileAsync(
     process.execPath,

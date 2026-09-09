@@ -271,7 +271,7 @@ describe("Phase 4 interface integration", () => {
       const endpoint = `http://127.0.0.1:${mock.port}/v1`;
       const storedConfig = await api(port, "/api/config", {
         method: "PATCH",
-        body: { ai: { apiKey: "stored-integration-key" } }
+        body: { ai: { endpoint: `${endpoint}/chat/completions`, apiKey: "stored-integration-key" } }
       });
       assert.equal(storedConfig.ai.hasApiKey, true);
       assert.equal(JSON.stringify(storedConfig).includes("stored-integration-key"), false);
@@ -368,7 +368,7 @@ describe("Phase 4 interface integration", () => {
       const validation = await api(port, "/api/ai/images/validate", { method: "POST", body: { config: { protocol: "openai_images", endpoint: `http://127.0.0.1:${mock.port}/v1`, modelId: "mock-image" } } });
       assert.equal(validation.valid, true);
       assert.equal(validation.capabilities.supportsMask, true);
-      await api(port, "/api/config", { method: "PATCH", body: { ai: { apiKey: "inherited-image-secret" } } });
+      await api(port, "/api/config", { method: "PATCH", body: { ai: { endpoint: `http://127.0.0.1:${mock.port}/v1`, apiKey: "inherited-image-secret" } } });
       const editorBefore = await api(port, "/api/editor");
       const targetAsset = editorBefore.assets.find((asset) => asset.cardId);
       assert.ok(targetAsset, "fixture must contain an existing card asset");
@@ -378,7 +378,7 @@ describe("Phase 4 interface integration", () => {
       });
       assert.deepEqual(displayed.asset.metadata.display, { fit: "cover", focalPoint: { x: 0, y: 1 } });
 
-      const stagedResponse = await fetch(`http://127.0.0.1:${port}/api/ai/images/stage?fileName=source.png`, { method: "POST", headers: { "content-type": "image/png" }, body: png });
+      const stagedResponse = await fetch(`http://127.0.0.1:${port}/api/ai/images/stage?fileName=source.png`, { method: "POST", headers: { "content-type": "image/png", "x-reigns-agent-capability": await apiCapability(port) }, body: png });
       assert.equal(stagedResponse.ok, true);
       const staged = await stagedResponse.json();
 
@@ -404,7 +404,7 @@ describe("Phase 4 interface integration", () => {
       assert.equal(applied.asset.id, targetAsset.id);
       assert.match(applied.asset.uri, /^assets\/generated\/[a-f0-9]{64}\.png$/);
       assert.deepEqual(applied.asset.metadata.display, { fit: "cover", focalPoint: { x: 0, y: 1 } });
-      const assetResponse = await fetch(`http://127.0.0.1:${port}/api/project-assets/${encodeURIComponent(applied.asset.uri)}`);
+      const assetResponse = await fetch(`http://127.0.0.1:${port}/api/project-assets/${encodeURIComponent(applied.asset.uri)}`, { headers: { "x-reigns-agent-capability": await apiCapability(port) } });
       assert.equal(assetResponse.headers.get("content-type"), "image/png");
       assert.deepEqual(new Uint8Array(await assetResponse.arrayBuffer()), png);
       const editor = await api(port, "/api/editor");
@@ -425,9 +425,10 @@ describe("Phase 4 interface integration", () => {
 });
 
 async function api(port, path, options = {}) {
+  const capability = await apiCapability(port);
   const response = await fetch(`http://127.0.0.1:${port}${path}`, {
     method: options.method ?? "GET",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", "x-reigns-agent-capability": capability },
     body: options.body !== undefined ? JSON.stringify(options.body) : undefined
   });
   const text = await response.text();
@@ -441,9 +442,10 @@ async function api(port, path, options = {}) {
 }
 
 async function apiError(port, path, options = {}) {
+  const capability = await apiCapability(port);
   const response = await fetch(`http://127.0.0.1:${port}${path}`, {
     method: options.method ?? "GET",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", "x-reigns-agent-capability": capability },
     body: options.body !== undefined ? JSON.stringify(options.body) : undefined
   });
   const text = await response.text();
@@ -452,6 +454,23 @@ async function apiError(port, path, options = {}) {
     throw new Error("Expected API error");
   }
   return json.error;
+}
+
+const capabilityByPort = new Map();
+function apiCapability(port) {
+  if (!capabilityByPort.has(port)) {
+    capabilityByPort.set(port, fetch(`http://127.0.0.1:${port}/api/session`)
+      .then(async (response) => {
+        const payload = await response.json();
+        if (!response.ok || typeof payload?.capability !== "string") throw new Error(payload?.error?.message ?? "Creator API session could not be established");
+        return payload.capability;
+      })
+      .catch((error) => {
+        capabilityByPort.delete(port);
+        throw error;
+      }));
+  }
+  return capabilityByPort.get(port);
 }
 
 async function text(port, path) {

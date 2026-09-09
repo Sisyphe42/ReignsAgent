@@ -4,6 +4,8 @@ export function stringify(value) {
   return `${lines.join("\n").trim()}\n`;
 }
 
+const UNSAFE_KEYS = new Set(["__proto__", "prototype", "constructor"]);
+
 export function parse(source) {
   const root = {};
   let table = root;
@@ -14,13 +16,15 @@ export function parse(source) {
     if (section) {
       table = root;
       for (const part of section[1].split(".")) {
-        if (!isRecord(table[part])) table[part] = {};
+        assertSafeKey(part, index + 1);
+        if (!Object.hasOwn(table, part) || !isRecord(table[part])) table[part] = {};
         table = table[part];
       }
       continue;
     }
     const assignment = line.match(/^([A-Za-z0-9_-]+)\s*=\s*(.+)$/);
     if (!assignment) throw new Error(`Invalid TOML at line ${index + 1}`);
+    assertSafeKey(assignment[1], index + 1);
     table[assignment[1]] = parseValue(assignment[2], index + 1);
   }
   return root;
@@ -113,4 +117,8 @@ function stripComment(line) {
 
 function isRecord(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function assertSafeKey(key, line) {
+  if (UNSAFE_KEYS.has(key)) throw new Error(`Unsafe TOML key '${key}' at line ${line}`);
 }
