@@ -982,6 +982,23 @@ describe("AI endpoint response limits", () => {
     );
   });
 
+  it("allows the bounded JSON envelope to scale with requested OpenAI image outputs", async () => {
+    const encoded = Buffer.from([0x89, 0x50, 0x4e, 0x47]).toString("base64");
+    const singleOutputLimit = Math.ceil(50 * 1024 * 1024 * 4 / 3) + 1024 * 1024;
+    const result = await executeImageOperation({
+      config: { protocol: "openai_images", endpoint: "https://images.example/v1", modelId: "image-model" },
+      request: { operation: "generate", prompt: "Two courts", output: { format: "png", count: 2 } },
+      fetchImpl: async () => ({
+        ok: true,
+        status: 200,
+        headers: new Headers({ "content-type": "application/json", "content-length": String(singleOutputLimit + 1) }),
+        text: async () => JSON.stringify({ data: [{ b64_json: encoded }, { b64_json: encoded }] })
+      })
+    });
+
+    assert.equal(result.outputs.length, 2);
+  });
+
   it("attaches provider deadlines and reports timeout errors", async () => {
     await assert.rejects(
       () => listAiEndpointModels({

@@ -5208,7 +5208,7 @@ function BuildPanel({ editor, diagnostics, playerReady, build, releaseState, bus
                 <code>{release.buildId}</code>
               </div>
               <div className="action-row">
-                <a className="btn btn--compact" href={`/api/releases/${encodeURIComponent(release.id)}/artifact`}>{tr(locale, "Download")}</a>
+                <a className="btn btn--compact" href={release.downloadUrl}>{tr(locale, "Download")}</a>
                 <button className="btn btn--ghost btn--compact" type="button" onClick={() => void onDeleteRelease(release)}>{tr(locale, "Delete release")}</button>
               </div>
             </article>

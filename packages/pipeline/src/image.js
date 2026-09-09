@@ -7,7 +7,7 @@ const IMAGE_FORMATS = new Set(["png", "jpeg", "webp"]);
 const IMAGE_ROUTE_MODES = new Set(["auto", "api_root", "full_url"]);
 const MAX_OUTPUTS = 4;
 const MAX_IMAGE_OUTPUT_BYTES = 50 * 1024 * 1024;
-const MAX_IMAGE_JSON_RESPONSE_BYTES = Math.ceil(MAX_IMAGE_OUTPUT_BYTES * 4 / 3) + 1024 * 1024;
+const MAX_IMAGE_JSON_OVERHEAD_BYTES = 1024 * 1024;
 const IMAGE_ENDPOINT_TIMEOUT_MS = 5 * 60 * 1000;
 const MIDJOURNEY_POLL_INTERVAL_MS = 1500;
 const MIDJOURNEY_MAX_POLLS = 200;
@@ -259,7 +259,7 @@ async function callOpenAiImages({ config, request, inputs, apiKey, fetchImpl, si
     if (mask) body.append("mask", toBlob(mask), mask.name);
   }
   const response = await providerFetch(fetchImpl, url, { method: "POST", headers, body, signal });
-  const payload = await readJsonResponse(response, "OpenAI image");
+  const payload = await readJsonResponse(response, "OpenAI image", imageJsonResponseLimit(request.output.count));
   const data = Array.isArray(payload.data) ? payload.data : [];
   return {
     url,
@@ -484,11 +484,11 @@ async function providerFetch(fetchImpl, url, init, errorCode = "image_endpoint_n
   return response;
 }
 
-async function readJsonResponse(response, label) {
+async function readJsonResponse(response, label, maxBytes = imageJsonResponseLimit(1)) {
   let text;
   try {
     text = await readBoundedResponseText(response, {
-      maxBytes: MAX_IMAGE_JSON_RESPONSE_BYTES,
+      maxBytes,
       createLimitError: imageResponseLimitError
     });
   } catch (error) {
@@ -499,6 +499,10 @@ async function readJsonResponse(response, label) {
   } catch (error) {
     throw new ImagePipelineError(`${label} response was not valid JSON: ${error.message}`, "image_endpoint_parse_error");
   }
+}
+
+function imageJsonResponseLimit(outputCount) {
+  return Math.ceil(MAX_IMAGE_OUTPUT_BYTES * outputCount * 4 / 3) + MAX_IMAGE_JSON_OVERHEAD_BYTES;
 }
 
 async function readImageBytes(response) {

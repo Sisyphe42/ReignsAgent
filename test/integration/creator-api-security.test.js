@@ -36,6 +36,9 @@ describe("Creator API request trust boundary", () => {
     const wrongCapability = await fetch(`${address.origin}/api/editor`, { headers: { "x-reigns-agent-capability": "wrong" } });
     assert.equal(wrongCapability.status, 401);
 
+    const queryCapabilityOnNonDownload = await fetch(`${address.origin}/api/editor?_reignsAgentCapability=${encodeURIComponent(address.capability)}`);
+    assert.equal(queryCapabilityOnNonDownload.status, 401);
+
     const textPlainMutation = await fetch(`${address.origin}/api/editor/metadata`, {
       method: "PATCH",
       headers: { "content-type": "text/plain", "x-reigns-agent-capability": address.capability },

@@ -562,7 +562,10 @@ async function handleApi(req, res, url) {
   if (path === "/api/releases" && req.method === "GET") {
     return sendJson(res, {
       capability: await windowsReleaseCapability({ enabled: enableWindowsRelease, playerHostPath: resolvedWindowsPlayerHostPath }),
-      releases: await workspace.listReleases()
+      releases: (await workspace.listReleases()).map((release) => ({
+        ...release,
+        downloadUrl: releaseArtifactUrl(release.id)
+      }))
     });
   }
 
@@ -881,6 +884,11 @@ function projectAssetUrl(uri) {
   return `/api/project-assets/${encodeURIComponent(uri)}?${query}`;
 }
 
+function releaseArtifactUrl(releaseId) {
+  const query = new URLSearchParams({ [API_CAPABILITY_QUERY]: apiCapability });
+  return `/api/releases/${encodeURIComponent(releaseId)}/artifact?${query}`;
+}
+
 function assertTrustedHost(hostHeader) {
   if (typeof hostHeader !== "string" || !trustedRequestHosts.has(hostHeader.toLowerCase())) {
     throw apiError("Request Host is not allowed", "request_host_forbidden", 403);
@@ -902,7 +910,9 @@ function assertLocalOrigin(originHeader) {
 
 function assertApiCapability(req, url) {
   const header = req.headers[API_CAPABILITY_HEADER];
-  const query = url.pathname.startsWith("/api/project-assets/")
+  const queryAllowed = url.pathname.startsWith("/api/project-assets/")
+    || /^\/api\/releases\/[^/]+\/artifact$/.test(url.pathname);
+  const query = queryAllowed
     ? url.searchParams.get(API_CAPABILITY_QUERY)
     : null;
   const supplied = typeof header === "string" ? header : query;
