@@ -24,7 +24,7 @@ describe("hosted Creator build", () => {
     const browserBuild = files.find((file) => /^assets\/browser-build-.*\.js$/.test(file));
     assert.ok(browserBuild, "missing browser player builder");
     const browserBuildSource = await readFile(join(ROOT, browserBuild), "utf8");
-    for (const asset of ["castle.svg", "coins.svg", "ATTRIBUTION.md"]) {
+    for (const asset of ["castle.svg", "coins.svg", "fog-harbor-first-fog.svg", "ATTRIBUTION.md"]) {
       assert.match(browserBuildSource, new RegExp(asset.replace(".", "\\.")));
       assert.ok(files.includes(`assets/sample/${asset}`), `missing Hosted sample asset '${asset}'`);
     }

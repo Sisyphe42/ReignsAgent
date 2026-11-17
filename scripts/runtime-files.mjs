@@ -60,7 +60,8 @@ export function validateCreatorRuntime(files, runtimeRoot) {
     "packages/interface/src/index.js",
     "packages/workspace/src/index.js",
     "packages/interface/web/player.html",
-    "fixtures/content/oss-court.cards.json"
+    "fixtures/content/oss-court.cards.json",
+    "fixtures/content/fog-harbor.cards.json"
   ];
   for (const requiredPath of required) {
     if (!names.includes(requiredPath)) {

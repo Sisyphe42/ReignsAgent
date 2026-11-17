@@ -104,7 +104,7 @@ Use the on-screen arrows, `Left`/`Right`, or `Space` to move between steps; `Esc
 
 Use the **Project** menu in the top bar to choose one of these starting points:
 
-1. **New from sample** clones the bundled Open Court sample into an editable project. This is the recommended first run because it demonstrates branching requirements, story groups, localized content, custom gauge labels, art bindings, endings, and a player-ready deck.
+1. **New from sample** clones a bundled sample into an editable project. Two samples are bundled: **Open Court** (English and Simplified Chinese) and **Fog Harbor** (雾港, Simplified Chinese only, 20 cards with original illustrations and tag-driven story chains). Open Court is the recommended first run because it demonstrates branching requirements, story groups, localized content, custom gauge labels, art bindings, endings, and a player-ready deck.
 2. **New blank project** creates an empty project for original work.
 3. **Import project** in **Content** imports a project/content bundle from a local file. The Hosted PWA also exposes workspace and active-project ZIP import/export under **Settings → Browser Persistence**.
 4. Selecting an existing project switches the active workspace. Deletion is project-scoped and requires confirmation.

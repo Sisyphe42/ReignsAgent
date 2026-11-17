@@ -80,6 +80,7 @@ function validateReleaseFiles(files) {
     "packages/workspace/src/index.js",
     "packages/interface/web/player.html",
     "fixtures/content/oss-court.cards.json",
+    "fixtures/content/fog-harbor.cards.json",
     "start.mjs",
     "start.cmd",
     "start.sh",

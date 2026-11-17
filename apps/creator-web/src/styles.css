@@ -683,6 +683,17 @@ select {
   border-top: 1px solid var(--border);
 }
 
+.project-menu__group-label {
+  padding: 6px 10px 2px;
+  color: var(--muted, var(--ink));
+  font-size: 0.75rem;
+  opacity: 0.7;
+}
+
+.project-menu__popover .project-menu__sample {
+  padding-left: 18px;
+}
+
 .project-menu__popover button {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

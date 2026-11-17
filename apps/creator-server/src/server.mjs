@@ -35,6 +35,8 @@ import { createWorkspaceStore } from "../../../packages/workspace/src/index.js";
 import { buildWindowsPlayerRelease, windowsReleaseCapability } from "./windows-release.mjs";
 
 const DEFAULT_ROOT = fileURLToPath(new URL("../../..", import.meta.url));
+const DEFAULT_SAMPLE_ID = "oss-court";
+const BUNDLED_SAMPLE_FILES = { "fog-harbor": "fixtures/content/fog-harbor.cards.json" };
 const API_CAPABILITY_HEADER = "x-reigns-agent-capability";
 const API_CAPABILITY_QUERY = "_reignsAgentCapability";
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
@@ -105,7 +107,7 @@ const resolvedWindowsPlayerHostPath = resolve(windowsPlayerHostPath);
 const temporaryDataRoot = dataRoot ? null : await mkdtemp(join(tmpdir(), "reigns-creator-"));
 const workspace = await createWorkspaceStore({
   dataRoot: dataRoot ?? temporaryDataRoot,
-  initialBundle: initialBundle ?? await readDefaultSample()
+  initialBundle: initialBundle ?? await readSample(DEFAULT_SAMPLE_ID)
 });
 const store = new SessionState(await workspace.readActiveBundle());
 const imageDrafts = new Map();
@@ -181,7 +183,11 @@ async function handleApi(req, res, url) {
 
   if (path === "/api/projects" && req.method === "POST") {
     const source = body?.source === "sample" ? "sample" : "blank";
-    const bundle = body?.bundle ?? (source === "sample" ? await readDefaultSample() : undefined);
+    let bundle = body?.bundle;
+    if (bundle === undefined && source === "sample") {
+      bundle = await readSample(typeof body?.sample === "string" ? body.sample : DEFAULT_SAMPLE_ID);
+      if (!bundle) throw apiError("Unknown sample", "sample_not_found", 404);
+    }
     const project = await workspace.createProject({ bundle, source });
     store.loadEditor(await workspace.readActiveBundle());
     return sendJson(res, { project, projects: await workspace.listProjects() });
@@ -218,8 +224,15 @@ async function handleApi(req, res, url) {
     });
   }
 
-  if (path === "/api/samples/oss-court" && req.method === "GET") {
-    return sendJson(res, JSON.parse(await readFile(samplePath, "utf8")));
+  if (path === "/api/samples" && req.method === "GET") {
+    return sendJson(res, { samples: await listSamples() });
+  }
+
+  const sampleMatch = path.match(/^\/api\/samples\/([a-z0-9-]+)$/);
+  if (sampleMatch && req.method === "GET") {
+    const sample = await readSample(sampleMatch[1]);
+    if (!sample) throw apiError("Unknown sample", "sample_not_found", 404);
+    return sendJson(res, sample);
   }
 
   if (path === "/api/editor/import" && req.method === "POST") {
@@ -739,12 +752,23 @@ function sendJson(res, payload) {
   res.end(body);
 }
 
-async function readDefaultSample() {
+async function readSample(id) {
+  const file = id === DEFAULT_SAMPLE_ID ? samplePath : (Object.hasOwn(BUNDLED_SAMPLE_FILES, id) ? BUNDLED_SAMPLE_FILES[id] : null);
+  if (!file) return null;
   try {
-    return JSON.parse(await readFile(samplePath, "utf8"));
+    return JSON.parse(await readFile(id === DEFAULT_SAMPLE_ID ? file : join(rootDir, file), "utf8"));
   } catch {
-    return { cards: [] };
+    return id === DEFAULT_SAMPLE_ID ? { cards: [] } : null;
   }
+}
+
+async function listSamples() {
+  const samples = [];
+  for (const id of [DEFAULT_SAMPLE_ID, ...Object.keys(BUNDLED_SAMPLE_FILES)]) {
+    const bundle = await readSample(id);
+    if (bundle) samples.push({ id, title: bundle.metadata?.title ?? id, description: bundle.metadata?.description ?? "", cardCount: bundle.cards?.length ?? 0 });
+  }
+  return samples;
 }
 
 function matchProjectPath(path) {
@@ -810,7 +834,11 @@ async function resolveImageCredentials(credentials, config) {
 }
 
 async function sendProjectAsset(res, uri) {
-  const bytes = await workspace.readActiveProjectAsset(uri);
+  let bytes = await workspace.readActiveProjectAsset(uri);
+  if (!bytes && /^assets\/sample\/[A-Za-z0-9._-]+$/.test(uri) && !uri.includes("..")) {
+    // Bundled sample art ships with the interface, not with each project copy.
+    bytes = await readFile(join(resolvedInterfaceWebRoot, uri)).catch(() => null);
+  }
   if (!bytes) throw apiError("Project asset was not found", "project_asset_not_found");
   const extension = extname(uri).toLowerCase();
   res.writeHead(200, {

@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+<defs>
+  <linearGradient id="night" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#171b33"/><stop offset=".55" stop-color="#343f72"/><stop offset="1" stop-color="#5a6699"/>
+  </linearGradient>
+  <linearGradient id="dusk" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#343f72"/><stop offset=".6" stop-color="#5a6699"/><stop offset="1" stop-color="#9aa3cf"/>
+  </linearGradient>
+  <linearGradient id="dawn" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#7f8fd0"/><stop offset=".5" stop-color="#f3c9b4"/><stop offset="1" stop-color="#ffe2a8"/>
+  </linearGradient>
+  <linearGradient id="room" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#232a4d"/><stop offset="1" stop-color="#343f72"/>
+  </linearGradient>
+  <linearGradient id="sea" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#343f72"/><stop offset="1" stop-color="#171b33"/>
+  </linearGradient>
+  <radialGradient id="glow" cx=".5" cy=".5" r=".5">
+    <stop offset="0" stop-color="#ffd27a" stop-opacity=".95"/><stop offset=".35" stop-color="#f6ad3c" stop-opacity=".45"/><stop offset="1" stop-color="#f6ad3c" stop-opacity="0"/>
+  </radialGradient>
+  <linearGradient id="beam" x1="0" y1="0" x2="1" y2="0">
+    <stop offset="0" stop-color="#ffd27a" stop-opacity=".85"/><stop offset="1" stop-color="#ffd27a" stop-opacity="0"/>
+  </linearGradient>
+  <filter id="soft" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="26"/></filter>
+  <filter id="soft2" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="9"/></filter>
+  <filter id="grain" x="0" y="0" width="100%" height="100%">
+    <feTurbulence type="fractalNoise" baseFrequency=".9" numOctaves="2" seed="7" result="n"/>
+    <feColorMatrix in="n" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -1.1 .62"/>
+  </filter>
+  
+</defs>
+
+  <rect width="1024" height="1024" fill="url(#night)"/><g filter="url(#soft)" opacity="0.5"><ellipse cx="256" cy="260" rx="512" ry="46" fill="#c5cae8"/><ellipse cx="819.2" cy="290" rx="460.8" ry="40" fill="#c5cae8"/></g>
+  <path d="M 720 330 Q 820 470 720 610" fill="none" stroke="#ffd27a" stroke-width="22" stroke-linecap="round" opacity="0.9"/><path d="M 800 270 Q 920 470 800 670" fill="none" stroke="#ffd27a" stroke-width="18" stroke-linecap="round" opacity="0.65"/><path d="M 880 210 Q 1020 470 880 730" fill="none" stroke="#ffd27a" stroke-width="14" stroke-linecap="round" opacity="0.4"/>
+  <rect x="150" y="760" width="520" height="264" fill="#171b33"/><rect x="130" y="740" width="560" height="40" rx="8" fill="#5a6699"/>
+  <rect x="330" y="560" width="60" height="190" fill="#232a4d"/>
+  <g transform="translate(360 470)">
+    <path d="M -150 -46 L 60 -60 L 330 -200 L 330 200 L 60 60 L -150 46 Z" fill="#f6ad3c"/>
+    <path d="M 60 0 L 330 0 L 330 200 L 60 60 Z" fill="#5f3d33" opacity=".35"/>
+    <ellipse cx="330" cy="0" rx="46" ry="200" fill="#ffd27a"/><ellipse cx="330" cy="0" rx="26" ry="150" fill="#5f3d33"/>
+    <rect x="-200" y="-60" width="70" height="120" rx="14" fill="#171b33"/>
+  </g>
+  <g filter="url(#soft)" opacity="0.6"><ellipse cx="256" cy="940" rx="512" ry="46" fill="#c5cae8"/><ellipse cx="819.2" cy="970" rx="460.8" ry="40" fill="#c5cae8"/></g>
+
+<rect width="1024" height="1024" filter="url(#grain)" fill="#171b33" opacity=".32"/>
+</svg>

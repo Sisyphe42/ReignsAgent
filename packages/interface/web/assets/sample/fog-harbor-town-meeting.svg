@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+<defs>
+  <linearGradient id="night" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#171b33"/><stop offset=".55" stop-color="#343f72"/><stop offset="1" stop-color="#5a6699"/>
+  </linearGradient>
+  <linearGradient id="dusk" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#343f72"/><stop offset=".6" stop-color="#5a6699"/><stop offset="1" stop-color="#9aa3cf"/>
+  </linearGradient>
+  <linearGradient id="dawn" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#7f8fd0"/><stop offset=".5" stop-color="#f3c9b4"/><stop offset="1" stop-color="#ffe2a8"/>
+  </linearGradient>
+  <linearGradient id="room" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#232a4d"/><stop offset="1" stop-color="#343f72"/>
+  </linearGradient>
+  <linearGradient id="sea" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#343f72"/><stop offset="1" stop-color="#171b33"/>
+  </linearGradient>
+  <radialGradient id="glow" cx=".5" cy=".5" r=".5">
+    <stop offset="0" stop-color="#ffd27a" stop-opacity=".95"/><stop offset=".35" stop-color="#f6ad3c" stop-opacity=".45"/><stop offset="1" stop-color="#f6ad3c" stop-opacity="0"/>
+  </radialGradient>
+  <linearGradient id="beam" x1="0" y1="0" x2="1" y2="0">
+    <stop offset="0" stop-color="#ffd27a" stop-opacity=".85"/><stop offset="1" stop-color="#ffd27a" stop-opacity="0"/>
+  </linearGradient>
+  <filter id="soft" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="26"/></filter>
+  <filter id="soft2" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="9"/></filter>
+  <filter id="grain" x="0" y="0" width="100%" height="100%">
+    <feTurbulence type="fractalNoise" baseFrequency=".9" numOctaves="2" seed="7" result="n"/>
+    <feColorMatrix in="n" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -1.1 .62"/>
+  </filter>
+  
+</defs>
+
+  <rect width="1024" height="1024" fill="url(#room)"/>
+  <path d="M 512 0 L 512 150" stroke="#171b33" stroke-width="10"/>
+  <circle cx="512" cy="230" r="460" fill="url(#glow)"/>
+  <path d="M 432 170 L 592 170 L 640 260 L 384 260 Z" fill="#171b33"/><ellipse cx="512" cy="264" rx="90" ry="26" fill="#ffd27a"/>
+  <g transform="translate(110 1060)"><circle cx="0" cy="-452.4" r="67.60000000000001" fill="#171b33"/><path d="M -104 0 L -83.2 -322.4 Q 0 -416 83.2 -322.4 L 104 0 Z" fill="#171b33"/></g><g transform="translate(300 1060)"><circle cx="0" cy="-487.2" r="72.8" fill="#171b33"/><path d="M -112 0 L -89.60000000000001 -347.2 Q 0 -448 89.60000000000001 -347.2 L 112 0 Z" fill="#171b33"/></g><g transform="translate(500 1060)"><circle cx="0" cy="-435" r="65" fill="#171b33"/><path d="M -100 0 L -80 -310 Q 0 -400 80 -310 L 100 0 Z" fill="#171b33"/></g><g transform="translate(700 1060)"><circle cx="0" cy="-478.5" r="71.5" fill="#171b33"/><path d="M -110 0 L -88 -341 Q 0 -440 88 -341 L 110 0 Z" fill="#171b33"/></g><g transform="translate(900 1060)"><circle cx="0" cy="-443.7" r="66.3" fill="#171b33"/><path d="M -102 0 L -81.60000000000001 -316.2 Q 0 -408 81.60000000000001 -316.2 L 102 0 Z" fill="#171b33"/></g>
+  <g transform="translate(200 700) rotate(-12)"><rect x="-26" y="-40" width="52" height="330" rx="24" fill="#232a4d"/><rect x="-44" y="-150" width="88" height="130" rx="36" fill="#f7f0e1"/><rect x="-44" y="-150" width="88" height="130" rx="36" fill="#f6ad3c" opacity=".25"/></g><g transform="translate(400 640) rotate(6)"><rect x="-26" y="-40" width="52" height="330" rx="24" fill="#232a4d"/><rect x="-44" y="-150" width="88" height="130" rx="36" fill="#f7f0e1"/><rect x="-44" y="-150" width="88" height="130" rx="36" fill="#f6ad3c" opacity=".25"/></g><g transform="translate(610 690) rotate(-4)"><rect x="-26" y="-40" width="52" height="330" rx="24" fill="#232a4d"/><rect x="-44" y="-150" width="88" height="130" rx="36" fill="#f7f0e1"/><rect x="-44" y="-150" width="88" height="130" rx="36" fill="#f6ad3c" opacity=".25"/></g><g transform="translate(800 650) rotate(10)"><rect x="-26" y="-40" width="52" height="330" rx="24" fill="#232a4d"/><rect x="-44" y="-150" width="88" height="130" rx="36" fill="#f7f0e1"/><rect x="-44" y="-150" width="88" height="130" rx="36" fill="#f6ad3c" opacity=".25"/></g>
+
+<rect width="1024" height="1024" filter="url(#grain)" fill="#171b33" opacity=".32"/>
+</svg>

@@ -104,7 +104,7 @@ Get-FileHash .\ReignsAgent-win32-x64-0.1.0.zip -Algorithm SHA256
 
 使用顶部栏的 **Project** 菜单选择起点：
 
-1. **New from sample** 会把内置 Open Court 示例克隆成可编辑项目。首次体验推荐选择它，因为它同时演示分支 requirements、story groups、本地化内容、自定义 gauge 标签、素材绑定、endings 和 player-ready 卡组。
+1. **New from sample** 会把内置示例克隆成可编辑项目。内置两个示例：**Open Court**（英文与简体中文）和 **雾港**（Fog Harbor，仅简体中文，20 张卡，原创插画，标签驱动的剧情线）。首次体验推荐 Open Court，因为它同时演示分支 requirements、story groups、本地化内容、自定义 gauge 标签、素材绑定、endings 和 player-ready 卡组。
 2. **New blank project** 创建一个用于原创内容的空项目。
 3. **Import project** 位于 **Content**，用于从本地文件导入项目或 content bundle。Hosted PWA 还在 **Settings → Browser Persistence** 提供 Workspace ZIP 与当前项目 ZIP 的导入导出。
 4. 选择现有项目会切换活动 Workspace；删除只作用于当前项目，并需要确认。

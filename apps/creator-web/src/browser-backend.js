@@ -1,4 +1,7 @@
 import sampleBundle from "../../../fixtures/content/oss-court.cards.json";
+import fogHarborBundle from "../../../fixtures/content/fog-harbor.cards.json";
+
+const BUNDLED_SAMPLES = { "oss-court": sampleBundle, "fog-harbor": fogHarborBundle };
 import {
   applyAiEditPlan, applyImageDraftAsset, buildAiEditPlanAsync, buildImageOperationDraft, buildGenerationPlan, createConnectorConfig, createPlaySession,
   deriveStoryGroups, deriveTagCatalog, getCardGraph, listAiEditEndpointModels, loadEditorFromContent,
@@ -25,12 +28,14 @@ export class BrowserCreatorBackend {
     if (path === "/api/workspace" && method === "GET") return this.workspace.getWorkspaceState();
     if (path === "/api/workspace" && method === "PATCH") return this.workspace.updateWorkspaceState(body ?? {});
     if (path === "/api/projects" && method === "GET") return { projects: await this.workspace.listProjects() };
-    if (path === "/api/projects" && method === "POST") { const source = body?.source === "sample" ? "sample" : "blank"; const project = await this.workspace.createProject({ bundle: body?.bundle ?? (source === "sample" ? sampleBundle : undefined), source }); await this.#reload(); return { project, projects: await this.workspace.listProjects() }; }
+    if (path === "/api/projects" && method === "POST") { const source = body?.source === "sample" ? "sample" : "blank"; const project = await this.workspace.createProject({ bundle: body?.bundle ?? (source === "sample" ? resolveSample(body?.sample) : undefined), source }); await this.#reload(); return { project, projects: await this.workspace.listProjects() }; }
     const project = path.match(/^\/api\/projects\/([^/]+)(?:\/(open))?$/);
     if (project && method === "POST" && project[2] === "open") { const result = await this.workspace.openProject(decodeURIComponent(project[1])); await this.#reload(); return { project: result }; }
     if (project && method === "PATCH" && !project[2]) { await this.workspace.openProject(decodeURIComponent(project[1])); await this.#reload(); if (typeof body?.title === "string") this.editor.setMetadata({ title: body.title }); await this.#persist(); return { project: (await this.workspace.listProjects()).find((entry) => entry.id === decodeURIComponent(project[1])) }; }
     if (project && method === "DELETE" && !project[2]) { const result = await this.workspace.deleteProject(decodeURIComponent(project[1])); await this.#reload(); return { ...result, projects: await this.workspace.listProjects() }; }
-    if (path === "/api/samples/oss-court" && method === "GET") return clone(sampleBundle);
+    if (path === "/api/samples" && method === "GET") return { samples: Object.entries(BUNDLED_SAMPLES).map(([id, bundle]) => ({ id, title: bundle.metadata?.title ?? id, description: bundle.metadata?.description ?? "", cardCount: bundle.cards?.length ?? 0 })) };
+    const sampleRoute = path.match(/^\/api\/samples\/([a-z0-9-]+)$/);
+    if (sampleRoute && method === "GET") return resolveSample(sampleRoute[1]);
     if (path === "/api/editor" && method === "GET") return this.#editorProjection();
     if (path === "/api/editor/import" && method === "POST") { this.#replace(body?.bundle ?? body?.content ?? body); await this.#persist(); return { imported: true, cardCount: this.editor.cardCount(), validation: this.editor.validate() }; }
     if (path === "/api/editor/snapshot" && method === "GET") return { bundle: this.editor.toBundle(), validation: this.editor.validate() };
@@ -99,3 +104,7 @@ function playProjection(sessionId, session, card, metadata, result = null) { con
 async function corsFetch(input, init) { const url = new URL(typeof input === "string" ? input : input.url, location.href); if (location.protocol === "https:" && url.protocol !== "https:" && !["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)) throw backendError("HTTPS Creator cannot call an insecure AI endpoint. Use HTTPS or localhost.", "mixed_content_blocked"); try { return await fetch(input, init); } catch (error) { throw backendError(`The AI endpoint could not be reached. Confirm that it allows CORS for ${location.origin} and permits Authorization and Content-Type headers.`, "cors_or_network_error"); } }
 function stagedInputDraftIds(request) { return [...new Set([...(request?.references ?? []), request?.mask].filter((uri) => typeof uri === "string" && uri.startsWith("assets/.drafts/")).map((uri) => uri.split("/")[2]).filter(Boolean))]; }
 function clone(value) { return JSON.parse(JSON.stringify(value)); }
+function resolveSample(id = "oss-court") {
+  if (typeof id !== "string" || !Object.hasOwn(BUNDLED_SAMPLES, id)) throw backendError("Unknown sample", "sample_not_found");
+  return clone(BUNDLED_SAMPLES[id]);
+}
