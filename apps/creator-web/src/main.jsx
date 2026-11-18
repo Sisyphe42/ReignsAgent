@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { SKINS as SKIN_CATALOG, DEFAULT_SKIN, applySkinTheme, resolveSkinId as resolveSharedSkinId } from "../../../packages/interface/web/skin-catalog.js";
 import { cardArtworkStyle, normalizeCardArtworkDisplay } from "../../../packages/interface/web/assets/card-artwork.js";
@@ -635,7 +635,7 @@ function SelectChevronIcon({ className = "" }) {
   );
 }
 
-function ProjectMenu({ locale, projects, activeProjectId, onOpen, onCreate, onDelete }) {
+function ProjectMenu({ locale, projects, samples = [], activeProjectId, onOpen, onCreate, onDelete }) {
   const activeProject = projects.find((project) => project.id === activeProjectId) ?? null;
   const closeMenu = (element) => element.closest("details")?.removeAttribute("open");
   return (
@@ -662,7 +662,24 @@ function ProjectMenu({ locale, projects, activeProjectId, onOpen, onCreate, onDe
           </div>
           <div className="project-menu__actions">
             <button type="button" onClick={(event) => { closeMenu(event.currentTarget); void onCreate("blank"); }}>{tr(locale, "New blank project")}</button>
-            <button type="button" onClick={(event) => { closeMenu(event.currentTarget); void onCreate("sample"); }}>{tr(locale, "New from sample")}</button>
+            {samples.length > 1 ? (
+              <>
+                <span className="project-menu__group-label">{tr(locale, "New from sample")}</span>
+                {samples.map((sample) => (
+                  <button
+                    key={sample.id}
+                    type="button"
+                    className="project-menu__sample"
+                    title={sample.description || undefined}
+                    onClick={(event) => { closeMenu(event.currentTarget); void onCreate("sample", sample.id); }}
+                  >
+                    <span>{sample.title}</span>
+                  </button>
+                ))}
+              </>
+            ) : (
+              <button type="button" onClick={(event) => { closeMenu(event.currentTarget); void onCreate("sample"); }}>{tr(locale, "New from sample")}</button>
+            )}
             <button className="project-menu__danger" type="button" onClick={(event) => { closeMenu(event.currentTarget); void onDelete(); }}>{tr(locale, "Delete project")}</button>
           </div>
         </div>
@@ -1084,6 +1101,7 @@ function App() {
   const [hasSavedImageApiKey, setHasSavedImageApiKey] = useState(false);
   const [imageCapabilities, setImageCapabilities] = useState(null);
   const [projects, setProjects] = useState([]);
+  const [samples, setSamples] = useState([]);
   const [activeProjectId, setActiveProjectId] = useState(null);
   const [configReady, setConfigReady] = useState(false);
   const [aiDraftRequest, setAiDraftRequest] = useState(null);
@@ -1231,10 +1249,11 @@ function App() {
   }, [activePanel, configReady, initialUrlState.hasExplicitPanel]);
 
   async function loadCreatorState() {
-    const [nextEditor, config, projectResult, workspaceState, nextReleases] = await Promise.all([
+    const [nextEditor, config, projectResult, sampleResult, workspaceState, nextReleases] = await Promise.all([
       api("/api/editor"),
       api("/api/config"),
       api("/api/projects"),
+      api("/api/samples").catch(() => ({ samples: [] })),
       api("/api/workspace"),
       import.meta.env.VITE_CREATOR_HOST === "browser"
         ? Promise.resolve({ capability: { windowsX64: false, reason: "hosted_web" }, releases: [] })
@@ -1242,6 +1261,7 @@ function App() {
     ]);
     setEditor(nextEditor);
     setProjects(projectResult.projects ?? []);
+    setSamples(sampleResult.samples ?? []);
     setActiveProjectId(config.activeProjectId);
     setReleaseState(nextReleases);
     setHasSavedApiKey(Boolean(config.ai?.hasApiKey));
@@ -1376,9 +1396,9 @@ function App() {
     setActiveProjectId(config.activeProjectId);
   }
 
-  async function createProject(source) {
+  async function createProject(source, sample) {
     await runAction("Creating project", async () => {
-      await api("/api/projects", { method: "POST", body: { source } });
+      await api("/api/projects", { method: "POST", body: sample ? { source, sample } : { source } });
       historyRef.current = [];
       setHistoryDepth(0);
       await Promise.all([refreshEditor({ statusMessage: "Project created" }), refreshProjects(), refreshReleases()]);
@@ -1734,6 +1754,7 @@ function App() {
         <ProjectMenu
           locale={locale}
           projects={projects}
+          samples={samples}
           activeProjectId={activeProjectId}
           onOpen={openProject}
           onCreate={createProject}
@@ -5299,25 +5320,47 @@ function AiAssistPreflight({ request, aiConfigured, diagnostics, onChange, onClo
 
 function useProjectAssetUrl(asset) {
   const [src, setSrc] = useState("");
+  const [reloadToken, setReloadToken] = useState(0);
+  const reload = useCallback(() => setReloadToken((token) => token + 1), []);
   useEffect(() => {
     let active = true;
     setSrc("");
-    void creatorBackendPromise.then((backend) => backend.assetUrl(asset?.uri)).then((url) => { if (active) setSrc(url); }).catch(() => { if (active) setSrc(asset?.uri ? `${import.meta.env.BASE_URL}${asset.uri}` : ""); });
+    void creatorBackendPromise
+      .then(async (backend) => {
+        // A reload only happens after a failed image load; refresh the session
+        // first so capability-signed (server) or object (browser) URLs are
+        // re-issued against the current backend state.
+        if (reloadToken > 0) await backend.refreshSession?.();
+        return backend.assetUrl(asset?.uri);
+      })
+      .then((url) => { if (active) setSrc(url); })
+      .catch(() => { if (active) setSrc(asset?.uri ? `${import.meta.env.BASE_URL}${asset.uri}` : ""); });
     return () => { active = false; };
-  }, [asset?.uri]);
-  return src;
+  }, [asset?.uri, reloadToken]);
+  return [src, reload];
 }
 
 function ProjectAssetImage({ asset, alt = "" }) {
-  const src = useProjectAssetUrl(asset);
+  const [src] = useProjectAssetUrl(asset);
   return src ? <img src={src} alt={alt} /> : <span className="art-placeholder" />;
 }
 
 function CardArtwork({ asset, alt = "", className = "" }) {
-  const src = useProjectAssetUrl(asset);
+  const [src, reload] = useProjectAssetUrl(asset);
   const [failed, setFailed] = useState(false);
+  const retriedRef = useRef(false);
   const normalized = cardArtworkStyle(asset);
   useEffect(() => setFailed(false), [src]);
+  useEffect(() => { retriedRef.current = false; }, [asset?.uri]);
+  function handleImageError() {
+    setFailed(true);
+    if (retriedRef.current) return;
+    // Recover once from a transient load failure (rotated capability token,
+    // restarted backend, momentary asset miss) instead of hiding the artwork
+    // until the asset URI changes or the page reloads.
+    retriedRef.current = true;
+    window.setTimeout(() => reload(), 600);
+  }
   if (!src || failed) return <span className={`art-placeholder ${className}`.trim()} />;
   return (
     <span
@@ -5326,7 +5369,7 @@ function CardArtwork({ asset, alt = "", className = "" }) {
       style={normalized.style}
     >
       <img className="card-artwork__backdrop" src={src} alt="" aria-hidden="true" />
-      <img className="card-artwork__image" src={src} alt={alt} onError={() => setFailed(true)} />
+      <img className="card-artwork__image" src={src} alt={alt} onError={handleImageError} />
     </span>
   );
 }

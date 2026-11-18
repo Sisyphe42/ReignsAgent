@@ -2,13 +2,25 @@ export class HttpCreatorBackend {
   #capabilityPromise;
 
   async request(path, options = {}) {
+    try {
+      return await this.#send(path, options, await this.#capability());
+    } catch (error) {
+      if (error?.code !== "api_capability_required") throw error;
+      // The Creator Server rotates its capability token on restart. A stale
+      // token is rejected before any handler runs, so one refresh + retry
+      // recovers every request without side effects.
+      return this.#send(path, options, await this.refreshSession());
+    }
+  }
+
+  async #send(path, options, capability) {
     let requestPath = path;
-    let headers = { "content-type": "application/json", "x-reigns-agent-capability": await this.#capability() };
+    let headers = { "content-type": "application/json", "x-reigns-agent-capability": capability };
     let body = options.body !== undefined ? JSON.stringify(options.body) : undefined;
     if (path === "/api/ai/images/stage" && options.body) {
       const query = new URLSearchParams({ draftId: options.body.draftId ?? "", fileName: options.body.fileName ?? "input.png" });
       requestPath = `${path}?${query}`;
-      headers = { "content-type": options.body.mimeType ?? "application/octet-stream", "x-reigns-agent-capability": await this.#capability() };
+      headers = { "content-type": options.body.mimeType ?? "application/octet-stream", "x-reigns-agent-capability": capability };
       body = options.body.bytes;
     }
     const response = await fetch(requestPath, { method: options.method ?? "GET", headers, body, signal: options.signal });
@@ -17,10 +29,16 @@ export class HttpCreatorBackend {
     if (!response.ok || json?.error) throw backendError(json?.error?.message ?? `Request failed: ${response.status}`, json?.error?.code);
     return json;
   }
+
   async assetUrl(uri) {
     if (!uri) return "";
     const query = new URLSearchParams({ _reignsAgentCapability: await this.#capability() });
     return `/api/project-assets/${encodeURIComponent(uri)}?${query}`;
+  }
+
+  async refreshSession() {
+    this.#capabilityPromise = undefined;
+    return this.#capability();
   }
 
   #capability() {

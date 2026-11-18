@@ -16,3 +16,7 @@ Included assets:
 - `church.svg`: Church icon by Delapouite.
 - `gate.svg`: Gate icon by Delapouite.
 - `book-cover.svg`: Book Cover icon by Delapouite.
+
+# Fog Harbor Sample Art
+
+The `fog-harbor-*.svg` files in this directory are original hand-written SVG scenes made for the bundled Fog Harbor (雾港) sample. They are project-owned artwork, not derived from third-party icons, and are covered by the repository license.

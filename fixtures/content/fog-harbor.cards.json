@@ -1,0 +1,1366 @@
+{
+  "metadata": {
+    "title": "雾港",
+    "version": "1.0.0",
+    "author": "演示项目",
+    "description": "你是雾港新任的港务长。灯油、渔民、商会和议会，每一夜只能顾上一头。",
+    "i18n": {
+      "defaultLocale": "zh-Hans",
+      "supportedLocales": [
+        "zh-Hans"
+      ]
+    },
+    "tagLabels": {
+      "onWatch": "已到任",
+      "lampAllNight": "整夜长明",
+      "lampRationed": "整点亮灯",
+      "oilDebt": "欠油商的账",
+      "oilRefused": "谢绝赊账",
+      "noticeEnforced": "告示重贴",
+      "noticeSoftened": "改半点亮灯",
+      "berthSold": "东泊位让出",
+      "taxPledged": "港务税抵账",
+      "reserveBurned": "备用油烧尽",
+      "shipsWaited": "船在外海过夜",
+      "boatSearched": "拦过暗船",
+      "boatIgnored": "放过暗船",
+      "seized": "烟草扣押",
+      "hushed": "补税放人",
+      "giftTaken": "收下无名灯油",
+      "giftDeclared": "灯油上交登记",
+      "recordsOpen": "记录全数交出",
+      "recordsCooked": "交了誊过的记录",
+      "harborClosed": "封港一天",
+      "fleetSailed": "船队出海",
+      "searchSent": "拖船出海搜救",
+      "searchDelayed": "搜救拖到天亮",
+      "whaleSaved": "鲸回到海里",
+      "whaleSold": "鲸卖给油商",
+      "fundSet": "抚恤金设立",
+      "fundDeferred": "抚恤金待表决",
+      "dredging": "航道疏浚",
+      "dredgeDeferred": "疏浚暂缓",
+      "netsPaid": "渔网获赔",
+      "crowdDispersed": "渔民被劝散",
+      "foghornOn": "蒸汽雾号",
+      "bellKept": "继续敲钟",
+      "keeperDaughter": "女儿接任守灯人",
+      "keeperOutsider": "外聘守灯人",
+      "auditFaced": "账目摊开",
+      "auditCovered": "商会担保",
+      "endorsed": "渔会推举连任",
+      "coalition": "两边各出副手",
+      "endingLogged": "写进港志",
+      "endingQuiet": "熄灯回家",
+      "quarantineLifted": "检疫解除",
+      "warehouseChecked": "医生先进仓",
+      "warehouseOpened": "七号仓卸货"
+    },
+    "presentation": {
+      "schemaVersion": 1,
+      "gauges": {
+        "gauge0": {
+          "label": "商会",
+          "description": "货主、油商和轮船公司怎么看你。"
+        },
+        "gauge1": {
+          "label": "渔民",
+          "description": "渔会和码头上的人怎么看你。"
+        },
+        "gauge2": {
+          "label": "灯油",
+          "description": "灯塔还能亮多少个晚上。"
+        },
+        "gauge3": {
+          "label": "议会",
+          "description": "镇议会还愿不愿意让你签字。"
+        }
+      },
+      "css": {
+        "variables": {},
+        "text": ""
+      },
+      "html": {},
+      "js": {},
+      "policy": {
+        "allowCssText": false,
+        "allowHtml": false,
+        "allowJs": false
+      }
+    },
+    "story": {
+      "groups": [
+        {
+          "id": "first-night",
+          "label": "第一夜",
+          "type": "chapter",
+          "description": "到任当晚的决定，把故事分成长明与省油两路。",
+          "cardIds": [
+            "first-fog"
+          ]
+        },
+        {
+          "id": "oil-line",
+          "label": "灯油线",
+          "type": "chapter",
+          "description": "赊账、告示与见底的油桶。",
+          "cardIds": [
+            "oil-merchant",
+            "ration-notice",
+            "debt-collector",
+            "last-oil"
+          ]
+        },
+        {
+          "id": "dark-boat-line",
+          "label": "暗船线",
+          "type": "chapter",
+          "description": "一条没挂灯的船，牵出议长的外甥和省里的稽查。",
+          "cardIds": [
+            "night-boat",
+            "contraband",
+            "quiet-gift",
+            "customs-inspector"
+          ]
+        },
+        {
+          "id": "storm-line",
+          "label": "风暴线",
+          "type": "chapter",
+          "description": "封港还是出海，以及之后要还的账。",
+          "cardIds": [
+            "storm-warning",
+            "missing-boat",
+            "stranded-whale",
+            "widow-fund"
+          ]
+        },
+        {
+          "id": "channel-line",
+          "label": "航道线",
+          "type": "chapter",
+          "description": "轮船公司、雾号和守灯人的人选。",
+          "cardIds": [
+            "steamship",
+            "dredge-nets",
+            "foghorn",
+            "lighthouse-keeper"
+          ]
+        },
+        {
+          "id": "reckoning",
+          "label": "清算",
+          "type": "chapter",
+          "description": "议会查账或镇民大会，取决于前面欠下的是哪一种账。",
+          "cardIds": [
+            "council-audit",
+            "town-meeting"
+          ]
+        },
+        {
+          "id": "debts",
+          "label": "欠下的账",
+          "type": "theme",
+          "description": "所有以后会被追问的决定。",
+          "tags": [
+            "oilDebt",
+            "berthSold",
+            "taxPledged",
+            "giftTaken",
+            "hushed",
+            "recordsCooked",
+            "whaleSold"
+          ]
+        },
+        {
+          "id": "goodwill",
+          "label": "攒下的人情",
+          "type": "theme",
+          "description": "渔民会记住的事。",
+          "tags": [
+            "whaleSaved",
+            "fundSet",
+            "netsPaid",
+            "keeperDaughter",
+            "searchSent",
+            "seized"
+          ]
+        },
+        {
+          "id": "morning-endings",
+          "label": "雾散的早晨",
+          "type": "ending",
+          "description": "熬过清算之后的两种收场。",
+          "tags": [
+            "endingLogged",
+            "endingQuiet"
+          ]
+        }
+      ]
+    },
+    "artLicense": "Original project art",
+    "artSource": "Hand-written SVG scenes generated by the fog-harbor art script"
+  },
+  "assets": [
+    {
+      "id": "art-first-fog",
+      "cardId": "first-fog",
+      "uri": "assets/sample/fog-harbor-first-fog.svg",
+      "title": "first-fog",
+      "license": "本项目自制",
+      "attribution": "《雾港》演示项目卡面插画",
+      "metadata": {
+        "display": {
+          "fit": "cover",
+          "focalPoint": {
+            "x": 0.5,
+            "y": 0.5
+          }
+        }
+      }
+    },
+    {
+      "id": "art-oil-merchant",
+      "cardId": "oil-merchant",
+      "uri": "assets/sample/fog-harbor-oil-merchant.svg",
+      "title": "oil-merchant",
+      "license": "本项目自制",
+      "attribution": "《雾港》演示项目卡面插画",
+      "metadata": {
+        "display": {
+          "fit": "cover",
+          "focalPoint": {
+            "x": 0.5,
+            "y": 0.5
+          }
+        }
+      }
+    },
+    {
+      "id": "art-ration-notice",
+      "cardId": "ration-notice",
+      "uri": "assets/sample/fog-harbor-ration-notice.svg",
+      "title": "ration-notice",
+      "license": "本项目自制",
+      "attribution": "《雾港》演示项目卡面插画",
+      "metadata": {
+        "display": {
+          "fit": "cover",
+          "focalPoint": {
+            "x": 0.5,
+            "y": 0.5
+          }
+        }
+      }
+    },
+    {
+      "id": "art-debt-collector",
+      "cardId": "debt-collector",
+      "uri": "assets/sample/fog-harbor-debt-collector.svg",
+      "title": "debt-collector",
+      "license": "本项目自制",
+      "attribution": "《雾港》演示项目卡面插画",
+      "metadata": {
+        "display": {
+          "fit": "cover",
+          "focalPoint": {
+            "x": 0.5,
+            "y": 0.5
+          }
+        }
+      }
+    },
+    {
+      "id": "art-last-oil",
+      "cardId": "last-oil",
+      "uri": "assets/sample/fog-harbor-last-oil.svg",
+      "title": "last-oil",
+      "license": "本项目自制",
+      "attribution": "《雾港》演示项目卡面插画",
+      "metadata": {
+        "display": {
+          "fit": "cover",
+          "focalPoint": {
+            "x": 0.5,
+            "y": 0.5
+          }
+        }
+      }
+    },
+    {
+      "id": "art-night-boat",
+      "cardId": "night-boat",
+      "uri": "assets/sample/fog-harbor-night-boat.svg",
+      "title": "night-boat",
+      "license": "本项目自制",
+      "attribution": "《雾港》演示项目卡面插画",
+      "metadata": {
+        "display": {
+          "fit": "cover",
+          "focalPoint": {
+            "x": 0.5,
+            "y": 0.5
+          }
+        }
+      }
+    },
+    {
+      "id": "art-contraband",
+      "cardId": "contraband",
+      "uri": "assets/sample/fog-harbor-contraband.svg",
+      "title": "contraband",
+      "license": "本项目自制",
+      "attribution": "《雾港》演示项目卡面插画",
+      "metadata": {
+        "display": {
+          "fit": "cover",
+          "focalPoint": {
+            "x": 0.5,
+            "y": 0.5
+          }
+        }
+      }
+    },
+    {
+      "id": "art-quiet-gift",
+      "cardId": "quiet-gift",
+      "uri": "assets/sample/fog-harbor-quiet-gift.svg",
+      "title": "quiet-gift",
+      "license": "本项目自制",
+      "attribution": "《雾港》演示项目卡面插画",
+      "metadata": {
+        "display": {
+          "fit": "cover",
+          "focalPoint": {
+            "x": 0.5,
+            "y": 0.5
+          }
+        }
+      }
+    },
+    {
+      "id": "art-customs-inspector",
+      "cardId": "customs-inspector",
+      "uri": "assets/sample/fog-harbor-customs-inspector.svg",
+      "title": "customs-inspector",
+      "license": "本项目自制",
+      "attribution": "《雾港》演示项目卡面插画",
+      "metadata": {
+        "display": {
+          "fit": "cover",
+          "focalPoint": {
+            "x": 0.5,
+            "y": 0.5
+          }
+        }
+      }
+    },
+    {
+      "id": "art-storm-warning",
+      "cardId": "storm-warning",
+      "uri": "assets/sample/fog-harbor-storm-warning.svg",
+      "title": "storm-warning",
+      "license": "本项目自制",
+      "attribution": "《雾港》演示项目卡面插画",
+      "metadata": {
+        "display": {
+          "fit": "cover",
+          "focalPoint": {
+            "x": 0.5,
+            "y": 0.5
+          }
+        }
+      }
+    },
+    {
+      "id": "art-missing-boat",
+      "cardId": "missing-boat",
+      "uri": "assets/sample/fog-harbor-missing-boat.svg",
+      "title": "missing-boat",
+      "license": "本项目自制",
+      "attribution": "《雾港》演示项目卡面插画",
+      "metadata": {
+        "display": {
+          "fit": "cover",
+          "focalPoint": {
+            "x": 0.5,
+            "y": 0.5
+          }
+        }
+      }
+    },
+    {
+      "id": "art-stranded-whale",
+      "cardId": "stranded-whale",
+      "uri": "assets/sample/fog-harbor-stranded-whale.svg",
+      "title": "stranded-whale",
+      "license": "本项目自制",
+      "attribution": "《雾港》演示项目卡面插画",
+      "metadata": {
+        "display": {
+          "fit": "cover",
+          "focalPoint": {
+            "x": 0.5,
+            "y": 0.5
+          }
+        }
+      }
+    },
+    {
+      "id": "art-widow-fund",
+      "cardId": "widow-fund",
+      "uri": "assets/sample/fog-harbor-widow-fund.svg",
+      "title": "widow-fund",
+      "license": "本项目自制",
+      "attribution": "《雾港》演示项目卡面插画",
+      "metadata": {
+        "display": {
+          "fit": "cover",
+          "focalPoint": {
+            "x": 0.5,
+            "y": 0.5
+          }
+        }
+      }
+    },
+    {
+      "id": "art-steamship",
+      "cardId": "steamship",
+      "uri": "assets/sample/fog-harbor-steamship.svg",
+      "title": "steamship",
+      "license": "本项目自制",
+      "attribution": "《雾港》演示项目卡面插画",
+      "metadata": {
+        "display": {
+          "fit": "cover",
+          "focalPoint": {
+            "x": 0.5,
+            "y": 0.5
+          }
+        }
+      }
+    },
+    {
+      "id": "art-dredge-nets",
+      "cardId": "dredge-nets",
+      "uri": "assets/sample/fog-harbor-dredge-nets.svg",
+      "title": "dredge-nets",
+      "license": "本项目自制",
+      "attribution": "《雾港》演示项目卡面插画",
+      "metadata": {
+        "display": {
+          "fit": "cover",
+          "focalPoint": {
+            "x": 0.5,
+            "y": 0.5
+          }
+        }
+      }
+    },
+    {
+      "id": "art-foghorn",
+      "cardId": "foghorn",
+      "uri": "assets/sample/fog-harbor-foghorn.svg",
+      "title": "foghorn",
+      "license": "本项目自制",
+      "attribution": "《雾港》演示项目卡面插画",
+      "metadata": {
+        "display": {
+          "fit": "cover",
+          "focalPoint": {
+            "x": 0.5,
+            "y": 0.5
+          }
+        }
+      }
+    },
+    {
+      "id": "art-lighthouse-keeper",
+      "cardId": "lighthouse-keeper",
+      "uri": "assets/sample/fog-harbor-lighthouse-keeper.svg",
+      "title": "lighthouse-keeper",
+      "license": "本项目自制",
+      "attribution": "《雾港》演示项目卡面插画"
+    },
+    {
+      "id": "art-council-audit",
+      "cardId": "council-audit",
+      "uri": "assets/sample/fog-harbor-council-audit.svg",
+      "title": "council-audit",
+      "license": "本项目自制",
+      "attribution": "《雾港》演示项目卡面插画",
+      "metadata": {
+        "display": {
+          "fit": "cover",
+          "focalPoint": {
+            "x": 0.5,
+            "y": 0.5
+          }
+        }
+      }
+    },
+    {
+      "id": "art-town-meeting",
+      "cardId": "town-meeting",
+      "uri": "assets/sample/fog-harbor-town-meeting.svg",
+      "title": "town-meeting",
+      "license": "本项目自制",
+      "attribution": "《雾港》演示项目卡面插画",
+      "metadata": {
+        "display": {
+          "fit": "cover",
+          "focalPoint": {
+            "x": 0.5,
+            "y": 0.5
+          }
+        }
+      }
+    },
+    {
+      "id": "art-clear-morning",
+      "cardId": "clear-morning",
+      "uri": "assets/sample/fog-harbor-clear-morning.svg",
+      "title": "clear-morning",
+      "license": "本项目自制",
+      "attribution": "《雾港》演示项目卡面插画",
+      "metadata": {
+        "display": {
+          "fit": "cover",
+          "focalPoint": {
+            "x": 0.5,
+            "y": 0.5
+          }
+        }
+      }
+    }
+  ],
+  "cards": [
+    {
+      "id": "first-fog",
+      "text": "你接任港务长的第一夜，海雾漫进了港口。灯塔的油只够烧到月底。",
+      "weight": 3,
+      "requirements": {
+        "noneTags": [
+          "onWatch"
+        ]
+      },
+      "choices": [
+        {
+          "id": "left",
+          "label": "整夜长明",
+          "effects": {
+            "factions": {
+              "gauge2": -8,
+              "gauge1": 6
+            },
+            "tags": {
+              "onWatch": true,
+              "lampAllNight": true
+            },
+            "variables": {
+              "nightPolicy": "bright"
+            }
+          }
+        },
+        {
+          "id": "right",
+          "label": "只在整点亮灯",
+          "effects": {
+            "factions": {
+              "gauge2": 5,
+              "gauge0": -5,
+              "gauge1": -4
+            },
+            "tags": {
+              "onWatch": true,
+              "lampRationed": true
+            },
+            "variables": {
+              "nightPolicy": "ration"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "oil-merchant",
+      "text": "油商愿意赊给你三十桶鲸油，条件是他的货船优先靠岸。",
+      "weight": 1,
+      "requirements": {
+        "allTags": [
+          "lampAllNight"
+        ]
+      },
+      "choices": [
+        {
+          "id": "left",
+          "label": "签下赊账",
+          "effects": {
+            "factions": {
+              "gauge2": 14,
+              "gauge1": -6,
+              "gauge0": 4
+            },
+            "tags": {
+              "oilDebt": true
+            }
+          }
+        },
+        {
+          "id": "right",
+          "label": "婉言谢绝",
+          "effects": {
+            "factions": {
+              "gauge2": -5,
+              "gauge3": 5
+            },
+            "tags": {
+              "oilRefused": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "ration-notice",
+      "text": "整点亮灯的告示贴出去了。渔会的人把它撕了下来。",
+      "weight": 1,
+      "requirements": {
+        "allTags": [
+          "lampRationed"
+        ]
+      },
+      "choices": [
+        {
+          "id": "left",
+          "label": "重新贴上",
+          "effects": {
+            "factions": {
+              "gauge3": 6,
+              "gauge1": -8
+            },
+            "tags": {
+              "noticeEnforced": true
+            }
+          }
+        },
+        {
+          "id": "right",
+          "label": "改成半点亮灯",
+          "effects": {
+            "factions": {
+              "gauge2": -7,
+              "gauge1": 7
+            },
+            "tags": {
+              "noticeSoftened": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "debt-collector",
+      "text": "油商来收账了。他不要钱，要码头东侧的泊位。",
+      "weight": 1,
+      "requirements": {
+        "allTags": [
+          "oilDebt"
+        ]
+      },
+      "choices": [
+        {
+          "id": "left",
+          "label": "让出泊位",
+          "effects": {
+            "factions": {
+              "gauge0": 9,
+              "gauge1": -10
+            },
+            "tags": {
+              "berthSold": true
+            }
+          }
+        },
+        {
+          "id": "right",
+          "label": "拿港务税抵账",
+          "effects": {
+            "factions": {
+              "gauge3": -9,
+              "gauge2": -4
+            },
+            "tags": {
+              "taxPledged": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "last-oil",
+      "text": "灯油见底了。今晚有三条船预定进港。",
+      "weight": 1,
+      "requirements": {
+        "allTags": [
+          "onWatch"
+        ],
+        "factions": {
+          "gauge2": {
+            "max": 30
+          }
+        }
+      },
+      "choices": [
+        {
+          "id": "left",
+          "label": "烧掉最后的备用油",
+          "effects": {
+            "factions": {
+              "gauge2": -12,
+              "gauge0": 6,
+              "gauge1": 5
+            },
+            "tags": {
+              "reserveBurned": true
+            }
+          }
+        },
+        {
+          "id": "right",
+          "label": "让船在外海等到天亮",
+          "effects": {
+            "factions": {
+              "gauge0": -12,
+              "gauge2": 4
+            },
+            "tags": {
+              "shipsWaited": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "night-boat",
+      "text": "雾里有条没挂灯的小船，正贴着防波堤往里走。",
+      "weight": 1,
+      "requirements": {
+        "allTags": [
+          "onWatch"
+        ]
+      },
+      "choices": [
+        {
+          "id": "left",
+          "label": "拦下检查",
+          "effects": {
+            "factions": {
+              "gauge3": 5,
+              "gauge0": -5
+            },
+            "tags": {
+              "boatSearched": true
+            }
+          }
+        },
+        {
+          "id": "right",
+          "label": "装作没看见",
+          "effects": {
+            "factions": {
+              "gauge0": 6,
+              "gauge3": -5
+            },
+            "tags": {
+              "boatIgnored": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "contraband",
+      "text": "船舱里是没完税的烟草。船主是议长的外甥。",
+      "weight": 1,
+      "requirements": {
+        "allTags": [
+          "boatSearched"
+        ]
+      },
+      "choices": [
+        {
+          "id": "left",
+          "label": "照章扣押",
+          "effects": {
+            "factions": {
+              "gauge3": -10,
+              "gauge1": 6,
+              "gauge0": 3
+            },
+            "tags": {
+              "seized": true
+            },
+            "variables": {
+              "smuggling": "exposed"
+            }
+          }
+        },
+        {
+          "id": "right",
+          "label": "补了税就放人",
+          "effects": {
+            "factions": {
+              "gauge3": 7,
+              "gauge1": -5,
+              "gauge2": 5
+            },
+            "tags": {
+              "hushed": true
+            },
+            "variables": {
+              "smuggling": "covered"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "quiet-gift",
+      "text": "第二天早上，你门口放着一箱灯油，没有署名。",
+      "weight": 1,
+      "requirements": {
+        "allTags": [
+          "boatIgnored"
+        ]
+      },
+      "choices": [
+        {
+          "id": "left",
+          "label": "收下",
+          "effects": {
+            "factions": {
+              "gauge2": 12,
+              "gauge3": -6
+            },
+            "tags": {
+              "giftTaken": true
+            },
+            "variables": {
+              "smuggling": "covered"
+            }
+          }
+        },
+        {
+          "id": "right",
+          "label": "送去议会登记",
+          "effects": {
+            "factions": {
+              "gauge3": 8,
+              "gauge0": -7
+            },
+            "tags": {
+              "giftDeclared": true
+            },
+            "variables": {
+              "smuggling": "exposed"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "customs-inspector",
+      "text": "省里的稽查员到了，要看过去一个月的进港记录。",
+      "weight": 1,
+      "requirements": {
+        "anyTags": [
+          "hushed",
+          "giftTaken"
+        ]
+      },
+      "choices": [
+        {
+          "id": "left",
+          "label": "交出全部记录",
+          "effects": {
+            "factions": {
+              "gauge3": -10,
+              "gauge0": -6,
+              "gauge1": 5
+            },
+            "tags": {
+              "recordsOpen": true
+            }
+          }
+        },
+        {
+          "id": "right",
+          "label": "给他一本誊过的",
+          "effects": {
+            "factions": {
+              "gauge3": 5,
+              "gauge0": 6,
+              "gauge1": -6
+            },
+            "tags": {
+              "recordsCooked": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "storm-warning",
+      "text": "气压计掉得很快。渔船队按计划天亮前出海。",
+      "weight": 1,
+      "requirements": {
+        "allTags": [
+          "onWatch"
+        ]
+      },
+      "choices": [
+        {
+          "id": "left",
+          "label": "封港一天",
+          "effects": {
+            "factions": {
+              "gauge1": -8,
+              "gauge0": -6,
+              "gauge3": 6
+            },
+            "tags": {
+              "harborClosed": true
+            }
+          }
+        },
+        {
+          "id": "right",
+          "label": "让船老大自己决定",
+          "effects": {
+            "factions": {
+              "gauge1": 6,
+              "gauge3": -5
+            },
+            "tags": {
+              "fleetSailed": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "missing-boat",
+      "text": "风暴过后，少了一条船。渔会要你派拖船去找。",
+      "weight": 1,
+      "requirements": {
+        "allTags": [
+          "fleetSailed"
+        ]
+      },
+      "choices": [
+        {
+          "id": "left",
+          "label": "立刻派拖船",
+          "effects": {
+            "factions": {
+              "gauge2": -10,
+              "gauge1": 10,
+              "gauge0": -4
+            },
+            "tags": {
+              "searchSent": true
+            }
+          }
+        },
+        {
+          "id": "right",
+          "label": "等到天亮再说",
+          "effects": {
+            "factions": {
+              "gauge1": -12,
+              "gauge2": 3
+            },
+            "tags": {
+              "searchDelayed": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "stranded-whale",
+      "text": "封港那天，一头鲸搁浅在北滩。渔民想救，油商想买。",
+      "weight": 1,
+      "requirements": {
+        "allTags": [
+          "harborClosed"
+        ]
+      },
+      "choices": [
+        {
+          "id": "left",
+          "label": "组织人手推回海里",
+          "effects": {
+            "factions": {
+              "gauge1": 9,
+              "gauge0": -7,
+              "gauge2": -3
+            },
+            "tags": {
+              "whaleSaved": true
+            }
+          }
+        },
+        {
+          "id": "right",
+          "label": "卖给油商炼油",
+          "effects": {
+            "factions": {
+              "gauge2": 15,
+              "gauge1": -10,
+              "gauge0": 5
+            },
+            "tags": {
+              "whaleSold": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "widow-fund",
+      "text": "渔会提议从泊位费里抽一成，设遇难船员抚恤金。",
+      "weight": 1,
+      "requirements": {
+        "anyTags": [
+          "searchSent",
+          "searchDelayed"
+        ]
+      },
+      "choices": [
+        {
+          "id": "left",
+          "label": "同意抽成",
+          "effects": {
+            "factions": {
+              "gauge1": 10,
+              "gauge0": -9
+            },
+            "tags": {
+              "fundSet": true
+            }
+          }
+        },
+        {
+          "id": "right",
+          "label": "交议会表决",
+          "effects": {
+            "factions": {
+              "gauge3": 6,
+              "gauge1": -7
+            },
+            "tags": {
+              "fundDeferred": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "steamship",
+      "text": "一家轮船公司想在雾港开定期航线，条件是加深航道。",
+      "weight": 1,
+      "requirements": {
+        "allTags": [
+          "onWatch"
+        ]
+      },
+      "choices": [
+        {
+          "id": "left",
+          "label": "批准疏浚",
+          "effects": {
+            "factions": {
+              "gauge0": 11,
+              "gauge1": -7,
+              "gauge2": -4
+            },
+            "tags": {
+              "dredging": true
+            }
+          }
+        },
+        {
+          "id": "right",
+          "label": "暂缓再议",
+          "effects": {
+            "factions": {
+              "gauge0": -8,
+              "gauge1": 5
+            },
+            "tags": {
+              "dredgeDeferred": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "dredge-nets",
+      "text": "疏浚船搅坏了近岸的渔网。渔民堵在港务所门口。",
+      "weight": 1,
+      "requirements": {
+        "allTags": [
+          "dredging"
+        ]
+      },
+      "choices": [
+        {
+          "id": "left",
+          "label": "让轮船公司赔网",
+          "effects": {
+            "factions": {
+              "gauge1": 9,
+              "gauge0": -9
+            },
+            "tags": {
+              "netsPaid": true
+            }
+          }
+        },
+        {
+          "id": "right",
+          "label": "请议会派人劝散",
+          "effects": {
+            "factions": {
+              "gauge3": 5,
+              "gauge1": -11
+            },
+            "tags": {
+              "crowdDispersed": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "foghorn",
+      "text": "有人提议装一台蒸汽雾号。它很响，镇上没人睡得着。",
+      "weight": 1,
+      "requirements": {
+        "allTags": [
+          "onWatch"
+        ]
+      },
+      "choices": [
+        {
+          "id": "left",
+          "label": "装",
+          "effects": {
+            "factions": {
+              "gauge0": 7,
+              "gauge3": -7,
+              "gauge2": -5
+            },
+            "tags": {
+              "foghornOn": true
+            }
+          }
+        },
+        {
+          "id": "right",
+          "label": "继续敲钟",
+          "effects": {
+            "factions": {
+              "gauge1": 4,
+              "gauge0": -5
+            },
+            "tags": {
+              "bellKept": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "lighthouse-keeper",
+      "text": "老守灯人说眼睛不行了，推荐女儿接班。议会没有这个先例。",
+      "weight": 1,
+      "requirements": {
+        "allTags": [
+          "onWatch"
+        ]
+      },
+      "choices": [
+        {
+          "id": "left",
+          "label": "任命她",
+          "effects": {
+            "factions": {
+              "gauge1": 7,
+              "gauge3": -8
+            },
+            "tags": {
+              "keeperDaughter": true
+            }
+          }
+        },
+        {
+          "id": "right",
+          "label": "从外地招人",
+          "effects": {
+            "factions": {
+              "gauge3": 6,
+              "gauge2": -4,
+              "gauge1": -5
+            },
+            "tags": {
+              "keeperOutsider": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "council-audit",
+      "text": "议会要审港务所的账。有几笔你自己也说不清。",
+      "weight": 1,
+      "requirements": {
+        "anyTags": [
+          "taxPledged",
+          "recordsCooked",
+          "giftTaken",
+          "berthSold",
+          "whaleSold"
+        ]
+      },
+      "choices": [
+        {
+          "id": "left",
+          "label": "全部摊开",
+          "effects": {
+            "factions": {
+              "gauge3": -12,
+              "gauge1": 6
+            },
+            "tags": {
+              "auditFaced": true
+            },
+            "variables": {
+              "ending": "honest"
+            }
+          }
+        },
+        {
+          "id": "right",
+          "label": "请商会出面担保",
+          "effects": {
+            "factions": {
+              "gauge0": 9,
+              "gauge3": 5,
+              "gauge1": -9
+            },
+            "tags": {
+              "auditCovered": true
+            },
+            "variables": {
+              "ending": "patron"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "town-meeting",
+      "text": "镇民大会上，渔会推举你连任。商会的人坐在后排，没有鼓掌。",
+      "weight": 1,
+      "requirements": {
+        "anyTags": [
+          "whaleSaved",
+          "fundSet",
+          "netsPaid",
+          "keeperDaughter",
+          "searchSent",
+          "seized"
+        ]
+      },
+      "choices": [
+        {
+          "id": "left",
+          "label": "接受推举",
+          "effects": {
+            "factions": {
+              "gauge1": 11,
+              "gauge0": -11
+            },
+            "tags": {
+              "endorsed": true
+            },
+            "variables": {
+              "ending": "people"
+            }
+          }
+        },
+        {
+          "id": "right",
+          "label": "请两边各出一名副手",
+          "effects": {
+            "factions": {
+              "gauge0": 6,
+              "gauge1": -5,
+              "gauge3": 6
+            },
+            "tags": {
+              "coalition": true
+            },
+            "variables": {
+              "ending": "balance"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "clear-morning",
+      "text": "雾散的那个早晨，你站在灯塔顶上。港里停满了船。",
+      "weight": 1,
+      "requirements": {
+        "anyTags": [
+          "auditFaced",
+          "auditCovered",
+          "endorsed",
+          "coalition"
+        ]
+      },
+      "choices": [
+        {
+          "id": "left",
+          "label": "把今天写进港志",
+          "effects": {
+            "factions": {
+              "gauge0": 4,
+              "gauge1": 4,
+              "gauge3": 4
+            },
+            "tags": {
+              "endingLogged": true
+            }
+          }
+        },
+        {
+          "id": "right",
+          "label": "熄了灯，下塔回家",
+          "effects": {
+            "factions": {
+              "gauge2": 9
+            },
+            "tags": {
+              "endingQuiet": true
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

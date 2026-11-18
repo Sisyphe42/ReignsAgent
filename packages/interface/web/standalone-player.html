@@ -699,7 +699,8 @@
         clearRecord: "Clear record", active: "Active", decisions: "decisions", localRecord: "Local record", aboutTitle: "About this release",
         builtWith: "Built with", cardMotion: "Card motion", fullMotion: "Full motion", reducedMotion: "Reduced motion",
         by: "By", playableRelease: "Playable release", offlinePlayer: "Offline player", newReign: "A new reign begins.",
-        recorded: "Decision recorded.", complete: "This reign is complete. Restart when ready.", reignConcluded: "Reign concluded", languageChanged: "Language changed."
+        recorded: "Decision recorded.", complete: "This reign is complete. Restart when ready.", reignConcluded: "Reign concluded", languageChanged: "Language changed.",
+        noDecree: "No decree is available.", reignEnded: "This reign has reached its end.", openBuildPrompt: "Open a build to begin."
       },
       "zh-Hans": {
         appearance: "外观", language: "语言", record: "记录", about: "关于", decision: "决策",
@@ -711,7 +712,8 @@
         clearRecord: "清空记录", active: "当前", decisions: "次决策", localRecord: "本地记录", aboutTitle: "关于本作",
         builtWith: "构建于", cardMotion: "卡片动效", fullMotion: "完整动效", reducedMotion: "减少动效",
         by: "作者", playableRelease: "可游玩版本", offlinePlayer: "离线玩家", newReign: "新的 Reign 开始了。",
-        recorded: "决策已记录。", complete: "本局已经结束，可以重新开始。", reignConcluded: "本局结束", languageChanged: "语言已切换。"
+        recorded: "决策已记录。", complete: "本局已经结束，可以重新开始。", reignConcluded: "本局结束", languageChanged: "语言已切换。",
+        noDecree: "当前没有可用的抉择。", reignEnded: "本局已落幕。", openBuildPrompt: "打开一个构建文件以开始。"
       }
     });
 
@@ -1185,7 +1187,7 @@
         el("summary").hidden = true;
       } else {
         clearArtwork();
-        el("text").textContent = snapshot?.gameOver ? "The reign has reached its end." : "No decree is available.";
+        el("text").textContent = snapshot?.gameOver ? copy("reignEnded") : copy("noDecree");
         updateChoiceLabels(null);
         if (snapshot?.gameOver) renderSummary(snapshot);
       }
@@ -1221,9 +1223,13 @@
     function renderSummary(snapshot) {
       const summary = el("summary");
       const lines = Object.entries(snapshot.factions ?? {})
-        .map(([name, value]) => `<span class="summary__line">${escapeHtml(name)} ${value}</span>`)
+        .map(([name, value]) => {
+          const gauge = projectGauges({ [name]: value }, presentation)[name];
+          return `<span class="summary__line">${escapeHtml(gauge?.label || name)} ${value}</span>`;
+        })
         .join("");
-      summary.innerHTML = `<p class="summary__title">${escapeHtml(copy("reignConcluded"))}</p><div>${escapeHtml(copy("decision"))}: ${snapshot.turn ?? 0}</div><div>${lines}</div>`;
+      const faction = snapshot?.gameOver?.faction ? (projectGauges({ [snapshot.gameOver.faction]: 0 }, presentation)[snapshot.gameOver.faction]?.label || snapshot.gameOver.faction) : "";
+      summary.innerHTML = `<p class="summary__title">${escapeHtml(copy("reignConcluded"))}${faction ? ` · ${escapeHtml(faction)}` : ""}</p><div>${escapeHtml(copy("decision"))}: ${snapshot.turn ?? 0}</div><div>${lines}</div>`;
       summary.hidden = false;
     }
 
@@ -1339,7 +1345,7 @@
 
     async function loadEmbeddedBuild() {
       if (!embeddedBuildPath) {
-        setStatus("Open a game build to begin.");
+        setStatus(copy("openBuildPrompt"));
         return;
       }
       el("load").hidden = true;

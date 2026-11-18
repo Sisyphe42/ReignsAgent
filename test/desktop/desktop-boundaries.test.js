@@ -78,10 +78,11 @@ describe("Electron desktop boundaries", () => {
     const desktopPackage = JSON.parse(await readFile(join(ROOT, "apps/desktop-electron/package.json"), "utf8"));
     const mainSource = await readFile(join(ROOT, "apps/desktop-electron/src/main.mjs"), "utf8");
     const playerSource = await readFile(join(ROOT, "packages/interface/web/player.html"), "utf8");
+    const rootPackage = JSON.parse(await readFile(join(ROOT, "package.json"), "utf8"));
     const packagerConfig = await import("../../apps/desktop-electron/packager.config.mjs");
     assert.deepEqual(desktopPackage.dependencies, {});
     assert.equal(desktopPackage.productName, "ReignsAgent");
-    assert.equal(desktopPackage.version, "0.1.0");
+    assert.equal(desktopPackage.version, rootPackage.version);
     assert.equal(desktopPackage.author, "Sisyphe42");
     assert.equal(packagerConfig.default.prune, false);
     assert.equal(packagerConfig.default.asar.unpack, "**/server-child.mjs");
