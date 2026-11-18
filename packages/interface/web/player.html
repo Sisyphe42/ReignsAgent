@@ -159,7 +159,7 @@
         <img id="art-backdrop" class="player-art__backdrop" alt="" aria-hidden="true" />
         <img id="art" class="player-art__image" alt="" />
       </span>
-      <p class="player-text" id="text" aria-live="polite">The court is waiting.</p>
+      <p class="player-text" id="text" aria-live="polite">The story is waiting.</p>
       <div class="player-swipes">
         <button id="left" class="btn btn--choice" disabled aria-label="Swipe left">◀ Left</button>
         <button id="right" class="btn btn--choice" disabled aria-label="Swipe right">Right ▶</button>
@@ -230,7 +230,7 @@
         Skin: "皮肤",
         "Back to workbench": "返回创作台",
         "Current card": "当前卡牌",
-        "The court is waiting.": "宫廷正在等待。",
+        "The story is waiting.": "故事即将开始。",
         "Swipe left": "向左选择",
         "Swipe right": "向右选择",
         Left: "左",
@@ -259,6 +259,8 @@
     let assetByCard = new Map();
     let lastResult = null;
     let awaitingRestartConfirm = false;
+    let deckPrompt = copy("The story is waiting.");
+    let gaugeLabels = {};
 
     function applyUiLocale() {
       document.documentElement.lang = uiLocale;
@@ -268,7 +270,7 @@
       el("skin-label").textContent = copy("Skin");
       el("back-link").textContent = copy("Back to workbench");
       el("card").setAttribute("aria-label", copy("Current card"));
-      el("text").textContent = copy("The court is waiting.");
+      el("text").textContent = deckPrompt;
       el("left").setAttribute("aria-label", copy("Swipe left"));
       el("right").setAttribute("aria-label", copy("Swipe right"));
       el("swipe-hint").textContent = copy("Drag the card or use ← → keys");
@@ -382,11 +384,16 @@
       el("art-frame").hidden = true;
     }
 
+    function gaugeDisplayName(name) {
+      const label = gaugeLabels[name];
+      return typeof label === "string" && label.trim() ? label : name;
+    }
+
     function renderSummary(state) {
       const summary = el("summary");
-      const faction = state.gameOver?.faction ?? "—";
+      const faction = gaugeDisplayName(state.gameOver?.faction ?? "—");
       const lines = Object.entries(state.factions ?? {})
-        .map(([name, value]) => `<div class="summary__line">${escapeHtml(name)}: ${value}</div>`)
+        .map(([name, value]) => `<div class="summary__line">${escapeHtml(gaugeDisplayName(name))}: ${value}</div>`)
         .join("");
       summary.innerHTML = `
         <p class="summary__title">${copy("Reign ended")} · ${escapeHtml(faction)}</p>
@@ -396,11 +403,21 @@
       summary.hidden = false;
     }
 
+    function resolveDeckPrompt(metadata) {
+      const description = typeof metadata?.description === "string" ? metadata.description.trim() : "";
+      if (description) return description;
+      const title = typeof metadata?.title === "string" && metadata.title.trim() ? metadata.title.trim() : "";
+      return title ? `${copy("The story is waiting.")} — ${title}` : copy("The story is waiting.");
+    }
+
     async function startReign() {
       try {
         const editor = await api("/api/editor", undefined, "GET");
         assetByCard = await createAssetMap(editor.assets ?? []);
         applyPresentation(editor.metadata?.presentation);
+        gaugeLabels = readGaugeLabels(editor.metadata?.presentation);
+        deckPrompt = resolveDeckPrompt(editor.metadata);
+        if (!session) el("text").textContent = deckPrompt;
         const result = await api("/api/play/start", { locale: requestedLocale });
         if (result.error) throw new Error(result.error.message);
         session = result.sessionId;
@@ -433,7 +450,7 @@
         awaitingRestartConfirm = false;
         const result = await api("/api/play/swipe", { sessionId: session, direction });
         render(result);
-        if (result.gameOver) setStatus(`${copy("Game over")}: ${result.gameOver.faction}`, "err");
+        if (result.gameOver) setStatus(`${copy("Game over")}: ${gaugeDisplayName(result.gameOver.faction)}`, "err");
       } catch (error) {
         setStatus(error.message, "err");
       }
@@ -451,6 +468,17 @@
     function resetChoiceButtonLabels() {
       el("left").textContent = `◀ ${copy("Left")}`;
       el("right").textContent = `${copy("Right")} ▶`;
+    }
+
+    function readGaugeLabels(presentation = {}) {
+      const gauges = presentation?.gauges ?? {};
+      const labels = {};
+      for (const [name, config] of Object.entries(gauges)) {
+        if (typeof config?.label === "string" && config.label.trim()) {
+          labels[name] = config.label.trim();
+        }
+      }
+      return labels;
     }
 
     function applyPresentation(presentation = {}) {
@@ -493,8 +521,22 @@
       return map;
     }
 
+    async function loadDeckContext() {
+      // The shared player serves every project, so the pre-start prompt must be
+      // derived from the active deck instead of naming any specific sample.
+      try {
+        const editor = await api("/api/editor", undefined, "GET");
+        gaugeLabels = readGaugeLabels(editor.metadata?.presentation);
+        deckPrompt = resolveDeckPrompt(editor.metadata);
+        if (!session && !lastResult) el("text").textContent = deckPrompt;
+      } catch {
+        // Keep the generic prompt when the editor context is unavailable.
+      }
+    }
+
     updateSessionMeta(null);
     updateActionButtons(null);
+    void loadDeckContext();
   </script>
 </body>
 </html>
