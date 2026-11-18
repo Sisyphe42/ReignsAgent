@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { SKINS as SKIN_CATALOG, DEFAULT_SKIN, applySkinTheme, resolveSkinId as resolveSharedSkinId } from "../../../packages/interface/web/skin-catalog.js";
 import { cardArtworkStyle, normalizeCardArtworkDisplay } from "../../../packages/interface/web/assets/card-artwork.js";
@@ -5320,25 +5320,47 @@ function AiAssistPreflight({ request, aiConfigured, diagnostics, onChange, onClo
 
 function useProjectAssetUrl(asset) {
   const [src, setSrc] = useState("");
+  const [reloadToken, setReloadToken] = useState(0);
+  const reload = useCallback(() => setReloadToken((token) => token + 1), []);
   useEffect(() => {
     let active = true;
     setSrc("");
-    void creatorBackendPromise.then((backend) => backend.assetUrl(asset?.uri)).then((url) => { if (active) setSrc(url); }).catch(() => { if (active) setSrc(asset?.uri ? `${import.meta.env.BASE_URL}${asset.uri}` : ""); });
+    void creatorBackendPromise
+      .then(async (backend) => {
+        // A reload only happens after a failed image load; refresh the session
+        // first so capability-signed (server) or object (browser) URLs are
+        // re-issued against the current backend state.
+        if (reloadToken > 0) await backend.refreshSession?.();
+        return backend.assetUrl(asset?.uri);
+      })
+      .then((url) => { if (active) setSrc(url); })
+      .catch(() => { if (active) setSrc(asset?.uri ? `${import.meta.env.BASE_URL}${asset.uri}` : ""); });
     return () => { active = false; };
-  }, [asset?.uri]);
-  return src;
+  }, [asset?.uri, reloadToken]);
+  return [src, reload];
 }
 
 function ProjectAssetImage({ asset, alt = "" }) {
-  const src = useProjectAssetUrl(asset);
+  const [src] = useProjectAssetUrl(asset);
   return src ? <img src={src} alt={alt} /> : <span className="art-placeholder" />;
 }
 
 function CardArtwork({ asset, alt = "", className = "" }) {
-  const src = useProjectAssetUrl(asset);
+  const [src, reload] = useProjectAssetUrl(asset);
   const [failed, setFailed] = useState(false);
+  const retriedRef = useRef(false);
   const normalized = cardArtworkStyle(asset);
   useEffect(() => setFailed(false), [src]);
+  useEffect(() => { retriedRef.current = false; }, [asset?.uri]);
+  function handleImageError() {
+    setFailed(true);
+    if (retriedRef.current) return;
+    // Recover once from a transient load failure (rotated capability token,
+    // restarted backend, momentary asset miss) instead of hiding the artwork
+    // until the asset URI changes or the page reloads.
+    retriedRef.current = true;
+    window.setTimeout(() => reload(), 600);
+  }
   if (!src || failed) return <span className={`art-placeholder ${className}`.trim()} />;
   return (
     <span
@@ -5347,7 +5369,7 @@ function CardArtwork({ asset, alt = "", className = "" }) {
       style={normalized.style}
     >
       <img className="card-artwork__backdrop" src={src} alt="" aria-hidden="true" />
-      <img className="card-artwork__image" src={src} alt={alt} onError={() => setFailed(true)} />
+      <img className="card-artwork__image" src={src} alt={alt} onError={handleImageError} />
     </span>
   );
 }

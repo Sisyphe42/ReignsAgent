@@ -88,7 +88,12 @@ export class BrowserCreatorBackend {
   }
   #editorProjection() { return { metadata: this.editor.metadata, assets: this.editor.assets, cards: this.editor.toCards(), validation: this.editor.validate(), playerValidation: this.editor.validateForPlayer() }; }
   async #reload() { this.#replace(await this.workspace.readActiveBundle()); }
-  #replace(bundle) { for (const url of this.assetUrls.values()) URL.revokeObjectURL(url); this.assetUrls.clear(); this.editor = loadEditorFromContent(bundle); this.sessions.clear(); this.lastDiagnostics = null; }
+  // Object URLs stay valid across editor reloads: project asset URIs are
+  // content-addressed (sha256 names) or shared bundled sample art, so a cached
+  // URL for a URI never goes stale. Revoking them here would break <img>
+  // elements that still reference the same URI (e.g. after undo/restore or
+  // project switches), which surfaced as artwork randomly disappearing.
+  #replace(bundle) { this.editor = loadEditorFromContent(bundle); this.sessions.clear(); this.lastDiagnostics = null; }
   async #persist(edited = false) { await this.workspace.saveActiveBundle(this.editor.toBundle()); if (edited) { this.sessions.clear(); this.lastDiagnostics = null; } }
   async #credentials(input) { const explicit = typeof input?.apiKey === "string" ? input.apiKey.trim() : ""; return { ...(input ?? {}), apiKey: explicit || await this.workspace.getStoredApiKey() || "" }; }
   async #imageCredentials(input, config) { const explicit = typeof input?.apiKey === "string" ? input.apiKey.trim() : ""; const stored = config?.credentialMode === "inherit_text" ? await this.workspace.getStoredApiKey() : await this.workspace.getStoredImageApiKey(); return { ...(input ?? {}), apiKey: explicit || stored || "" }; }
