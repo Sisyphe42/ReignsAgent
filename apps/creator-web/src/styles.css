@@ -8597,3 +8597,58 @@ summary:focus-visible {
   color: var(--muted);
   overflow-wrap: anywhere;
 }
+
+/* Request log toggle: a light, card-consistent disclosure row instead of the global
+   button-like summary style (which renders as a dark slab here). */
+.ai-advanced.repair-log {
+  background: var(--surface);
+}
+
+.ai-advanced.repair-log summary {
+  display: grid;
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 0;
+  background: var(--surface);
+  box-shadow: none;
+  color: var(--muted);
+  font-weight: 500;
+  transform: none;
+}
+
+.ai-advanced.repair-log summary:hover {
+  background: color-mix(in srgb, var(--accent) 5%, var(--surface));
+}
+
+.ai-advanced.repair-log summary .ai-field-label {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.ai-advanced.repair-log summary::after {
+  content: "Show ⌄";
+  transform: none;
+  color: var(--accent);
+  font-family: var(--font-data);
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+.ai-advanced.repair-log[open] summary {
+  border-bottom: 1px solid var(--border);
+}
+
+.ai-advanced.repair-log[open] summary::after {
+  content: "Hide ⌃";
+  transform: none;
+}
+
+.ai-advanced.repair-log > .repair-log__entry {
+  padding: 0 12px 10px;
+}
+
+.ai-advanced.repair-log summary span:not(.ai-field-label) {
+  font-weight: 400;
+}

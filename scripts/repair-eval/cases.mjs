@@ -231,6 +231,23 @@ export const REPAIR_EVAL_CASES = [
     real: { taskId: "court-variable-gate" }
   },
   {
+    id: "court-variable-market-producer",
+    description: "Answer the real model gave in all three first rounds of the 2026-11-24 run: add riverToll to both river-market choices (an existing card outside the related set). Producer-only edits are scope-exempt since phase 3.",
+    deck: courtTollVariable,
+    repairTarget: { code: "unsatisfied_required_variables", entities: ["var:riverToll"] },
+    script: [[{
+      id: "river-market-toll",
+      title: "Seed riverToll through the river market",
+      summary: "Adds riverToll=paid to both river-market outcomes while preserving each choice's existing tags and full gauge movement.",
+      patches: ["left", "right"].map((choiceId) => {
+        const effects = courtEffects(loadFixture("oss-court"), "river-market", choiceId);
+        return { op: "setChoiceEffects", cardId: "river-market", choiceId, effects: { ...effects, variables: { ...(effects.variables ?? {}), riverToll: "paid" } } };
+      })
+    }]],
+    expect: { status: "verified", rounds: 1, blocked: {} },
+    realSkip: "Replays a recorded real-model answer; the real run covers court-variable-gate."
+  },
+  {
     id: "night-watch-stall",
     description: "Four one-shot cards stall every run. Round 1 removes the one-shot gates; round 2 adds a repeatable patrol card.",
     deck: nightWatchStall,

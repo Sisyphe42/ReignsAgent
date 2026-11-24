@@ -5,9 +5,11 @@ import { describe, it } from "node:test";
 import {
   applyAiEditPlan,
   buildVerifiedRepairPlan,
+  DEFAULT_REPAIR_LOOP_LIMITS,
   collectIssueEntities,
   createCardEditor,
   evaluateRepairProposal,
+  producerOnlyEdit,
   runDiagnostics
 } from "../src/index.js";
 
@@ -128,6 +130,10 @@ describe("verified repair loop", () => {
     assert.equal(JSON.stringify(editor.toBundle()), before);
   });
 
+  it("allows two full 120 s text requests inside the 300 s loop deadline", () => {
+    assert.equal(DEFAULT_REPAIR_LOOP_LIMITS.deadlineMs, 300_000);
+  });
+
   it("is deterministic for the same input", async () => {
     const first = await buildVerifiedRepairPlan({ editor: createCardEditor(sealedWarehouseBundle()) });
     const second = await buildVerifiedRepairPlan({ editor: createCardEditor(sealedWarehouseBundle()) });
@@ -208,6 +214,87 @@ describe("verified repair loop", () => {
     assert.equal(allBad.calls.length, 3);
   });
 
+  it("exempts an unrelated card from scope only when the edit just adds the missing producer", async () => {
+    const clearMorning = FOG.cards.find((entry) => entry.id === "clear-morning");
+    const withTag = (choice, extra = {}) => ({ ...choice.effects, ...extra, tags: { ...(choice.effects.tags ?? {}), quarantineLifted: true } });
+    const producerOnly = {
+      id: "producer-on-clear-morning",
+      title: "Lift quarantine at dawn",
+      patches: clearMorning.choices.map((choice) => ({ op: "setChoiceEffects", cardId: "clear-morning", choiceId: choice.id, effects: withTag(choice) }))
+    };
+    const producerPlusGauge = {
+      id: "producer-plus-gauge",
+      title: "Lift quarantine and soften the dawn",
+      patches: [{ op: "setChoiceEffects", cardId: "clear-morning", choiceId: "left", effects: { ...withTag(clearMorning.choices[0]), factions: { gauge0: 3, gauge1: 4, gauge3: 4 } } }]
+    };
+    const producerPlusGate = {
+      id: "producer-plus-gate",
+      title: "Lift quarantine and open the dawn",
+      patches: [
+        { op: "setChoiceEffects", cardId: "clear-morning", choiceId: "left", effects: withTag(clearMorning.choices[0]) },
+        { op: "updateCard", cardId: "clear-morning", changes: { requirements: {} } }
+      ]
+    };
+    const unrelatedTag = {
+      id: "other-tag",
+      title: "Set an unrelated tag",
+      patches: [{ op: "setChoiceEffects", cardId: "clear-morning", choiceId: "left", effects: { ...clearMorning.choices[0].effects, tags: { ...(clearMorning.choices[0].effects.tags ?? {}), dawnBell: true } } }]
+    };
+    const { fetchImpl } = scriptedFetch([[producerOnly, producerPlusGauge, producerPlusGate, unrelatedTag]]);
+    const plan = await buildVerifiedRepairPlan({
+      editor: createCardEditor(sealedWarehouseBundle()),
+      config: ENDPOINT_CONFIG,
+      fetchImpl,
+      repairTarget: { code: "unreachable_cards", cardIds: ["sealed-warehouse"] },
+      limits: { maxRounds: 1 }
+    });
+    const byId = new Map(plan.proposals.map((proposal) => [proposal.id, proposal]));
+
+    const exempt = checkOf(byId.get("producer-on-clear-morning"), "scope");
+    assert.equal(exempt.passed, true);
+    assert.deepEqual(exempt.exemptions, [{ cardId: "clear-morning", reason: "adds_missing_producer", signals: ["tag:quarantineLifted"] }]);
+    assert.match(exempt.detail, /scope_exempt: adds_missing_producer/);
+    assert.equal(byId.get("producer-on-clear-morning").verification.passed, true);
+
+    assert.equal(checkOf(byId.get("producer-plus-gauge"), "scope").passed, false, "changing a gauge delta is not a producer-only edit");
+    assert.equal(checkOf(byId.get("producer-plus-gate"), "scope").passed, false, "removing a gate is not a producer-only edit");
+    assert.equal(checkOf(byId.get("producer-plus-gate"), "gates_preserved").passed, false);
+    assert.equal(checkOf(byId.get("other-tag"), "scope").passed, false, "only the missing tag counts as a producer");
+  });
+
+  it("still counts producer-only edits toward the edited-card limit", async () => {
+    const ids = ["oil-merchant", "ration-notice", "debt-collector", "contraband", "quiet-gift"];
+    const fivePlaces = {
+      id: "five-producers",
+      title: "Lift quarantine everywhere",
+      patches: ids.map((cardId) => {
+        const choice = FOG.cards.find((entry) => entry.id === cardId).choices[0];
+        return { op: "setChoiceEffects", cardId, choiceId: choice.id, effects: { ...choice.effects, tags: { ...(choice.effects.tags ?? {}), quarantineLifted: true } } };
+      })
+    };
+    const { fetchImpl } = scriptedFetch([[fivePlaces]]);
+    const plan = await buildVerifiedRepairPlan({ editor: createCardEditor(sealedWarehouseBundle()), config: ENDPOINT_CONFIG, fetchImpl, limits: { maxRounds: 1 } });
+    const scope = checkOf(plan.proposals[0], "scope");
+    assert.equal(scope.passed, false);
+    assert.match(scope.detail, /5 existing cards edited; limit is 4/);
+    assert.equal(scope.exemptions.length, 5);
+  });
+
+  it("defines a producer-only edit narrowly", () => {
+    const missing = new Set(["var:riverToll"]);
+    const before = { id: "a", text: "A", weight: 1, requirements: {}, choices: [{ id: "left", label: "L", effects: { factions: { gauge0: 1 } } }, { id: "right", label: "R", effects: { factions: { gauge1: 1 } } }] };
+    const after = structuredClone(before);
+    after.choices[0].effects.variables = { riverToll: "paid" };
+    assert.deepEqual(producerOnlyEdit(before, after, missing), ["var:riverToll"]);
+    const relabelled = structuredClone(after);
+    relabelled.choices[0].label = "Changed";
+    assert.equal(producerOnlyEdit(before, relabelled, missing), null);
+    assert.equal(producerOnlyEdit(before, after, new Set(["var:other"])), null);
+    const falsy = structuredClone(before);
+    falsy.choices[0].effects.tags = { quarantineLifted: false };
+    assert.equal(producerOnlyEdit(before, falsy, new Set(["tag:quarantineLifted"])), null);
+  });
+
   it("rejects disallowed operations and empty proposals before scoring", () => {
     const bundle = sealedWarehouseBundle();
     const baseline = runDiagnostics({ cards: bundle.cards, metadata: bundle.metadata, cycles: 500, maxTurns: 40, seed: 1 });
@@ -259,7 +346,7 @@ describe("verified repair loop", () => {
       editor,
       config: ENDPOINT_CONFIG,
       fetchImpl: async (...args) => {
-        clock += 200_000;
+        clock += 310_000;
         return timed.fetchImpl(...args);
       },
       now: () => clock

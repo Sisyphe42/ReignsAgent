@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { buildAiContext, buildCardEditRequest, collectAiCardSignals, createAiEditSuggestions, selectAiContextCards } from "../src/index.js";
+import { AI_TEXT_REQUEST_TIMEOUT_MS, buildAiContext, buildCardEditRequest, collectAiCardSignals, createAiEditSuggestions, selectAiContextCards } from "../src/index.js";
 
 function card(id, { requirements = {}, left = {}, right = {}, text = `Card ${id}` } = {}) {
   return {
@@ -19,6 +19,12 @@ function card(id, { requirements = {}, left = {}, right = {}, text = `Card ${id}
 function fillerDeck(count) {
   return Array.from({ length: count }, (_, index) => card(`filler-${index + 1}`));
 }
+
+describe("AI text request deadline", () => {
+  it("gives text proposal requests 120 seconds", () => {
+    assert.equal(AI_TEXT_REQUEST_TIMEOUT_MS, 120_000);
+  });
+});
 
 describe("AI context card selection", () => {
   it("includes a diagnostic card that sits beyond the old first-12 slice", () => {

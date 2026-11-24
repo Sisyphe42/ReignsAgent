@@ -24,7 +24,8 @@ export {
   REPAIR_CHECKS,
   buildVerifiedRepairPlan,
   collectIssueEntities,
-  evaluateRepairProposal
+  evaluateRepairProposal,
+  producerOnlyEdit
 } from "./repair-loop.js";
 
 const PLAYER_SCHEMA_VERSION = 1;

@@ -27,7 +27,10 @@ const DEFAULT_ASSET_DISPLAY = Object.freeze({
 });
 const AI_EDIT_SCHEMA_VERSION = 1;
 const MAX_AI_TEXT_RESPONSE_BYTES = 1024 * 1024;
-const AI_ENDPOINT_TIMEOUT_MS = 60 * 1000;
+// Text proposal/validation requests: reasoning models often need 40-90 s for a repair
+// answer, so 60 s timed out 4 of 21 real-model requests. Model listing stays at 60 s.
+export const AI_TEXT_REQUEST_TIMEOUT_MS = 120 * 1000;
+const AI_MODEL_LIST_TIMEOUT_MS = 60 * 1000;
 const AI_EDIT_MODES = new Set(["generate_cards", "repair_diagnostics", "generate_asset", "analyze_asset"]);
 const AI_EDIT_PATCH_OPS = new Set(["addCard", "updateCard", "setChoiceLabel", "setChoiceEffects", "setMetadata", "upsertAsset"]);
 const AI_ENDPOINT_ROUTES = {
@@ -874,7 +877,7 @@ export async function listAiEndpointModels({
     response = await fetchImpl(url, {
       method: "GET",
       headers,
-      signal: AbortSignal.timeout(AI_ENDPOINT_TIMEOUT_MS)
+      signal: AbortSignal.timeout(AI_MODEL_LIST_TIMEOUT_MS)
     });
   } catch (error) {
     if (isTimeoutError(error)) throw new PipelineError("AI endpoint model listing timed out", "endpoint_timeout");
@@ -1469,7 +1472,7 @@ async function postAiEditEndpoint({ fetchImpl, url, headers, body }) {
       method: "POST",
       headers,
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(AI_ENDPOINT_TIMEOUT_MS)
+      signal: AbortSignal.timeout(AI_TEXT_REQUEST_TIMEOUT_MS)
     });
   } catch (error) {
     if (isTimeoutError(error)) throw new PipelineError("AI endpoint request timed out", "endpoint_timeout");

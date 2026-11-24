@@ -31,7 +31,9 @@ export const DEFAULT_REPAIR_LOOP_LIMITS = Object.freeze({
   maxRequestBytes: 256 * 1024,
   maxResponseBytes: 512 * 1024,
   maxTotalBytes: 2 * 1024 * 1024,
-  deadlineMs: 180 * 1000,
+  // Two full 120 s text-request timeouts plus scoring fit inside the deadline, and the
+  // author never waits more than five minutes for one repair draft.
+  deadlineMs: 300 * 1000,
   feedbackBytes: 6 * 1024,
   logBytes: 16 * 1024
 });
@@ -356,13 +358,26 @@ export function evaluateRepairProposal({ context, proposal }) {
       : `All ${context.baseById.size} original cards kept.`);
 
   const edited = collectEditedCards(context.baseById, afterById);
-  const outOfScope = edited.filter((cardId) => !context.relatedCards.has(cardId));
+  // An unrelated card may still be edited when the edit only adds a producer for a
+  // missing tag/variable named by the target (see producerOnlyEdit). It still counts
+  // toward maxEditedCards.
+  const scopeExempt = [];
+  const outOfScope = [];
+  for (const cardId of edited.filter((candidate) => !context.relatedCards.has(candidate))) {
+    const signals = producerOnlyEdit(context.baseById.get(cardId), afterById.get(cardId), context.missingProducerSignals);
+    if (signals) scopeExempt.push({ cardId, reason: "adds_missing_producer", signals });
+    else outOfScope.push(cardId);
+  }
   const scopeOk = outOfScope.length === 0 && edited.length <= context.budget.maxEditedCards;
-  add("scope", scopeOk, outOfScope.length > 0
+  const exemptNote = scopeExempt.length > 0
+    ? ` scope_exempt: adds_missing_producer (${scopeExempt.map((entry) => `${entry.cardId}: ${entry.signals.join(", ")}`).join("; ")}).`
+    : "";
+  add("scope", scopeOk, (outOfScope.length > 0
     ? `Edited unrelated card${outOfScope.length === 1 ? "" : "s"}: ${outOfScope.slice(0, 5).join(", ")}.`
     : edited.length > context.budget.maxEditedCards
       ? `${edited.length} existing cards edited; limit is ${context.budget.maxEditedCards}.`
-      : `${edited.length} existing card${edited.length === 1 ? "" : "s"} edited${edited.length ? ` (${edited.join(", ")})` : ""}; ${afterCards.length - context.baseById.size} added.`);
+      : `${edited.length} existing card${edited.length === 1 ? "" : "s"} edited${edited.length ? ` (${edited.join(", ")})` : ""}; ${afterCards.length - context.baseById.size} added.`) + exemptNote);
+  if (scopeExempt.length > 0) checks[checks.length - 1].exemptions = scopeExempt;
 
   const gateResult = compareGates(context, afterById, edited);
   add("gates_preserved", gateResult.removed.length === 0, gateResult.removed.length > 0
@@ -522,6 +537,20 @@ function buildEvaluationContext({ baseBundle, baseline, baselineIssues, targets,
     ...strings(graph.unsatisfiedRequiredVariables).map((variable) => `var:${variable}`),
     ...strings(graph.unsatisfiedRequiredFactions).map((faction) => `gauge:${faction}`)
   ]);
+  // Missing producers: never-satisfiable tags/variables that a target names directly or
+  // that a target card requires. Only these may justify an out-of-scope producer edit.
+  const missingProducerSignals = new Set();
+  for (const name of focus.tags) if (deadSignals.has(`tag:${name}`)) missingProducerSignals.add(`tag:${name}`);
+  for (const name of focus.variables) if (deadSignals.has(`var:${name}`)) missingProducerSignals.add(`var:${name}`);
+  for (const cardId of targetCardIds) {
+    const requirements = baseById.get(cardId)?.requirements ?? {};
+    for (const tag of [...strings(requirements.allTags), ...strings(requirements.anyTags)]) {
+      if (deadSignals.has(`tag:${tag}`)) missingProducerSignals.add(`tag:${tag}`);
+    }
+    for (const key of Object.keys(requirements.variables ?? {})) {
+      if (deadSignals.has(`var:${key}`)) missingProducerSignals.add(`var:${key}`);
+    }
+  }
   return {
     baseBundle,
     baseById,
@@ -530,9 +559,43 @@ function buildEvaluationContext({ baseBundle, baseline, baselineIssues, targets,
     targets,
     relatedCards,
     deadSignals,
+    missingProducerSignals,
     scoring,
     budget
   };
+}
+
+/**
+ * producerOnlyEdit returns the added producer signals when the only difference
+ * between `before` and `after` is new entries in choice effects that produce a
+ * missing tag (set to a truthy value) or a missing variable. Text, weight,
+ * requirements, labels, choice ids/order, gauge deltas, hooks, and every existing
+ * tag/variable entry must be unchanged. Returns null otherwise.
+ */
+export function producerOnlyEdit(before, after, missingSignals) {
+  if (!before || !after || !(missingSignals instanceof Set) || missingSignals.size === 0) return null;
+  const stripped = JSON.parse(JSON.stringify(after));
+  const beforeChoices = new Map((before.choices ?? []).map((choice) => [choice.id, choice]));
+  const added = new Set();
+  for (const choice of stripped.choices ?? []) {
+    const original = beforeChoices.get(choice.id);
+    if (!original || !isRecord(choice.effects)) continue;
+    const originalEffects = original.effects ?? {};
+    for (const [bucket, prefix] of [["tags", "tag"], ["variables", "var"]]) {
+      const entries = choice.effects[bucket];
+      if (!isRecord(entries)) continue;
+      for (const [key, value] of Object.entries(entries)) {
+        if (originalEffects[bucket] && key in originalEffects[bucket]) continue;
+        if (!missingSignals.has(`${prefix}:${key}`)) continue;
+        if (bucket === "tags" && !value) continue;
+        delete entries[key];
+        added.add(`${prefix}:${key}`);
+      }
+      if (Object.keys(entries).length === 0 && !(bucket in originalEffects)) delete choice.effects[bucket];
+    }
+  }
+  if (added.size === 0) return null;
+  return stableJson(stripped) === stableJson(before) ? [...added].sort() : null;
 }
 
 function collectEditedCards(baseById, afterById) {
