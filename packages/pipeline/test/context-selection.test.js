@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { buildAiContext, buildCardEditRequest, collectAiCardSignals, selectAiContextCards } from "../src/index.js";
+import { buildAiContext, buildCardEditRequest, collectAiCardSignals, createAiEditSuggestions, selectAiContextCards } from "../src/index.js";
 
 function card(id, { requirements = {}, left = {}, right = {}, text = `Card ${id}` } = {}) {
   return {
@@ -91,9 +91,26 @@ describe("AI context card selection", () => {
     const cards = [...fillerDeck(20), card("focus")];
     const request = buildCardEditRequest({
       bundle: { cards },
-      constraints: { repairLoop: { targets: [{ code: "unreachable_cards", cardIds: ["focus"] }] } }
+      constraints: { repairLoop: { targets: [{ code: "unreachable_cards", cardIds: ["focus"] }] } },
+      contextStrategy: "relevance"
     });
     assert.match(request.context.bundle.cardSelection.reasons.focus, /^target: repair target/);
+  });
+
+  it("keeps the original first-12 context for drafting and other non-repair modes", () => {
+    const cards = [...fillerDeck(20), card("late")];
+    const diagnostics = { warnings: [{ code: "unreachable_cards", severity: "error", details: { cardIds: ["late"] } }] };
+    for (const mode of ["generate_cards", "generate_asset", "analyze_asset"]) {
+      const context = buildAiContext({ bundle: { cards }, diagnostics, mode });
+      assert.equal(context.bundle.cards.length, 12, mode);
+      assert.deepEqual(context.bundle.cards.map((entry) => entry.id), cards.slice(0, 12).map((entry) => entry.id));
+      assert.equal(context.bundle.cardSelection.strategy, "first_n");
+    }
+    const drafting = createAiEditSuggestions({ bundle: { cards }, mode: "generate_cards", instruction: "Draft" });
+    assert.equal(drafting.request.context.bundle.cards.length, 12);
+    const repair = createAiEditSuggestions({ bundle: { cards }, mode: "repair_diagnostics", diagnostics });
+    assert.equal(repair.request.context.bundle.cardSelection.strategy, "relevance_v1");
+    assert.ok(repair.request.context.bundle.cards.some((entry) => entry.id === "late"));
   });
 
   it("collects required and produced signals per card", () => {

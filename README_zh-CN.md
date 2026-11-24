@@ -140,7 +140,7 @@ AI Assist 是 Creator 侧的可选协作层，不是自主作者，也不属于�
 | 上下文动作 | 对选中的卡牌或图上下文执行 explain、translate 或 branch；除非指令明确要求改变，否则保留 ids、tags、variables 和左右选择含义。 |
 | 视觉生成 | 生成新素材；在 adapter 支持时还可使用参考图、edit、inpaint、outpaint、mask、aspect ratio、negative prompt 和多个输出候选。结果在 Apply 前始终只是二进制草稿。 |
 
-模型看到的是按相关性挑选的一部分卡牌，而不是整个项目：先是选中和目标卡，再是 Review 问题点名的卡，再是与它们共享标签、变量或相关量表的卡，最多 40 张 / 24 KiB。请求预览会列出每张卡被选入的原因。`npm run eval:repair` 用脚本化的 mock endpoint 离线运行修复循环（衡量的是这套检查流程，不是模型）。
+Review 修复时，模型看到的是按相关性挑选的一部分卡牌：先是选中和目标卡，再是 Review 问题点名的卡，再是与它们共享标签、变量或相关量表的卡，最多 40 张 / 24 KiB。起草等其他模式仍和以前一样只发前 12 张卡。修复打分参数固定为 500 局、40 回合、种子 1，与 Review 面板的设置无关。请求预览会列出每张卡被选入的原因。`npm run eval:repair` 用脚本化的 mock endpoint 离线运行修复循环（衡量的是这套检查流程，不是模型）。
 
 文本 endpoint 位于 **Settings → AI Endpoint**。选择 channel preset 或自定义 endpoint，填写 base URL 和 model ID，声明 structured JSON、vision 等 capabilities；只有需要覆盖 protocol、route、compatibility 或 JSON mode 时才使用 Advanced。**Fetch `/models`** 查询兼容的模型发现路由；**Validate endpoint** 只发送兼容性请求，不会编辑项目。
 

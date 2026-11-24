@@ -5934,7 +5934,7 @@ function RepairVerificationSummary({ verification }) {
         </div>
       </div>
       <p className="muted repair-verification__note">
-        Each proposal was applied to a copy and scored with a fixed-seed Review ({scoring.cycles} cycles, {scoring.maxTurns} turns, seed {scoring.seed}). Nothing is written until you apply. Evidence is per proposal; re-run Review after applying several together.
+        Each proposal was applied to a copy and scored with a fixed-seed Review. Scoring settings are fixed at {scoring.cycles} cycles, {scoring.maxTurns} turns, seed {scoring.seed}, independent of the Review panel settings. Nothing is written until you apply. Evidence is per proposal; re-run Review after applying several together.
       </p>
       {(verification.targets ?? []).length > 0 && (
         <p className="repair-verification__targets">

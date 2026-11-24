@@ -59,6 +59,7 @@ const AI_ENDPOINT_EDITOR_RULES = [
   "When constraints.repairLoop is present, fix the listed targets without deleting cards, renaming ids, wiping requirements, or zeroing choice effects; read previousAttempts and change approach for every failed check it names."
 ];
 const AI_CONTEXT_CARD_LIMIT = 40;
+const AI_CONTEXT_LEGACY_CARD_LIMIT = 12;
 const AI_CONTEXT_CARD_BUDGET_BYTES = 24 * 1024;
 const AI_CONTEXT_TIERS = ["target", "diagnostic", "neighbour", "other"];
 
@@ -505,7 +506,8 @@ export function buildAiContext({
   constraints = {},
   assets = null,
   assetId = null,
-  mode = "generate_cards"
+  mode = "generate_cards",
+  contextStrategy = null
 }) {
   const normalizedBundle = createContentBundle(bundle);
   const selectedIds = normalizeStringArray(targetCardIds);
@@ -515,12 +517,17 @@ export function buildAiContext({
     selectedSet.has(asset.cardId) || (assetId && asset.id === assetId)
   );
   const suppliedAssets = Array.isArray(assets) ? assets.map((asset) => cloneJsonValue(asset, "AI context asset")) : [];
-  const cardSelection = selectAiContextCards({
-    cards: normalizedBundle.cards,
-    targetCardIds: selectedIds,
-    diagnostics,
-    focus: constraints?.repairLoop?.targets ?? null
-  });
+  // Relevance selection is only used for review repair; drafting and media keep
+  // the original "first 12 cards" context so their prompt size does not grow.
+  const strategy = contextStrategy ?? (mode === "repair_diagnostics" ? "relevance" : "first_n");
+  const cardSelection = strategy === "relevance"
+    ? selectAiContextCards({
+      cards: normalizedBundle.cards,
+      targetCardIds: selectedIds,
+      diagnostics,
+      focus: constraints?.repairLoop?.targets ?? null
+    })
+    : selectFirstAiContextCards(normalizedBundle.cards);
 
   return {
     schemaVersion: AI_EDIT_SCHEMA_VERSION,
@@ -565,8 +572,8 @@ export function buildAiContext({
   };
 }
 
-export function buildCardEditRequest({ bundle, instruction = "", targetCardIds = [], diagnostics = null, constraints = {} }) {
-  const context = buildAiContext({ bundle, instruction, targetCardIds, diagnostics, constraints, mode: "card_edit" });
+export function buildCardEditRequest({ bundle, instruction = "", targetCardIds = [], diagnostics = null, constraints = {}, contextStrategy = "first_n" }) {
+  const context = buildAiContext({ bundle, instruction, targetCardIds, diagnostics, constraints, mode: "card_edit", contextStrategy });
   const prompt = [
     "Create ReignsAgent card-edit proposals from the supplied context.",
     `Creator instruction: ${context.instruction || "Use the current deck context."}`,
@@ -681,7 +688,7 @@ export function createAiEditSuggestions({
   const style = isNonEmptyString(descriptor.style) ? descriptor.style : "editorial card art";
   const request = mode === "generate_asset" || mode === "analyze_asset"
     ? buildMediaEditRequest({ bundle: normalizedBundle, mode, instruction, targetCardId, assetId, style, diagnostics })
-    : buildCardEditRequest({ bundle: normalizedBundle, instruction, targetCardIds, diagnostics, constraints: descriptor.constraints ?? {} });
+    : buildCardEditRequest({ bundle: normalizedBundle, instruction, targetCardIds, diagnostics, constraints: descriptor.constraints ?? {}, contextStrategy: mode === "repair_diagnostics" ? "relevance" : "first_n" });
   const feedback = diagnostics ? createDiagnosticFeedback(diagnostics) : null;
   const proposals = createOfflineProposals({ bundle: normalizedBundle, mode, config: descriptor, instruction, targetCardId, assetId, request, feedback });
 
@@ -728,7 +735,7 @@ export async function createAiEditSuggestionsFromEndpoint({
   const style = isNonEmptyString(descriptor.style) ? descriptor.style : "editorial card art";
   const request = mode === "generate_asset" || mode === "analyze_asset"
     ? buildMediaEditRequest({ bundle: normalizedBundle, mode, instruction, targetCardId, assetId, style, diagnostics })
-    : buildCardEditRequest({ bundle: normalizedBundle, instruction, targetCardIds, diagnostics, constraints: descriptor.constraints ?? {} });
+    : buildCardEditRequest({ bundle: normalizedBundle, instruction, targetCardIds, diagnostics, constraints: descriptor.constraints ?? {}, contextStrategy: mode === "repair_diagnostics" ? "relevance" : "first_n" });
   const feedback = diagnostics ? createDiagnosticFeedback(diagnostics) : null;
   const endpointResult = await callAiEditEndpoint({
     endpoint,
@@ -2345,6 +2352,20 @@ function addSignalNames(target, source) {
   normalizeStringArray(source.variables).forEach((variable) => target.variables.add(variable));
   normalizeStringArray(source.factions).forEach((faction) => target.factions.add(faction));
   if (isNonEmptyString(source.faction)) target.factions.add(source.faction);
+}
+
+function selectFirstAiContextCards(cards) {
+  const included = cards.slice(0, AI_CONTEXT_LEGACY_CARD_LIMIT);
+  return {
+    cards: included,
+    report: {
+      strategy: "first_n",
+      included: included.length,
+      omitted: cards.length - included.length,
+      omittedCardIds: cards.slice(AI_CONTEXT_LEGACY_CARD_LIMIT).map((card) => card.id).slice(0, 50),
+      maxCards: AI_CONTEXT_LEGACY_CARD_LIMIT
+    }
+  };
 }
 
 function collectContextWarnings(diagnostics) {
