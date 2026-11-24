@@ -21,6 +21,7 @@
     "content:review": "node scripts/content-tool.mjs review",
     "content:convert": "node scripts/content-tool.mjs convert",
     "content:feedback": "node scripts/content-tool.mjs feedback",
+    "eval:repair": "node scripts/eval-repair-loop.mjs",
     "dev:dashboard": "npm run dev -w @reigns-agent/creator-web --",
     "dev:hosted": "npm run dev:hosted -w @reigns-agent/creator-web --",
     "dev:desktop": "npm run build:dashboard && npm run desktop:prepare && npm run start -w @reigns-agent/desktop-electron",
