@@ -24,6 +24,7 @@ export {
   REPAIR_CHECKS,
   buildVerifiedRepairPlan,
   collectIssueEntities,
+  collectMissingProducerSignals,
   evaluateRepairProposal,
   producerOnlyEdit
 } from "./repair-loop.js";

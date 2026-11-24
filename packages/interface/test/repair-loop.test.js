@@ -7,6 +7,7 @@ import {
   buildVerifiedRepairPlan,
   DEFAULT_REPAIR_LOOP_LIMITS,
   collectIssueEntities,
+  collectMissingProducerSignals,
   createCardEditor,
   evaluateRepairProposal,
   producerOnlyEdit,
@@ -293,6 +294,65 @@ describe("verified repair loop", () => {
     const falsy = structuredClone(before);
     falsy.choices[0].effects.tags = { quarantineLifted: false };
     assert.equal(producerOnlyEdit(before, falsy, new Set(["tag:quarantineLifted"])), null);
+  });
+
+  it("extends the producer exemption up a multi-level missing chain with one rule", async () => {
+    // archive-report needs sealOpened; only seal-breaker produces it and needs keyFound;
+    // only key-search produces keyFound and needs ledgerTorn; nothing produces ledgerTorn.
+    const bundle = structuredClone(FOG);
+    const chainCard = (id, needs, makes) => ({
+      id,
+      text: `Chain card ${id}.`,
+      weight: 1,
+      requirements: { allTags: ["onWatch", needs] },
+      choices: [
+        { id: "left", label: "Yes", effects: { factions: { gauge0: 2, gauge1: -2 }, ...(makes ? { tags: { [makes]: true } } : {}) } },
+        { id: "right", label: "No", effects: { factions: { gauge1: 2, gauge0: -2 }, ...(makes ? { tags: { [makes]: true } } : {}) } }
+      ]
+    });
+    bundle.cards.push(chainCard("archive-report", "sealOpened", null), chainCard("seal-breaker", "keyFound", "sealOpened"), chainCard("key-search", "ledgerTorn", "keyFound"));
+    const baseline = runDiagnostics({ cards: bundle.cards, metadata: bundle.metadata, cycles: 500, maxTurns: 40, seed: 1 });
+    const missing = collectMissingProducerSignals({ cards: bundle.cards, reachableCardIds: new Set(baseline.graph.reachableCards), targetCardIds: ["archive-report"] });
+    assert.deepEqual([...missing].sort(), ["tag:keyFound", "tag:ledgerTorn", "tag:sealOpened"]);
+
+    const clearMorning = FOG.cards.find((entry) => entry.id === "clear-morning");
+    const addTag = (tag, id) => ({
+      id,
+      title: `Produce ${tag} at dawn`,
+      patches: [{ op: "setChoiceEffects", cardId: "clear-morning", choiceId: "left", effects: { ...clearMorning.choices[0].effects, tags: { ...(clearMorning.choices[0].effects.tags ?? {}), [tag]: true } } }]
+    });
+    const { fetchImpl } = scriptedFetch([[addTag("ledgerTorn", "root"), addTag("keyFound", "middle"), addTag("sealOpened", "nearest"), addTag("dawnBell", "unrelated")]]);
+    const plan = await buildVerifiedRepairPlan({
+      editor: createCardEditor(bundle),
+      config: ENDPOINT_CONFIG,
+      fetchImpl,
+      repairTarget: { code: "unreachable_cards", cardIds: ["archive-report"] },
+      limits: { maxRounds: 1 }
+    });
+    const byId = new Map(plan.proposals.map((proposal) => [proposal.id, proposal]));
+    for (const id of ["root", "middle", "nearest"]) {
+      const scope = checkOf(byId.get(id), "scope");
+      assert.equal(scope.passed, true, `${id}: ${scope.detail}`);
+      assert.equal(scope.exemptions[0].reason, "adds_missing_producer");
+      assert.equal(checkOf(byId.get(id), "target_resolved").passed, true, id);
+    }
+    assert.equal(checkOf(byId.get("unrelated"), "scope").passed, false);
+  });
+
+  it("terminates on cycles and only treats anyTags as missing when every alternative is", () => {
+    const card = (id, requirements, makes) => ({ id, requirements, choices: [{ id: "left", effects: makes ? { tags: { [makes]: true } } : {} }, { id: "right", effects: {} }] });
+    const cards = [
+      card("start", {}, "open"),
+      card("target", { allTags: ["a"] }),
+      card("loop-a", { allTags: ["b"] }, "a"),
+      card("loop-b", { allTags: ["a"] }, "b"),
+      card("either", { anyTags: ["open", "never"] }),
+      card("neither", { anyTags: ["never", "nowhere"] })
+    ];
+    const reachable = new Set(["start", "either"]);
+    assert.deepEqual([...collectMissingProducerSignals({ cards, reachableCardIds: reachable, targetCardIds: ["target"] })].sort(), ["tag:a", "tag:b"]);
+    assert.deepEqual([...collectMissingProducerSignals({ cards, reachableCardIds: reachable, targetCardIds: ["either"] })], []);
+    assert.deepEqual([...collectMissingProducerSignals({ cards, reachableCardIds: reachable, targetCardIds: ["neither"] })].sort(), ["tag:never", "tag:nowhere"]);
   });
 
   it("rejects disallowed operations and empty proposals before scoring", () => {

@@ -537,20 +537,12 @@ function buildEvaluationContext({ baseBundle, baseline, baselineIssues, targets,
     ...strings(graph.unsatisfiedRequiredVariables).map((variable) => `var:${variable}`),
     ...strings(graph.unsatisfiedRequiredFactions).map((faction) => `gauge:${faction}`)
   ]);
-  // Missing producers: never-satisfiable tags/variables that a target names directly or
-  // that a target card requires. Only these may justify an out-of-scope producer edit.
-  const missingProducerSignals = new Set();
-  for (const name of focus.tags) if (deadSignals.has(`tag:${name}`)) missingProducerSignals.add(`tag:${name}`);
-  for (const name of focus.variables) if (deadSignals.has(`var:${name}`)) missingProducerSignals.add(`var:${name}`);
-  for (const cardId of targetCardIds) {
-    const requirements = baseById.get(cardId)?.requirements ?? {};
-    for (const tag of [...strings(requirements.allTags), ...strings(requirements.anyTags)]) {
-      if (deadSignals.has(`tag:${tag}`)) missingProducerSignals.add(`tag:${tag}`);
-    }
-    for (const key of Object.keys(requirements.variables ?? {})) {
-      if (deadSignals.has(`var:${key}`)) missingProducerSignals.add(`var:${key}`);
-    }
-  }
+  const missingProducerSignals = collectMissingProducerSignals({
+    cards: baseBundle.cards,
+    reachableCardIds: new Set(graph.reachableCards ?? []),
+    targetCardIds,
+    namedSignals: [...focus.tags.map((tag) => `tag:${tag}`), ...focus.variables.map((variable) => `var:${variable}`)]
+  });
   return {
     baseBundle,
     baseById,
@@ -563,6 +555,67 @@ function buildEvaluationContext({ baseBundle, baseline, baselineIssues, targets,
     scoring,
     budget
   };
+}
+
+/**
+ * collectMissingProducerSignals walks upstream from the target cards through the
+ * signal network and returns every tag/variable that is "effectively missing": some
+ * card in the upstream closure requires it, and no card reachable in the baseline
+ * produces it. Signals with no producer at all are the end of the chain; signals that
+ * are only produced by unreachable cards are intermediate links, and the walk
+ * continues into those producers' own requirements. One rule covers any depth, and
+ * the visited set makes cycles (A needs B, B needs A) terminate.
+ *
+ * Adding a producer for any signal in this set is what the scope exemption allows:
+ * producing an end-of-chain signal unlocks the whole chain, producing an intermediate
+ * signal bypasses the broken upstream part.
+ */
+export function collectMissingProducerSignals({ cards, reachableCardIds, targetCardIds, namedSignals = [] }) {
+  const producersBySignal = new Map();
+  for (const card of cards) {
+    for (const choice of card.choices ?? []) {
+      const effects = choice.effects ?? {};
+      for (const [tag, value] of Object.entries(isRecord(effects.tags) ? effects.tags : {})) {
+        if (value) addToMapSet(producersBySignal, `tag:${tag}`, card.id);
+      }
+      for (const key of Object.keys(isRecord(effects.variables) ? effects.variables : {})) {
+        addToMapSet(producersBySignal, `var:${key}`, card.id);
+      }
+    }
+  }
+  const byId = new Map(cards.map((card) => [card.id, card]));
+  const missing = new Set();
+  const visitedCards = new Set();
+  const visitedSignals = new Set();
+  const queue = [];
+  const visitSignal = (signal) => {
+    if (visitedSignals.has(signal)) return;
+    visitedSignals.add(signal);
+    const producers = [...(producersBySignal.get(signal) ?? [])];
+    if (producers.some((cardId) => reachableCardIds.has(cardId))) return;
+    missing.add(signal);
+    for (const cardId of producers) queue.push(cardId);
+  };
+  for (const signal of namedSignals) visitSignal(signal);
+  for (const cardId of targetCardIds) queue.push(cardId);
+  while (queue.length > 0) {
+    const cardId = queue.shift();
+    if (visitedCards.has(cardId)) continue;
+    visitedCards.add(cardId);
+    const requirements = byId.get(cardId)?.requirements ?? {};
+    for (const tag of strings(requirements.allTags)) visitSignal(`tag:${tag}`);
+    // anyTags only blocks a card when none of the alternatives has a reachable producer.
+    const anyTags = strings(requirements.anyTags).map((tag) => `tag:${tag}`);
+    const anySatisfiable = anyTags.some((signal) => [...(producersBySignal.get(signal) ?? [])].some((producer) => reachableCardIds.has(producer)));
+    if (!anySatisfiable) anyTags.forEach(visitSignal);
+    for (const key of Object.keys(requirements.variables ?? {})) visitSignal(`var:${key}`);
+  }
+  return missing;
+}
+
+function addToMapSet(map, key, value) {
+  if (!map.has(key)) map.set(key, new Set());
+  map.get(key).add(value);
 }
 
 /**
