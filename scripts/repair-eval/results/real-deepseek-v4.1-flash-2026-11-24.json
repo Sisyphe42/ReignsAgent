@@ -1,0 +1,2784 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-11-24T11:50:18.171Z",
+  "endpoint": "http://127.0.0.1:3425/v1",
+  "model": "auto/deepseek-v4.1-flash",
+  "k": 3,
+  "scoring": {
+    "cycles": 500,
+    "maxTurns": 40,
+    "seed": 1
+  },
+  "requestCap": 148,
+  "requestsSent": 21,
+  "durationMs": 733500,
+  "skippedCases": [
+    {
+      "case": "fog-gate-wipe-then-fix",
+      "reason": "Same deck and target as fog-direct-fix; the real run covers it once."
+    },
+    {
+      "case": "fog-persistent-shortcuts",
+      "reason": "Same deck and target as fog-direct-fix; only the scripted shortcuts differ."
+    },
+    {
+      "case": "fog-rejected-response",
+      "reason": "Scripted malformed response (failure injection); a real model is not asked to fail."
+    },
+    {
+      "case": "fog-endpoint-drop",
+      "reason": "Scripted HTTP 503 (endpoint failure injection)."
+    }
+  ],
+  "summary": {
+    "tasks": 5,
+    "k": 3,
+    "runsCompleted": 15,
+    "runsErrored": 1,
+    "runsRetried": 2,
+    "verifiedRuns": 13,
+    "passAt1Mean": 0.867,
+    "tasksWithAnySuccess": 5,
+    "anySuccessRate": 1,
+    "averageRounds": 1.286,
+    "evaluatedProposals": 17,
+    "blockedProposals": 4,
+    "blockedByCheck": {
+      "scope": 4
+    },
+    "rejectedRounds": 0,
+    "endpointErrorRounds": 1,
+    "averageRunMs": 39918,
+    "requestBytes": 607091,
+    "responseBytes": 334536,
+    "tokens": {
+      "prompt": 122693,
+      "completion": 75087,
+      "total": 197780,
+      "callsWithUsage": 17
+    },
+    "perTask": [
+      {
+        "task": "fog-unreachable",
+        "runs": 3,
+        "verified": 3,
+        "passAt1": 1,
+        "anySuccess": true,
+        "statuses": [
+          "verified",
+          "verified",
+          "verified"
+        ],
+        "rounds": [
+          1,
+          2,
+          1
+        ]
+      },
+      {
+        "task": "fog-missing-tag",
+        "runs": 3,
+        "verified": 3,
+        "passAt1": 1,
+        "anySuccess": true,
+        "statuses": [
+          "verified",
+          "verified",
+          "verified"
+        ],
+        "rounds": [
+          1,
+          1,
+          1
+        ]
+      },
+      {
+        "task": "court-gauge-pressure",
+        "runs": 3,
+        "verified": 2,
+        "passAt1": 0.667,
+        "anySuccess": true,
+        "statuses": [
+          "verified",
+          "error",
+          "verified"
+        ],
+        "rounds": [
+          1,
+          null,
+          1
+        ]
+      },
+      {
+        "task": "court-variable-gate",
+        "runs": 3,
+        "verified": 2,
+        "passAt1": 0.667,
+        "anySuccess": true,
+        "statuses": [
+          "unverified",
+          "verified",
+          "verified"
+        ],
+        "rounds": [
+          2,
+          2,
+          2
+        ]
+      },
+      {
+        "task": "night-watch-stall",
+        "runs": 3,
+        "verified": 3,
+        "passAt1": 1,
+        "anySuccess": true,
+        "statuses": [
+          "verified",
+          "verified",
+          "verified"
+        ],
+        "rounds": [
+          1,
+          1,
+          1
+        ]
+      }
+    ]
+  },
+  "runs": [
+    {
+      "task": "fog-unreachable",
+      "run": 1,
+      "status": "verified",
+      "stopReason": "verified",
+      "rounds": 1,
+      "baselineScore": 55,
+      "roundSummaries": [
+        {
+          "round": 1,
+          "status": "evaluated",
+          "proposalCount": 1,
+          "passedCount": 1,
+          "bestScore": 79,
+          "blockedBy": {},
+          "error": null,
+          "proposals": [
+            {
+              "id": "proposal-repair-sealed-warehouse-reachability",
+              "title": "Add quarantine clearance producer for sealed-warehouse",
+              "passed": true,
+              "scoreAfter": 79,
+              "failedDetails": []
+            }
+          ]
+        }
+      ],
+      "passedProposal": {
+        "id": "proposal-repair-sealed-warehouse-reachability",
+        "title": "Add quarantine clearance producer for sealed-warehouse",
+        "summary": "Adds a reachable onWatch follow-up that sets the missing quarantineLifted tag, making sealed-warehouse reachable without removing its authored gate or changing existing cards.",
+        "round": 1,
+        "score": {
+          "before": 55,
+          "after": 79,
+          "delta": 24
+        },
+        "advisories": [],
+        "patches": [
+          {
+            "op": "addCard",
+            "cardId": "quarantine-clearance",
+            "requirements": {
+              "allTags": [
+                "onWatch"
+              ],
+              "noneTags": [
+                "quarantineLifted"
+              ]
+            },
+            "choices": [
+              {
+                "id": "left",
+                "label": "我来担责，准予开仓",
+                "effects": {
+                  "factions": {
+                    "gauge3": -6,
+                    "gauge0": 4
+                  },
+                  "tags": {
+                    "quarantineLifted": true
+                  }
+                }
+              },
+              {
+                "id": "right",
+                "label": "让货主去求议会",
+                "effects": {
+                  "factions": {
+                    "gauge0": -5,
+                    "gauge3": 6
+                  },
+                  "tags": {
+                    "quarantineLifted": true
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "usage": {
+        "calls": 1,
+        "requestBytes": 37636,
+        "responseBytes": 36115,
+        "promptTokens": 7689,
+        "completionTokens": 8173,
+        "totalTokens": 15862,
+        "callsWithUsage": 1
+      },
+      "calls": [
+        {
+          "status": 200,
+          "durationMs": 47225,
+          "requestBytes": 37636,
+          "responseBytes": 36115,
+          "usage": {
+            "completion_tokens": 8173,
+            "completion_tokens_details": {
+              "reasoning_tokens": 7876
+            },
+            "prompt_tokens": 7689,
+            "prompt_tokens_details": {
+              "cache_write_tokens": 0,
+              "cached_tokens": 7552
+            },
+            "total_tokens": 15862
+          },
+          "proposals": [
+            {
+              "id": "proposal-repair-sealed-warehouse-reachability",
+              "title": "Add quarantine clearance producer for sealed-warehouse",
+              "summary": "Adds a reachable onWatch follow-up that sets the missing quarantineLifted tag, making sealed-warehouse reachable without removing its authored gate or changing existing cards.",
+              "patches": [
+                {
+                  "op": "addCard",
+                  "cardId": "quarantine-clearance",
+                  "requirements": {
+                    "allTags": [
+                      "onWatch"
+                    ],
+                    "noneTags": [
+                      "quarantineLifted"
+                    ]
+                  },
+                  "choices": [
+                    {
+                      "id": "left",
+                      "label": "我来担责，准予开仓",
+                      "effects": {
+                        "factions": {
+                          "gauge3": -6,
+                          "gauge0": 4
+                        },
+                        "tags": {
+                          "quarantineLifted": true
+                        }
+                      }
+                    },
+                    {
+                      "id": "right",
+                      "label": "让货主去求议会",
+                      "effects": {
+                        "factions": {
+                          "gauge0": -5,
+                          "gauge3": 6
+                        },
+                        "tags": {
+                          "quarantineLifted": true
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "contentExcerpt": "{\"proposals\":[{\"id\":\"proposal-repair-sealed-warehouse-reachability\",\"title\":\"Add quarantine clearance producer for sealed-warehouse\",\"summary\":\"Adds a reachable onWatch follow-up that sets the missing quarantineLifted tag, making sealed-warehouse reachable without removing its authored gate or changing existing cards.\",\"source\":{\"diagnostics\":[\"unreachable_cards\",\"unsatisfied_required_tags\"],\"tags\":[\"quarantineLifted\"]},\"target\":{\"cardIds\":[\"sealed-warehouse\"],\"tags\":[\"quarantineLifted\"]},\"patches\":[{\"op\":\"addCard\",\"card\":{\"id\":\"quarantine-clearance\",\"text\":\"检疫官撤了封条，却把七号仓的钥匙交到你手上。他说，开仓得有人担责。\",\"weight\":2,\"requirements\":{\"allTags\":[\"onWatch\"],\"noneTags\":[\"quarantineLifted\"]},\"choices\":[{\"id\":\"left\",\"label\":\"我来担责，准予开仓\",\"effects\":{\"factions\":{\"gauge3\":-6,\"gauge0\":4},\"tags\":{\"quarantineLifted\":true}}},{\"id\":\"right\",\"label\":\"让货主去求议会\",\"effects\":{\"factions\":{\"gauge0\":-5,\"gauge3\":6},\"tags\":{\"quarantineLifted\":true}}}]}}]}]}"
+        }
+      ],
+      "durationMs": 47683
+    },
+    {
+      "task": "fog-unreachable",
+      "run": 2,
+      "status": "verified",
+      "stopReason": "verified",
+      "rounds": 2,
+      "baselineScore": 55,
+      "roundSummaries": [
+        {
+          "round": 1,
+          "status": "evaluated",
+          "proposalCount": 1,
+          "passedCount": 0,
+          "bestScore": 78,
+          "blockedBy": {
+            "scope": 1
+          },
+          "error": null,
+          "proposals": [
+            {
+              "id": "repair-sealed-warehouse-quarantine-producer",
+              "title": "Add quarantine-lifted producer on clear-morning",
+              "passed": false,
+              "scoreAfter": 78,
+              "failedDetails": [
+                {
+                  "id": "scope",
+                  "detail": "Edited unrelated card: clear-morning."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "round": 2,
+          "status": "evaluated",
+          "proposalCount": 1,
+          "passedCount": 1,
+          "bestScore": 78,
+          "blockedBy": {},
+          "error": null,
+          "proposals": [
+            {
+              "id": "repair-sealed-warehouse-remove-unsatisfiable-quarantine-gate",
+              "title": "Make sealed-warehouse reachable by removing its unsatisfiable quarantine gate",
+              "passed": true,
+              "scoreAfter": 78,
+              "failedDetails": []
+            }
+          ]
+        }
+      ],
+      "passedProposal": {
+        "id": "repair-sealed-warehouse-remove-unsatisfiable-quarantine-gate",
+        "title": "Make sealed-warehouse reachable by removing its unsatisfiable quarantine gate",
+        "summary": "The sealed-warehouse card is unreachable because no declared effect produces quarantineLifted. This patch updates only the target card, removing that unsatisfiable requirement while preserving the reachable onWatch gate, the card id, weight, text, and both binary choices with their existing effects.",
+        "round": 2,
+        "score": {
+          "before": 55,
+          "after": 78,
+          "delta": 23
+        },
+        "advisories": [
+          "gate_relaxed"
+        ],
+        "patches": [
+          {
+            "op": "updateCard",
+            "cardId": "sealed-warehouse",
+            "changes": {
+              "requirements": {
+                "allTags": [
+                  "onWatch"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "usage": {
+        "calls": 2,
+        "requestBytes": 75924,
+        "responseBytes": 45243,
+        "promptTokens": 15506,
+        "completionTokens": 9816,
+        "totalTokens": 25322,
+        "callsWithUsage": 2
+      },
+      "calls": [
+        {
+          "status": 200,
+          "durationMs": 29371,
+          "requestBytes": 37636,
+          "responseBytes": 23239,
+          "usage": {
+            "completion_tokens": 5116,
+            "completion_tokens_details": {
+              "reasoning_tokens": 4880
+            },
+            "prompt_tokens": 7689,
+            "prompt_tokens_details": {
+              "cache_write_tokens": 0,
+              "cached_tokens": 7552
+            },
+            "total_tokens": 12805
+          },
+          "proposals": [
+            {
+              "id": "repair-sealed-warehouse-quarantine-producer",
+              "title": "Add quarantine-lifted producer on clear-morning",
+              "summary": "Makes sealed-warehouse reachable by declaring the missing quarantineLifted story tag on an existing late-game clear-morning choice. Both outcomes set the tag so the target card is not blocked by one branch, while preserving every existing tag and all gauge movement.",
+              "patches": [
+                {
+                  "op": "setChoiceEffects",
+                  "cardId": "clear-morning",
+                  "choiceId": "left",
+                  "effects": {
+                    "factions": {
+                      "gauge0": 4,
+                      "gauge1": 4,
+                      "gauge3": 4
+                    },
+                    "tags": {
+                      "endingLogged": true,
+                      "quarantineLifted": true
+                    }
+                  }
+                },
+                {
+                  "op": "setChoiceEffects",
+                  "cardId": "clear-morning",
+                  "choiceId": "right",
+                  "effects": {
+                    "factions": {
+                      "gauge2": 9
+                    },
+                    "tags": {
+                      "endingQuiet": true,
+                      "quarantineLifted": true
+                    }
+                  }
+                }
+              ]
+            }
+          ],
+          "contentExcerpt": "{\"proposals\":[{\"id\":\"repair-sealed-warehouse-quarantine-producer\",\"title\":\"Add quarantine-lifted producer on clear-morning\",\"summary\":\"Makes sealed-warehouse reachable by declaring the missing quarantineLifted story tag on an existing late-game clear-morning choice. Both outcomes set the tag so the target card is not blocked by one branch, while preserving every existing tag and all gauge movement.\",\"source\":{\"cardIds\":[\"clear-morning\"]},\"target\":{\"cardIds\":[\"sealed-warehouse\"],\"tags\":[\"quarantineLifted\"]},\"patches\":[{\"op\":\"setChoiceEffects\",\"cardId\":\"clear-morning\",\"choiceId\":\"left\",\"effects\":{\"factions\":{\"gauge0\":4,\"gauge1\":4,\"gauge3\":4},\"tags\":{\"endingLogged\":true,\"quarantineLifted\":true}}},{\"op\":\"setChoiceEffects\",\"cardId\":\"clear-morning\",\"choiceId\":\"right\",\"effects\":{\"factions\":{\"gauge2\":9},\"tags\":{\"endingQuiet\":true,\"quarantineLifted\":true}}}]}]}"
+        },
+        {
+          "status": 200,
+          "durationMs": 31092,
+          "requestBytes": 38288,
+          "responseBytes": 22004,
+          "usage": {
+            "completion_tokens": 4700,
+            "completion_tokens_details": {
+              "reasoning_tokens": 4513
+            },
+            "prompt_tokens": 7817,
+            "prompt_tokens_details": {
+              "cache_write_tokens": 0,
+              "cached_tokens": 256
+            },
+            "total_tokens": 12517
+          },
+          "proposals": [
+            {
+              "id": "repair-sealed-warehouse-remove-unsatisfiable-quarantine-gate",
+              "title": "Make sealed-warehouse reachable by removing its unsatisfiable quarantine gate",
+              "summary": "The sealed-warehouse card is unreachable because no declared effect produces quarantineLifted. This patch updates only the target card, removing that unsatisfiable requirement while preserving the reachable onWatch gate, the card id, weight, text, and both binary choices with their existing effects.",
+              "patches": [
+                {
+                  "op": "updateCard",
+                  "cardId": "sealed-warehouse",
+                  "changes": {
+                    "requirements": {
+                      "allTags": [
+                        "onWatch"
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          ],
+          "contentExcerpt": "{\"proposals\":[{\"id\":\"repair-sealed-warehouse-remove-unsatisfiable-quarantine-gate\",\"title\":\"Make sealed-warehouse reachable by removing its unsatisfiable quarantine gate\",\"summary\":\"The sealed-warehouse card is unreachable because no declared effect produces quarantineLifted. This patch updates only the target card, removing that unsatisfiable requirement while preserving the reachable onWatch gate, the card id, weight, text, and both binary choices with their existing effects.\",\"source\":{\"cardId\":\"sealed-warehouse\",\"requirements\":{\"allTags\":[\"onWatch\",\"quarantineLifted\"]}},\"target\":{\"cardId\":\"sealed-warehouse\",\"requirements\":{\"allTags\":[\"onWatch\"]}},\"patches\":[{\"op\":\"updateCard\",\"cardId\":\"sealed-warehouse\",\"changes\":{\"requirements\":{\"allTags\":[\"onWatch\"]}}}]}]}"
+        }
+      ],
+      "durationMs": 61234
+    },
+    {
+      "task": "fog-unreachable",
+      "run": 3,
+      "status": "verified",
+      "stopReason": "verified",
+      "rounds": 1,
+      "baselineScore": 55,
+      "roundSummaries": [
+        {
+          "round": 1,
+          "status": "evaluated",
+          "proposalCount": 1,
+          "passedCount": 1,
+          "bestScore": 79,
+          "blockedBy": {},
+          "error": null,
+          "proposals": [
+            {
+              "id": "repair-unreachable-sealed-warehouse",
+              "title": "Add quarantine-lift bridge for sealed warehouse",
+              "passed": true,
+              "scoreAfter": 79,
+              "failedDetails": []
+            }
+          ]
+        }
+      ],
+      "passedProposal": {
+        "id": "repair-unreachable-sealed-warehouse",
+        "title": "Add quarantine-lift bridge for sealed warehouse",
+        "summary": "Adds a reachable quarantine-order card that consumes the initial onWatch state and produces the missing quarantineLifted tag on either binary outcome. This makes sealed-warehouse reachable without loosening its existing requirements or changing any existing card effects.",
+        "round": 1,
+        "score": {
+          "before": 55,
+          "after": 79,
+          "delta": 24
+        },
+        "advisories": [],
+        "patches": [
+          {
+            "op": "addCard",
+            "cardId": "quarantine-order",
+            "requirements": {
+              "allTags": [
+                "onWatch"
+              ],
+              "noneTags": [
+                "quarantineLifted"
+              ]
+            },
+            "choices": [
+              {
+                "id": "left",
+                "label": "签下解封令",
+                "effects": {
+                  "factions": {
+                    "gauge3": 5,
+                    "gauge0": -5
+                  },
+                  "tags": {
+                    "quarantineLifted": true
+                  }
+                }
+              },
+              {
+                "id": "right",
+                "label": "等议会背书",
+                "effects": {
+                  "factions": {
+                    "gauge0": 6,
+                    "gauge1": -4
+                  },
+                  "tags": {
+                    "quarantineLifted": true
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "usage": {
+        "calls": 1,
+        "requestBytes": 37636,
+        "responseBytes": 25825,
+        "promptTokens": 7689,
+        "completionTokens": 5645,
+        "totalTokens": 13334,
+        "callsWithUsage": 1
+      },
+      "calls": [
+        {
+          "status": 200,
+          "durationMs": 33378,
+          "requestBytes": 37636,
+          "responseBytes": 25825,
+          "usage": {
+            "completion_tokens": 5645,
+            "completion_tokens_details": {
+              "reasoning_tokens": 5343
+            },
+            "prompt_tokens": 7689,
+            "prompt_tokens_details": {
+              "cache_write_tokens": 0,
+              "cached_tokens": 7552
+            },
+            "total_tokens": 13334
+          },
+          "proposals": [
+            {
+              "id": "repair-unreachable-sealed-warehouse",
+              "title": "Add quarantine-lift bridge for sealed warehouse",
+              "summary": "Adds a reachable quarantine-order card that consumes the initial onWatch state and produces the missing quarantineLifted tag on either binary outcome. This makes sealed-warehouse reachable without loosening its existing requirements or changing any existing card effects.",
+              "patches": [
+                {
+                  "op": "addCard",
+                  "cardId": "quarantine-order",
+                  "requirements": {
+                    "allTags": [
+                      "onWatch"
+                    ],
+                    "noneTags": [
+                      "quarantineLifted"
+                    ]
+                  },
+                  "choices": [
+                    {
+                      "id": "left",
+                      "label": "签下解封令",
+                      "effects": {
+                        "factions": {
+                          "gauge3": 5,
+                          "gauge0": -5
+                        },
+                        "tags": {
+                          "quarantineLifted": true
+                        }
+                      }
+                    },
+                    {
+                      "id": "right",
+                      "label": "等议会背书",
+                      "effects": {
+                        "factions": {
+                          "gauge0": 6,
+                          "gauge1": -4
+                        },
+                        "tags": {
+                          "quarantineLifted": true
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "contentExcerpt": "{\"proposals\":[{\"id\":\"repair-unreachable-sealed-warehouse\",\"title\":\"Add quarantine-lift bridge for sealed warehouse\",\"summary\":\"Adds a reachable quarantine-order card that consumes the initial onWatch state and produces the missing quarantineLifted tag on either binary outcome. This makes sealed-warehouse reachable without loosening its existing requirements or changing any existing card effects.\",\"source\":{\"diagnostics\":[\"unreachable_cards\",\"unsatisfied_required_tags\"],\"tags\":[\"quarantineLifted\"]},\"target\":{\"cardIds\":[\"sealed-warehouse\"],\"tags\":[\"quarantineLifted\"]},\"patches\":[{\"op\":\"addCard\",\"card\":{\"id\":\"quarantine-order\",\"text\":\"检疫官在七号仓外贴了告示：封条可以拆，但责任自负。医生和商会都在等你先开口。\",\"weight\":2,\"requirements\":{\"allTags\":[\"onWatch\"],\"noneTags\":[\"quarantineLifted\"]},\"choices\":[{\"id\":\"left\",\"label\":\"签下解封令\",\"effects\":{\"factions\":{\"gauge3\":5,\"gauge0\":-5},\"tags\":{\"quarantineLifted\":true}}},{\"id\":\"right\",\"label\":\"等议会背书\",\"effects\":{\"factions\":{\"gauge0\":6,\"gauge1\":-4},\"tags\":{\"quarantineLifted\":true}}}]}}]}]}"
+        }
+      ],
+      "durationMs": 33834
+    },
+    {
+      "task": "fog-missing-tag",
+      "run": 1,
+      "status": "verified",
+      "stopReason": "verified",
+      "rounds": 1,
+      "baselineScore": 55,
+      "roundSummaries": [
+        {
+          "round": 1,
+          "status": "evaluated",
+          "proposalCount": 1,
+          "passedCount": 1,
+          "bestScore": 78,
+          "blockedBy": {},
+          "error": null,
+          "proposals": [
+            {
+              "id": "proposal-quarantine-release",
+              "title": "Add a reachable quarantine release card",
+              "passed": true,
+              "scoreAfter": 78,
+              "failedDetails": []
+            }
+          ]
+        }
+      ],
+      "passedProposal": {
+        "id": "proposal-quarantine-release",
+        "title": "Add a reachable quarantine release card",
+        "summary": "Adds one post-appointment decision card that produces the missing quarantineLifted tag on both branches, so sealed-warehouse can satisfy its requirements without loosening any existing gate. The binary choice keeps immediate release versus public recheck as the tension.",
+        "round": 1,
+        "score": {
+          "before": 55,
+          "after": 78,
+          "delta": 23
+        },
+        "advisories": [],
+        "patches": [
+          {
+            "op": "addCard",
+            "cardId": "quarantine-release",
+            "requirements": {
+              "allTags": [
+                "onWatch"
+              ]
+            },
+            "choices": [
+              {
+                "id": "left",
+                "label": "Sign the release now",
+                "effects": {
+                  "factions": {
+                    "gauge0": 7,
+                    "gauge1": -5,
+                    "gauge3": -4
+                  },
+                  "tags": {
+                    "quarantineLifted": true
+                  }
+                }
+              },
+              {
+                "id": "right",
+                "label": "Hold a public recheck first",
+                "effects": {
+                  "factions": {
+                    "gauge3": 6,
+                    "gauge1": 5,
+                    "gauge0": -6
+                  },
+                  "tags": {
+                    "quarantineLifted": true
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "usage": {
+        "calls": 1,
+        "requestBytes": 37629,
+        "responseBytes": 20356,
+        "promptTokens": 7692,
+        "completionTokens": 4551,
+        "totalTokens": 12243,
+        "callsWithUsage": 1
+      },
+      "calls": [
+        {
+          "status": 200,
+          "durationMs": 33857,
+          "requestBytes": 37629,
+          "responseBytes": 20356,
+          "usage": {
+            "completion_tokens": 4551,
+            "completion_tokens_details": {
+              "reasoning_tokens": 4212
+            },
+            "prompt_tokens": 7692,
+            "prompt_tokens_details": {
+              "cache_write_tokens": 0,
+              "cached_tokens": 256
+            },
+            "total_tokens": 12243
+          },
+          "proposals": [
+            {
+              "id": "proposal-quarantine-release",
+              "title": "Add a reachable quarantine release card",
+              "summary": "Adds one post-appointment decision card that produces the missing quarantineLifted tag on both branches, so sealed-warehouse can satisfy its requirements without loosening any existing gate. The binary choice keeps immediate release versus public recheck as the tension.",
+              "patches": [
+                {
+                  "op": "addCard",
+                  "cardId": "quarantine-release",
+                  "requirements": {
+                    "allTags": [
+                      "onWatch"
+                    ]
+                  },
+                  "choices": [
+                    {
+                      "id": "left",
+                      "label": "Sign the release now",
+                      "effects": {
+                        "factions": {
+                          "gauge0": 7,
+                          "gauge1": -5,
+                          "gauge3": -4
+                        },
+                        "tags": {
+                          "quarantineLifted": true
+                        }
+                      }
+                    },
+                    {
+                      "id": "right",
+                      "label": "Hold a public recheck first",
+                      "effects": {
+                        "factions": {
+                          "gauge3": 6,
+                          "gauge1": 5,
+                          "gauge0": -6
+                        },
+                        "tags": {
+                          "quarantineLifted": true
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "contentExcerpt": "{\"proposals\":[{\"id\":\"proposal-quarantine-release\",\"title\":\"Add a reachable quarantine release card\",\"summary\":\"Adds one post-appointment decision card that produces the missing quarantineLifted tag on both branches, so sealed-warehouse can satisfy its requirements without loosening any existing gate. The binary choice keeps immediate release versus public recheck as the tension.\",\"source\":{\"diagnostics\":[\"unsatisfied_required_tags\",\"unreachable_cards\"],\"tags\":[\"quarantineLifted\"],\"cardIds\":[\"sealed-warehouse\"]},\"target\":{\"tags\":[\"quarantineLifted\"],\"cardIds\":[\"sealed-warehouse\"],\"addedCardIds\":[\"quarantine-release\"]},\"patches\":[{\"op\":\"addCard\",\"card\":{\"id\":\"quarantine-release\",\"text\":\"The quarantine officer sets the final inspection sheet on your desk. The fever has passed; the release order needs only your signature. The merchant guild wants warehouse seven opened now. The doctor asks for a public recheck first.\",\"weight\":1,\"requirements\":{\"allTags\":[\"onWatch\"]},\"choices\":[{\"id\":\"left\",\"label\":\"Sign the release now\",\"effects\":{\"factions\":{\"gauge0\":7,\"gauge1\":-5,\"gauge3\":-4},\"tags\":{\"quarantineLifted\":true}}},{\"id\":\"right\",\"label\":\"Hold a public recheck first\",\"effects\":{\"factions\":{\"gauge3\":6,\"gauge1\":5,\"gauge0\":-6},\"tags\":{\"quarantineLifted\":true}}}]}}]}]}"
+        }
+      ],
+      "durationMs": 34309
+    },
+    {
+      "task": "fog-missing-tag",
+      "run": 2,
+      "status": "verified",
+      "stopReason": "verified",
+      "rounds": 1,
+      "baselineScore": 55,
+      "roundSummaries": [
+        {
+          "round": 1,
+          "status": "evaluated",
+          "proposalCount": 1,
+          "passedCount": 1,
+          "bestScore": 77,
+          "blockedBy": {},
+          "error": null,
+          "proposals": [
+            {
+              "id": "proposal-quarantine-tag-producer",
+              "title": "Add quarantine release card to produce quarantineLifted",
+              "passed": true,
+              "scoreAfter": 77,
+              "failedDetails": []
+            }
+          ]
+        }
+      ],
+      "passedProposal": {
+        "id": "proposal-quarantine-tag-producer",
+        "title": "Add quarantine release card to produce quarantineLifted",
+        "summary": "Introduces a reachable post-onWatch quarantine decision whose left choice sets quarantineLifted, satisfying the missing tag producer and opening sealed-warehouse. The right choice keeps the quarantine in place with a different faction tradeoff, preserving a clear binary consequence and adding modest gauge pressure.",
+        "round": 1,
+        "score": {
+          "before": 55,
+          "after": 77,
+          "delta": 22
+        },
+        "advisories": [],
+        "patches": [
+          {
+            "op": "addCard",
+            "cardId": "quarantine-release",
+            "requirements": {
+              "allTags": [
+                "onWatch"
+              ],
+              "noneTags": [
+                "quarantineLifted"
+              ]
+            },
+            "choices": [
+              {
+                "id": "left",
+                "label": "签字解除检疫",
+                "effects": {
+                  "factions": {
+                    "gauge0": 6,
+                    "gauge3": -4
+                  },
+                  "tags": {
+                    "quarantineLifted": true
+                  }
+                }
+              },
+              {
+                "id": "right",
+                "label": "再封三天",
+                "effects": {
+                  "factions": {
+                    "gauge0": -5,
+                    "gauge3": 5
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "usage": {
+        "calls": 1,
+        "requestBytes": 37629,
+        "responseBytes": 14140,
+        "promptTokens": 7692,
+        "completionTokens": 3040,
+        "totalTokens": 10732,
+        "callsWithUsage": 1
+      },
+      "calls": [
+        {
+          "status": 200,
+          "durationMs": 18845,
+          "requestBytes": 37629,
+          "responseBytes": 14140,
+          "usage": {
+            "completion_tokens": 3040,
+            "completion_tokens_details": {
+              "reasoning_tokens": 2761
+            },
+            "prompt_tokens": 7692,
+            "prompt_tokens_details": {
+              "cache_write_tokens": 0,
+              "cached_tokens": 7552
+            },
+            "total_tokens": 10732
+          },
+          "proposals": [
+            {
+              "id": "proposal-quarantine-tag-producer",
+              "title": "Add quarantine release card to produce quarantineLifted",
+              "summary": "Introduces a reachable post-onWatch quarantine decision whose left choice sets quarantineLifted, satisfying the missing tag producer and opening sealed-warehouse. The right choice keeps the quarantine in place with a different faction tradeoff, preserving a clear binary consequence and adding modest gauge pressure.",
+              "patches": [
+                {
+                  "op": "addCard",
+                  "cardId": "quarantine-release",
+                  "requirements": {
+                    "allTags": [
+                      "onWatch"
+                    ],
+                    "noneTags": [
+                      "quarantineLifted"
+                    ]
+                  },
+                  "choices": [
+                    {
+                      "id": "left",
+                      "label": "签字解除检疫",
+                      "effects": {
+                        "factions": {
+                          "gauge0": 6,
+                          "gauge3": -4
+                        },
+                        "tags": {
+                          "quarantineLifted": true
+                        }
+                      }
+                    },
+                    {
+                      "id": "right",
+                      "label": "再封三天",
+                      "effects": {
+                        "factions": {
+                          "gauge0": -5,
+                          "gauge3": 5
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "contentExcerpt": "{\"proposals\":[{\"id\":\"proposal-quarantine-tag-producer\",\"title\":\"Add quarantine release card to produce quarantineLifted\",\"summary\":\"Introduces a reachable post-onWatch quarantine decision whose left choice sets quarantineLifted, satisfying the missing tag producer and opening sealed-warehouse. The right choice keeps the quarantine in place with a different faction tradeoff, preserving a clear binary consequence and adding modest gauge pressure.\",\"source\":{\"diagnostic\":\"unsatisfied_required_tags\",\"tag\":\"quarantineLifted\"},\"target\":{\"tag\":\"quarantineLifted\",\"cardIds\":[\"sealed-warehouse\"]},\"patches\":[{\"op\":\"addCard\",\"card\":{\"id\":\"quarantine-release\",\"text\":\"检疫官把最后一份船员名册放在你桌上：观察期满，解除检疫的公文只差你的签名。\",\"weight\":1,\"requirements\":{\"allTags\":[\"onWatch\"],\"noneTags\":[\"quarantineLifted\"]},\"choices\":[{\"id\":\"left\",\"label\":\"签字解除检疫\",\"effects\":{\"factions\":{\"gauge0\":6,\"gauge3\":-4},\"tags\":{\"quarantineLifted\":true}}},{\"id\":\"right\",\"label\":\"再封三天\",\"effects\":{\"factions\":{\"gauge0\":-5,\"gauge3\":5}}}]}}]}]}"
+        }
+      ],
+      "durationMs": 19311
+    },
+    {
+      "task": "fog-missing-tag",
+      "run": 3,
+      "status": "verified",
+      "stopReason": "verified",
+      "rounds": 1,
+      "baselineScore": 55,
+      "roundSummaries": [
+        {
+          "round": 1,
+          "status": "evaluated",
+          "proposalCount": 1,
+          "passedCount": 1,
+          "bestScore": 79,
+          "blockedBy": {},
+          "error": null,
+          "proposals": [
+            {
+              "id": "repair-quarantine-tag-producer",
+              "title": "Add quarantine-lift card to produce quarantineLifted",
+              "passed": true,
+              "scoreAfter": 79,
+              "failedDetails": []
+            }
+          ]
+        }
+      ],
+      "passedProposal": {
+        "id": "repair-quarantine-tag-producer",
+        "title": "Add quarantine-lift card to produce quarantineLifted",
+        "summary": "Introduces a single binary port-authority decision gated by onWatch that sets quarantineLifted from either choice, making sealed-warehouse reachable without changing existing cards or requirements. The two choices trade council goodwill against merchant pressure while keeping the tag producer reliable for review coverage.",
+        "round": 1,
+        "score": {
+          "before": 55,
+          "after": 79,
+          "delta": 24
+        },
+        "advisories": [],
+        "patches": [
+          {
+            "op": "addCard",
+            "cardId": "quarantine-lift",
+            "requirements": {
+              "allTags": [
+                "onWatch"
+              ],
+              "noneTags": [
+                "quarantineLifted"
+              ]
+            },
+            "choices": [
+              {
+                "id": "left",
+                "label": "立即签字解封",
+                "effects": {
+                  "factions": {
+                    "gauge0": 6,
+                    "gauge3": -4,
+                    "gauge1": -3
+                  },
+                  "tags": {
+                    "quarantineLifted": true
+                  }
+                }
+              },
+              {
+                "id": "right",
+                "label": "先让医生验仓",
+                "effects": {
+                  "factions": {
+                    "gauge3": 5,
+                    "gauge0": -5,
+                    "gauge1": 3
+                  },
+                  "tags": {
+                    "quarantineLifted": true
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "usage": {
+        "calls": 1,
+        "requestBytes": 37629,
+        "responseBytes": 15140,
+        "promptTokens": 7692,
+        "completionTokens": 3360,
+        "totalTokens": 11052,
+        "callsWithUsage": 1
+      },
+      "calls": [
+        {
+          "status": 200,
+          "durationMs": 21900,
+          "requestBytes": 37629,
+          "responseBytes": 15140,
+          "usage": {
+            "completion_tokens": 3360,
+            "completion_tokens_details": {
+              "reasoning_tokens": 3039
+            },
+            "prompt_tokens": 7692,
+            "prompt_tokens_details": {
+              "cache_write_tokens": 0,
+              "cached_tokens": 7552
+            },
+            "total_tokens": 11052
+          },
+          "proposals": [
+            {
+              "id": "repair-quarantine-tag-producer",
+              "title": "Add quarantine-lift card to produce quarantineLifted",
+              "summary": "Introduces a single binary port-authority decision gated by onWatch that sets quarantineLifted from either choice, making sealed-warehouse reachable without changing existing cards or requirements. The two choices trade council goodwill against merchant pressure while keeping the tag producer reliable for review coverage.",
+              "patches": [
+                {
+                  "op": "addCard",
+                  "cardId": "quarantine-lift",
+                  "requirements": {
+                    "allTags": [
+                      "onWatch"
+                    ],
+                    "noneTags": [
+                      "quarantineLifted"
+                    ]
+                  },
+                  "choices": [
+                    {
+                      "id": "left",
+                      "label": "立即签字解封",
+                      "effects": {
+                        "factions": {
+                          "gauge0": 6,
+                          "gauge3": -4,
+                          "gauge1": -3
+                        },
+                        "tags": {
+                          "quarantineLifted": true
+                        }
+                      }
+                    },
+                    {
+                      "id": "right",
+                      "label": "先让医生验仓",
+                      "effects": {
+                        "factions": {
+                          "gauge3": 5,
+                          "gauge0": -5,
+                          "gauge1": 3
+                        },
+                        "tags": {
+                          "quarantineLifted": true
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "contentExcerpt": "{\"proposals\":[{\"id\":\"repair-quarantine-tag-producer\",\"title\":\"Add quarantine-lift card to produce quarantineLifted\",\"summary\":\"Introduces a single binary port-authority decision gated by onWatch that sets quarantineLifted from either choice, making sealed-warehouse reachable without changing existing cards or requirements. The two choices trade council goodwill against merchant pressure while keeping the tag producer reliable for review coverage.\",\"source\":{\"diagnostics\":[\"unsatisfied_required_tags:quarantineLifted\",\"unreachable_cards:sealed-warehouse\"]},\"target\":{\"tags\":[\"quarantineLifted\"],\"cardIds\":[\"sealed-warehouse\"]},\"patches\":[{\"op\":\"addCard\",\"card\":{\"id\":\"quarantine-lift\",\"text\":\"防疫官把解除检疫的文书放在桌上。七号仓的货主和医生都堵在门口。\",\"weight\":1,\"requirements\":{\"allTags\":[\"onWatch\"],\"noneTags\":[\"quarantineLifted\"]},\"choices\":[{\"id\":\"left\",\"label\":\"立即签字解封\",\"effects\":{\"factions\":{\"gauge0\":6,\"gauge3\":-4,\"gauge1\":-3},\"tags\":{\"quarantineLifted\":true}}},{\"id\":\"right\",\"label\":\"先让医生验仓\",\"effects\":{\"factions\":{\"gauge3\":5,\"gauge0\":-5,\"gauge1\":3},\"tags\":{\"quarantineLifted\":true}}}]}}]}]}"
+        }
+      ],
+      "durationMs": 22366
+    },
+    {
+      "task": "court-gauge-pressure",
+      "run": 1,
+      "status": "verified",
+      "stopReason": "verified",
+      "rounds": 1,
+      "baselineScore": 72,
+      "roundSummaries": [
+        {
+          "round": 1,
+          "status": "evaluated",
+          "proposalCount": 1,
+          "passedCount": 1,
+          "bestScore": 75,
+          "blockedBy": {},
+          "error": null,
+          "proposals": [
+            {
+              "id": "repair-dominant-game-over-faction-gauge1",
+              "title": "Rebalance Crowd pressure in late council choices",
+              "passed": true,
+              "scoreAfter": 75,
+              "failedDetails": []
+            }
+          ]
+        }
+      ],
+      "passedProposal": {
+        "id": "repair-dominant-game-over-faction-gauge1",
+        "title": "Rebalance Crowd pressure in late council choices",
+        "summary": "Reduces gauge1 (Crowd) movement in four related late-council cards and redistributes that pressure across Rites, Watch, and Coin. All existing tags, variables, requirements, and card ids are preserved, and each edited choice keeps at least the original total gauge movement.",
+        "round": 1,
+        "score": {
+          "before": 72,
+          "after": 75,
+          "delta": 3
+        },
+        "advisories": [],
+        "patches": [
+          {
+            "op": "setChoiceEffects",
+            "cardId": "ledger-council",
+            "choiceId": "left",
+            "effects": {
+              "factions": {
+                "gauge1": 2,
+                "gauge3": -4,
+                "gauge0": 2
+              },
+              "tags": {
+                "ledgerOpen": true
+              }
+            }
+          },
+          {
+            "op": "setChoiceEffects",
+            "cardId": "ledger-council",
+            "choiceId": "right",
+            "effects": {
+              "factions": {
+                "gauge3": 7,
+                "gauge1": -2,
+                "gauge0": 1
+              },
+              "tags": {
+                "ledgerSealed": true
+              }
+            }
+          },
+          {
+            "op": "setChoiceEffects",
+            "cardId": "unrest-court",
+            "choiceId": "left",
+            "effects": {
+              "factions": {
+                "gauge1": 3,
+                "gauge3": -6,
+                "gauge0": 3
+              },
+              "tags": {
+                "crowdAppeased": true
+              }
+            }
+          },
+          {
+            "op": "setChoiceEffects",
+            "cardId": "unrest-court",
+            "choiceId": "right",
+            "effects": {
+              "factions": {
+                "gauge2": 6,
+                "gauge1": -2,
+                "gauge0": -3
+              },
+              "tags": {
+                "watchCurfew": true
+              }
+            }
+          },
+          {
+            "op": "setChoiceEffects",
+            "cardId": "midnight-council",
+            "choiceId": "left",
+            "effects": {
+              "factions": {
+                "gauge0": 5,
+                "gauge1": 1,
+                "gauge2": -2
+              },
+              "tags": {
+                "councilReady": true
+              },
+              "variables": {
+                "endingPath": "mercy"
+              }
+            }
+          },
+          {
+            "op": "setChoiceEffects",
+            "cardId": "midnight-council",
+            "choiceId": "right",
+            "effects": {
+              "factions": {
+                "gauge2": 5,
+                "gauge3": 3,
+                "gauge1": -1
+              },
+              "tags": {
+                "councilReady": true
+              },
+              "variables": {
+                "endingPath": "authority"
+              }
+            }
+          },
+          {
+            "op": "setChoiceEffects",
+            "cardId": "dawn-gate",
+            "choiceId": "left",
+            "effects": {
+              "factions": {
+                "gauge1": 3,
+                "gauge0": 4,
+                "gauge2": -2
+              },
+              "tags": {
+                "gateOpened": true
+              }
+            }
+          },
+          {
+            "op": "setChoiceEffects",
+            "cardId": "dawn-gate",
+            "choiceId": "right",
+            "effects": {
+              "factions": {
+                "gauge2": 6,
+                "gauge3": 3,
+                "gauge1": -1
+              },
+              "tags": {
+                "gateClosed": true
+              }
+            }
+          }
+        ]
+      },
+      "usage": {
+        "calls": 1,
+        "requestBytes": 41876,
+        "responseBytes": 26862,
+        "promptTokens": 8365,
+        "completionTokens": 7164,
+        "totalTokens": 15529,
+        "callsWithUsage": 1
+      },
+      "calls": [
+        {
+          "status": 200,
+          "durationMs": 40359,
+          "requestBytes": 41876,
+          "responseBytes": 26862,
+          "usage": {
+            "completion_tokens": 7164,
+            "completion_tokens_details": {
+              "reasoning_tokens": 6587
+            },
+            "prompt_tokens": 8365,
+            "prompt_tokens_details": {
+              "cache_write_tokens": 0,
+              "cached_tokens": 8192
+            },
+            "total_tokens": 15529
+          },
+          "proposals": [
+            {
+              "id": "repair-dominant-game-over-faction-gauge1",
+              "title": "Rebalance Crowd pressure in late council choices",
+              "summary": "Reduces gauge1 (Crowd) movement in four related late-council cards and redistributes that pressure across Rites, Watch, and Coin. All existing tags, variables, requirements, and card ids are preserved, and each edited choice keeps at least the original total gauge movement.",
+              "patches": [
+                {
+                  "op": "setChoiceEffects",
+                  "cardId": "ledger-council",
+                  "choiceId": "left",
+                  "effects": {
+                    "factions": {
+                      "gauge1": 2,
+                      "gauge3": -4,
+                      "gauge0": 2
+                    },
+                    "tags": {
+                      "ledgerOpen": true
+                    }
+                  }
+                },
+                {
+                  "op": "setChoiceEffects",
+                  "cardId": "ledger-council",
+                  "choiceId": "right",
+                  "effects": {
+                    "factions": {
+                      "gauge3": 7,
+                      "gauge1": -2,
+                      "gauge0": 1
+                    },
+                    "tags": {
+                      "ledgerSealed": true
+                    }
+                  }
+                },
+                {
+                  "op": "setChoiceEffects",
+                  "cardId": "unrest-court",
+                  "choiceId": "left",
+                  "effects": {
+                    "factions": {
+                      "gauge1": 3,
+                      "gauge3": -6,
+                      "gauge0": 3
+                    },
+                    "tags": {
+                      "crowdAppeased": true
+                    }
+                  }
+                },
+                {
+                  "op": "setChoiceEffects",
+                  "cardId": "unrest-court",
+                  "choiceId": "right",
+                  "effects": {
+                    "factions": {
+                      "gauge2": 6,
+                      "gauge1": -2,
+                      "gauge0": -3
+                    },
+                    "tags": {
+                      "watchCurfew": true
+                    }
+                  }
+                },
+                {
+                  "op": "setChoiceEffects",
+                  "cardId": "midnight-council",
+                  "choiceId": "left",
+                  "effects": {
+                    "factions": {
+                      "gauge0": 5,
+                      "gauge1": 1,
+                      "gauge2": -2
+                    },
+                    "tags": {
+                      "councilReady": true
+                    },
+                    "variables": {
+                      "endingPath": "mercy"
+                    }
+                  }
+                },
+                {
+                  "op": "setChoiceEffects",
+                  "cardId": "midnight-council",
+                  "choiceId": "right",
+                  "effects": {
+                    "factions": {
+                      "gauge2": 5,
+                      "gauge3": 3,
+                      "gauge1": -1
+                    },
+                    "tags": {
+                      "councilReady": true
+                    },
+                    "variables": {
+                      "endingPath": "authority"
+                    }
+                  }
+                },
+                {
+                  "op": "setChoiceEffects",
+                  "cardId": "dawn-gate",
+                  "choiceId": "left",
+                  "effects": {
+                    "factions": {
+                      "gauge1": 3,
+                      "gauge0": 4,
+                      "gauge2": -2
+                    },
+                    "tags": {
+                      "gateOpened": true
+                    }
+                  }
+                },
+                {
+                  "op": "setChoiceEffects",
+                  "cardId": "dawn-gate",
+                  "choiceId": "right",
+                  "effects": {
+                    "factions": {
+                      "gauge2": 6,
+                      "gauge3": 3,
+                      "gauge1": -1
+                    },
+                    "tags": {
+                      "gateClosed": true
+                    }
+                  }
+                }
+              ]
+            }
+          ],
+          "contentExcerpt": "{\"proposals\":[{\"id\":\"repair-dominant-game-over-faction-gauge1\",\"title\":\"Rebalance Crowd pressure in late council choices\",\"summary\":\"Reduces gauge1 (Crowd) movement in four related late-council cards and redistributes that pressure across Rites, Watch, and Coin. All existing tags, variables, requirements, and card ids are preserved, and each edited choice keeps at least the original total gauge movement.\",\"source\":{},\"target\":{\"diagnostic\":\"dominant_game_over_faction\",\"faction\":\"gauge1\",\"gauge\":\"gauge1\"},\"patches\":[{\"op\":\"setChoiceEffects\",\"cardId\":\"ledger-council\",\"choiceId\":\"left\",\"effects\":{\"factions\":{\"gauge1\":2,\"gauge3\":-4,\"gauge0\":2},\"tags\":{\"ledgerOpen\":true}}},{\"op\":\"setChoiceEffects\",\"cardId\":\"ledger-council\",\"choiceId\":\"right\",\"effects\":{\"factions\":{\"gauge3\":7,\"gauge1\":-2,\"gauge0\":1},\"tags\":{\"ledgerSealed\":true}}},{\"op\":\"setChoiceEffects\",\"cardId\":\"unrest-court\",\"choiceId\":\"left\",\"effects\":{\"factions\":{\"gauge1\":3,\"gauge3\":-6,\"gauge0\":3},\"tags\":{\"crowdAppeased\":true}}},{\"op\":\"setChoiceEffects\",\"cardId\":\"unrest-court\",\"choiceId\":\"right\",\"effects\":{\"factions\":{\"gauge2\":6,\"gauge1\":-2,\"gauge0\":-3},\"tags\":{\"watchCurfew\":true}}},{\"op\":\"setChoiceEffects\",\"cardId\":\"midnight-council\",\"choiceId\":\"left\",\"effects\":{\"factions\":{\"gauge0\":5,\"gauge1\":1,\"gauge2\":-2},\"tags\":{\"councilReady\":true},\"variables\":{\"endingPath\":\"mercy\"}}},{\"op\":\"setChoiceEffects\",\"cardId\":\"midnight-council\",\"choiceId\":\"right\",\"effects\":{\"factions\":{\"gauge2\":5,\"gauge3\":3,\"gauge1\":-1},\"tags\":{\"councilReady\":true},\"variables\":{\"endingPath\":\"authority\"}}},{\"op\":\"setChoiceEffects\",\"cardId\":\"dawn-gate\",\"choiceId\":\"left\",\"effects\":{\"factions\":{\"gauge1\":3,\"gauge0\":4,\"gauge2\":-2},\"tags\":{\"gateOpened\":true}}},{\"op\":\"setChoiceEffects\",\"cardId\":\"dawn-gate\",\"choiceId\":\"right\",\"effects\":{\"factions\":{\"gauge2\":6,\"gauge3\":3,\"gauge1\":-1},\"tags\":{\"gateClosed\":true}}}]}]}"
+        }
+      ],
+      "durationMs": 40950,
+      "retriedAfter": {
+        "code": "endpoint_timeout",
+        "message": "AI endpoint request timed out"
+      }
+    },
+    {
+      "task": "court-gauge-pressure",
+      "run": 2,
+      "status": "error",
+      "error": {
+        "code": "endpoint_timeout",
+        "message": "AI endpoint request timed out"
+      },
+      "usage": {
+        "calls": 0,
+        "requestBytes": 0,
+        "responseBytes": 0,
+        "promptTokens": 0,
+        "completionTokens": 0,
+        "totalTokens": 0,
+        "callsWithUsage": 0
+      },
+      "calls": [],
+      "durationMs": 60309,
+      "retriedAfter": {
+        "code": "endpoint_timeout",
+        "message": "AI endpoint request timed out"
+      }
+    },
+    {
+      "task": "court-gauge-pressure",
+      "run": 3,
+      "status": "verified",
+      "stopReason": "verified",
+      "rounds": 1,
+      "baselineScore": 72,
+      "roundSummaries": [
+        {
+          "round": 1,
+          "status": "evaluated",
+          "proposalCount": 1,
+          "passedCount": 1,
+          "bestScore": 75,
+          "blockedBy": {},
+          "error": null,
+          "proposals": [
+            {
+              "id": "repair-dominant-gauge1-crowd-pressure",
+              "title": "Diversify Crowd pressure on relief choices",
+              "passed": true,
+              "scoreAfter": 75,
+              "failedDetails": []
+            }
+          ]
+        }
+      ],
+      "passedProposal": {
+        "id": "repair-dominant-gauge1-crowd-pressure",
+        "title": "Diversify Crowd pressure on relief choices",
+        "summary": "Reduce repeated Crowd (gauge1) spikes on three high-weight relief decisions and redistribute that pressure to Rites and Watch without changing tags, variables, gates, or the left/right choice structure. This targets the dominant simulated ending faction while preserving the existing morning relief narrative and choice intent.",
+        "round": 1,
+        "score": {
+          "before": 72,
+          "after": 75,
+          "delta": 3
+        },
+        "advisories": [],
+        "patches": [
+          {
+            "op": "setChoiceEffects",
+            "cardId": "gate-audience",
+            "choiceId": "left",
+            "effects": {
+              "factions": {
+                "gauge1": 4,
+                "gauge3": -4,
+                "gauge2": 2
+              },
+              "tags": {
+                "grainRelief": true
+              },
+              "variables": {
+                "openingPetition": "grain"
+              }
+            }
+          },
+          {
+            "op": "setChoiceEffects",
+            "cardId": "bread-line",
+            "choiceId": "left",
+            "effects": {
+              "factions": {
+                "gauge1": 2,
+                "gauge3": -4,
+                "gauge0": 3
+              },
+              "tags": {
+                "breadLine": true,
+                "rationTokens": true
+              },
+              "variables": {
+                "reliefStyle": "tokens"
+              }
+            }
+          },
+          {
+            "op": "setChoiceEffects",
+            "cardId": "token-riot",
+            "choiceId": "left",
+            "effects": {
+              "factions": {
+                "gauge1": 3,
+                "gauge3": -5,
+                "gauge0": 2,
+                "gauge2": 2
+              },
+              "tags": {
+                "nightKitchens": true
+              },
+              "variables": {
+                "afternoonRelief": "kitchens"
+              }
+            }
+          }
+        ]
+      },
+      "usage": {
+        "calls": 1,
+        "requestBytes": 41876,
+        "responseBytes": 22798,
+        "promptTokens": 8365,
+        "completionTokens": 5525,
+        "totalTokens": 13890,
+        "callsWithUsage": 1
+      },
+      "calls": [
+        {
+          "status": 200,
+          "durationMs": 32447,
+          "requestBytes": 41876,
+          "responseBytes": 22798,
+          "usage": {
+            "completion_tokens": 5525,
+            "completion_tokens_details": {
+              "reasoning_tokens": 5141
+            },
+            "prompt_tokens": 8365,
+            "prompt_tokens_details": {
+              "cache_write_tokens": 0,
+              "cached_tokens": 8192
+            },
+            "total_tokens": 13890
+          },
+          "proposals": [
+            {
+              "id": "repair-dominant-gauge1-crowd-pressure",
+              "title": "Diversify Crowd pressure on relief choices",
+              "summary": "Reduce repeated Crowd (gauge1) spikes on three high-weight relief decisions and redistribute that pressure to Rites and Watch without changing tags, variables, gates, or the left/right choice structure. This targets the dominant simulated ending faction while preserving the existing morning relief narrative and choice intent.",
+              "patches": [
+                {
+                  "op": "setChoiceEffects",
+                  "cardId": "gate-audience",
+                  "choiceId": "left",
+                  "effects": {
+                    "factions": {
+                      "gauge1": 4,
+                      "gauge3": -4,
+                      "gauge2": 2
+                    },
+                    "tags": {
+                      "grainRelief": true
+                    },
+                    "variables": {
+                      "openingPetition": "grain"
+                    }
+                  }
+                },
+                {
+                  "op": "setChoiceEffects",
+                  "cardId": "bread-line",
+                  "choiceId": "left",
+                  "effects": {
+                    "factions": {
+                      "gauge1": 2,
+                      "gauge3": -4,
+                      "gauge0": 3
+                    },
+                    "tags": {
+                      "breadLine": true,
+                      "rationTokens": true
+                    },
+                    "variables": {
+                      "reliefStyle": "tokens"
+                    }
+                  }
+                },
+                {
+                  "op": "setChoiceEffects",
+                  "cardId": "token-riot",
+                  "choiceId": "left",
+                  "effects": {
+                    "factions": {
+                      "gauge1": 3,
+                      "gauge3": -5,
+                      "gauge0": 2,
+                      "gauge2": 2
+                    },
+                    "tags": {
+                      "nightKitchens": true
+                    },
+                    "variables": {
+                      "afternoonRelief": "kitchens"
+                    }
+                  }
+                }
+              ]
+            }
+          ],
+          "contentExcerpt": "{\"proposals\":[{\"id\":\"repair-dominant-gauge1-crowd-pressure\",\"title\":\"Diversify Crowd pressure on relief choices\",\"summary\":\"Reduce repeated Crowd (gauge1) spikes on three high-weight relief decisions and redistribute that pressure to Rites and Watch without changing tags, variables, gates, or the left/right choice structure. This targets the dominant simulated ending faction while preserving the existing morning relief narrative and choice intent.\",\"source\":{\"diagnostic\":\"dominant_game_over_faction\",\"faction\":\"gauge1\",\"target\":\"gauge:gauge1\",\"bundle\":\"bundle:908d4ab1\"},\"target\":{\"cards\":[\"gate-audience\",\"bread-line\",\"token-riot\"],\"gauges\":[\"gauge0\",\"gauge1\",\"gauge2\",\"gauge3\"]},\"patches\":[{\"op\":\"setChoiceEffects\",\"cardId\":\"gate-audience\",\"choiceId\":\"left\",\"effects\":{\"factions\":{\"gauge1\":4,\"gauge3\":-4,\"gauge2\":2},\"tags\":{\"grainRelief\":true},\"variables\":{\"openingPetition\":\"grain\"}}},{\"op\":\"setChoiceEffects\",\"cardId\":\"bread-line\",\"choiceId\":\"left\",\"effects\":{\"factions\":{\"gauge1\":2,\"gauge3\":-4,\"gauge0\":3},\"tags\":{\"breadLine\":true,\"rationTokens\":true},\"variables\":{\"reliefStyle\":\"tokens\"}}},{\"op\":\"setChoiceEffects\",\"cardId\":\"token-riot\",\"choiceId\":\"left\",\"effects\":{\"factions\":{\"gauge1\":3,\"gauge3\":-5,\"gauge0\":2,\"gauge2\":2},\"tags\":{\"nightKitchens\":true},\"variables\":{\"afternoonRelief\":\"kitchens\"}}}]}]}"
+        }
+      ],
+      "durationMs": 33060
+    },
+    {
+      "task": "court-variable-gate",
+      "run": 1,
+      "status": "unverified",
+      "stopReason": "endpoint_error",
+      "rounds": 2,
+      "baselineScore": 48,
+      "roundSummaries": [
+        {
+          "round": 1,
+          "status": "evaluated",
+          "proposalCount": 1,
+          "passedCount": 0,
+          "bestScore": 75,
+          "blockedBy": {
+            "scope": 1
+          },
+          "error": null,
+          "proposals": [
+            {
+              "id": "proposal-river-toll-producer",
+              "title": "Seed riverToll through the river market",
+              "passed": false,
+              "scoreAfter": 75,
+              "failedDetails": [
+                {
+                  "id": "scope",
+                  "detail": "Edited unrelated card: river-market."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "round": 2,
+          "status": "endpoint_error",
+          "proposalCount": 0,
+          "passedCount": 0,
+          "bestScore": null,
+          "blockedBy": {},
+          "error": {
+            "code": "endpoint_timeout",
+            "message": "AI endpoint request timed out"
+          },
+          "proposals": []
+        }
+      ],
+      "passedProposal": null,
+      "usage": {
+        "calls": 1,
+        "requestBytes": 44043,
+        "responseBytes": 12047,
+        "promptTokens": 8789,
+        "completionTokens": 2619,
+        "totalTokens": 11408,
+        "callsWithUsage": 1
+      },
+      "calls": [
+        {
+          "status": 200,
+          "durationMs": 24449,
+          "requestBytes": 44043,
+          "responseBytes": 12047,
+          "usage": {
+            "completion_tokens": 2619,
+            "completion_tokens_details": {
+              "reasoning_tokens": 2342
+            },
+            "prompt_tokens": 8789,
+            "prompt_tokens_details": {
+              "cache_write_tokens": 0,
+              "cached_tokens": 256
+            },
+            "total_tokens": 11408
+          },
+          "proposals": [
+            {
+              "id": "proposal-river-toll-producer",
+              "title": "Seed riverToll through the river market",
+              "summary": "Adds riverToll=paid to both river-market outcomes while preserving each choice's existing tags and full gauge movement. This gives toll-dispute a reachable producer, allowing its riverToll requirement to be satisfied and the card to enter the draw pool.",
+              "patches": [
+                {
+                  "op": "setChoiceEffects",
+                  "cardId": "river-market",
+                  "choiceId": "left",
+                  "effects": {
+                    "factions": {
+                      "gauge1": 4,
+                      "gauge0": 2,
+                      "gauge3": -2
+                    },
+                    "tags": {
+                      "harvestOath": true
+                    },
+                    "variables": {
+                      "riverToll": "paid"
+                    }
+                  }
+                },
+                {
+                  "op": "setChoiceEffects",
+                  "cardId": "river-market",
+                  "choiceId": "right",
+                  "effects": {
+                    "factions": {
+                      "gauge3": 6,
+                      "gauge1": -2,
+                      "gauge0": -1
+                    },
+                    "tags": {
+                      "marketTax": true
+                    },
+                    "variables": {
+                      "riverToll": "paid"
+                    }
+                  }
+                }
+              ]
+            }
+          ],
+          "contentExcerpt": "{\"proposals\":[{\"id\":\"proposal-river-toll-producer\",\"title\":\"Seed riverToll through the river market\",\"summary\":\"Adds riverToll=paid to both river-market outcomes while preserving each choice's existing tags and full gauge movement. This gives toll-dispute a reachable producer, allowing its riverToll requirement to be satisfied and the card to enter the draw pool.\",\"source\":{\"diagnostics\":[\"unsatisfied_required_variables\",\"unreachable_cards\",\"never_visited_cards\"],\"variables\":[\"riverToll\"],\"cardIds\":[\"toll-dispute\"]},\"target\":{\"cardIds\":[\"river-market\"],\"variables\":[\"riverToll\"]},\"patches\":[{\"op\":\"setChoiceEffects\",\"cardId\":\"river-market\",\"choiceId\":\"left\",\"effects\":{\"factions\":{\"gauge1\":4,\"gauge0\":2,\"gauge3\":-2},\"tags\":{\"harvestOath\":true},\"variables\":{\"riverToll\":\"paid\"}}},{\"op\":\"setChoiceEffects\",\"cardId\":\"river-market\",\"choiceId\":\"right\",\"effects\":{\"factions\":{\"gauge3\":6,\"gauge1\":-2,\"gauge0\":-1},\"tags\":{\"marketTax\":true},\"variables\":{\"riverToll\":\"paid\"}}}]}]}"
+        }
+      ],
+      "durationMs": 85024
+    },
+    {
+      "task": "court-variable-gate",
+      "run": 2,
+      "status": "verified",
+      "stopReason": "verified",
+      "rounds": 2,
+      "baselineScore": 48,
+      "roundSummaries": [
+        {
+          "round": 1,
+          "status": "evaluated",
+          "proposalCount": 1,
+          "passedCount": 0,
+          "bestScore": 75,
+          "blockedBy": {
+            "scope": 1
+          },
+          "error": null,
+          "proposals": [
+            {
+              "id": "repair-river-toll-producer",
+              "title": "Produce riverToll from the river market decision",
+              "passed": false,
+              "scoreAfter": 75,
+              "failedDetails": [
+                {
+                  "id": "scope",
+                  "detail": "Edited unrelated card: river-market."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "round": 2,
+          "status": "evaluated",
+          "proposalCount": 1,
+          "passedCount": 1,
+          "bestScore": 78,
+          "blockedBy": {},
+          "error": null,
+          "proposals": [
+            {
+              "id": "repair-river-toll-producer-v2",
+              "title": "Add a reachable river-toll producer card",
+              "passed": true,
+              "scoreAfter": 78,
+              "failedDetails": []
+            }
+          ]
+        }
+      ],
+      "passedProposal": {
+        "id": "repair-river-toll-producer-v2",
+        "title": "Add a reachable river-toll producer card",
+        "summary": "Adds a no-requirement river toll card whose left and right outcomes both set riverToll to paid, satisfying toll-dispute's variable gate without changing existing ids, requirements, or choices. The binary choice shifts gauge pressure between Coin, Crowd, and Watch while preserving the authored toll-refund story.",
+        "round": 2,
+        "score": {
+          "before": 48,
+          "after": 78,
+          "delta": 30
+        },
+        "advisories": [
+          "new_warnings"
+        ],
+        "patches": [
+          {
+            "op": "addCard",
+            "cardId": "river-toll-offer",
+            "requirements": {},
+            "choices": [
+              {
+                "id": "left",
+                "label": "Take the coin",
+                "effects": {
+                  "factions": {
+                    "gauge3": 4,
+                    "gauge1": -3
+                  },
+                  "variables": {
+                    "riverToll": "paid"
+                  }
+                }
+              },
+              {
+                "id": "right",
+                "label": "Take the service",
+                "effects": {
+                  "factions": {
+                    "gauge2": 3,
+                    "gauge3": -1,
+                    "gauge1": 1
+                  },
+                  "variables": {
+                    "riverToll": "paid"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "usage": {
+        "calls": 2,
+        "requestBytes": 88721,
+        "responseBytes": 49551,
+        "promptTokens": 17702,
+        "completionTokens": 10949,
+        "totalTokens": 28651,
+        "callsWithUsage": 2
+      },
+      "calls": [
+        {
+          "status": 200,
+          "durationMs": 15965,
+          "requestBytes": 44043,
+          "responseBytes": 11898,
+          "usage": {
+            "completion_tokens": 2529,
+            "completion_tokens_details": {
+              "reasoning_tokens": 2244
+            },
+            "prompt_tokens": 8789,
+            "prompt_tokens_details": {
+              "cache_write_tokens": 0,
+              "cached_tokens": 8576
+            },
+            "total_tokens": 11318
+          },
+          "proposals": [
+            {
+              "id": "repair-river-toll-producer",
+              "title": "Produce riverToll from the river market decision",
+              "summary": "Adds a riverToll variable producer to both outcomes of river-market so toll-dispute's requirement can be satisfied. All existing tags, variables, and gauge movements on river-market are preserved; no requirements are removed or loosened. This should clear the unsatisfied_required_variables diagnostic for var:riverToll and make toll-dispute reachable through normal play.",
+              "patches": [
+                {
+                  "op": "setChoiceEffects",
+                  "cardId": "river-market",
+                  "choiceId": "left",
+                  "effects": {
+                    "factions": {
+                      "gauge1": 4,
+                      "gauge0": 2,
+                      "gauge3": -2
+                    },
+                    "tags": {
+                      "harvestOath": true
+                    },
+                    "variables": {
+                      "riverToll": "paid"
+                    }
+                  }
+                },
+                {
+                  "op": "setChoiceEffects",
+                  "cardId": "river-market",
+                  "choiceId": "right",
+                  "effects": {
+                    "factions": {
+                      "gauge3": 6,
+                      "gauge1": -2,
+                      "gauge0": -1
+                    },
+                    "tags": {
+                      "marketTax": true
+                    },
+                    "variables": {
+                      "riverToll": "paid"
+                    }
+                  }
+                }
+              ]
+            }
+          ],
+          "contentExcerpt": "{\"proposals\":[{\"id\":\"repair-river-toll-producer\",\"title\":\"Produce riverToll from the river market decision\",\"summary\":\"Adds a riverToll variable producer to both outcomes of river-market so toll-dispute's requirement can be satisfied. All existing tags, variables, and gauge movements on river-market are preserved; no requirements are removed or loosened. This should clear the unsatisfied_required_variables diagnostic for var:riverToll and make toll-dispute reachable through normal play.\",\"source\":{\"diagnostic\":\"unsatisfied_required_variables\",\"variable\":\"riverToll\",\"affectedCardId\":\"toll-dispute\"},\"target\":{\"cardId\":\"river-market\",\"variable\":\"riverToll\",\"value\":\"paid\"},\"patches\":[{\"op\":\"setChoiceEffects\",\"cardId\":\"river-market\",\"choiceId\":\"left\",\"effects\":{\"factions\":{\"gauge1\":4,\"gauge0\":2,\"gauge3\":-2},\"tags\":{\"harvestOath\":true},\"variables\":{\"riverToll\":\"paid\"}}},{\"op\":\"setChoiceEffects\",\"cardId\":\"river-market\",\"choiceId\":\"right\",\"effects\":{\"factions\":{\"gauge3\":6,\"gauge1\":-2,\"gauge0\":-1},\"tags\":{\"marketTax\":true},\"variables\":{\"riverToll\":\"paid\"}}}]}]}"
+        },
+        {
+          "status": 200,
+          "durationMs": 48689,
+          "requestBytes": 44678,
+          "responseBytes": 37653,
+          "usage": {
+            "completion_tokens": 8420,
+            "completion_tokens_details": {
+              "reasoning_tokens": 8147
+            },
+            "prompt_tokens": 8913,
+            "prompt_tokens_details": {
+              "cache_write_tokens": 0,
+              "cached_tokens": 256
+            },
+            "total_tokens": 17333
+          },
+          "proposals": [
+            {
+              "id": "repair-river-toll-producer-v2",
+              "title": "Add a reachable river-toll producer card",
+              "summary": "Adds a no-requirement river toll card whose left and right outcomes both set riverToll to paid, satisfying toll-dispute's variable gate without changing existing ids, requirements, or choices. The binary choice shifts gauge pressure between Coin, Crowd, and Watch while preserving the authored toll-refund story.",
+              "patches": [
+                {
+                  "op": "addCard",
+                  "cardId": "river-toll-offer",
+                  "requirements": {},
+                  "choices": [
+                    {
+                      "id": "left",
+                      "label": "Take the coin",
+                      "effects": {
+                        "factions": {
+                          "gauge3": 4,
+                          "gauge1": -3
+                        },
+                        "variables": {
+                          "riverToll": "paid"
+                        }
+                      }
+                    },
+                    {
+                      "id": "right",
+                      "label": "Take the service",
+                      "effects": {
+                        "factions": {
+                          "gauge2": 3,
+                          "gauge3": -1,
+                          "gauge1": 1
+                        },
+                        "variables": {
+                          "riverToll": "paid"
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "contentExcerpt": "{\"proposals\":[{\"id\":\"repair-river-toll-producer-v2\",\"title\":\"Add a reachable river-toll producer card\",\"summary\":\"Adds a no-requirement river toll card whose left and right outcomes both set riverToll to paid, satisfying toll-dispute's variable gate without changing existing ids, requirements, or choices. The binary choice shifts gauge pressure between Coin, Crowd, and Watch while preserving the authored toll-refund story.\",\"source\":{\"cardId\":\"toll-dispute\",\"variable\":\"riverToll\"},\"target\":{\"cardId\":\"river-toll-offer\",\"variable\":\"riverToll\"},\"patches\":[{\"op\":\"addCard\",\"card\":{\"id\":\"river-toll-offer\",\"text\":\"Ferrymen bring the river toll to the gate, offering coin or service before their boats move.\",\"weight\":2,\"requirements\":{},\"choices\":[{\"id\":\"left\",\"label\":\"Take the coin\",\"effects\":{\"factions\":{\"gauge3\":4,\"gauge1\":-3},\"variables\":{\"riverToll\":\"paid\"}}},{\"id\":\"right\",\"label\":\"Take the service\",\"effects\":{\"factions\":{\"gauge2\":3,\"gauge3\":-1,\"gauge1\":1},\"variables\":{\"riverToll\":\"paid\"}}}]}}]}]}"
+        }
+      ],
+      "durationMs": 65494
+    },
+    {
+      "task": "court-variable-gate",
+      "run": 3,
+      "status": "verified",
+      "stopReason": "verified",
+      "rounds": 2,
+      "baselineScore": 48,
+      "roundSummaries": [
+        {
+          "round": 1,
+          "status": "evaluated",
+          "proposalCount": 1,
+          "passedCount": 0,
+          "bestScore": 75,
+          "blockedBy": {
+            "scope": 1
+          },
+          "error": null,
+          "proposals": [
+            {
+              "id": "repair-riverToll-producer",
+              "title": "Add riverToll producer at river market",
+              "passed": false,
+              "scoreAfter": 75,
+              "failedDetails": [
+                {
+                  "id": "scope",
+                  "detail": "Edited unrelated card: river-market."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "round": 2,
+          "status": "evaluated",
+          "proposalCount": 1,
+          "passedCount": 1,
+          "bestScore": 79,
+          "blockedBy": {},
+          "error": null,
+          "proposals": [
+            {
+              "id": "repair-riverToll-requirement-toll-dispute",
+              "title": "Remove impossible riverToll gate from toll-dispute",
+              "passed": true,
+              "scoreAfter": 79,
+              "failedDetails": []
+            }
+          ]
+        }
+      ],
+      "passedProposal": {
+        "id": "repair-riverToll-requirement-toll-dispute",
+        "title": "Remove impossible riverToll gate from toll-dispute",
+        "summary": "The toll-dispute card requires riverToll='paid', but no initial state or card effect can produce that variable. Since the baseline review identifies this requirement as unsatisfiable, remove only that requirement from the target card. This restores toll-dispute reachability and clears the missing variable producer while preserving its text, exactly two left/right choices, and all existing gauge effects.",
+        "round": 2,
+        "score": {
+          "before": 48,
+          "after": 79,
+          "delta": 31
+        },
+        "advisories": [
+          "gate_relaxed"
+        ],
+        "patches": [
+          {
+            "op": "updateCard",
+            "cardId": "toll-dispute",
+            "changes": {
+              "requirements": {}
+            }
+          }
+        ]
+      },
+      "usage": {
+        "calls": 2,
+        "requestBytes": 88710,
+        "responseBytes": 33451,
+        "promptTokens": 17700,
+        "completionTokens": 7132,
+        "totalTokens": 24832,
+        "callsWithUsage": 2
+      },
+      "calls": [
+        {
+          "status": 200,
+          "durationMs": 24746,
+          "requestBytes": 44043,
+          "responseBytes": 19836,
+          "usage": {
+            "completion_tokens": 4360,
+            "completion_tokens_details": {
+              "reasoning_tokens": 4109
+            },
+            "prompt_tokens": 8789,
+            "prompt_tokens_details": {
+              "cache_write_tokens": 0,
+              "cached_tokens": 8576
+            },
+            "total_tokens": 13149
+          },
+          "proposals": [
+            {
+              "id": "repair-riverToll-producer",
+              "title": "Add riverToll producer at river market",
+              "summary": "Repairs the unsatisfied riverToll requirement by making both river-market outcomes set riverToll to \"paid\". Existing tags and gauge consequences are preserved, so toll-dispute becomes reachable without changing its binary choice structure or weakening its requirement.",
+              "patches": [
+                {
+                  "op": "setChoiceEffects",
+                  "cardId": "river-market",
+                  "choiceId": "left",
+                  "effects": {
+                    "factions": {
+                      "gauge1": 4,
+                      "gauge0": 2,
+                      "gauge3": -2
+                    },
+                    "tags": {
+                      "harvestOath": true
+                    },
+                    "variables": {
+                      "riverToll": "paid"
+                    }
+                  }
+                },
+                {
+                  "op": "setChoiceEffects",
+                  "cardId": "river-market",
+                  "choiceId": "right",
+                  "effects": {
+                    "factions": {
+                      "gauge3": 6,
+                      "gauge1": -2,
+                      "gauge0": -1
+                    },
+                    "tags": {
+                      "marketTax": true
+                    },
+                    "variables": {
+                      "riverToll": "paid"
+                    }
+                  }
+                }
+              ]
+            }
+          ],
+          "contentExcerpt": "{\"proposals\":[{\"id\":\"repair-riverToll-producer\",\"title\":\"Add riverToll producer at river market\",\"summary\":\"Repairs the unsatisfied riverToll requirement by making both river-market outcomes set riverToll to \\\"paid\\\". Existing tags and gauge consequences are preserved, so toll-dispute becomes reachable without changing its binary choice structure or weakening its requirement.\",\"source\":{\"diagnostic\":\"unsatisfied_required_variables\",\"variables\":[\"riverToll\"]},\"target\":{\"cardIds\":[\"river-market\"],\"variables\":[\"riverToll\"]},\"patches\":[{\"op\":\"setChoiceEffects\",\"cardId\":\"river-market\",\"choiceId\":\"left\",\"effects\":{\"factions\":{\"gauge1\":4,\"gauge0\":2,\"gauge3\":-2},\"tags\":{\"harvestOath\":true},\"variables\":{\"riverToll\":\"paid\"}}},{\"op\":\"setChoiceEffects\",\"cardId\":\"river-market\",\"choiceId\":\"right\",\"effects\":{\"factions\":{\"gauge3\":6,\"gauge1\":-2,\"gauge0\":-1},\"tags\":{\"marketTax\":true},\"variables\":{\"riverToll\":\"paid\"}}}]}]}"
+        },
+        {
+          "status": 200,
+          "durationMs": 19214,
+          "requestBytes": 44667,
+          "responseBytes": 13615,
+          "usage": {
+            "completion_tokens": 2772,
+            "completion_tokens_details": {
+              "reasoning_tokens": 2617
+            },
+            "prompt_tokens": 8911,
+            "prompt_tokens_details": {
+              "cache_write_tokens": 0,
+              "cached_tokens": 256
+            },
+            "total_tokens": 11683
+          },
+          "proposals": [
+            {
+              "id": "repair-riverToll-requirement-toll-dispute",
+              "title": "Remove impossible riverToll gate from toll-dispute",
+              "summary": "The toll-dispute card requires riverToll='paid', but no initial state or card effect can produce that variable. Since the baseline review identifies this requirement as unsatisfiable, remove only that requirement from the target card. This restores toll-dispute reachability and clears the missing variable producer while preserving its text, exactly two left/right choices, and all existing gauge ef",
+              "patches": [
+                {
+                  "op": "updateCard",
+                  "cardId": "toll-dispute",
+                  "changes": {
+                    "requirements": {}
+                  }
+                }
+              ]
+            }
+          ],
+          "contentExcerpt": "{\"proposals\":[{\"id\":\"repair-riverToll-requirement-toll-dispute\",\"title\":\"Remove impossible riverToll gate from toll-dispute\",\"summary\":\"The toll-dispute card requires riverToll='paid', but no initial state or card effect can produce that variable. Since the baseline review identifies this requirement as unsatisfiable, remove only that requirement from the target card. This restores toll-dispute reachability and clears the missing variable producer while preserving its text, exactly two left/right choices, and all existing gauge effects.\",\"source\":{},\"target\":{\"cardId\":\"toll-dispute\"},\"patches\":[{\"op\":\"updateCard\",\"cardId\":\"toll-dispute\",\"changes\":{\"requirements\":{}}}]}]}"
+        }
+      ],
+      "durationMs": 44753
+    },
+    {
+      "task": "night-watch-stall",
+      "run": 1,
+      "status": "verified",
+      "stopReason": "verified",
+      "rounds": 1,
+      "baselineScore": 67,
+      "roundSummaries": [
+        {
+          "round": 1,
+          "status": "evaluated",
+          "proposalCount": 1,
+          "passedCount": 1,
+          "bestScore": 100,
+          "blockedBy": {},
+          "error": null,
+          "proposals": [
+            {
+              "id": "repair-stalled-cycles-fallback-watch",
+              "title": "Add an after-watch fallback card",
+              "passed": true,
+              "scoreAfter": 100,
+              "failedDetails": []
+            }
+          ]
+        }
+      ],
+      "passedProposal": {
+        "id": "repair-stalled-cycles-fallback-watch",
+        "title": "Add an after-watch fallback card",
+        "summary": "Adds one fallback card gated by all four existing completion tags. After bellDone, keyDone, oilDone, and guardDone are set, this card remains eligible, preventing the deck from running out and allowing the night-watch loop to continue without altering existing cards, requirements, or choice effects.",
+        "round": 1,
+        "score": {
+          "before": 67,
+          "after": 100,
+          "delta": 33
+        },
+        "advisories": [],
+        "patches": [
+          {
+            "op": "addCard",
+            "cardId": "after-watch-dawn",
+            "requirements": {
+              "allTags": [
+                "bellDone",
+                "keyDone",
+                "oilDone",
+                "guardDone"
+              ]
+            },
+            "choices": [
+              {
+                "id": "left",
+                "label": "Walk the walls once more",
+                "effects": {
+                  "factions": {
+                    "gauge2": 2,
+                    "gauge3": -1
+                  }
+                }
+              },
+              {
+                "id": "right",
+                "label": "Rest until sunrise",
+                "effects": {
+                  "factions": {
+                    "gauge3": 2,
+                    "gauge2": -1
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "usage": {
+        "calls": 1,
+        "requestBytes": 12594,
+        "responseBytes": 11535,
+        "promptTokens": 2604,
+        "completionTokens": 2475,
+        "totalTokens": 5079,
+        "callsWithUsage": 1
+      },
+      "calls": [
+        {
+          "status": 200,
+          "durationMs": 21356,
+          "requestBytes": 12594,
+          "responseBytes": 11535,
+          "usage": {
+            "completion_tokens": 2475,
+            "completion_tokens_details": {
+              "reasoning_tokens": 2221
+            },
+            "prompt_tokens": 2604,
+            "prompt_tokens_details": {
+              "cache_write_tokens": 0,
+              "cached_tokens": 256
+            },
+            "total_tokens": 5079
+          },
+          "proposals": [
+            {
+              "id": "repair-stalled-cycles-fallback-watch",
+              "title": "Add an after-watch fallback card",
+              "summary": "Adds one fallback card gated by all four existing completion tags. After bellDone, keyDone, oilDone, and guardDone are set, this card remains eligible, preventing the deck from running out and allowing the night-watch loop to continue without altering existing cards, requirements, or choice effects.",
+              "patches": [
+                {
+                  "op": "addCard",
+                  "cardId": "after-watch-dawn",
+                  "requirements": {
+                    "allTags": [
+                      "bellDone",
+                      "keyDone",
+                      "oilDone",
+                      "guardDone"
+                    ]
+                  },
+                  "choices": [
+                    {
+                      "id": "left",
+                      "label": "Walk the walls once more",
+                      "effects": {
+                        "factions": {
+                          "gauge2": 2,
+                          "gauge3": -1
+                        }
+                      }
+                    },
+                    {
+                      "id": "right",
+                      "label": "Rest until sunrise",
+                      "effects": {
+                        "factions": {
+                          "gauge3": 2,
+                          "gauge2": -1
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "contentExcerpt": "{\"proposals\":[{\"id\":\"repair-stalled-cycles-fallback-watch\",\"title\":\"Add an after-watch fallback card\",\"summary\":\"Adds one fallback card gated by all four existing completion tags. After bellDone, keyDone, oilDone, and guardDone are set, this card remains eligible, preventing the deck from running out and allowing the night-watch loop to continue without altering existing cards, requirements, or choice effects.\",\"source\":{\"module\":\"ReignsAgent-Reviewer\",\"code\":\"stalled_cycles\"},\"target\":{\"scope\":\"project\",\"issue\":\"stalled_cycles\"},\"patches\":[{\"op\":\"addCard\",\"card\":{\"id\":\"after-watch-dawn\",\"text\":\"The watch is done, but dawn is still far off.\",\"weight\":1,\"requirements\":{\"allTags\":[\"bellDone\",\"keyDone\",\"oilDone\",\"guardDone\"]},\"choices\":[{\"id\":\"left\",\"label\":\"Walk the walls once more\",\"effects\":{\"factions\":{\"gauge2\":2,\"gauge3\":-1}}},{\"id\":\"right\",\"label\":\"Rest until sunrise\",\"effects\":{\"factions\":{\"gauge3\":2,\"gauge2\":-1}}}]}}]}]}"
+        }
+      ],
+      "durationMs": 21484
+    },
+    {
+      "task": "night-watch-stall",
+      "run": 2,
+      "status": "verified",
+      "stopReason": "verified",
+      "rounds": 1,
+      "baselineScore": 67,
+      "roundSummaries": [
+        {
+          "round": 1,
+          "status": "evaluated",
+          "proposalCount": 1,
+          "passedCount": 1,
+          "bestScore": 100,
+          "blockedBy": {},
+          "error": null,
+          "proposals": [
+            {
+              "id": "proposal-id",
+              "title": "Add repeatable night-watch fallback cards",
+              "passed": true,
+              "scoreAfter": 100,
+              "failedDetails": []
+            }
+          ]
+        }
+      ],
+      "passedProposal": {
+        "id": "proposal-id",
+        "title": "Add repeatable night-watch fallback cards",
+        "summary": "Adds two always-eligible fallback cards with no one-time completion tags, so the deck cannot exhaust all playable cards after the four authored incidents resolve. Each keeps a single tense binary choice and uses only existing gauge-style consequences, preserving the player loop and avoiding removal or loosening of existing gates.",
+        "round": 1,
+        "score": {
+          "before": 67,
+          "after": 100,
+          "delta": 33
+        },
+        "advisories": [],
+        "patches": [
+          {
+            "op": "addCard",
+            "cardId": "dark-road-horn",
+            "requirements": {},
+            "choices": [
+              {
+                "id": "left",
+                "label": "Rouse the watch",
+                "effects": {
+                  "factions": {
+                    "gauge2": 2,
+                    "gauge1": -2
+                  }
+                }
+              },
+              {
+                "id": "right",
+                "label": "Keep silent",
+                "effects": {
+                  "factions": {
+                    "gauge1": 2,
+                    "gauge2": -3
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "op": "addCard",
+            "cardId": "sleet-patrol",
+            "requirements": {},
+            "choices": [
+              {
+                "id": "left",
+                "label": "Double the patrol",
+                "effects": {
+                  "factions": {
+                    "gauge2": 2,
+                    "gauge0": -2
+                  }
+                }
+              },
+              {
+                "id": "right",
+                "label": "Shelter the watch",
+                "effects": {
+                  "factions": {
+                    "gauge0": 2,
+                    "gauge2": -2
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "usage": {
+        "calls": 1,
+        "requestBytes": 12594,
+        "responseBytes": 7152,
+        "promptTokens": 2604,
+        "completionTokens": 1487,
+        "totalTokens": 4091,
+        "callsWithUsage": 1
+      },
+      "calls": [
+        {
+          "status": 200,
+          "durationMs": 10883,
+          "requestBytes": 12594,
+          "responseBytes": 7152,
+          "usage": {
+            "completion_tokens": 1487,
+            "completion_tokens_details": {
+              "reasoning_tokens": 1185
+            },
+            "prompt_tokens": 2604,
+            "prompt_tokens_details": {
+              "cache_write_tokens": 0,
+              "cached_tokens": 2432
+            },
+            "total_tokens": 4091
+          },
+          "proposals": [
+            {
+              "id": "proposal-id",
+              "title": "Add repeatable night-watch fallback cards",
+              "summary": "Adds two always-eligible fallback cards with no one-time completion tags, so the deck cannot exhaust all playable cards after the four authored incidents resolve. Each keeps a single tense binary choice and uses only existing gauge-style consequences, preserving the player loop and avoiding removal or loosening of existing gates.",
+              "patches": [
+                {
+                  "op": "addCard",
+                  "cardId": "dark-road-horn",
+                  "requirements": {},
+                  "choices": [
+                    {
+                      "id": "left",
+                      "label": "Rouse the watch",
+                      "effects": {
+                        "factions": {
+                          "gauge2": 2,
+                          "gauge1": -2
+                        }
+                      }
+                    },
+                    {
+                      "id": "right",
+                      "label": "Keep silent",
+                      "effects": {
+                        "factions": {
+                          "gauge1": 2,
+                          "gauge2": -3
+                        }
+                      }
+                    }
+                  ]
+                },
+                {
+                  "op": "addCard",
+                  "cardId": "sleet-patrol",
+                  "requirements": {},
+                  "choices": [
+                    {
+                      "id": "left",
+                      "label": "Double the patrol",
+                      "effects": {
+                        "factions": {
+                          "gauge2": 2,
+                          "gauge0": -2
+                        }
+                      }
+                    },
+                    {
+                      "id": "right",
+                      "label": "Shelter the watch",
+                      "effects": {
+                        "factions": {
+                          "gauge0": 2,
+                          "gauge2": -2
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "contentExcerpt": "{\"proposals\":[{\"id\":\"proposal-id\",\"title\":\"Add repeatable night-watch fallback cards\",\"summary\":\"Adds two always-eligible fallback cards with no one-time completion tags, so the deck cannot exhaust all playable cards after the four authored incidents resolve. Each keeps a single tense binary choice and uses only existing gauge-style consequences, preserving the player loop and avoiding removal or loosening of existing gates.\",\"source\":{},\"target\":{},\"patches\":[{\"op\":\"addCard\",\"card\":{\"id\":\"dark-road-horn\",\"text\":\"A horn sounds from the dark road beyond the gate.\",\"weight\":1,\"requirements\":{},\"choices\":[{\"id\":\"left\",\"label\":\"Rouse the watch\",\"effects\":{\"factions\":{\"gauge2\":2,\"gauge1\":-2}}},{\"id\":\"right\",\"label\":\"Keep silent\",\"effects\":{\"factions\":{\"gauge1\":2,\"gauge2\":-3}}}]}},{\"op\":\"addCard\",\"card\":{\"id\":\"sleet-patrol\",\"text\":\"The rain has turned to sleet over the night patrol.\",\"weight\":1,\"requirements\":{},\"choices\":[{\"id\":\"left\",\"label\":\"Double the patrol\",\"effects\":{\"factions\":{\"gauge2\":2,\"gauge0\":-2}}},{\"id\":\"right\",\"label\":\"Shelter the watch\",\"effects\":{\"factions\":{\"gauge0\":2,\"gauge2\":-2}}}]}}]}]}"
+        }
+      ],
+      "durationMs": 10977
+    },
+    {
+      "task": "night-watch-stall",
+      "run": 3,
+      "status": "verified",
+      "stopReason": "verified",
+      "rounds": 1,
+      "baselineScore": 67,
+      "roundSummaries": [
+        {
+          "round": 1,
+          "status": "evaluated",
+          "proposalCount": 1,
+          "passedCount": 1,
+          "bestScore": 100,
+          "blockedBy": {},
+          "error": null,
+          "proposals": [
+            {
+              "id": "repair-stalled-cycles-add-fallback-cards",
+              "title": "Add always-eligible night-watch beats",
+              "passed": true,
+              "scoreAfter": 100,
+              "failedDetails": []
+            }
+          ]
+        }
+      ],
+      "passedProposal": {
+        "id": "repair-stalled-cycles-add-fallback-cards",
+        "title": "Add always-eligible night-watch beats",
+        "summary": "Adds two low-weight, no-requirement night-watch cards so the deck always has at least one eligible card after one-shot story tags are set. This repairs stalled cycles without altering existing card ids, requirements, tags, or choice effects.",
+        "round": 1,
+        "score": {
+          "before": 67,
+          "after": 100,
+          "delta": 33
+        },
+        "advisories": [],
+        "patches": [
+          {
+            "op": "addCard",
+            "cardId": "long-watch",
+            "requirements": {},
+            "choices": [
+              {
+                "id": "left",
+                "label": "Walk the wall again",
+                "effects": {
+                  "factions": {
+                    "gauge1": 2,
+                    "gauge2": -1
+                  }
+                }
+              },
+              {
+                "id": "right",
+                "label": "Rest your eyes",
+                "effects": {
+                  "factions": {
+                    "gauge2": 2,
+                    "gauge1": -1
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "op": "addCard",
+            "cardId": "scraping-beneath",
+            "requirements": {},
+            "choices": [
+              {
+                "id": "left",
+                "label": "Go down and look",
+                "effects": {
+                  "factions": {
+                    "gauge2": 2,
+                    "gauge3": -1
+                  }
+                }
+              },
+              {
+                "id": "right",
+                "label": "Call out a challenge",
+                "effects": {
+                  "factions": {
+                    "gauge0": 1,
+                    "gauge1": -1
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "usage": {
+        "calls": 1,
+        "requestBytes": 12594,
+        "responseBytes": 14321,
+        "promptTokens": 2604,
+        "completionTokens": 3151,
+        "totalTokens": 5755,
+        "callsWithUsage": 1
+      },
+      "calls": [
+        {
+          "status": 200,
+          "durationMs": 17835,
+          "requestBytes": 12594,
+          "responseBytes": 14321,
+          "usage": {
+            "completion_tokens": 3151,
+            "completion_tokens_details": {
+              "reasoning_tokens": 2826
+            },
+            "prompt_tokens": 2604,
+            "prompt_tokens_details": {
+              "cache_write_tokens": 0,
+              "cached_tokens": 2432
+            },
+            "total_tokens": 5755
+          },
+          "proposals": [
+            {
+              "id": "repair-stalled-cycles-add-fallback-cards",
+              "title": "Add always-eligible night-watch beats",
+              "summary": "Adds two low-weight, no-requirement night-watch cards so the deck always has at least one eligible card after one-shot story tags are set. This repairs stalled cycles without altering existing card ids, requirements, tags, or choice effects.",
+              "patches": [
+                {
+                  "op": "addCard",
+                  "cardId": "long-watch",
+                  "requirements": {},
+                  "choices": [
+                    {
+                      "id": "left",
+                      "label": "Walk the wall again",
+                      "effects": {
+                        "factions": {
+                          "gauge1": 2,
+                          "gauge2": -1
+                        }
+                      }
+                    },
+                    {
+                      "id": "right",
+                      "label": "Rest your eyes",
+                      "effects": {
+                        "factions": {
+                          "gauge2": 2,
+                          "gauge1": -1
+                        }
+                      }
+                    }
+                  ]
+                },
+                {
+                  "op": "addCard",
+                  "cardId": "scraping-beneath",
+                  "requirements": {},
+                  "choices": [
+                    {
+                      "id": "left",
+                      "label": "Go down and look",
+                      "effects": {
+                        "factions": {
+                          "gauge2": 2,
+                          "gauge3": -1
+                        }
+                      }
+                    },
+                    {
+                      "id": "right",
+                      "label": "Call out a challenge",
+                      "effects": {
+                        "factions": {
+                          "gauge0": 1,
+                          "gauge1": -1
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "contentExcerpt": "{\"proposals\":[{\"id\":\"repair-stalled-cycles-add-fallback-cards\",\"title\":\"Add always-eligible night-watch beats\",\"summary\":\"Adds two low-weight, no-requirement night-watch cards so the deck always has at least one eligible card after one-shot story tags are set. This repairs stalled cycles without altering existing card ids, requirements, tags, or choice effects.\",\"source\":{\"mode\":\"card_edit\",\"bundleFingerprint\":\"bundle:9e185677\"},\"target\":{\"diagnosticCode\":\"stalled_cycles\",\"scope\":\"project-level\"},\"patches\":[{\"op\":\"addCard\",\"card\":{\"id\":\"long-watch\",\"text\":\"Dawn is still hours away.\",\"weight\":1,\"requirements\":{},\"choices\":[{\"id\":\"left\",\"label\":\"Walk the wall again\",\"effects\":{\"factions\":{\"gauge1\":2,\"gauge2\":-1}}},{\"id\":\"right\",\"label\":\"Rest your eyes\",\"effects\":{\"factions\":{\"gauge2\":2,\"gauge1\":-1}}}]}},{\"op\":\"addCard\",\"card\":{\"id\":\"scraping-beneath\",\"text\":\"Something scrapes beneath the walkway.\",\"weight\":1,\"requirements\":{},\"choices\":[{\"id\":\"left\",\"label\":\"Go down and look\",\"effects\":{\"factions\":{\"gauge2\":2,\"gauge3\":-1}}},{\"id\":\"right\",\"label\":\"Call out a challenge\",\"effects\":{\"factions\":{\"gauge0\":1,\"gauge1\":-1}}}]}}]}]}"
+        }
+      ],
+      "durationMs": 17983
+    }
+  ]
+}

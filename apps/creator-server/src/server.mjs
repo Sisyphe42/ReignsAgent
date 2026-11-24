@@ -12,6 +12,7 @@ import {
   applyImageDraftAsset,
   buildAiEditPlanAsync,
   buildImageOperationDraft,
+  buildVerifiedRepairPlan,
   buildGenerationPlan,
   createCardEditor,
   createConnectorConfig,
@@ -378,6 +379,20 @@ async function handleApi(req, res, url) {
           code: "diagnostics_required"
         }
       });
+    }
+    if (mode === "repair_diagnostics" && body?.verify !== false) {
+      // Verified repair loop: proposals are scored on copies; nothing is written here.
+      const plan = await buildVerifiedRepairPlan({
+        editor: store.editor,
+        getEditor: () => store.editor,
+        config: body?.config ?? {},
+        credentials: await resolveCredentials(body?.credentials, body?.config),
+        instruction: body?.instruction ?? "",
+        targetCardId: body?.targetCardId ?? null,
+        repairTarget: body?.repairTarget ?? null,
+        diagnostics
+      });
+      return sendJson(res, plan);
     }
     const plan = await buildAiEditPlanAsync({
       editor: store.editor,

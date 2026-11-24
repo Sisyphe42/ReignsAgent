@@ -4735,6 +4735,7 @@ function ReviewPanel({ editor, diagnostics, aiAssistEnabled, onRun, onOpen, onFo
       mode: "repair_diagnostics",
       cardCount: 1,
       contextSummary: `${issue.severity} · ${issue.code}`,
+      repairTarget: { code: issue.code, cardIds: issue.cardIds, entities: issue.otherTargets },
       instruction: `Use the latest Review diagnostics to repair '${issue.code}'. Focus on: ${issue.message}. Targets: ${issue.cardIds.length > 0 ? issue.cardIds.join(", ") : "project-level issue"}. Keep changes as explicit patch proposals.`
     });
   }
@@ -5488,6 +5489,7 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
   const [targetCardId, setTargetCardId] = useState("");
   const [assetId, setAssetId] = useState("");
   const [instruction, setInstruction] = useState("");
+  const [repairTarget, setRepairTarget] = useState(null);
   const [plan, setPlan] = useState(null);
   const [selected, setSelected] = useState([]);
   const [applyResult, setApplyResult] = useState("");
@@ -5534,6 +5536,7 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
     setInstruction(draftRequest.instruction ?? "");
     setTargetCardId(draftRequest.targetCardId ?? "");
     setAssetId(draftRequest.assetId ?? "");
+    setRepairTarget(draftRequest.repairTarget ?? null);
     if (draftRequest.cardCount) setCardCount(draftRequest.cardCount);
     if (draftRequest.theme) setTheme(draftRequest.theme);
     setPlan(null);
@@ -5556,6 +5559,7 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
     const nextCardCount = overrides?.cardCount ?? (IMAGE_OPERATIONS.some(([id]) => id === nextMode) ? imageCount : cardCount);
     const nextTheme = overrides?.theme ?? theme;
     const nextStyle = overrides?.style ?? style;
+    const nextRepairTarget = overrides ? overrides.repairTarget ?? null : repairTarget;
     const nextRequiresDiagnostics = nextMode === "repair_diagnostics";
     if (isBuilding) return;
     if (nextRequiresDiagnostics && !diagnostics) {
@@ -5637,7 +5641,8 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
       instruction: nextInstruction,
       targetCardId: nextTargetCardId || null,
       assetId: nextAssetId || null,
-      diagnostics: nextRequiresDiagnostics ? diagnostics : null
+      diagnostics: nextRequiresDiagnostics ? diagnostics : null,
+      ...(nextRequiresDiagnostics && nextRepairTarget ? { repairTarget: nextRepairTarget } : {})
     });
     if (!result || result === true) {
       setProgressStatus("failed");
@@ -5652,7 +5657,7 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
     await wait(90);
     if (result && result !== true) {
       setPlan(result);
-      setSelected((result.proposals ?? []).filter((proposal) => (proposal.patches ?? []).length > 0).map((proposal) => proposal.id));
+      setSelected(defaultSelectedProposalIds(result));
       setApplyResult("");
       setProgressStep(5);
       setProgressStatus("ready");
@@ -5848,9 +5853,10 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
               <button className="btn btn--primary" disabled={selected.length === 0} onClick={() => void applySelected()}>Apply selected</button>
               <span className="muted">{selected.length}/{plan.proposals?.length ?? 0} selected</span>
             </div>
+            {plan.verification && <RepairVerificationSummary verification={plan.verification} />}
             <div className="ai-proposal-list">
               {(plan.proposals ?? []).map((proposal) => (
-                <article className="ai-proposal" key={proposal.id}>
+                <article className={`ai-proposal${proposal.verification ? (proposal.verification.passed ? " ai-proposal--verified" : " ai-proposal--blocked") : ""}`} key={proposal.id}>
                   <label className="ai-proposal__head">
                     <input
                       type="checkbox"
@@ -5864,6 +5870,7 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
                     </span>
                   </label>
                   <p>{proposal.summary}</p>
+                  {proposal.verification && <RepairProposalEvidence verification={proposal.verification} />}
                   <pre className="output output--compact">{JSON.stringify(proposal.patches, null, 2)}</pre>
                 </article>
               ))}
@@ -5875,6 +5882,141 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
         {applyResult && <p className="muted">{applyResult}</p>}
       </div>
     </section>
+  );
+}
+
+const REPAIR_STATUS_LABELS = {
+  verified: "Verified",
+  unverified: "Not verified",
+  not_verifiable: "Not scored"
+};
+
+const REPAIR_STOP_LABELS = {
+  verified: "Stopped at the first round with a proposal that passed every blocking check.",
+  max_rounds: "Stopped at the round limit; no proposal passed every blocking check.",
+  offline_single_round: "Local rule-based repair runs once; asking again would return the same proposals.",
+  endpoint_error: "Stopped because the endpoint failed in a later round; showing the best earlier round.",
+  deadline: "Stopped at the loop deadline; showing the best round so far.",
+  total_byte_budget: "Stopped at the total byte budget; showing the best round so far.",
+  ai_repair_request_budget: "Stopped: a round request exceeded the byte budget.",
+  ai_repair_response_budget: "Stopped: a round response exceeded the byte budget.",
+  ai_repair_total_budget: "Stopped at the total byte budget; showing the best round so far.",
+  target_not_scored: "This issue type is not scored by the Reviewer, so proposals are shown without verification.",
+  no_scored_issues: "The fixed-seed scoring review found no issue to verify against.",
+  target_entity_not_scored: "The selected issue target does not appear in the fixed-seed scoring review, so proposals are shown without verification."
+};
+
+function defaultSelectedProposalIds(plan) {
+  const proposals = plan?.proposals ?? [];
+  const status = plan?.verification?.status;
+  if (status === "verified" || status === "unverified") {
+    // Evidence first: only proposals that passed every blocking check start selected.
+    return proposals.filter((proposal) => proposal.verification?.passed).map((proposal) => proposal.id);
+  }
+  return proposals.filter((proposal) => (proposal.patches ?? []).length > 0).map((proposal) => proposal.id);
+}
+
+function formatRepairTarget(target) {
+  return target.entity === "*" ? target.code : `${target.code} · ${target.entity}`;
+}
+
+function RepairVerificationSummary({ verification }) {
+  const rounds = verification.rounds ?? [];
+  const scoring = verification.scoring ?? {};
+  const status = verification.status ?? "unverified";
+  const baselineScore = verification.baseline?.healthScore ?? "–";
+  return (
+    <div className={`repair-verification repair-verification--${status}`} data-testid="repair-verification">
+      <div className="repair-verification__head">
+        <span className={`repair-status repair-status--${status}`}>{REPAIR_STATUS_LABELS[status] ?? status}</span>
+        <div>
+          <strong>Repair loop · {rounds.length}/{verification.limits?.maxRounds ?? 3} rounds · baseline {baselineScore}/100</strong>
+          <small>{verification.message ?? REPAIR_STOP_LABELS[verification.stopReason] ?? verification.stopReason}</small>
+        </div>
+      </div>
+      <p className="muted repair-verification__note">
+        Each proposal was applied to a copy and scored with a fixed-seed Review. Scoring settings are fixed at {scoring.cycles} cycles, {scoring.maxTurns} turns, seed {scoring.seed}, independent of the Review panel settings. Nothing is written until you apply. Evidence is per proposal; re-run Review after applying several together.
+      </p>
+      {(verification.targets ?? []).length > 0 && (
+        <p className="repair-verification__targets">
+          <span>Targets</span>
+          {verification.targets.map((target) => <code key={`${target.code}:${target.entity}`}>{formatRepairTarget(target)}</code>)}
+        </p>
+      )}
+      {(verification.unmatchedTargets ?? []).length > 0 && (
+        <p className="repair-verification__targets">
+          <span>Not scored (absent from the scoring review)</span>
+          {verification.unmatchedTargets.map((entity) => <code key={entity}>{entity}</code>)}
+        </p>
+      )}
+      {rounds.length > 0 && (
+        <table className="repair-rounds">
+          <thead>
+            <tr><th>Round</th><th>Proposals</th><th>Passed</th><th>Best score</th><th>Blocked by</th></tr>
+          </thead>
+          <tbody>
+            {rounds.map((round) => (
+              <tr key={round.round} className={round.passedCount > 0 ? "repair-rounds__row--passed" : ""}>
+                <td>{round.round}</td>
+                <td>{round.status === "evaluated" ? round.proposalCount : round.status === "rejected_response" ? "rejected" : "error"}</td>
+                <td>{round.passedCount}</td>
+                <td>{round.bestScore === null || round.bestScore === undefined ? "–" : `${baselineScore} → ${round.bestScore}`}</td>
+                <td>{round.error ? round.error.code : Object.entries(round.blockedBy ?? {}).map(([id, count]) => `${id} ×${count}`).join(", ") || "–"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {rounds.some((round) => round.round !== verification.selectedRound && (round.proposals ?? []).length > 0) && (
+        <ul className="repair-attempts">
+          {rounds.filter((round) => round.round !== verification.selectedRound).flatMap((round) => (round.proposals ?? []).map((attempt) => (
+            <li key={`${round.round}:${attempt.id}`}>
+              <strong>Round {round.round} · {attempt.title}</strong>
+              <span>{attempt.passed ? "passed" : `blocked: ${(attempt.failedDetails ?? []).map((entry) => `${entry.id} (${entry.detail})`).join("; ") || attempt.failedChecks.join(", ")}`} · score {baselineScore} → {attempt.scoreAfter ?? "–"}</span>
+            </li>
+          )))}
+        </ul>
+      )}
+      {rounds.some((round) => (round.exchange ?? []).length > 0) && (
+        <details className="ai-advanced repair-log">
+          <summary>
+            <span className="ai-field-label">Request log</span>
+            <span>{verification.usage?.totalBytes ?? 0} bytes · ~{verification.usage?.estimatedTokens ?? 0} tokens · keys redacted</span>
+          </summary>
+          {rounds.flatMap((round) => (round.exchange ?? []).map((entry) => (
+            <div className="repair-log__entry" key={`${round.round}:${entry.call}`}>
+              <strong>Round {round.round} · {entry.method} {entry.url} · {entry.status ?? "no response"}</strong>
+              <small>request {entry.requestBytes} B · response {entry.responseBytes} B · headers {Object.entries(entry.headers ?? {}).map(([name, value]) => `${name}: ${value}`).join(", ") || "none"}</small>
+              <pre className="output output--compact">{entry.requestBody}</pre>
+              <pre className="output output--compact">{entry.responseText || "(no response body)"}</pre>
+            </div>
+          )))}
+        </details>
+      )}
+    </div>
+  );
+}
+
+function RepairProposalEvidence({ verification }) {
+  const checks = verification.checks ?? [];
+  const score = verification.score ?? {};
+  return (
+    <div className="repair-evidence" data-testid="repair-evidence">
+      <div className="repair-evidence__score">
+        <span className={`repair-status repair-status--${verification.passed ? "verified" : "unverified"}`}>{verification.passed ? "Passed" : "Blocked"}</span>
+        <span>Round {verification.round}</span>
+        <span>Health {score.before ?? "–"} → {score.after ?? "–"}{Number.isFinite(score.delta) ? ` (${score.delta >= 0 ? "+" : ""}${score.delta})` : ""}</span>
+      </div>
+      <ul className="repair-checks">
+        {checks.map((check) => (
+          <li key={check.id} className={`repair-check repair-check--${check.passed ? "pass" : check.severity === "advisory" ? "note" : "fail"}`}>
+            <span aria-hidden="true">{check.passed ? "✓" : check.severity === "advisory" ? "!" : "✗"}</span>
+            <code>{check.id}</code>
+            <small>{check.detail}</small>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 

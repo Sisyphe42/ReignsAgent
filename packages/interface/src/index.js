@@ -18,6 +18,17 @@ import {
 } from "../../pipeline/src/index.js";
 import { analyzeCardGraph, runMonteCarloReview } from "../../reviewer/src/index.js";
 export { stitchPlayerRuntime } from "./player-build.js";
+export {
+  DEFAULT_REPAIR_LOOP_LIMITS,
+  DEFAULT_REPAIR_SCORING,
+  REPAIR_CHECKS,
+  buildVerifiedRepairPlan,
+  collectIssueEntities,
+  collectMissingProducerSignals,
+  compareHealthScores,
+  evaluateRepairProposal,
+  producerOnlyEdit
+} from "./repair-loop.js";
 
 const PLAYER_SCHEMA_VERSION = 1;
 const BUILD_SCHEMA_VERSION = 1;
@@ -586,6 +597,7 @@ export function summarizeDiagnostics(report, context = {}) {
     module: report?.module ?? "ReignsAgent-Reviewer",
     sampleSize: cycles,
     healthScore: computeHealthScore(summary, warnings),
+    rawHealthScore: round(computeRawHealthScore(summary, warnings)),
     headline: buildHeadline(summary, warnings),
     factions: projectFactions(summary, cycles),
     coverage: {
@@ -895,6 +907,14 @@ export function applyAiEditPlan({ editor, plan, proposalIds = [] }) {
     assets: applied.bundle.assets
   });
   const playerValidation = nextEditor.validateForPlayer();
+  // Verified repair plans promise player-valid output; a combination of individually
+  // verified proposals can still break it, so refuse instead of writing it.
+  if (plan.verification && typeof plan.verification === "object" && !playerValidation.valid) {
+    throw new InterfaceError(
+      `Selected repair proposals fail player validation together: ${playerValidation.errors.slice(0, 2).join("; ")}`,
+      "ai_repair_player_invalid"
+    );
+  }
 
   return {
     applied: true,
@@ -1106,12 +1126,18 @@ function normalizeStringSlots(slots) {
 }
 
 function computeHealthScore(summary, warnings) {
+  return Math.max(0, Math.min(100, Math.round(computeRawHealthScore(summary, warnings))));
+}
+
+// Same formula without rounding or the 0..100 clamp, so regressions stay visible once
+// the displayed score has hit its floor.
+function computeRawHealthScore(summary, warnings) {
   let score = 100;
   score -= (summary.gameOverRate ?? 0) * 35;
   score -= (summary.stalledRate ?? 0) * 25;
   score -= warnings.filter((warning) => warning.severity === "error").length * 8;
   score -= warnings.filter((warning) => warning.severity === "warning").length * 3;
-  return Math.max(0, Math.min(100, Math.round(score)));
+  return score;
 }
 
 function buildHeadline(summary, warnings) {

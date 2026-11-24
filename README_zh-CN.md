@@ -136,9 +136,11 @@ AI Assist 是 Creator 侧的可选协作层，不是自主作者，也不属于�
 | 工作流 | 输入与结果 |
 | --- | --- |
 | 项目或卡牌草稿 | 将当前项目快照与 premise、tone、branch depth、ending 目标、constraints、目标卡牌和请求卡牌数结合。Endpoint 返回明确 patch proposals，而不是直接替换整个项目。 |
-| Review 修复 | 必须先获得完整 Review 结果；它会针对选中的诊断和受影响卡牌提出尽量小的修复。应用后应再次运行 Review 衡量效果。 |
+| Review 修复 | 必须先获得完整 Review 结果，针对选中的诊断运行有上限的“验证—重试”循环（最多 3 轮）：每条 proposal 先在副本上应用，必须通过玩家版检查，再用固定种子的 Review（500 局、40 回合、种子 1）打分，并通过防走捷径检查（目标问题消失、不新增报错、只改相关卡、不删作者门槛和选项效果、不删卡改 id、可达卡数和健康分不下降）。没过的检查会反馈给 endpoint 再改。面板显示每轮分数和每条 proposal 的检查结果；只有全部通过的 proposal 默认勾选，Apply 前不写入任何内容。 |
 | 上下文动作 | 对选中的卡牌或图上下文执行 explain、translate 或 branch；除非指令明确要求改变，否则保留 ids、tags、variables 和左右选择含义。 |
 | 视觉生成 | 生成新素材；在 adapter 支持时还可使用参考图、edit、inpaint、outpaint、mask、aspect ratio、negative prompt 和多个输出候选。结果在 Apply 前始终只是二进制草稿。 |
+
+Review 修复时，模型看到的是按相关性挑选的一部分卡牌：先是选中和目标卡，再是 Review 问题点名的卡，再是与它们共享标签、变量或相关量表的卡，最多 40 张 / 24 KiB。起草等其他模式仍和以前一样只发前 12 张卡。修复打分参数固定为 500 局、40 回合、种子 1，与 Review 面板的设置无关。请求预览会列出每张卡被选入的原因。`npm run eval:repair` 用脚本化的 mock endpoint 离线运行修复循环（衡量的是这套检查流程，不是模型）；`npm run eval:repair -- --real --endpoint <回环地址> --model <id>` 会把可用于真实模型的用例发给不需要密钥的本机端点，已记录的结果在 `scripts/repair-eval/results/`。
 
 文本 endpoint 位于 **Settings → AI Endpoint**。选择 channel preset 或自定义 endpoint，填写 base URL 和 model ID，声明 structured JSON、vision 等 capabilities；只有需要覆盖 protocol、route、compatibility 或 JSON mode 时才使用 Advanced。**Fetch `/models`** 查询兼容的模型发现路由；**Validate endpoint** 只发送兼容性请求，不会编辑项目。
 
@@ -429,18 +431,25 @@ sequenceDiagram
   participant Pipeline as Pipeline
   participant Provider as User Endpoint
   participant Core as Core
+  participant Reviewer as Reviewer
 
   UI->>API: draft / repair / analyze request
   API->>Interface: current editor snapshot
-  Interface->>Pipeline: redacted context + endpoint config
+  Interface->>Pipeline: relevance-selected context + endpoint config (API key only in the auth header)
   Pipeline->>Provider: transient request
   Provider-->>Pipeline: proposal JSON
   Pipeline-->>Interface: prevalidated patches
-  Interface-->>API: immutable plan
+  opt repair_diagnostics (verified loop, at most 3 rounds)
+    Interface->>Pipeline: apply each proposal's patches to a copy
+    Interface->>Interface: player validation gate (hard)
+    Interface->>Reviewer: fixed-seed Review of the copy
+    Interface->>Pipeline: failed checks as repairLoop feedback (next round)
+  end
+  Interface-->>API: immutable plan (+ verification evidence)
   API-->>UI: proposal preview
   UI->>API: apply selected proposal
   API->>Interface: baseFingerprint guard
-  Interface->>Core: validate resulting cards
+  Interface-->>API: new editor + player validation report
 ```
 
 ## 构建输出

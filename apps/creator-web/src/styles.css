@@ -8391,3 +8391,264 @@ summary:focus-visible {
     flex-direction: column;
   }
 }
+
+/* Verified repair loop evidence (AI Assist, repair_diagnostics). */
+.ai-proposal--verified {
+  border-left: 3px solid var(--ok);
+}
+
+.ai-proposal--blocked {
+  border-left: 3px solid var(--danger);
+}
+
+.repair-verification {
+  display: grid;
+  gap: 10px;
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface-2) 80%, transparent);
+}
+
+.repair-verification--verified {
+  border-color: color-mix(in srgb, var(--ok) 45%, var(--border));
+}
+
+.repair-verification--unverified {
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
+}
+
+.repair-verification__head {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.repair-verification__head > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.repair-verification__head small,
+.repair-verification__note {
+  color: var(--muted);
+  font-size: 0.78rem;
+  margin: 0;
+}
+
+.repair-verification__targets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin: 0;
+  font-size: 0.78rem;
+}
+
+.repair-verification__targets > span {
+  color: var(--muted);
+}
+
+.repair-status {
+  flex: none;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.repair-status--verified {
+  color: var(--ok);
+  border-color: color-mix(in srgb, var(--ok) 50%, var(--border));
+  background: color-mix(in srgb, var(--ok) 10%, transparent);
+}
+
+.repair-status--unverified {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 50%, var(--border));
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+}
+
+.repair-status--not_verifiable {
+  color: var(--muted);
+}
+
+.repair-rounds {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+}
+
+.repair-rounds th,
+.repair-rounds td {
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.repair-rounds th {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.repair-rounds__row--passed td:first-child {
+  box-shadow: inset 3px 0 0 var(--ok);
+}
+
+.repair-log__entry {
+  display: grid;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.repair-log__entry small {
+  color: var(--muted);
+}
+
+.repair-log__entry pre {
+  max-height: 220px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.repair-evidence {
+  display: grid;
+  gap: 8px;
+  margin: 8px 0 10px;
+}
+
+.repair-evidence__score {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.repair-checks {
+  display: grid;
+  gap: 3px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.76rem;
+}
+
+.repair-check {
+  display: grid;
+  grid-template-columns: 1rem minmax(9rem, max-content) minmax(0, 1fr);
+  gap: 6px;
+  align-items: baseline;
+}
+
+.repair-check small {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.repair-check--pass > span {
+  color: var(--ok);
+}
+
+.repair-check--fail > span,
+.repair-check--fail code {
+  color: var(--danger);
+}
+
+.repair-check--note > span {
+  color: var(--accent);
+}
+
+@media (max-width: 720px) {
+  .repair-check {
+    grid-template-columns: 1rem minmax(0, 1fr);
+  }
+
+  .repair-check small {
+    grid-column: 2;
+  }
+}
+
+.repair-attempts {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.76rem;
+}
+
+.repair-attempts li {
+  display: grid;
+  gap: 2px;
+  padding: 6px 8px;
+  border-left: 3px solid var(--danger);
+  background: color-mix(in srgb, var(--danger) 5%, transparent);
+}
+
+.repair-attempts span {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+/* Request log toggle: a light, card-consistent disclosure row instead of the global
+   button-like summary style (which renders as a dark slab here). */
+.ai-advanced.repair-log {
+  background: var(--surface);
+}
+
+.ai-advanced.repair-log summary {
+  display: grid;
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 0;
+  background: var(--surface);
+  box-shadow: none;
+  color: var(--muted);
+  font-weight: 500;
+  transform: none;
+}
+
+.ai-advanced.repair-log summary:hover {
+  background: color-mix(in srgb, var(--accent) 5%, var(--surface));
+}
+
+.ai-advanced.repair-log summary .ai-field-label {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.ai-advanced.repair-log summary::after {
+  content: "Show ⌄";
+  transform: none;
+  color: var(--accent);
+  font-family: var(--font-data);
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+.ai-advanced.repair-log[open] summary {
+  border-bottom: 1px solid var(--border);
+}
+
+.ai-advanced.repair-log[open] summary::after {
+  content: "Hide ⌃";
+  transform: none;
+}
+
+.ai-advanced.repair-log > .repair-log__entry {
+  padding: 0 12px 10px;
+}
+
+.ai-advanced.repair-log summary span:not(.ai-field-label) {
+  font-weight: 400;
+}
