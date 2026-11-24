@@ -38,3 +38,43 @@ What this shows:
 ## Offline harness eval
 
 `npm run eval:repair` (scripted mock answers; measures the harness, not a model) is covered by `test/integration/repair-eval.test.js`.
+
+## Real model re-run after phase 3, 2026-11-24
+
+- File: `real-deepseek-v4.1-flash-2026-11-24-r2.json`
+- Command:
+  `npm run eval:repair -- --real --endpoint http://127.0.0.1:3425/v1 --model auto/deepseek-v4.1-flash --k 3 --max-requests 60 --json scripts/repair-eval/results/real-deepseek-v4.1-flash-2026-11-24-r2.json`
+- Same endpoint, model, 5 tasks and k = 3 as the first run. No key was sent.
+- Code changes between the runs:
+  - Producer-only edits are exempt from `scope` (`scope_exempt: adds_missing_producer`).
+  - Text requests time out after 120 s instead of 60 s; the loop deadline is 300 s instead of 180 s.
+
+| Metric | Run 1 (`…-2026-11-24.json`) | Run 2 (`…-2026-11-24-r2.json`) |
+|---|---|---|
+| Verified runs | 13/15 | 15/15 |
+| pass@1 mean | 86.7 % | 100 % |
+| Tasks with ≥ 1 success | 5/5 | 5/5 |
+| Average rounds | 1.29 | 1.00 |
+| Proposals evaluated / blocked | 17 / 4 | 15 / 0 |
+| Blocked by check | scope = 4 | none |
+| Requests sent (cap) | 21 (148) | 15 (60) |
+| Timed-out requests | 4 (60 s limit) | 0 (120 s limit) |
+| Completed-call duration: median / max | 24.7 s / 48.7 s | 18.8 s / 106.5 s |
+| Completed calls over 60 s | 0 (anything slower was cut off) | 1 (court-gauge-pressure run 2, 106.5 s) |
+| Average run / total wall time | 39.9 s / 12.2 min | 28.0 s / 7.0 min |
+| Bytes sent / received | 607,091 / 334,536 | 521,334 / 318,921 |
+| Tokens (prompt / completion / total) | 122,693 / 75,087 / 197,780 (17 calls) | 105,417 / 74,866 / 180,283 (15 calls) |
+
+What changed in the answers:
+- court-variable-gate:
+  - In run 1, every first round put `riverToll` on `river-market` and was blocked by `scope`.
+  - In run 2, all three runs again chose `river-market` (this time only the right choice). Each passed in round 1 via the producer exemption (48 → 72).
+- court-gauge-pressure run 2 took 106.5 s. Under the old 60 s limit this request would have been cut off; in run 1 the same task lost a run to two timeouts.
+- fog-unreachable: in run 1, run 2 needed 2 rounds (`scope` block on `clear-morning`, then dead-gate removal). In run 2, all three runs added a new producer card in round 1. No `gate_relaxed` advisories appeared in run 2.
+
+Limits on attribution:
+- Two variables changed at once (scope rule and timeouts), and each condition has only one run of 15. The model was sampled through a routing endpoint, so answers and latency vary between runs even at temperature 0.
+- Directly attributable changes:
+  - court-variable-gate: the same kind of answer was blocked in run 1 and passed in run 2, which is the scope change.
+  - court-gauge run 2: the 106.5 s call would have hit the 60 s limit, which is the timeout change.
+- Not attributable to either change: the fog-unreachable switch from a `clear-morning` edit to a new card, and the lower median latency. These may be run-to-run variation.
