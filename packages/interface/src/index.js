@@ -18,6 +18,14 @@ import {
 } from "../../pipeline/src/index.js";
 import { analyzeCardGraph, runMonteCarloReview } from "../../reviewer/src/index.js";
 export { stitchPlayerRuntime } from "./player-build.js";
+export {
+  DEFAULT_REPAIR_LOOP_LIMITS,
+  DEFAULT_REPAIR_SCORING,
+  REPAIR_CHECKS,
+  buildVerifiedRepairPlan,
+  collectIssueEntities,
+  evaluateRepairProposal
+} from "./repair-loop.js";
 
 const PLAYER_SCHEMA_VERSION = 1;
 const BUILD_SCHEMA_VERSION = 1;
@@ -895,6 +903,14 @@ export function applyAiEditPlan({ editor, plan, proposalIds = [] }) {
     assets: applied.bundle.assets
   });
   const playerValidation = nextEditor.validateForPlayer();
+  // Verified repair plans promise player-valid output; a combination of individually
+  // verified proposals can still break it, so refuse instead of writing it.
+  if (plan.verification && typeof plan.verification === "object" && !playerValidation.valid) {
+    throw new InterfaceError(
+      `Selected repair proposals fail player validation together: ${playerValidation.errors.slice(0, 2).join("; ")}`,
+      "ai_repair_player_invalid"
+    );
+  }
 
   return {
     applied: true,
