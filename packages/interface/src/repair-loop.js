@@ -590,8 +590,8 @@ export function collectMissingProducerSignals({ cards, reachableCardIds, targetC
       for (const [tag, value] of Object.entries(isRecord(effects.tags) ? effects.tags : {})) {
         if (value) addToMapSet(producersBySignal, `tag:${tag}`, card.id);
       }
-      for (const key of Object.keys(isRecord(effects.variables) ? effects.variables : {})) {
-        addToMapSet(producersBySignal, `var:${key}`, card.id);
+      for (const [key, value] of Object.entries(isRecord(effects.variables) ? effects.variables : {})) {
+        if (value !== null && value !== undefined) addToMapSet(producersBySignal, `var:${key}`, card.id);
       }
     }
   }
@@ -653,6 +653,8 @@ export function producerOnlyEdit(before, after, missingSignals) {
         if (originalEffects[bucket] && key in originalEffects[bucket]) continue;
         if (!missingSignals.has(`${prefix}:${key}`)) continue;
         if (bucket === "tags" && !value) continue;
+        // Core treats a null variable effect as clearing the variable, not producing it.
+        if (bucket === "variables" && (value === null || value === undefined)) continue;
         delete entries[key];
         added.add(`${prefix}:${key}`);
       }
@@ -706,12 +708,18 @@ function compareEffects(baseById, afterById, edited) {
       if (!afterChoice) continue; // player_valid reports missing left/right choices.
       const beforeEffects = choice.effects ?? {};
       const afterEffects = afterChoice.effects ?? {};
-      const lostTags = Object.entries(beforeEffects.tags ?? {}).filter(([tag, value]) => value && !afterEffects.tags?.[tag]).map(([tag]) => tag);
-      const lostVariables = Object.keys(beforeEffects.variables ?? {}).filter((key) => !(key in (afterEffects.variables ?? {})));
+      // Core treats tag false/null and variable null as deletions, and variable values feed
+      // requirements, so every existing tag/variable entry must keep its exact meaning.
+      const lostTags = Object.entries(beforeEffects.tags ?? {})
+        .filter(([tag, value]) => tagEffectMeaning(value) !== tagEffectMeaning(afterEffects.tags?.[tag], tag in (afterEffects.tags ?? {})))
+        .map(([tag]) => tag);
+      const lostVariables = Object.entries(beforeEffects.variables ?? {})
+        .filter(([key, value]) => !(key in (afterEffects.variables ?? {})) || stableJson(afterEffects.variables[key]) !== stableJson(value))
+        .map(([key]) => key);
       const beforeMagnitude = magnitude(beforeEffects.factions);
       const afterMagnitude = magnitude(afterEffects.factions);
-      if (lostTags.length > 0) problems.push(`${cardId}/${choice.id} stops setting tag ${lostTags.join(", ")}`);
-      if (lostVariables.length > 0) problems.push(`${cardId}/${choice.id} stops setting variable ${lostVariables.join(", ")}`);
+      if (lostTags.length > 0) problems.push(`${cardId}/${choice.id} changes or drops tag effect ${lostTags.join(", ")}`);
+      if (lostVariables.length > 0) problems.push(`${cardId}/${choice.id} changes or drops variable effect ${lostVariables.join(", ")}`);
       if (beforeMagnitude > 0 && afterMagnitude < beforeMagnitude * MIN_EFFECT_MAGNITUDE_RATIO) {
         problems.push(`${cardId}/${choice.id} gauge movement ${beforeMagnitude} → ${afterMagnitude} (below 50%)`);
       }
@@ -807,7 +815,8 @@ function pickBestRound(evaluatedRounds) {
   if (evaluatedRounds.length === 0) return null;
   // No round passed: prefer the round whose best proposal fails the fewest blocking
   // checks, then the higher score, then the later round (it saw more feedback).
-  const rank = (entry) => entry.proposals.reduce((best, proposal) => {
+  // Proposals skipped by the per-round evaluation budget were never scored; ignore them.
+  const rank = (entry) => entry.proposals.filter((proposal) => !proposal.verification.failedChecks.includes("evaluation_budget")).reduce((best, proposal) => {
     const failed = proposal.verification.failedChecks.length;
     const score = proposal.verification.score.after ?? -1;
     return failed < best.failed || (failed === best.failed && score > best.score) ? { failed, score } : best;
@@ -898,12 +907,13 @@ function createMeter({ fetchImpl, budget, remainingMs, remainingTotalBytes, apiK
       if (requestBytes > budget.maxRequestBytes) {
         throw fail("ai_repair_request_budget", `Repair round request is ${requestBytes} bytes; limit is ${budget.maxRequestBytes}`);
       }
-      if (state.requestBytes > remainingTotalBytes) {
+      if (state.requestBytes + state.responseBytes > remainingTotalBytes) {
         throw fail("ai_repair_total_budget", "Repair loop exceeded its total byte budget");
       }
       const signal = init.signal ? AbortSignal.any([init.signal, deadline]) : deadline;
       const response = await fetchImpl(url, { ...init, signal });
-      const limit = Math.min(budget.maxResponseBytes, Math.max(0, remainingTotalBytes - state.requestBytes));
+      // Include bytes already received (e.g. the first attempt before a JSON-mode retry).
+      const limit = Math.min(budget.maxResponseBytes, Math.max(0, remainingTotalBytes - state.requestBytes - state.responseBytes));
       let text;
       try {
         text = await readBoundedResponseText(response, {
@@ -985,6 +995,13 @@ function splitEntity(entity) {
   if (entity === "*") return ["*", null];
   const index = entity.indexOf(":");
   return [entity.slice(0, index), entity.slice(index + 1)];
+}
+
+// "set" (truthy value, compared exactly), "clear" (false/null), or "absent".
+function tagEffectMeaning(value, present = true) {
+  if (!present || value === undefined) return "absent";
+  if (value === false || value === null) return "clear";
+  return `set:${stableJson(value)}`;
 }
 
 function magnitude(factions) {

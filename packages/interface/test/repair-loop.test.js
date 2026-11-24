@@ -355,6 +355,72 @@ describe("verified repair loop", () => {
     assert.deepEqual([...collectMissingProducerSignals({ cards, reachableCardIds: reachable, targetCardIds: ["neither"] })].sort(), ["tag:never", "tag:nowhere"]);
   });
 
+  it("treats changed or dropped tag/variable effects as not preserved, including false tags", async () => {
+    const bundle = sealedWarehouseBundle();
+    const firstFog = bundle.cards.find((entry) => entry.id === "first-fog");
+    firstFog.choices[1].effects.tags = { ...(firstFog.choices[1].effects.tags ?? {}), lampAllNight: false };
+    const leftEffects = firstFog.choices[0].effects;
+    const rightEffects = firstFog.choices[1].effects;
+    const withProducer = (effects) => ({ ...effects, tags: { ...(effects.tags ?? {}), quarantineLifted: true } });
+    const changedVariable = { id: "changed-variable", title: "Change night policy", patches: [{ op: "setChoiceEffects", cardId: "first-fog", choiceId: "left", effects: { ...withProducer(leftEffects), variables: { ...leftEffects.variables, nightPolicy: "dim" } } }] };
+    const nulledVariable = { id: "nulled-variable", title: "Clear night policy", patches: [{ op: "setChoiceEffects", cardId: "first-fog", choiceId: "left", effects: { ...withProducer(leftEffects), variables: { ...leftEffects.variables, nightPolicy: null } } }] };
+    const droppedFalse = { id: "dropped-false", title: "Stop clearing lampAllNight", patches: [{ op: "setChoiceEffects", cardId: "first-fog", choiceId: "right", effects: (() => { const next = withProducer(rightEffects); delete next.tags.lampAllNight; return next; })() }] };
+    const keepsAll = { id: "keeps-all", title: "Only add the producer", patches: [{ op: "setChoiceEffects", cardId: "first-fog", choiceId: "left", effects: withProducer(leftEffects) }] };
+    const { fetchImpl } = scriptedFetch([[changedVariable, nulledVariable, droppedFalse, keepsAll]]);
+    const plan = await buildVerifiedRepairPlan({ editor: createCardEditor(bundle), config: ENDPOINT_CONFIG, fetchImpl, limits: { maxRounds: 1 } });
+    const byId = new Map(plan.proposals.map((proposal) => [proposal.id, proposal]));
+    for (const id of ["changed-variable", "nulled-variable", "dropped-false"]) {
+      assert.equal(checkOf(byId.get(id), "effects_preserved").passed, false, id);
+    }
+    assert.equal(checkOf(byId.get("keeps-all"), "effects_preserved").passed, true);
+  });
+
+  it("does not count a null variable effect as a producer", () => {
+    const before = { id: "a", text: "A", weight: 1, requirements: {}, choices: [{ id: "left", label: "L", effects: { factions: { gauge0: 1 } } }, { id: "right", label: "R", effects: {} }] };
+    const nulled = structuredClone(before);
+    nulled.choices[0].effects.variables = { riverToll: null };
+    assert.equal(producerOnlyEdit(before, nulled, new Set(["var:riverToll"])), null);
+    const cards = [
+      { id: "clearer", requirements: {}, choices: [{ id: "left", effects: { variables: { riverToll: null } } }, { id: "right", effects: {} }] },
+      { id: "target", requirements: { variables: { riverToll: "paid" } }, choices: [] }
+    ];
+    assert.deepEqual([...collectMissingProducerSignals({ cards, reachableCardIds: new Set(["clearer"]), targetCardIds: ["target"] })], ["var:riverToll"]);
+  });
+
+  it("counts received bytes against the total budget across a JSON-mode retry", async () => {
+    const jsonConfig = { ...ENDPOINT_CONFIG, capabilities: ["structuredJson"] };
+    const unsupported = (padding) => async () => ({ ok: false, status: 400, text: async () => `response_format json_object unsupported ${"x".repeat(padding)}` });
+    const sizes = [];
+    const probe = scriptedFetch([unsupported(0), [PROPOSALS.addProducer]]);
+    await buildVerifiedRepairPlan({
+      editor: createCardEditor(sealedWarehouseBundle()),
+      config: jsonConfig,
+      fetchImpl: async (url, init) => { sizes.push(Buffer.byteLength(init.body)); return probe.fetchImpl(url, init); },
+      limits: { maxRounds: 1 }
+    });
+    const padding = 40_000;
+    const total = sizes[0] + sizes[1] + padding / 2;
+    const capped = scriptedFetch([unsupported(padding), [PROPOSALS.addProducer]]);
+    await assert.rejects(
+      buildVerifiedRepairPlan({ editor: createCardEditor(sealedWarehouseBundle()), config: jsonConfig, fetchImpl: capped.fetchImpl, limits: { maxRounds: 1, maxTotalBytes: total } }),
+      (error) => error.code === "ai_repair_total_budget"
+    );
+    assert.equal(capped.calls.length, 1, "the retry is never sent once received bytes exhaust the budget");
+  });
+
+  it("ranks fallback rounds by evaluated proposals only", async () => {
+    const again = { ...PROPOSALS.newError, id: "producer-plus-dead-end-2" };
+    const { fetchImpl } = scriptedFetch([[PROPOSALS.newError, PROPOSALS.wipeGate], [again]]);
+    const plan = await buildVerifiedRepairPlan({
+      editor: createCardEditor(sealedWarehouseBundle()),
+      config: ENDPOINT_CONFIG,
+      fetchImpl,
+      limits: { maxRounds: 2, maxProposalsPerRound: 1 }
+    });
+    assert.equal(plan.verification.status, "unverified");
+    assert.equal(plan.proposals[0].id === "producer-plus-dead-end-2" || plan.verification.selectedRound === 2, true, "an unscored proposal must not make round 1 look better");
+  });
+
   it("rejects disallowed operations and empty proposals before scoring", () => {
     const bundle = sealedWarehouseBundle();
     const baseline = runDiagnostics({ cards: bundle.cards, metadata: bundle.metadata, cycles: 500, maxTurns: 40, seed: 1 });
