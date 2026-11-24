@@ -143,6 +143,8 @@ const TOLL_PRODUCER = {
   })
 };
 
+// Cases marked `real` are also run against a real endpoint (`--real`): the model gets
+// only the broken deck and the target issue, never the scripted answers.
 export const REPAIR_EVAL_CASES = [
   {
     id: "fog-direct-fix",
@@ -150,7 +152,8 @@ export const REPAIR_EVAL_CASES = [
     deck: fogHarborSealedWarehouse,
     repairTarget: { code: "unreachable_cards", cardIds: ["sealed-warehouse"] },
     script: [[fog.addProducer]],
-    expect: { status: "verified", rounds: 1, blocked: {} }
+    expect: { status: "verified", rounds: 1, blocked: {} },
+    real: { taskId: "fog-unreachable" }
   },
   {
     id: "fog-gate-wipe-then-fix",
@@ -158,7 +161,8 @@ export const REPAIR_EVAL_CASES = [
     deck: fogHarborSealedWarehouse,
     repairTarget: { code: "unreachable_cards", cardIds: ["sealed-warehouse"] },
     script: [[fog.wipeGate], [fog.addProducer]],
-    expect: { status: "verified", rounds: 2, blocked: { gates_preserved: 1 } }
+    expect: { status: "verified", rounds: 2, blocked: { gates_preserved: 1 } },
+    realSkip: "Same deck and target as fog-direct-fix; the real run covers it once."
   },
   {
     id: "fog-rename-zero-then-fix",
@@ -166,7 +170,8 @@ export const REPAIR_EVAL_CASES = [
     deck: fogHarborSealedWarehouse,
     repairTarget: { code: "unsatisfied_required_tags", entities: ["tag:quarantineLifted"] },
     script: [[fog.rename], [fog.zeroEffects], [fog.addProducer]],
-    expect: { status: "verified", rounds: 3, blocked: { card_ids_preserved: 1, target_resolved: 1, effects_preserved: 1 } }
+    expect: { status: "verified", rounds: 3, blocked: { card_ids_preserved: 1, target_resolved: 1, effects_preserved: 1 } },
+    real: { taskId: "fog-missing-tag" }
   },
   {
     id: "fog-persistent-shortcuts",
@@ -174,7 +179,8 @@ export const REPAIR_EVAL_CASES = [
     deck: fogHarborSealedWarehouse,
     repairTarget: { code: "unreachable_cards", cardIds: ["sealed-warehouse"] },
     script: [[fog.wipeGate, fog.offScope], [fog.newError], [fog.leftOnly]],
-    expect: { status: "unverified", rounds: 3, stopReason: "max_rounds", blocked: { gates_preserved: 1, scope: 1, no_new_errors: 1, player_valid: 1 } }
+    expect: { status: "unverified", rounds: 3, stopReason: "max_rounds", blocked: { gates_preserved: 1, scope: 1, no_new_errors: 1, player_valid: 1 } },
+    realSkip: "Same deck and target as fog-direct-fix; only the scripted shortcuts differ."
   },
   {
     id: "fog-rejected-response",
@@ -182,7 +188,8 @@ export const REPAIR_EVAL_CASES = [
     deck: fogHarborSealedWarehouse,
     repairTarget: { code: "unreachable_cards", cardIds: ["sealed-warehouse"] },
     script: [[fog.missingCard], [fog.addProducer]],
-    expect: { status: "verified", rounds: 2, rejectedRounds: 1, blocked: {} }
+    expect: { status: "verified", rounds: 2, rejectedRounds: 1, blocked: {} },
+    realSkip: "Scripted malformed response (failure injection); a real model is not asked to fail."
   },
   {
     id: "fog-endpoint-drop",
@@ -190,7 +197,8 @@ export const REPAIR_EVAL_CASES = [
     deck: fogHarborSealedWarehouse,
     repairTarget: { code: "unreachable_cards", cardIds: ["sealed-warehouse"] },
     script: [[fog.wipeGate], { status: 503, body: { error: "upstream unavailable" } }],
-    expect: { status: "unverified", rounds: 2, stopReason: "endpoint_error", blocked: { gates_preserved: 1 } }
+    expect: { status: "unverified", rounds: 2, stopReason: "endpoint_error", blocked: { gates_preserved: 1 } },
+    realSkip: "Scripted HTTP 503 (endpoint failure injection)."
   },
   {
     id: "court-gauge-pressure",
@@ -207,7 +215,8 @@ export const REPAIR_EVAL_CASES = [
       }],
       [{ id: "halve-granary", title: "Halve the granary relief push", summary: "granary-count left gauge1 8 → 4.", patches: [courtGauge1("granary-count", "left", 4)] }]
     ],
-    expect: { status: "verified", rounds: 3, blocked: { target_resolved: 1, score_not_lower: 1, scope: 1 } }
+    expect: { status: "verified", rounds: 3, blocked: { target_resolved: 1, score_not_lower: 1, scope: 1 } },
+    real: { taskId: "court-gauge-pressure" }
   },
   {
     id: "court-variable-gate",
@@ -218,7 +227,8 @@ export const REPAIR_EVAL_CASES = [
       [{ id: "one-sided-charter", title: "Ferry charter", summary: "Producer with one choice.", patches: [{ op: "addCard", card: { ...clone(TOLL_PRODUCER.card), choices: [clone(TOLL_PRODUCER.card.choices[0])] } }] }],
       [{ id: "ferry-charter", title: "Ferry charter", summary: "A charter card sets the toll.", patches: [TOLL_PRODUCER] }]
     ],
-    expect: { status: "verified", rounds: 2, blocked: { player_valid: 1 } }
+    expect: { status: "verified", rounds: 2, blocked: { player_valid: 1 } },
+    real: { taskId: "court-variable-gate" }
   },
   {
     id: "night-watch-stall",
@@ -246,7 +256,8 @@ export const REPAIR_EVAL_CASES = [
         }]
       }]
     ],
-    expect: { status: "verified", rounds: 2, blocked: { gates_preserved: 1 } }
+    expect: { status: "verified", rounds: 2, blocked: { gates_preserved: 1 } },
+    real: { taskId: "night-watch-stall" }
   }
 ];
 

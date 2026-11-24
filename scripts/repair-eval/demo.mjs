@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,13 +12,22 @@ import { startRepairMockEndpoint } from "./mock-endpoint.mjs";
  * Local repair-loop demo: a Creator Server on a throwaway data root (never the
  * real workspace or its saved keys), the scripted mock endpoint, and one eval
  * case's broken deck imported. Usage:
- *   node scripts/repair-eval/demo.mjs [case-id] [creator-port] [mock-port]
+ *   node scripts/repair-eval/demo.mjs [case-id] [creator-port] [mock-port] [replay.json]
+ * replay.json ({ id, deckCase, script }) replays recorded model answers (for
+ * example from a real-endpoint eval run) on the deck of an existing case.
  * Requires a built dashboard (npm run build:dashboard).
  */
 const caseId = process.argv[2] ?? "fog-gate-wipe-then-fix";
 const creatorPort = Number(process.argv[3] ?? 4331);
 const mockPort = Number(process.argv[4] ?? 4393);
-const entry = REPAIR_EVAL_CASES.find((candidate) => candidate.id === caseId);
+const replay = process.argv[5] ? JSON.parse(await readFile(process.argv[5], "utf8")) : null;
+const cases = [...REPAIR_EVAL_CASES];
+if (replay) {
+  const deckCase = REPAIR_EVAL_CASES.find((candidate) => candidate.id === replay.deckCase);
+  if (!deckCase) throw new Error(`Unknown replay deckCase '${replay.deckCase}'`);
+  cases.push({ ...deckCase, id: replay.id, description: replay.description ?? `Replay of recorded answers on ${deckCase.id}`, script: replay.script });
+}
+const entry = cases.find((candidate) => candidate.id === (replay ? replay.id : caseId));
 if (!entry) {
   console.error(`Unknown case '${caseId}'. Known: ${REPAIR_EVAL_CASES.map((candidate) => candidate.id).join(", ")}`);
   process.exit(1);
@@ -26,7 +35,7 @@ if (!entry) {
 
 const rootDir = fileURLToPath(new URL("../..", import.meta.url));
 const dataRoot = await mkdtemp(join(tmpdir(), "reigns-repair-demo-"));
-const mock = await startRepairMockEndpoint({ scripts: Object.fromEntries(REPAIR_EVAL_CASES.map((candidate) => [candidate.id, candidate.script])), port: mockPort });
+const mock = await startRepairMockEndpoint({ scripts: Object.fromEntries(cases.map((candidate) => [candidate.id, candidate.script])), port: mockPort });
 const creator = await createCreatorServer({ rootDir, dataRoot, staticRoot: join(rootDir, "apps/creator-web/dist") });
 await creator.start({ host: "127.0.0.1", port: creatorPort });
 
@@ -41,6 +50,8 @@ const call = async (path, body, method = "POST") => {
 await call("/api/editor/import", { bundle: entry.deck() });
 await call("/api/config", {
   aiAssistEnabled: true,
+  locale: "en",
+  theme: "github-light",
   ai: { endpoint: `http://127.0.0.1:${mock.port}/${entry.id}/v1`, protocol: "openai_chat", endpointPresetId: "custom", compatibilityFamily: "custom", modelId: "scripted-repair-model", routeMode: "auto", jsonMode: "auto", capabilities: ["structuredJson"] }
 }, "PATCH");
 

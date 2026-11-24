@@ -151,7 +151,45 @@ function formatReport({ cases, summary }) {
   return lines.join("\n");
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
+function argValue(name) {
+  const index = process.argv.indexOf(name);
+  return index !== -1 ? process.argv[index + 1] : undefined;
+}
+
+async function runRealCli() {
+  const { runRealRepairEval } = await import("./repair-eval/real-eval.mjs");
+  const endpoint = argValue("--endpoint");
+  const model = argValue("--model");
+  if (!endpoint || !model) {
+    console.error("Usage: npm run eval:repair -- --real --endpoint http://127.0.0.1:<port>/v1 --model <id> [--k 3] [--max-requests 150] [--json <path>]");
+    process.exit(2);
+  }
+  const report = await runRealRepairEval({
+    endpoint,
+    model,
+    k: Number(argValue("--k") ?? 3),
+    maxRequests: Number(argValue("--max-requests") ?? 150),
+    log: (line) => console.log(line)
+  });
+  const { summary } = report;
+  console.log("");
+  console.log(`Real-endpoint repair eval: ${model} @ ${endpoint} (no key sent)`);
+  for (const task of summary.perTask) console.log(`  ${task.task}: ${task.verified}/${task.runs} verified, rounds [${task.rounds.join(", ")}], statuses [${task.statuses.join(", ")}]`);
+  console.log(`pass@1 mean: ${(summary.passAt1Mean * 100).toFixed(1)}%; tasks with >=1 success: ${summary.tasksWithAnySuccess}/${summary.tasks}`);
+  console.log(`average rounds: ${summary.averageRounds}; runs errored: ${summary.runsErrored}; retried: ${summary.runsRetried}`);
+  console.log(`proposals evaluated: ${summary.evaluatedProposals}; blocked: ${summary.blockedProposals}; rejected responses: ${summary.rejectedRounds}; endpoint-error rounds: ${summary.endpointErrorRounds}`);
+  console.log(`blocked by check: ${Object.entries(summary.blockedByCheck).map(([id, count]) => `${id}=${count}`).join(", ") || "none"}`);
+  console.log(`requests: ${report.requestsSent}/${report.requestCap}; bytes sent/received: ${summary.requestBytes}/${summary.responseBytes}; tokens: ${summary.tokens.total} (${summary.tokens.callsWithUsage} calls reported usage); avg run ${summary.averageRunMs} ms; total ${report.durationMs} ms`);
+  const jsonPath = argValue("--json");
+  if (jsonPath) {
+    await writeFile(jsonPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
+    console.log(`JSON report: ${jsonPath}`);
+  }
+}
+
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href && process.argv.includes("--real")) {
+  await runRealCli();
+} else if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   const jsonIndex = process.argv.indexOf("--json");
   const report = await runRepairEval();
   console.log(formatReport(report));
