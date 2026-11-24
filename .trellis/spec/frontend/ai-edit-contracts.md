@@ -25,6 +25,11 @@
   - `listAiEditEndpointModels({ config, credentials, fetchImpl })`
   - `validateAiEditEndpointConfig({ editor, config, credentials, fetchImpl })`
   - `applyAiEditPlan({ editor, plan, proposalIds })`
+  - `buildVerifiedRepairPlan({ editor, getEditor?, config, credentials, instruction, targetCardId, repairTarget?, diagnostics?, scoring?, limits?, fetchImpl })`
+  - `evaluateRepairProposal({ context, proposal })`, `collectIssueEntities(diagnostics)`
+- Pipeline context selection:
+  - `selectAiContextCards({ cards, targetCardIds, diagnostics, focus, maxCards = 40, budgetBytes = 24576 })`
+  - `collectAiCardSignals(card)`
 - Creator UI:
   - `openAiAssistDraft({ mode, instruction, targetCardId?, assetId?, cardCount?, theme?, autoBuild? })`
   - `openAiAssistPreflight({ source, actionId, actionLabel, mode, instruction, contextSummary, targetCardId?, assetId?, cardCount?, theme? })`
@@ -62,6 +67,14 @@
   - Endpoint draft prompts must include ReignsAgent-specific editing rules: preserve tense binary left/right card decisions, use only author-owned tags/variables/metadata/default gauges, avoid built-in RPG or management loops, prefer small reviewable patches, and prioritize reachable story flow, missing producers, stalled runs, ending coverage, and gauge pressure when repairing diagnostics.
   - provider output must parse to `{ proposals: [...] }`
   - returned `config` may include redacted `apiKeyRef`, endpoint/model preset ids, icon keys, compatibility family, route mode, and JSON mode, but must never include raw `apiKey` or `credentials`
+- Context card selection (`relevance_v1`): tiers `target` (selected + repair targets) -> `diagnostic` (cards named by warnings, errors first) -> `neighbour` (cards producing/consuming a tag or variable required or produced by tier-0/1 cards, or named by an issue; gauge producers only for gauges named by an issue) -> `other`. Truncated at 40 cards and 24 KiB compact JSON; the first target card is always kept; output keeps authored order; `request.context.bundle.cardSelection` lists per-card reasons and omitted ids.
+- Verified repair loop (`repair_diagnostics`, server and Hosted; opt out with `verify: false`):
+  - Baseline and every candidate are scored with `runDiagnostics` at fixed `{ cycles: 500, maxTurns: 40, seed: 1 }`.
+  - Targets: `repairTarget { code, cardIds?, entities? }` (entities are `card:` / `tag:` / `var:` / `gauge:` keys), else all error-level issue entities, else all issue entities.
+  - Blocking checks: `patches_apply`, `allowed_ops` (addCard/updateCard/setChoiceLabel/setChoiceEffects, <= 8 patches), `player_valid`, `card_ids_preserved` (no removal, rename, or weight 0), `target_resolved`, `no_new_errors`, `scope` (edited existing cards within the related set, <= 4), `gates_preserved` (no satisfiable requirement atom removed), `effects_preserved` (keep set tags/variables and >= 50% gauge magnitude), `reachability_kept`, `score_not_lower`. Advisory: `gate_relaxed`, `new_warnings`, `stalled_rate`.
+  - Stop: first round with a passing proposal (`verified`); 3 rounds (`max_rounds`, hard cap); `deadline` (180 s); byte budgets (256 KiB request / 512 KiB response per round, 2 MiB total); later-round endpoint failure (`endpoint_error`, best earlier round returned). Round-1 infrastructure failures throw. Responses rejected by prevalidation are fed back as `rejected_response` rounds. Local rule-based repair runs one round (`offline_single_round`). Unscored targets return `status: "not_verifiable"` with one unverified round.
+  - The loop never mutates the editor, keeps the start `baseFingerprint`, fails with `ai_repair_stale` if the live editor changed, never places the API key in a request body, plan, or log, and records a redacted per-round exchange log.
+  - `applyAiEditPlan` refuses a plan with `verification` whose selected proposals together fail player validation (`ai_repair_player_invalid`).
 - Proposal response:
   - `id`, `title`, `summary`, `source`, `target`, `patches`, optional `preview`
 - Allowed patch operations only:
@@ -138,6 +151,9 @@
   - Apply selected proposals only.
   - Stale fingerprints and invalid patches reject without mutating the editor.
   - Image draft creation carries the active bundle fingerprint and explicit image apply performs only a validated `upsertAsset`.
+- Repair loop tests:
+  - Each shortcut (gate wipe, rename, zeroed effects, off-scope edit, new dead-end card, one-sided card, disallowed op) fails its named check; real fixes pass; output is deterministic; budgets, deadline, round-1 vs later failure, rejected responses, not-scored targets, stale editor, and the combined-apply player gate are covered.
+  - `npm run eval:repair` cases agree 100% with their expected harness outcome (integration test).
 - Integration tests:
   - `/api/ai/edit/plan` and `/api/ai/edit/apply` cover card generation, endpoint execution, repair routing, visual previews, and stale-plan rejection.
   - `/api/ai/edit/validate` and `/api/ai/edit/models` cover real local API routes with a mock endpoint, redaction, and no editor mutation.

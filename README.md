@@ -136,9 +136,11 @@ AI Assist is an optional Creator-side collaboration layer, not an autonomous aut
 | Workflow | Input and result |
 | --- | --- |
 | Project or card drafting | Combines the current project snapshot with a premise, tone, branch depth, ending goal, constraints, target card, and requested card count. The endpoint returns explicit patch proposals rather than a replacement project. |
-| Review repair | Requires a completed Review result, targets the selected diagnostic and affected cards, and proposes the smallest relevant repair. Rerun Review after applying changes to measure the result. |
+| Review repair | Requires a completed Review result and targets the selected diagnostic. It runs a bounded verify-and-retry loop (at most 3 rounds): each proposal is applied to a copy, must pass player validation, is scored with a fixed-seed Review (500 cycles, 40 turns, seed 1), and must pass anti-shortcut checks (the targeted issue is gone, no new errors, edits stay on related cards, author gates and choice effects are not stripped, no card is removed or renamed, reachable cards and the health score do not drop). Failed checks are fed back to the endpoint. The panel shows per-round scores and each proposal's checks; only passing proposals start selected, and nothing is written until you apply. |
 | Context actions | Explain, translate, or branch from the selected card/graph context while preserving ids, tags, variables, and left/right meaning unless the instruction explicitly changes them. |
 | Visual generation | Generate new art or, when the chosen adapter supports it, use reference images, edit, inpaint, outpaint, masks, aspect ratios, negative prompts, and multiple output candidates. Results remain binary drafts until applied. |
+
+The model sees a relevance-selected slice of the deck rather than the whole project: selected and targeted cards first, then cards named by Review issues, then cards that share their tags, variables, or the affected gauge, truncated to 40 cards / 24 KiB. The request preview lists why each card was included. `npm run eval:repair` runs the repair loop offline against a scripted mock endpoint (it measures the harness, not a model).
 
 Text endpoint configuration lives under **Settings → AI Endpoint**. Choose a channel preset or custom endpoint, supply the base URL and model ID, declare capabilities such as structured JSON or vision, then use the advanced controls only when protocol, route, compatibility, or JSON-mode overrides are needed. **Fetch `/models`** queries compatible model discovery routes. **Validate endpoint** sends a compatibility request and does not edit the project.
 
@@ -381,18 +383,25 @@ sequenceDiagram
   participant Pipeline as Pipeline
   participant Provider as User Endpoint
   participant Core as Core
+  participant Reviewer as Reviewer
 
   UI->>API: draft / repair / analyze request
   API->>Interface: current editor snapshot
-  Interface->>Pipeline: redacted context + endpoint config
+  Interface->>Pipeline: relevance-selected context + endpoint config (API key only in the auth header)
   Pipeline->>Provider: transient request
   Provider-->>Pipeline: proposal JSON
   Pipeline-->>Interface: prevalidated patches
-  Interface-->>API: immutable plan
+  opt repair_diagnostics (verified loop, at most 3 rounds)
+    Interface->>Pipeline: apply each proposal's patches to a copy
+    Interface->>Interface: player validation gate (hard)
+    Interface->>Reviewer: fixed-seed Review of the copy
+    Interface->>Pipeline: failed checks as repairLoop feedback (next round)
+  end
+  Interface-->>API: immutable plan (+ verification evidence)
   API-->>UI: proposal preview
   UI->>API: apply selected proposal
   API->>Interface: baseFingerprint guard
-  Interface->>Core: validate resulting cards
+  Interface-->>API: new editor + player validation report
 ```
 
 ## Build Output
