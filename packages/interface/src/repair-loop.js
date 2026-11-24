@@ -297,6 +297,7 @@ export async function buildVerifiedRepairPlan({
       limits: budget,
       baseline: summarizeScore(baseline),
       targets: targets.map(({ code, severity, entity }) => ({ code, severity, entity })),
+      unmatchedTargets: targetSelection.unmatchedTargets ?? [],
       relatedCardIds: [...context.relatedCards].sort(),
       rounds,
       usage: { totalBytes, estimatedTokens: Math.ceil(totalBytes / 4) },
@@ -479,8 +480,19 @@ function resolveRepairTargets({ baselineIssues, repairTarget }) {
       ...strings(repairTarget.cardIds).map((id) => `card:${id}`),
       ...strings(repairTarget.entities)
     ]);
-    const matched = wanted.size > 0 ? ofCode.filter((issue) => wanted.has(issue.entity)) : ofCode;
-    return { status: "ok", targets: matched.length > 0 ? matched : ofCode };
+    if (wanted.size === 0) return { status: "ok", targets: ofCode, unmatchedTargets: [] };
+    const matched = ofCode.filter((issue) => wanted.has(issue.entity));
+    const unmatched = [...wanted].filter((entity) => !ofCode.some((issue) => issue.entity === entity));
+    // Never broaden a specific target to other issues of the same code: a proposal that fixes a
+    // different card/tag would otherwise be reported as verifying the one the author selected.
+    if (matched.length === 0) {
+      return {
+        status: "not_verifiable",
+        stopReason: "target_entity_not_scored",
+        message: `The selected ${repairTarget.code} target (${[...wanted].join(", ")}) is not present in the fixed-seed scoring review, so the loop cannot score it. Proposals are shown without verification.`
+      };
+    }
+    return { status: "ok", targets: matched, unmatchedTargets: unmatched };
   }
   const errors = baselineIssues.filter((issue) => issue.severity === "error");
   const targets = errors.length > 0 ? errors : baselineIssues;

@@ -5902,7 +5902,8 @@ const REPAIR_STOP_LABELS = {
   ai_repair_response_budget: "Stopped: a round response exceeded the byte budget.",
   ai_repair_total_budget: "Stopped at the total byte budget; showing the best round so far.",
   target_not_scored: "This issue type is not scored by the Reviewer, so proposals are shown without verification.",
-  no_scored_issues: "The fixed-seed scoring review found no issue to verify against."
+  no_scored_issues: "The fixed-seed scoring review found no issue to verify against.",
+  target_entity_not_scored: "The selected issue target does not appear in the fixed-seed scoring review, so proposals are shown without verification."
 };
 
 function defaultSelectedProposalIds(plan) {
@@ -5940,6 +5941,12 @@ function RepairVerificationSummary({ verification }) {
         <p className="repair-verification__targets">
           <span>Targets</span>
           {verification.targets.map((target) => <code key={`${target.code}:${target.entity}`}>{formatRepairTarget(target)}</code>)}
+        </p>
+      )}
+      {(verification.unmatchedTargets ?? []).length > 0 && (
+        <p className="repair-verification__targets">
+          <span>Not scored (absent from the scoring review)</span>
+          {verification.unmatchedTargets.map((entity) => <code key={entity}>{entity}</code>)}
         </p>
       )}
       {rounds.length > 0 && (

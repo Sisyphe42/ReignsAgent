@@ -429,6 +429,24 @@ describe("verified repair loop", () => {
     assert.equal(plan.request.context.diagnostics.warnings[0].code, "low_card_cycle_coverage");
   });
 
+  it("keeps a specific target unverified when the scoring review does not contain it", async () => {
+    const plan = await buildVerifiedRepairPlan({
+      editor: createCardEditor(sealedWarehouseBundle()),
+      repairTarget: { code: "unreachable_cards", cardIds: ["first-fog"] }
+    });
+    assert.equal(plan.verification.status, "not_verifiable");
+    assert.equal(plan.verification.stopReason, "target_entity_not_scored");
+    assert.deepEqual(plan.verification.targets, []);
+    assert.ok(plan.proposals.every((proposal) => proposal.verification === undefined), "nothing is marked verified for a different card");
+
+    const partial = await buildVerifiedRepairPlan({
+      editor: createCardEditor(sealedWarehouseBundle()),
+      repairTarget: { code: "unreachable_cards", cardIds: ["sealed-warehouse", "first-fog"] }
+    });
+    assert.deepEqual(partial.verification.targets.map((target) => target.entity), ["card:sealed-warehouse"]);
+    assert.deepEqual(partial.verification.unmatchedTargets, ["card:first-fog"]);
+  });
+
   it("targets only the requested issue entities", async () => {
     const plan = await buildVerifiedRepairPlan({
       editor: createCardEditor(sealedWarehouseBundle()),
