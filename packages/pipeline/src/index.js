@@ -55,8 +55,12 @@ const AI_ENDPOINT_EDITOR_RULES = [
   "Prefer small reviewable patches that preserve existing ids, tone, and story intent unless the creator explicitly asks for a rewrite.",
   "When repairing diagnostics, prioritize reachable story flow, missing tag or variable producers, stalled runs, ending coverage, and gauge pressure.",
   "For every addCard patch, include exactly left and right choices and keep effects valid for the supplied ReignsAgent schema.",
-  "Summaries should explain the author-facing design intent and the expected narrative or balance effect."
+  "Summaries should explain the author-facing design intent and the expected narrative or balance effect.",
+  "When constraints.repairLoop is present, fix the listed targets without deleting cards, renaming ids, wiping requirements, or zeroing choice effects; read previousAttempts and change approach for every failed check it names."
 ];
+const AI_CONTEXT_CARD_LIMIT = 40;
+const AI_CONTEXT_CARD_BUDGET_BYTES = 24 * 1024;
+const AI_CONTEXT_TIERS = ["target", "diagnostic", "neighbour", "other"];
 
 export {
   ImagePipelineError,
@@ -511,6 +515,12 @@ export function buildAiContext({
     selectedSet.has(asset.cardId) || (assetId && asset.id === assetId)
   );
   const suppliedAssets = Array.isArray(assets) ? assets.map((asset) => cloneJsonValue(asset, "AI context asset")) : [];
+  const cardSelection = selectAiContextCards({
+    cards: normalizedBundle.cards,
+    targetCardIds: selectedIds,
+    diagnostics,
+    focus: constraints?.repairLoop?.targets ?? null
+  });
 
   return {
     schemaVersion: AI_EDIT_SCHEMA_VERSION,
@@ -547,7 +557,8 @@ export function buildAiContext({
       },
       cardCount: normalizedBundle.cards.length,
       assetCount: normalizedBundle.assets.length,
-      cards: normalizedBundle.cards.slice(0, 12).map(compactCardForAi)
+      cards: cardSelection.cards.map(compactCardForAi),
+      cardSelection: cardSelection.report
     },
     diagnostics: diagnostics ? compactDiagnosticsForAi(diagnostics) : null,
     constraints: cloneJsonValue(constraints ?? {}, "AI context constraints")
@@ -2184,6 +2195,170 @@ function stableStringify(value) {
     return `[${value.map(stableStringify).join(",")}]`;
   }
   return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`).join(",")}}`;
+}
+
+/**
+ * selectAiContextCards picks which cards the model sees. It replaces the old
+ * "first 12 cards" slice: cards are ranked by relevance to the request, then
+ * truncated by a count limit and a compact-JSON byte budget.
+ *
+ * Tiers (document order inside a tier):
+ *   target     - explicitly selected cards and repair-loop target cards
+ *   diagnostic - cards named by review warnings (error severity first)
+ *   neighbour  - cards that produce or consume a signal (tag / variable / gauge
+ *                threshold) required or produced by target/diagnostic cards, or
+ *                named by a warning (e.g. an unsatisfied tag)
+ *   other      - everything else
+ * The first target card is always kept, even when it alone exceeds the budget.
+ * The returned cards keep authored order so the model reads the deck as written.
+ */
+export function selectAiContextCards({
+  cards = [],
+  targetCardIds = [],
+  diagnostics = null,
+  focus = null,
+  maxCards = AI_CONTEXT_CARD_LIMIT,
+  budgetBytes = AI_CONTEXT_CARD_BUDGET_BYTES
+} = {}) {
+  const list = Array.isArray(cards) ? cards.filter((card) => isPlainRecord(card) && isNonEmptyString(card.id)) : [];
+  const ids = new Set(list.map((card) => card.id));
+  const tierOf = new Map();
+  const reasonOf = new Map();
+  const assign = (cardId, tier, reason) => {
+    if (!ids.has(cardId)) return;
+    const current = tierOf.get(cardId);
+    if (current !== undefined && AI_CONTEXT_TIERS.indexOf(current) <= AI_CONTEXT_TIERS.indexOf(tier)) return;
+    tierOf.set(cardId, tier);
+    reasonOf.set(cardId, reason);
+  };
+
+  const focusEntries = Array.isArray(focus) ? focus.filter(isPlainRecord) : (isPlainRecord(focus) ? [focus] : []);
+  for (const cardId of normalizeStringArray(targetCardIds)) assign(cardId, "target", "selected card");
+  for (const entry of focusEntries) {
+    for (const cardId of normalizeStringArray(entry.cardIds)) assign(cardId, "target", `repair target (${entry.code ?? "issue"})`);
+  }
+
+  const wanted = { tags: new Set(), variables: new Set(), factions: new Set() };
+  const orderedWarnings = collectContextWarnings(diagnostics)
+    .sort((left, right) => severityRank(left.severity) - severityRank(right.severity));
+  for (const warning of orderedWarnings) {
+    const details = isPlainRecord(warning.details) ? warning.details : warning;
+    const cardIds = [
+      ...normalizeStringArray(details.cardIds),
+      ...(Array.isArray(details.cards) ? details.cards.map((entry) => entry?.cardId).filter(isNonEmptyString) : [])
+    ];
+    for (const cardId of cardIds) assign(cardId, "diagnostic", `review ${warning.code ?? "warning"}`);
+    addSignalNames(wanted, details);
+  }
+  for (const entry of focusEntries) addSignalNames(wanted, entry);
+  // Gauges named by an issue (e.g. dominant_game_over_faction) make every card that
+  // moves that gauge relevant; gauges merely required by seed cards do not.
+  const issueFactions = new Set(wanted.factions);
+
+  const signalsById = new Map(list.map((card) => [card.id, collectAiCardSignals(card)]));
+  for (const seedId of [...tierOf.keys()]) {
+    const signals = signalsById.get(seedId);
+    for (const kind of SIGNAL_KINDS) {
+      signals.requires[kind].forEach((key) => wanted[kind].add(key));
+      signals.produces[kind].forEach((key) => {
+        // Gauge deltas are on almost every card; only tag/variable production links cards.
+        if (kind !== "factions") wanted[kind].add(key);
+      });
+    }
+  }
+  for (const card of list) {
+    if (tierOf.has(card.id)) continue;
+    const signals = signalsById.get(card.id);
+    const shared = [];
+    for (const kind of SIGNAL_KINDS) {
+      const touched = kind === "factions"
+        ? [...signals.requires.factions, ...[...signals.produces.factions].filter((key) => issueFactions.has(key))]
+        : [...signals.produces[kind], ...signals.requires[kind]];
+      for (const key of touched) {
+        if (wanted[kind].has(key)) shared.push(`${SIGNAL_PREFIX[kind]}:${key}`);
+      }
+    }
+    if (shared.length > 0) assign(card.id, "neighbour", `shares ${[...new Set(shared)].slice(0, 3).join(", ")}`);
+  }
+
+  const ranked = AI_CONTEXT_TIERS.flatMap((tier) => list.filter((card) => (tierOf.get(card.id) ?? "other") === tier));
+  const includedSet = new Set();
+  const reasons = {};
+  const tiers = Object.fromEntries(AI_CONTEXT_TIERS.map((tier) => [tier, 0]));
+  let usedBytes = 0;
+  for (const card of ranked) {
+    const tier = tierOf.get(card.id) ?? "other";
+    const size = utf8ByteLength(JSON.stringify(compactCardForAi(card)));
+    const forced = includedSet.size === 0 && tier === "target";
+    if (!forced && (includedSet.size >= maxCards || usedBytes + size > budgetBytes)) continue;
+    includedSet.add(card.id);
+    usedBytes += size;
+    tiers[tier] += 1;
+    reasons[card.id] = `${tier}: ${reasonOf.get(card.id) ?? "remaining deck context"}`;
+  }
+
+  const ordered = list.filter((card) => includedSet.has(card.id));
+  const omittedCardIds = list.filter((card) => !includedSet.has(card.id)).map((card) => card.id);
+  return {
+    cards: ordered,
+    report: {
+      strategy: "relevance_v1",
+      included: ordered.length,
+      omitted: omittedCardIds.length,
+      omittedCardIds: omittedCardIds.slice(0, 50),
+      maxCards,
+      budgetBytes,
+      usedBytes,
+      tiers,
+      reasons
+    }
+  };
+}
+
+/**
+ * collectAiCardSignals lists the story signals a card requires and produces.
+ * Shared with the Interface repair loop so context selection and the repair
+ * scope check use the same notion of a "related card".
+ */
+export function collectAiCardSignals(card) {
+  const requires = { tags: new Set(), variables: new Set(), factions: new Set() };
+  const produces = { tags: new Set(), variables: new Set(), factions: new Set() };
+  const requirements = isPlainRecord(card?.requirements) ? card.requirements : {};
+  for (const key of ["allTags", "anyTags", "noneTags"]) normalizeStringArray(requirements[key]).forEach((tag) => requires.tags.add(tag));
+  if (isPlainRecord(requirements.variables)) Object.keys(requirements.variables).forEach((key) => requires.variables.add(key));
+  if (isPlainRecord(requirements.factions)) Object.keys(requirements.factions).forEach((key) => requires.factions.add(key));
+  for (const choice of Array.isArray(card?.choices) ? card.choices : []) {
+    const effects = isPlainRecord(choice?.effects) ? choice.effects : {};
+    if (isPlainRecord(effects.tags)) Object.entries(effects.tags).forEach(([tag, value]) => { if (value) produces.tags.add(tag); });
+    if (isPlainRecord(effects.variables)) Object.keys(effects.variables).forEach((key) => produces.variables.add(key));
+    if (isPlainRecord(effects.factions)) Object.keys(effects.factions).forEach((key) => produces.factions.add(key));
+  }
+  return { requires, produces };
+}
+
+const SIGNAL_KINDS = ["tags", "variables", "factions"];
+const SIGNAL_PREFIX = { tags: "tag", variables: "var", factions: "gauge" };
+
+function addSignalNames(target, source) {
+  if (!isPlainRecord(source)) return;
+  normalizeStringArray(source.tags).forEach((tag) => target.tags.add(tag));
+  normalizeStringArray(source.variables).forEach((variable) => target.variables.add(variable));
+  normalizeStringArray(source.factions).forEach((faction) => target.factions.add(faction));
+  if (isNonEmptyString(source.faction)) target.factions.add(source.faction);
+}
+
+function collectContextWarnings(diagnostics) {
+  if (!isPlainRecord(diagnostics)) return [];
+  const warnings = diagnostics.diagnostics?.warnings ?? diagnostics.warnings ?? [];
+  return Array.isArray(warnings) ? warnings.filter(isPlainRecord) : [];
+}
+
+function severityRank(severity) {
+  return severity === "error" ? 0 : severity === "warning" ? 1 : 2;
+}
+
+function utf8ByteLength(text) {
+  return new TextEncoder().encode(text).length;
 }
 
 function compactCardForAi(card) {
