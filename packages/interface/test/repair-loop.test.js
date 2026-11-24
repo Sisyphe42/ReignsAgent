@@ -8,6 +8,7 @@ import {
   DEFAULT_REPAIR_LOOP_LIMITS,
   collectIssueEntities,
   collectMissingProducerSignals,
+  compareHealthScores,
   createCardEditor,
   evaluateRepairProposal,
   producerOnlyEdit,
@@ -375,6 +376,18 @@ describe("verified repair loop", () => {
     assert.equal(checkOf(byId.get("keeps-all"), "effects_preserved").passed, true);
   });
 
+  it("compares the unclamped score once the baseline health score is saturated at 0", () => {
+    const floor = (raw) => ({ healthScore: Math.max(0, Math.round(raw)), rawHealthScore: raw });
+    const worse = compareHealthScores(floor(-12), floor(-30));
+    assert.equal(worse.passed, false, "0 -> 0 but the unclamped score dropped");
+    assert.match(worse.detail, /score floor reached; unclamped -12 → -30/);
+    assert.equal(compareHealthScores(floor(-12), floor(-5)).passed, true);
+    assert.equal(compareHealthScores(floor(60), floor(55)).passed, false);
+    assert.equal(compareHealthScores(floor(55), floor(60)).detail, "55 → 60.");
+    const projected = runDiagnostics({ cards: FOG.cards, metadata: FOG.metadata, cycles: 50, maxTurns: 20, seed: 1 });
+    assert.ok(Number.isFinite(projected.rawHealthScore), "diagnostics projection exposes the unclamped score");
+  });
+
   it("does not count a null variable effect as a producer", () => {
     const before = { id: "a", text: "A", weight: 1, requirements: {}, choices: [{ id: "left", label: "L", effects: { factions: { gauge0: 1 } } }, { id: "right", label: "R", effects: {} }] };
     const nulled = structuredClone(before);
@@ -509,8 +522,9 @@ describe("verified repair loop", () => {
       editor: createCardEditor(sealedWarehouseBundle()),
       repairTarget: { code: "unreachable_cards", cardIds: ["sealed-warehouse", "first-fog"] }
     });
-    assert.deepEqual(partial.verification.targets.map((target) => target.entity), ["card:sealed-warehouse"]);
+    assert.equal(partial.verification.status, "not_verifiable", "a partly unscored selection is not verified");
     assert.deepEqual(partial.verification.unmatchedTargets, ["card:first-fog"]);
+    assert.ok(partial.proposals.every((proposal) => proposal.verification === undefined));
   });
 
   it("targets only the requested issue entities", async () => {

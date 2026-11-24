@@ -108,6 +108,7 @@ export async function buildVerifiedRepairPlan({
         status: "not_verifiable",
         stopReason: targetSelection.stopReason,
         message: targetSelection.message,
+        unmatchedTargets: targetSelection.unmatchedTargets ?? [],
         scoring: scoringConfig,
         limits: budget,
         baseline: summarizeScore(baseline),
@@ -417,7 +418,8 @@ export function evaluateRepairProposal({ context, proposal }) {
     : `${reachableAfter.size} reachable (was ${(context.baseline.graph?.reachableCards ?? []).length}).`);
 
   const after = summarizeScore(afterDiagnostics);
-  add("score_not_lower", after.healthScore >= before.healthScore, `${before.healthScore} → ${after.healthScore}.`);
+  const scoreCheck = compareHealthScores(before, after);
+  add("score_not_lower", scoreCheck.passed, scoreCheck.detail);
 
   add("gate_relaxed", gateResult.relaxedDead.length === 0, gateResult.relaxedDead.length > 0
     ? `Removed never-satisfiable requirement${gateResult.relaxedDead.length === 1 ? "" : "s"}: ${gateResult.relaxedDead.slice(0, 4).join(", ")}. Consider adding a producer instead.`
@@ -437,6 +439,22 @@ export function evaluateRepairProposal({ context, proposal }) {
       addedCardIds: afterCards.filter((card) => !context.baseById.has(card.id)).map((card) => card.id)
     }
   });
+}
+
+/**
+ * compareHealthScores implements score_not_lower. The displayed score is clamped at 0, so
+ * once the baseline is saturated the unclamped score is compared too: worse game-over or
+ * stalled rates and more issues still count as a regression.
+ */
+export function compareHealthScores(before, after) {
+  const saturated = Number.isFinite(before?.rawHealthScore) && before.rawHealthScore < 0;
+  const rawOk = !saturated || (Number.isFinite(after?.rawHealthScore) && after.rawHealthScore >= before.rawHealthScore);
+  return {
+    passed: after.healthScore >= before.healthScore && rawOk,
+    detail: saturated
+      ? `${before.healthScore} → ${after.healthScore} (score floor reached; unclamped ${before.rawHealthScore} → ${after.rawHealthScore}).`
+      : `${before.healthScore} → ${after.healthScore}.`
+  };
 }
 
 /**
@@ -483,16 +501,18 @@ function resolveRepairTargets({ baselineIssues, repairTarget }) {
     if (wanted.size === 0) return { status: "ok", targets: ofCode, unmatchedTargets: [] };
     const matched = ofCode.filter((issue) => wanted.has(issue.entity));
     const unmatched = [...wanted].filter((entity) => !ofCode.some((issue) => issue.entity === entity));
-    // Never broaden a specific target to other issues of the same code: a proposal that fixes a
-    // different card/tag would otherwise be reported as verifying the one the author selected.
-    if (matched.length === 0) {
+    // Never broaden or narrow a specific target: if any selected entity is missing from the
+    // fixed-seed baseline, a proposal could look verified while ignoring part of what the
+    // author selected, so the whole repair stays unverified.
+    if (unmatched.length > 0) {
       return {
         status: "not_verifiable",
         stopReason: "target_entity_not_scored",
-        message: `The selected ${repairTarget.code} target (${[...wanted].join(", ")}) is not present in the fixed-seed scoring review, so the loop cannot score it. Proposals are shown without verification.`
+        unmatchedTargets: unmatched,
+        message: `Selected ${repairTarget.code} target${unmatched.length === 1 ? "" : "s"} ${unmatched.join(", ")} ${unmatched.length === 1 ? "is" : "are"} not present in the fixed-seed scoring review, so the loop cannot score the selection. Proposals are shown without verification.`
       };
     }
-    return { status: "ok", targets: matched, unmatchedTargets: unmatched };
+    return { status: "ok", targets: matched, unmatchedTargets: [] };
   }
   const errors = baselineIssues.filter((issue) => issue.severity === "error");
   const targets = errors.length > 0 ? errors : baselineIssues;
@@ -850,6 +870,7 @@ function summarizeScore(diagnostics) {
   const warnings = Array.isArray(diagnostics?.warnings) ? diagnostics.warnings : [];
   return {
     healthScore: diagnostics?.healthScore ?? 0,
+    rawHealthScore: Number.isFinite(diagnostics?.rawHealthScore) ? diagnostics.rawHealthScore : null,
     errors: warnings.filter((warning) => warning.severity === "error").length,
     warnings: warnings.filter((warning) => warning.severity !== "error").length,
     stalledRate: diagnostics?.coverage?.stalledRate ?? 0,

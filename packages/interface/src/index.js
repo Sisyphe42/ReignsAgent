@@ -25,6 +25,7 @@ export {
   buildVerifiedRepairPlan,
   collectIssueEntities,
   collectMissingProducerSignals,
+  compareHealthScores,
   evaluateRepairProposal,
   producerOnlyEdit
 } from "./repair-loop.js";
@@ -596,6 +597,7 @@ export function summarizeDiagnostics(report, context = {}) {
     module: report?.module ?? "ReignsAgent-Reviewer",
     sampleSize: cycles,
     healthScore: computeHealthScore(summary, warnings),
+    rawHealthScore: round(computeRawHealthScore(summary, warnings)),
     headline: buildHeadline(summary, warnings),
     factions: projectFactions(summary, cycles),
     coverage: {
@@ -1124,12 +1126,18 @@ function normalizeStringSlots(slots) {
 }
 
 function computeHealthScore(summary, warnings) {
+  return Math.max(0, Math.min(100, Math.round(computeRawHealthScore(summary, warnings))));
+}
+
+// Same formula without rounding or the 0..100 clamp, so regressions stay visible once
+// the displayed score has hit its floor.
+function computeRawHealthScore(summary, warnings) {
   let score = 100;
   score -= (summary.gameOverRate ?? 0) * 35;
   score -= (summary.stalledRate ?? 0) * 25;
   score -= warnings.filter((warning) => warning.severity === "error").length * 8;
   score -= warnings.filter((warning) => warning.severity === "warning").length * 3;
-  return Math.max(0, Math.min(100, Math.round(score)));
+  return score;
 }
 
 function buildHeadline(summary, warnings) {
