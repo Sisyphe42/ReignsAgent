@@ -71,6 +71,7 @@ export async function buildVerifiedRepairPlan({
   instruction = "",
   targetCardId = null,
   repairTarget = null,
+  diagnostics = null,
   scoring = {},
   limits = {},
   fetchImpl = globalThis.fetch,
@@ -94,7 +95,8 @@ export async function buildVerifiedRepairPlan({
       mode: "repair_diagnostics",
       instruction,
       targetCardId,
-      diagnostics: baseline,
+      // Nothing to score: give the model the Review the author actually looked at.
+      diagnostics: diagnostics ?? baseline,
       fetchImpl
     });
     return {
@@ -102,7 +104,7 @@ export async function buildVerifiedRepairPlan({
       verification: {
         schemaVersion: REPAIR_LOOP_SCHEMA_VERSION,
         status: "not_verifiable",
-        stopReason: "target_not_scored",
+        stopReason: targetSelection.stopReason,
         message: targetSelection.message,
         scoring: scoringConfig,
         limits: budget,
@@ -451,6 +453,7 @@ function resolveRepairTargets({ baselineIssues, repairTarget }) {
     if (ofCode.length === 0) {
       return {
         status: "not_verifiable",
+        stopReason: "target_not_scored",
         message: `'${repairTarget.code}' is not a current Reviewer warning, so the loop cannot score it. Proposals are shown without verification.`
       };
     }
@@ -464,7 +467,11 @@ function resolveRepairTargets({ baselineIssues, repairTarget }) {
   const errors = baselineIssues.filter((issue) => issue.severity === "error");
   const targets = errors.length > 0 ? errors : baselineIssues;
   if (targets.length === 0) {
-    throw new InterfaceError("The latest Review has no issues to repair", "ai_repair_nothing_to_fix");
+    return {
+      status: "not_verifiable",
+      stopReason: "no_scored_issues",
+      message: "The fixed-seed scoring review finds no issue to verify against, so proposals are shown without verification. Run Review with the scoring settings to compare."
+    };
   }
   return { status: "ok", targets };
 }

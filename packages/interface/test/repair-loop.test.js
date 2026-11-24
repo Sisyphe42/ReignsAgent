@@ -274,6 +274,14 @@ describe("verified repair loop", () => {
     assert.ok(plan.proposals.every((proposal) => proposal.verification === undefined));
   });
 
+  it("does not invent a verification when the scoring review finds nothing", async () => {
+    const authorReview = { warnings: [{ code: "low_card_cycle_coverage", severity: "warning", details: { cards: [{ cardId: "foghorn" }] } }] };
+    const plan = await buildVerifiedRepairPlan({ editor: createCardEditor(structuredClone(FOG)), diagnostics: authorReview });
+    assert.equal(plan.verification.status, "not_verifiable");
+    assert.equal(plan.verification.stopReason, "no_scored_issues");
+    assert.equal(plan.request.context.diagnostics.warnings[0].code, "low_card_cycle_coverage");
+  });
+
   it("targets only the requested issue entities", async () => {
     const plan = await buildVerifiedRepairPlan({
       editor: createCardEditor(sealedWarehouseBundle()),
