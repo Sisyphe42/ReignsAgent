@@ -233,6 +233,9 @@ export async function buildVerifiedRepairPlan({
         title: proposal.title,
         passed: proposal.verification.passed,
         failedChecks: proposal.verification.failedChecks,
+        failedDetails: proposal.verification.checks
+          .filter((check) => check.severity === "blocking" && !check.passed)
+          .map((check) => ({ id: check.id, detail: String(check.detail ?? "").slice(0, 200) })),
         scoreAfter: proposal.verification.score.after
       }))
     };

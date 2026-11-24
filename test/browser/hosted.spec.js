@@ -944,3 +944,21 @@ async function expectOnboardingStep(page, tour, step) {
     }).toBeLessThan(160);
   }
 }
+
+test("runs the verified repair loop through the browser backend and pre-selects only passing proposals", async ({ page }) => {
+  await openHosted(page);
+  await page.locator('.rail__item[aria-label="Review"]').click();
+  await page.getByRole("button", { name: "Run review" }).click();
+  await page.getByRole("tab", { name: /^Issues/ }).click();
+  await page.locator(".review-issue", { hasText: "dominant_game_over_faction" }).first().getByRole("button", { name: "AI Repair" }).click();
+  await page.getByRole("button", { name: "Build draft" }).first().click();
+  const summary = page.getByTestId("repair-verification");
+  await expect(summary).toBeVisible({ timeout: 30_000 });
+  await expect(summary).toContainText("Repair loop · 1/3 rounds");
+  await expect(summary).toContainText("dominant_game_over_faction · gauge:gauge1");
+  await expect(summary.locator(".repair-rounds tbody tr")).toHaveCount(1);
+  const evidence = page.getByTestId("repair-evidence");
+  await expect(evidence.first()).toContainText("target_resolved");
+  const passed = await page.locator(".ai-proposal--verified").count();
+  await expect(page.locator(".ai-proposal input[type=checkbox]:checked")).toHaveCount(passed);
+});
