@@ -120,7 +120,12 @@ export class BrowserCreatorBackend {
     } else {
       plan = await buildVerifiedRepairPlan({ editor: this.editor, getEditor: () => this.editor, ...input, fetchImpl: corsFetch, onProgress: progressObserver(onProgress) });
     }
-    if (JSON.stringify(this.editor.toBundle()) !== startedJson) throw backendError("Content changed while the repair loop was running; rebuild the repair draft", "ai_repair_stale");
+    if (JSON.stringify(this.editor.toBundle()) !== startedJson) {
+      // Keep the finished rounds for History even though the draft can no longer be applied.
+      const stale = backendError("Content changed while the repair loop was running; rebuild the repair draft", "ai_repair_stale");
+      if (plan?.verification) stale.repairVerification = { ...plan.verification, status: "failed", stopReason: "ai_repair_stale" };
+      throw stale;
+    }
     return plan;
   }
   async #recordRepairHistory({ plan = null, error = null, body = {}, credentials = {} }) {

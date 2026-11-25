@@ -103,6 +103,20 @@ describe("failed loops keep their evidence", () => {
     assert.equal(record.baseline.healthScore, 55);
   });
 
+  it("keeps finished rounds when an edit during the loop makes the draft stale", async () => {
+    const editor = createCardEditor(sealedWarehouseBundle());
+    let live = editor;
+    const fetchImpl = async () => {
+      live = createCardEditor({ ...sealedWarehouseBundle(), cards: sealedWarehouseBundle().cards.slice(1) });
+      return { ok: true, status: 200, text: async () => JSON.stringify({ choices: [{ message: { content: JSON.stringify({ proposals: [ADD_PRODUCER] }) } }] }) };
+    };
+    const error = await buildVerifiedRepairPlan({ editor, getEditor: () => live, config: ENDPOINT_CONFIG, fetchImpl, yieldToHost: async () => {} }).catch((caught) => caught);
+    assert.equal(error.code, "ai_repair_stale");
+    assert.equal(error.repairVerification.stopReason, "ai_repair_stale");
+    assert.equal(error.repairVerification.rounds[0].passedCount, 1);
+    assert.equal(createRepairHistoryRecord({ error, id: "rh-unit-stale1" }).rounds.length, 1);
+  });
+
   it("keeps a failed round when the target cannot be scored", async () => {
     const fetchImpl = async () => ({ ok: false, status: 503, text: async () => "{}" });
     const error = await buildVerifiedRepairPlan({ editor: createCardEditor(sealedWarehouseBundle()), config: ENDPOINT_CONFIG, repairTarget: { code: "never_reported_issue" }, fetchImpl, yieldToHost: async () => {} }).catch((caught) => caught);

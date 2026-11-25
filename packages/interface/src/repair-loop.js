@@ -331,7 +331,7 @@ export async function buildVerifiedRepairPlan({
   // but failing here is clearer than a later apply rejection.
   const liveEditor = typeof getEditor === "function" ? getEditor() : editor;
   if (fingerprintBundle(toBundle(liveEditor)) !== baseFingerprint) {
-    throw new InterfaceError("Content changed while the repair loop was running; rebuild the repair draft", "ai_repair_stale");
+    throw attachLoopEvidence(new InterfaceError("Content changed while the repair loop was running; rebuild the repair draft", "ai_repair_stale"), { stopReason: "ai_repair_stale", budget, scoringConfig, baseline, targets, rounds, requestedCardIds });
   }
 
   return {
