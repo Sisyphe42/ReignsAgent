@@ -1578,9 +1578,13 @@ function App() {
         setStatus(`AI Assist draft ready: ${result.proposals?.length ?? 0} proposals`);
         return result;
       } catch (error) {
+        // A browser abort (Cancel) surfaces as a generic AbortError; report it as the author's cancel.
+        const failure = signal?.aborted
+          ? Object.assign(new Error("AI request cancelled by the author"), { code: "ai_cancelled", stage: error?.stage ?? null })
+          : error;
         // Tell the panel which real stage failed before the status bar shows the message.
-        if (typeof onProgress === "function") onProgress({ type: "failed", stage: error?.stage ?? null, message: error?.message ?? String(error) });
-        throw error;
+        if (typeof onProgress === "function") onProgress({ type: "failed", stage: failure?.stage ?? null, message: failure?.message ?? String(failure) });
+        throw failure;
       }
     });
   }
@@ -6478,13 +6482,25 @@ function RepairHistoryCompare({ left, right, onClose }) {
     const scores = (record.rounds ?? []).map((round) => round.bestScore).filter((value) => Number.isFinite(value));
     return scores.length ? Math.max(...scores) : null;
   };
+  // Rows adapt to what is being compared: repair loops show targets, scores, and rounds;
+  // drafts, selection actions, and images show mode, instruction, and outcome.
+  const anyLoop = [older, newer].some((record) => (record.kind ?? "repair_loop") === "repair_loop");
+  const anyOther = [older, newer].some((record) => (record.kind ?? "repair_loop") !== "repair_loop");
   const rows = [
     ["Started", (record) => formatHistoryTime(record.createdAt)],
-    ["Status", (record) => REPAIR_HISTORY_STATUS_LABELS[record.status] ?? record.status],
+    ["Request", (record) => `${AI_ACTIVITY_KIND_LABELS[record.kind ?? "repair_loop"] ?? record.kind}${record.source ? ` · ${record.source}` : ""}${record.mode ? ` · ${AI_MODE_LABELS[record.mode] ?? record.mode}` : ""}`],
+    ["Status", (record) => `${REPAIR_HISTORY_STATUS_LABELS[record.status] ?? record.status}${record.error?.code ? ` (${record.error.code})` : ""}`],
     ["Model", (record) => (record.endpoint === "local_rules" ? "Local rules" : record.model || "Configured endpoint")],
-    ["Targets", (record) => (record.targets ?? []).map(formatRepairTarget).join(", ") || "–"],
-    ["Score", (record) => `${record.baseline?.healthScore ?? "–"} → ${best(record) ?? "–"}`],
-    ["Rounds", (record) => `${record.roundsUsed ?? record.rounds?.length ?? 0}${record.maxRounds ? `/${record.maxRounds}` : ""}`],
+    ["Instruction", (record) => (record.instruction ? `${record.instruction.slice(0, 90)}${record.instruction.length > 90 ? "…" : ""}` : "–")],
+    ...(anyLoop ? [
+      ["Targets", (record) => (record.targets ?? []).map(formatRepairTarget).join(", ") || "–"],
+      ["Score", (record) => `${record.baseline?.healthScore ?? "–"} → ${best(record) ?? "–"}`],
+      ["Rounds", (record) => `${record.roundsUsed ?? record.rounds?.length ?? 0}${record.maxRounds ? `/${record.maxRounds}` : ""}`]
+    ] : []),
+    ...(anyOther ? [
+      ["Proposals", (record) => `${(record.finalProposals ?? []).length}${(record.scopeRejected ?? []).length ? ` (+${record.scopeRejected.length} discarded)` : ""}`],
+      ["Answer", (record) => (record.answer ? `${record.answer.slice(0, 90)}${record.answer.length > 90 ? "…" : ""}` : "–")]
+    ] : []),
     ["Duration", (record) => (Number.isFinite(record.durationMs) ? `${(record.durationMs / 1000).toFixed(1)}s` : "–")],
     ["Author applied", (record) => (record.outcome === "applied" ? (record.appliedProposalIds ?? []).join(", ") || "nothing" : "not applied")],
     ...Array.from({ length: roundCount }, (_, index) => [`Round ${index + 1}`, (record) => summarizeHistoryRound(record.rounds?.[index])])

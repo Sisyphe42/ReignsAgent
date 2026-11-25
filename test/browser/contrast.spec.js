@@ -73,6 +73,19 @@ function scanContrast() {
     return parse(getComputedStyle(document.body).backgroundColor);
   };
   const failures = [];
+  // Form controls show their value (or placeholder) instead of a text node: measure them too.
+  for (const control of document.querySelectorAll(".app-shell :is(input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=range]), select, textarea)")) {
+    const rect = control.getBoundingClientRect();
+    if (!rect.width || !rect.height) continue;
+    const style = getComputedStyle(control);
+    if (style.visibility === "hidden" || Number(style.opacity) === 0) continue;
+    const foreground = parse(style.color);
+    const background = backgroundOf(control);
+    if (!foreground || !background) continue;
+    const [light, dark] = [luminance(foreground), luminance(background)].sort((a, b) => b - a);
+    const ratio = (light + 0.05) / (dark + 0.05);
+    if (ratio < 4.5) failures.push(`${ratio.toFixed(2)} ${control.tagName.toLowerCase()}.${[...control.classList].join(".")} value "${String(control.value ?? "").slice(0, 24)}"`);
+  }
   for (const element of document.querySelectorAll(".app-shell *:not(.ai-ambient *)")) {
     if (![...element.childNodes].some((node) => node.nodeType === 3 && node.textContent.trim())) continue;
     const rect = element.getBoundingClientRect();

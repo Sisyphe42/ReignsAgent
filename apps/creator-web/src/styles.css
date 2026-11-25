@@ -9543,3 +9543,20 @@ summary:focus-visible {
   background: #f7f2e9;
   border-color: #09090a;
 }
+
+/* Phantom form controls are black fields: keep their text light even though panels redefine
+   --ink for the cream paper around them. */
+/* Every Phantom field is a black field with cream text (Request form, Review inputs, Content
+   editor, Settings selects), including the read-only effect keys that an older rule painted dark. */
+:root[data-skin="phantom"] .panel :is(input, select, textarea) {
+  color: #f7f2e9;
+  background-color: #09090a;
+}
+
+:root[data-skin="phantom"] .content-detail .effect-row input.effect-row__key {
+  color: #f7f2e9;
+}
+
+:root[data-skin="phantom"] .panel :is(input, textarea)::placeholder {
+  color: #c8c1b5;
+}
