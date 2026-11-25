@@ -149,6 +149,11 @@ test("keeps short metric values in the repair popover on one line", async ({ pag
 test("explains a selected card through the AI layer and logs it as selection activity", async ({ page }) => {
   await openHosted(page, "workbench/content?ai=1");
   await expect(page.getByTestId("ai-ambient-status")).toContainText(/Local planner · no endpoint configured · \d+ cards/);
+  // The status pill collapses to a corner chip (so it never covers page content) and comes back.
+  await page.getByRole("button", { name: "Collapse AI status" }).click();
+  await expect(page.getByTestId("ai-ambient-status")).toHaveCount(0);
+  await page.getByRole("button", { name: "Show AI status" }).click();
+  await expect(page.getByTestId("ai-ambient-status")).toBeVisible();
   const card = page.locator(".card-switcher__item").nth(1);
   const cardId = await card.getAttribute("data-ai-card-id");
   await card.click();

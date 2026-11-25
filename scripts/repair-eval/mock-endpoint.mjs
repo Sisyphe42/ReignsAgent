@@ -9,7 +9,6 @@ import { pathToFileURL } from "node:url";
  * Routes: POST /<scriptId>/v1/chat/completions -> the next scripted response
  * for that script (the last one repeats). GET /<scriptId>/v1/models lists one model.
  * POST /<scriptId>/reset restarts that script.
- * A step `{ proposals, answer }` also returns an answer (explain_selection).
  * `delayMs` (or a step `{ delayMs, proposals }`) holds each answer back, so demos can show
  * the request stage of the progress UI. A step `{ status, body }` answers with an error.
  */
@@ -41,7 +40,7 @@ export async function startRepairMockEndpoint({ scripts, port = 0, host = "127.0
     const proposals = Array.isArray(step) ? step : Array.isArray(step?.proposals) ? step.proposals : null;
     if (!proposals) return send(res, step.status ?? 500, step.body ?? { error: "scripted failure" });
     // Optional loop directives a model may add: contextRequests (cards to read next) and stop.
-    const directives = Array.isArray(step) ? {} : { ...(step.contextRequests ? { contextRequests: step.contextRequests } : {}), ...(step.stop ? { stop: step.stop } : {}), ...(typeof step.answer === "string" ? { answer: step.answer } : {}) };
+    const directives = Array.isArray(step) ? {} : { ...(step.contextRequests ? { contextRequests: step.contextRequests } : {}), ...(step.stop ? { stop: step.stop } : {}) };
     return send(res, 200, { choices: [{ message: { role: "assistant", content: JSON.stringify({ proposals, ...directives }) } }] });
   });
   await new Promise((resolve, reject) => {

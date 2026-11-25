@@ -9496,8 +9496,11 @@ summary:focus-visible {
   left: 50%;
   bottom: 14px;
   z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   max-width: calc(100vw - 32px);
-  padding: 5px 12px;
+  padding: 5px 6px 5px 12px;
   transform: translateX(-50%);
   color: var(--ink);
   border: 1px solid var(--border);
@@ -9506,7 +9509,40 @@ summary:focus-visible {
   box-shadow: 0 6px 18px var(--shadow);
   font-family: var(--font-data);
   font-size: 0.7rem;
-  pointer-events: none;
+}
+
+/* The AI layer container ignores pointer events; the pill's controls opt back in. */
+.ai-ambient__status-close,
+.ai-ambient__status--collapsed {
+  pointer-events: auto;
+}
+
+.ai-ambient__status-close {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  color: var(--muted);
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.ai-ambient__status-close:hover {
+  color: var(--ink);
+  background: var(--surface-2);
+}
+
+/* Collapsed: a small chip in the bottom-left corner, away from page content. */
+.ai-ambient__status--collapsed {
+  left: 14px;
+  padding: 4px 10px;
+  transform: none;
+  cursor: pointer;
 }
 
 .repair-history__filters {

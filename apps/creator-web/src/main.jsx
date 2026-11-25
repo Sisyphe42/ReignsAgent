@@ -27,6 +27,7 @@ const DEFAULT_PANEL = "overview";
 const LEGACY_DRAFT_KEY = "reigns-agent.creator-web.editor-draft";
 const RAIL_COLLAPSED_KEY = "reigns-agent.creator-web.rail-collapsed";
 const RAIL_PINNED_KEY = "reigns-agent.creator-web.rail-pinned";
+const AI_STATUS_COLLAPSED_KEY = "reigns-agent.creator-web.ai-status-collapsed";
 const UI_LOCALES = [
   ["system", null],
   ["en", "English"],
@@ -7435,6 +7436,10 @@ function SettingsPanel({ editor, aiSettings, apiKey, apiKeySaved, locale, locale
 function AiAmbientLayer({ activePanelLabel, graphSelection, onAction, contextStatus = null }) {
   // No artificial loading delay: the layer is ready at once and states what the AI will see.
   const [phase, setPhase] = useState("ready");
+  // The status pill can be collapsed to a small chip so it never covers the end of a long page;
+  // the choice is a per-viewer convenience (guarded storage, defaults to expanded).
+  const [statusCollapsed, setStatusCollapsed] = useState(() => readOptionalStorage(AI_STATUS_COLLAPSED_KEY) === "true");
+  useEffect(() => { writeOptionalStorage(AI_STATUS_COLLAPSED_KEY, String(statusCollapsed)); }, [statusCollapsed]);
   const [selection, setSelection] = useState(null);
   const [expanded, setExpanded] = useState(false);
   const [pinned, setPinned] = useState(false);
@@ -7863,14 +7868,21 @@ function AiAmbientLayer({ activePanelLabel, graphSelection, onAction, contextSta
       <div className="ai-ambient__frame" aria-hidden="true">
         <canvas ref={borderCanvasRef} className="ai-ambient__border-canvas" />
       </div>
-      {contextStatus && (
+      {contextStatus && (statusCollapsed ? (
+        <button className="ai-ambient__status ai-ambient__status--collapsed" type="button" data-testid="ai-ambient-status-chip" aria-label="Show AI status" onClick={() => setStatusCollapsed(false)}>
+          AI {contextStatus.configured ? "ready" : "local"}
+        </button>
+      ) : (
         <div className="ai-ambient__status" role="status" data-testid="ai-ambient-status">
-          {contextStatus.configured ? `AI ready · ${contextStatus.modelId || "configured endpoint"}` : "Local planner · no endpoint configured"}
-          {` · ${contextStatus.cardCount} card${contextStatus.cardCount === 1 ? "" : "s"}`}
-          {contextStatus.reviewScore !== null ? ` · review ${contextStatus.reviewScore}/100` : " · review not run"}
-          {" · select text or a card to act on it"}
+          <span>
+            {contextStatus.configured ? `AI ready · ${contextStatus.modelId || "configured endpoint"}` : "Local planner · no endpoint configured"}
+            {` · ${contextStatus.cardCount} card${contextStatus.cardCount === 1 ? "" : "s"}`}
+            {contextStatus.reviewScore !== null ? ` · review ${contextStatus.reviewScore}/100` : " · review not run"}
+            {" · select text or a card to act on it"}
+          </span>
+          <button className="ai-ambient__status-close" type="button" aria-label="Collapse AI status" onClick={() => setStatusCollapsed(true)}>×</button>
         </div>
-      )}
+      ))}
       {phase === "loading" && (
         <div className="ai-ambient__loading" role="status">
           <span />
