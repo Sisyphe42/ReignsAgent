@@ -3059,7 +3059,7 @@ select {
 
 .ai-progress {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 6px;
   margin: 10px 0;
 }
@@ -3112,6 +3112,106 @@ select {
 
 @keyframes ai-progress-sweep {
   to { transform: translateX(100%); }
+}
+
+.repair-loop-progress {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin: -4px 0 10px;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  font-size: 0.78rem;
+}
+
+.repair-loop-progress > strong {
+  font-family: var(--font-data);
+  white-space: nowrap;
+}
+
+.repair-loop-progress__phases {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.repair-loop-progress__phase {
+  padding: 2px 7px;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-family: var(--font-data);
+  font-size: 0.68rem;
+  white-space: nowrap;
+}
+
+.repair-loop-progress__phase--done {
+  color: var(--ok);
+  border-color: color-mix(in srgb, var(--ok) 55%, var(--border));
+}
+
+.repair-loop-progress__phase--active {
+  color: var(--ink);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+}
+
+.repair-loop-progress__phase--failed {
+  color: var(--danger);
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, var(--surface));
+}
+
+.repair-loop-progress__text {
+  color: var(--ink);
+}
+
+.review-progress {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.review-progress__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  margin-bottom: 8px;
+  font-size: 0.86rem;
+}
+
+.review-progress__head > span {
+  color: var(--muted);
+  font-family: var(--font-data);
+}
+
+.review-progress__pct {
+  margin-left: auto;
+  color: var(--ink) !important;
+}
+
+.review-progress__track {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--surface-3);
+}
+
+.review-progress__track > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 160ms linear;
 }
 
 :root[data-skin="phantom"] .metric,

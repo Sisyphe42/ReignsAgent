@@ -16,7 +16,7 @@ import {
   validateCardSet,
   validateContentBundle
 } from "../../pipeline/src/index.js";
-import { analyzeCardGraph, runMonteCarloReview } from "../../reviewer/src/index.js";
+import { analyzeCardGraph, runMonteCarloReview, runMonteCarloReviewAsync } from "../../reviewer/src/index.js";
 export { stitchPlayerRuntime } from "./player-build.js";
 export {
   DEFAULT_REPAIR_LOOP_LIMITS,
@@ -464,12 +464,39 @@ export function createPlaySession(options = {}) {
 /**
  * runDiagnostics runs the headless reviewer and returns a render-ready projection.
  */
-export function runDiagnostics({ cards, metadata = {}, cycles = 1000, maxTurns = 50, seed = 1, thresholds }) {
+export function runDiagnostics({ cards, metadata = {}, cycles = 1000, maxTurns = 50, seed = 1, thresholds, onProgress = null }) {
+  const reviewOptions = diagnosticReviewOptions({ cards, cycles, maxTurns, seed, thresholds, onProgress });
+  const report = runMonteCarloReview(reviewOptions);
+  emitReviewPhase(onProgress, "summarize", report.parameters?.cycles ?? cycles);
+  return summarizeDiagnostics(report, { cards, metadata });
+}
+
+/**
+ * runDiagnosticsAsync returns the same projection as runDiagnostics but yields to the
+ * host event loop while simulating, so a server can stream real progress events:
+ * `{ phase: "simulate", completed, total }` then `{ phase: "summarize", completed: total, total }`.
+ */
+export async function runDiagnosticsAsync({ cards, metadata = {}, cycles = 1000, maxTurns = 50, seed = 1, thresholds, onProgress = null, yieldToHost }) {
+  const reviewOptions = diagnosticReviewOptions({ cards, cycles, maxTurns, seed, thresholds, onProgress });
+  if (typeof yieldToHost === "function") reviewOptions.yieldToHost = yieldToHost;
+  const report = await runMonteCarloReviewAsync(reviewOptions);
+  emitReviewPhase(onProgress, "summarize", report.parameters?.cycles ?? cycles);
+  return summarizeDiagnostics(report, { cards, metadata });
+}
+
+function diagnosticReviewOptions({ cards, cycles, maxTurns, seed, thresholds, onProgress }) {
   const reviewOptions = { cards: cloneCards(cards), cycles, maxTurns, seed };
   if (thresholds) {
     reviewOptions.thresholds = cloneJsonSafe(thresholds, "Reviewer thresholds");
   }
-  return summarizeDiagnostics(runMonteCarloReview(reviewOptions), { cards, metadata });
+  if (typeof onProgress === "function") {
+    reviewOptions.onProgress = ({ completed, total }) => onProgress({ phase: "simulate", completed, total });
+  }
+  return reviewOptions;
+}
+
+function emitReviewPhase(onProgress, phase, total) {
+  if (typeof onProgress === "function") onProgress({ phase, completed: total, total });
 }
 
 /**
@@ -761,7 +788,8 @@ export async function buildAiEditPlanAsync({
   targetCardId = null,
   assetId = null,
   diagnostics = null,
-  fetchImpl = globalThis.fetch
+  fetchImpl = globalThis.fetch,
+  onProgress = null
 }) {
   const bundle = editor?.toBundle ? editor.toBundle() : createContentBundle(editor ?? {});
   const descriptor = normalizeAiEditConnectorConfig(config);
@@ -773,7 +801,8 @@ export async function buildAiEditPlanAsync({
       instruction,
       targetCardId,
       assetId,
-      diagnostics
+      diagnostics,
+      onProgress
     });
   }
 
@@ -786,7 +815,8 @@ export async function buildAiEditPlanAsync({
     targetCardId,
     assetId,
     diagnostics,
-    fetchImpl
+    fetchImpl,
+    onProgress
   });
 }
 

@@ -20,7 +20,7 @@ const modules = [
   },
   {
     path: "packages/reviewer/src/index.js",
-    exports: ["ReviewerError", "analyzeCardGraph", "runMonteCarloReview", "runSimulationCycle"]
+    exports: ["ReviewerError", "analyzeCardGraph", "runMonteCarloReview", "runMonteCarloReviewAsync", "runSimulationCycle"]
   },
   {
     path: "packages/pipeline/src/index.js",
@@ -86,6 +86,7 @@ const modules = [
       "projectFactionGauges",
       "resolveLocale",
       "runDiagnostics",
+      "runDiagnosticsAsync",
       "serializeBuild",
       "summarizeDiagnostics",
       "summarizeFeedback",

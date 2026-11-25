@@ -679,12 +679,15 @@ export function createAiEditSuggestions({
   instruction = "",
   targetCardId = null,
   assetId = null,
-  diagnostics = null
+  diagnostics = null,
+  onProgress = null
 }) {
   if (!AI_EDIT_MODES.has(mode)) {
     throw new PipelineError(`Unknown AI edit mode '${mode}'`);
   }
 
+  const stage = createAiStageTracker(onProgress);
+  stage.enter("context");
   const normalizedBundle = createContentBundle(bundle);
   const descriptor = cloneJsonValue(config ?? {}, "AI edit config");
   const targetCardIds = isNonEmptyString(targetCardId) ? [targetCardId] : [];
@@ -693,7 +696,9 @@ export function createAiEditSuggestions({
     ? buildMediaEditRequest({ bundle: normalizedBundle, mode, instruction, targetCardId, assetId, style, diagnostics })
     : buildCardEditRequest({ bundle: normalizedBundle, instruction, targetCardIds, diagnostics, constraints: descriptor.constraints ?? {}, contextStrategy: mode === "repair_diagnostics" ? "relevance" : "first_n" });
   const feedback = diagnostics ? createDiagnosticFeedback(diagnostics) : null;
+  stage.enter("draft", { source: "local_rules" });
   const proposals = createOfflineProposals({ bundle: normalizedBundle, mode, config: descriptor, instruction, targetCardId, assetId, request, feedback });
+  stage.enter("validate", { proposalCount: proposals.length });
 
   return {
     schemaVersion: AI_EDIT_SCHEMA_VERSION,
@@ -715,11 +720,22 @@ export async function createAiEditSuggestionsFromEndpoint({
   targetCardId = null,
   assetId = null,
   diagnostics = null,
-  fetchImpl = globalThis.fetch
+  fetchImpl = globalThis.fetch,
+  onProgress = null
 }) {
   if (!AI_EDIT_MODES.has(mode)) {
     throw new PipelineError(`Unknown AI edit mode '${mode}'`, "unknown_ai_mode");
   }
+  const stage = createAiStageTracker(onProgress);
+  try {
+    return await runEndpointSuggestions({ bundle, mode, config, credentials, instruction, targetCardId, assetId, diagnostics, fetchImpl, stage });
+  } catch (error) {
+    throw stage.annotate(error);
+  }
+}
+
+async function runEndpointSuggestions({ bundle, mode, config, credentials, instruction, targetCardId, assetId, diagnostics, fetchImpl, stage }) {
+  stage.enter("context");
   if (typeof fetchImpl !== "function") {
     throw new PipelineError("AI endpoint execution requires fetch", "endpoint_fetch_unavailable");
   }
@@ -748,8 +764,10 @@ export async function createAiEditSuggestionsFromEndpoint({
     request,
     config: descriptor,
     apiKey: normalizeEndpointValue(credentials?.apiKey),
-    fetchImpl
+    fetchImpl,
+    stage
   });
+  stage.enter("validate", { proposalCount: Array.isArray(endpointResult.proposals) ? endpointResult.proposals.length : 0 });
   const proposals = normalizeProviderProposals({
     bundle: normalizedBundle,
     mode,
@@ -1423,7 +1441,7 @@ function extractTextPayload(response) {
   throw new PipelineError("generateText must return a string or an object with a text field");
 }
 
-async function callAiEditEndpoint({ endpoint, protocol, routeMode = "auto", model, request, config, apiKey, fetchImpl }) {
+async function callAiEditEndpoint({ endpoint, protocol, routeMode = "auto", model, request, config, apiKey, fetchImpl, stage = createAiStageTracker(null) }) {
   const url = resolveAiEndpointUrl(endpoint, protocol, routeMode);
   const wantsStructuredJson = shouldUseStructuredJson(config);
   const headers = {
@@ -1439,33 +1457,41 @@ async function callAiEditEndpoint({ endpoint, protocol, routeMode = "auto", mode
     }
   }
 
+  stage.enter("request");
   const firstAttempt = await postAiEditEndpoint({
     fetchImpl,
     url,
     headers,
-    body: buildAiEndpointBody({ protocol, model, request, config, includeStructuredJson: wantsStructuredJson })
+    body: buildAiEndpointBody({ protocol, model, request, config, includeStructuredJson: wantsStructuredJson }),
+    stage
   });
-  const result = firstAttempt.ok || !wantsStructuredJson || !isStructuredJsonUnsupportedError(firstAttempt.text)
-    ? firstAttempt
-    : await postAiEditEndpoint({
+  let result = firstAttempt;
+  if (!firstAttempt.ok && wantsStructuredJson && isStructuredJsonUnsupportedError(firstAttempt.text)) {
+    stage.enter("request", { retry: "without_structured_json" });
+    result = await postAiEditEndpoint({
       fetchImpl,
       url,
       headers,
-      body: buildAiEndpointBody({ protocol, model, request, config, includeStructuredJson: false })
+      body: buildAiEndpointBody({ protocol, model, request, config, includeStructuredJson: false }),
+      stage
     });
+  }
 
   if (!result.ok) {
     const status = result.status ?? "unknown";
+    // The endpoint answered with an error status: the request step failed, not parsing.
+    stage.enter("request", { status });
     throw new PipelineError(`AI endpoint request failed with status ${status}`, "endpoint_http_error");
   }
 
+  stage.enter("parse");
   return {
     url,
     proposals: parseAiEndpointProposalResponse(result.text, protocol)
   };
 }
 
-async function postAiEditEndpoint({ fetchImpl, url, headers, body }) {
+async function postAiEditEndpoint({ fetchImpl, url, headers, body, stage = createAiStageTracker(null) }) {
   let response;
   try {
     response = await fetchImpl(url, {
@@ -1479,6 +1505,7 @@ async function postAiEditEndpoint({ fetchImpl, url, headers, body }) {
     throw new PipelineError(`AI endpoint request failed: ${error.message}`, "endpoint_network_error");
   }
 
+  if (response?.ok) stage.enter("response", { status: response.status });
   const text = await readAiEndpointResponse(response);
   return {
     ok: Boolean(response?.ok),
@@ -2379,6 +2406,41 @@ function collectContextWarnings(diagnostics) {
 
 function severityRank(severity) {
   return severity === "error" ? 0 : severity === "warning" ? 1 : 2;
+}
+
+/**
+ * AI_EDIT_PROGRESS_STAGES are the real stages of one AI edit draft, in order.
+ * `draft` is only used by the local rule-based planner; `response` only by endpoints.
+ * Errors thrown while a stage is active carry `error.stage` so a UI can stop on it.
+ */
+export const AI_EDIT_PROGRESS_STAGES = Object.freeze(["context", "request", "response", "draft", "parse", "validate"]);
+
+function createAiStageTracker(onProgress) {
+  let current = null;
+  return {
+    enter(stage, details = {}) {
+      current = stage;
+      if (typeof onProgress !== "function") return;
+      try {
+        onProgress({ stage, ...details });
+      } catch {
+        // Progress observers must never break drafting.
+      }
+    },
+    get current() {
+      return current;
+    },
+    annotate(error) {
+      if (error && typeof error === "object" && !error.stage && current) {
+        try {
+          error.stage = current;
+        } catch {
+          // Frozen errors keep their original shape.
+        }
+      }
+      return error;
+    }
+  };
 }
 
 function utf8ByteLength(text) {

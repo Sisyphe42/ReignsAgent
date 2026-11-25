@@ -25,6 +25,7 @@ import {
   prepareGameBuild,
   projectFactionGauges,
   runDiagnostics,
+  runDiagnosticsAsync,
   serializeBuild,
   summarizeDiagnostics,
   summarizeFeedback,
@@ -344,13 +345,22 @@ async function handleApi(req, res, url) {
 
   if (path === "/api/diagnostics/run" && req.method === "POST") {
     const cards = store.editor.toCards();
-    const projection = runDiagnostics({
+    const reviewInput = {
       cards,
       metadata: store.editor.metadata,
       cycles: normalizeDiagnosticLimit(body?.cycles ?? 1000, "cycles", MAX_CREATOR_DIAGNOSTIC_CYCLES),
       maxTurns: normalizeDiagnosticLimit(body?.maxTurns ?? 50, "maxTurns", MAX_DIAGNOSTIC_TURNS),
       seed: Number(body?.seed ?? 1)
-    });
+    };
+    if (wantsProgressStream(req)) {
+      // Opt-in NDJSON: real simulated-cycle progress, then the same projection.
+      return streamWithProgress(res, async (progress) => {
+        const projection = await runDiagnosticsAsync({ ...reviewInput, onProgress: progress });
+        store.lastDiagnostics = projection;
+        return projection;
+      });
+    }
+    const projection = runDiagnostics(reviewInput);
     store.lastDiagnostics = projection;
     return sendJson(res, projection);
   }
@@ -380,31 +390,36 @@ async function handleApi(req, res, url) {
         }
       });
     }
-    if (mode === "repair_diagnostics" && body?.verify !== false) {
-      // Verified repair loop: proposals are scored on copies; nothing is written here.
-      const plan = await buildVerifiedRepairPlan({
+    const credentials = await resolveCredentials(body?.credentials, body?.config);
+    const buildPlan = async (onProgress = null) => {
+      if (mode === "repair_diagnostics" && body?.verify !== false) {
+        // Verified repair loop: proposals are scored on copies; nothing is written here.
+        return buildVerifiedRepairPlan({
+          editor: store.editor,
+          getEditor: () => store.editor,
+          config: body?.config ?? {},
+          credentials,
+          instruction: body?.instruction ?? "",
+          targetCardId: body?.targetCardId ?? null,
+          repairTarget: body?.repairTarget ?? null,
+          diagnostics,
+          onProgress
+        });
+      }
+      return buildAiEditPlanAsync({
         editor: store.editor,
-        getEditor: () => store.editor,
         config: body?.config ?? {},
-        credentials: await resolveCredentials(body?.credentials, body?.config),
+        credentials,
+        mode,
         instruction: body?.instruction ?? "",
         targetCardId: body?.targetCardId ?? null,
-        repairTarget: body?.repairTarget ?? null,
-        diagnostics
+        assetId: body?.assetId ?? null,
+        diagnostics,
+        onProgress
       });
-      return sendJson(res, plan);
-    }
-    const plan = await buildAiEditPlanAsync({
-      editor: store.editor,
-      config: body?.config ?? {},
-      credentials: await resolveCredentials(body?.credentials, body?.config),
-      mode,
-      instruction: body?.instruction ?? "",
-      targetCardId: body?.targetCardId ?? null,
-      assetId: body?.assetId ?? null,
-      diagnostics
-    });
-    return sendJson(res, plan);
+    };
+    if (wantsProgressStream(req)) return streamWithProgress(res, buildPlan);
+    return sendJson(res, await buildPlan());
   }
 
   if (path === "/api/ai/edit/validate" && req.method === "POST") {
@@ -754,6 +769,35 @@ async function readJsonBody(req) {
     return JSON.parse(text);
   } catch (error) {
     throw new Error(`Request body is not valid JSON: ${error.message}`);
+  }
+}
+
+function wantsProgressStream(req) {
+  return String(req.headers.accept ?? "").includes("application/x-ndjson");
+}
+
+/**
+ * streamWithProgress answers with NDJSON: `{"type":"progress",...}` lines while `work`
+ * runs, then one `{"type":"result","result":...}` or `{"type":"error","error":...}` line.
+ * Errors after the header keep the 200 status; the client reads the error line.
+ */
+async function streamWithProgress(res, work) {
+  res.writeHead(200, {
+    "content-type": "application/x-ndjson; charset=utf-8",
+    "cache-control": "no-store",
+    "x-content-type-options": "nosniff"
+  });
+  let lastStage = null;
+  const progress = (event) => {
+    if (event?.stage) lastStage = event.stage;
+    if (!res.writableEnded) res.write(`${JSON.stringify({ type: "progress", ...event })}\n`);
+  };
+  try {
+    const result = await work(progress);
+    res.end(`${JSON.stringify({ type: "result", result })}\n`);
+  } catch (error) {
+    const payload = { name: error?.name, message: error?.message ?? String(error), code: error?.code ?? "internal_error", stage: error?.stage ?? lastStage };
+    if (!res.writableEnded) res.end(`${JSON.stringify({ type: "error", error: payload })}\n`);
   }
 }
 

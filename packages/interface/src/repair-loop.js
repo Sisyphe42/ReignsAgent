@@ -77,11 +77,16 @@ export async function buildVerifiedRepairPlan({
   scoring = {},
   limits = {},
   fetchImpl = globalThis.fetch,
-  now = () => Date.now()
+  now = () => Date.now(),
+  onProgress = null,
+  yieldToHost = defaultYield
 } = {}) {
   const startedAt = now();
   const budget = normalizeLimits(limits);
   const scoringConfig = normalizeScoring(scoring);
+  const progress = createLoopProgress(onProgress, budget.maxRounds);
+  progress.emit({ stage: "baseline" });
+  await yieldToHost();
   const baseBundle = toBundle(editor);
   const baseFingerprint = fingerprintBundle(baseBundle);
   const baseline = runDiagnostics({ cards: baseBundle.cards, metadata: baseBundle.metadata, ...scoringConfig });
@@ -99,8 +104,10 @@ export async function buildVerifiedRepairPlan({
       targetCardId,
       // Nothing to score: give the model the Review the author actually looked at.
       diagnostics: diagnostics ?? baseline,
-      fetchImpl
+      fetchImpl,
+      onProgress: (event) => progress.emit({ ...event, round: 1, maxRounds: 1 })
     });
+    progress.emit({ stage: "done", round: 1, maxRounds: 1 });
     return {
       ...plan,
       verification: {
@@ -158,7 +165,8 @@ export async function buildVerifiedRepairPlan({
         instruction,
         targetCardId,
         diagnostics: baseline,
-        fetchImpl: meter.fetch
+        fetchImpl: meter.fetch,
+        onProgress: (event) => progress.emit({ ...event, round })
       });
     } catch (error) {
       const failure = { code: meter.budgetError?.code ?? error?.code ?? "endpoint_error", message: scrub(meter.budgetError?.message ?? error?.message ?? String(error), apiKey) };
@@ -213,12 +221,24 @@ export async function buildVerifiedRepairPlan({
     lastPlan = plan;
 
     const proposals = Array.isArray(plan.proposals) ? plan.proposals : [];
-    const evaluated = proposals.map((proposal, index) => {
+    const evaluated = [];
+    const scoredCount = Math.min(proposals.length, budget.maxProposalsPerRound);
+    for (const [index, proposal] of proposals.entries()) {
       if (index >= budget.maxProposalsPerRound) {
-        return withVerification(proposal, round, skippedVerdict(budget));
+        evaluated.push(withVerification(proposal, round, skippedVerdict(budget)));
+        continue;
       }
-      return withVerification(proposal, round, evaluateRepairProposal({ context, proposal }));
-    });
+      const position = { round, proposalIndex: index + 1, proposalCount: scoredCount };
+      const verdict = await evaluateRepairProposalStaged({
+        context,
+        proposal,
+        onStage: async (stage) => {
+          progress.emit({ ...position, stage });
+          await yieldToHost();
+        }
+      });
+      evaluated.push(withVerification(proposal, round, verdict));
+    }
     const passed = evaluated.filter((proposal) => proposal.verification.passed);
     const roundRecord = {
       round,
@@ -272,6 +292,7 @@ export async function buildVerifiedRepairPlan({
     );
   }
 
+  progress.emit({ stage: "done", round: rounds.length, stopReason });
   const chosen = stopReason === "verified" ? finalRound : pickBestRound(evaluatedRounds);
   const status = stopReason === "verified" ? "verified" : "unverified";
   const proposals = chosen?.proposals ?? [];
@@ -313,6 +334,29 @@ export async function buildVerifiedRepairPlan({
  * Deterministic for a fixed context (fixed Reviewer seed).
  */
 export function evaluateRepairProposal({ context, proposal }) {
+  const steps = repairEvaluationSteps({ context, proposal });
+  let next = steps.next();
+  while (!next.done) next = steps.next();
+  return next.value;
+}
+
+/**
+ * evaluateRepairProposalStaged is the same evaluation, reporting each real stage
+ * ("trial" = apply to a copy and structural checks, "scoring" = fixed-seed Reviewer run,
+ * "checks" = review-based checks) to `onStage` before it starts.
+ */
+export async function evaluateRepairProposalStaged({ context, proposal, onStage = null }) {
+  const steps = repairEvaluationSteps({ context, proposal });
+  let next = steps.next();
+  while (!next.done) {
+    if (typeof onStage === "function") await onStage(next.value);
+    next = steps.next();
+  }
+  return next.value;
+}
+
+function* repairEvaluationSteps({ context, proposal }) {
+  yield "trial";
   const checks = [];
   const add = (id, passed, detail) => checks.push({ id, severity: CHECK_BY_ID.get(id).severity, passed, detail });
   const patches = Array.isArray(proposal?.patches) ? proposal.patches : [];
@@ -391,6 +435,7 @@ export function evaluateRepairProposal({ context, proposal }) {
     ? effectResult.problems.slice(0, 3).join("; ")
     : "Edited choices keep their tags, variables, and gauge weight.");
 
+  yield "scoring";
   let afterDiagnostics;
   try {
     afterDiagnostics = runDiagnostics({ cards: afterCards, metadata: applied.bundle.metadata, ...context.scoring });
@@ -398,6 +443,7 @@ export function evaluateRepairProposal({ context, proposal }) {
     add("target_resolved", false, `Review could not run: ${error?.message ?? error}`);
     return finalizeVerdict({ checks, before, after: null, metrics: null });
   }
+  yield "checks";
 
   const afterIssues = collectIssueEntities(afterDiagnostics);
   const afterKeys = new Set(afterIssues.map((issue) => issue.key));
@@ -777,6 +823,29 @@ function skippedVerdict(budget) {
     checks: [{ id: "evaluation_budget", severity: "blocking", passed: false, detail: `Not evaluated: only the first ${budget.maxProposalsPerRound} proposals per round are scored.` }],
     score: { before: null, after: null, delta: null },
     metrics: {}
+  };
+}
+
+function defaultYield() {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+/**
+ * createLoopProgress forwards loop progress to an optional observer. Events always carry
+ * maxRounds and the latest round, so a UI can render "Round r/3 · stage".
+ */
+function createLoopProgress(onProgress, maxRounds) {
+  let lastRound = 0;
+  return {
+    emit(event) {
+      if (typeof onProgress !== "function") return;
+      if (Number.isInteger(event.round)) lastRound = event.round;
+      try {
+        onProgress({ maxRounds, ...event, round: event.round ?? lastRound });
+      } catch {
+        // Progress observers must never break the loop.
+      }
+    }
   };
 }
 

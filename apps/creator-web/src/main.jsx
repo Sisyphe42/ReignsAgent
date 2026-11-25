@@ -553,6 +553,58 @@ function aiModel(id, label = id, capabilities = {}, protocol = "openai_chat") {
   };
 }
 const AI_PROGRESS_STEPS = ["Context", "Request", "Local draft", "Parse", "Validate", "Ready"];
+// Real backend stages (Pipeline AI_EDIT_PROGRESS_STAGES plus repair-loop stages) mapped onto the six steps.
+const AI_STAGE_TO_STEP = {
+  baseline: 0,
+  context: 0,
+  request: 1,
+  response: 2,
+  draft: 2,
+  parse: 3,
+  validate: 4,
+  trial: 4,
+  scoring: 4,
+  checks: 4,
+  done: 5
+};
+const REPAIR_LOOP_PHASES = [
+  ["request", "Request", ["request", "response", "parse", "validate", "context", "draft"]],
+  ["trial", "Trial apply", ["trial"]],
+  ["scoring", "Scoring", ["scoring"]],
+  ["checks", "Checks", ["checks"]]
+];
+const AI_STAGE_TEXT = {
+  baseline: "Scoring the current deck",
+  context: "Selecting context cards",
+  request: "Waiting for the endpoint",
+  response: "Receiving the response",
+  draft: "Drafting with local rules",
+  parse: "Parsing proposals",
+  validate: "Validating patches",
+  trial: "Applying to a copy",
+  scoring: "Fixed-seed review",
+  checks: "Running checks",
+  done: "Done"
+};
+
+function initialAiProgressDetail(endpointConfigured) {
+  const startedAt = Date.now();
+  return { stage: "context", round: 0, maxRounds: 0, proposalIndex: 0, proposalCount: 0, responseLabel: endpointConfigured ? "Response" : "Local draft", startedAt, stageStartedAt: startedAt };
+}
+
+function reduceAiProgressDetail(current, event) {
+  const base = current ?? initialAiProgressDetail(false);
+  const next = { ...base };
+  if (event.stage && event.stage !== base.stage) next.stageStartedAt = Date.now();
+  if (event.stage) next.stage = event.stage;
+  if (Number.isInteger(event.round)) next.round = event.round;
+  if (Number.isInteger(event.maxRounds)) next.maxRounds = event.maxRounds;
+  next.proposalIndex = Number.isInteger(event.proposalIndex) ? event.proposalIndex : 0;
+  next.proposalCount = Number.isInteger(event.proposalCount) ? event.proposalCount : 0;
+  if (event.stage === "response") next.responseLabel = "Response";
+  if (event.stage === "draft") next.responseLabel = "Local draft";
+  return next;
+}
 const AI_MODE_LABELS = {
   generate_cards: "Draft cards",
   repair_diagnostics: "Repair review",
@@ -1078,10 +1130,6 @@ function AiOptionGroup({ label, value, options, onChange }) {
   );
 }
 
-function wait(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 function App() {
   const initialUrlState = useMemo(() => readUrlState(), []);
   const [activePanel, setActivePanel] = useState(initialUrlState.panel);
@@ -1111,6 +1159,8 @@ function App() {
   const [build, setBuild] = useState(null);
   const [releaseState, setReleaseState] = useState({ capability: { windowsX64: false, reason: "loading" }, releases: [] });
   const [busy, setBusy] = useState("");
+  const [reviewProgress, setReviewProgress] = useState(null);
+  const reviewRunningRef = useRef(false);
   const [draftInfo, setDraftInfo] = useState(null);
   const [focusCardId, setFocusCardId] = useState(null);
   const [aiGraphSelection, setAiGraphSelection] = useState(null);
@@ -1464,26 +1514,46 @@ function App() {
   }
 
   async function runDiagnostics(form) {
-    await runAction("Running diagnostics", async () => {
-      const result = await api("/api/diagnostics/run", { method: "POST", body: form });
-      setDiagnostics(result);
-      setStatus(`Diagnostics complete: ${result.healthScore}/100`);
-    });
+    // One review at a time: the button is disabled too, this also covers keyboard repeats.
+    if (reviewRunningRef.current) return;
+    reviewRunningRef.current = true;
+    setReviewProgress({ phase: "starting", completed: 0, total: Number(form?.cycles) || 0 });
+    try {
+      await runAction("Running diagnostics", async () => {
+        const result = await api("/api/diagnostics/run", {
+          method: "POST",
+          body: form,
+          onProgress: (event) => setReviewProgress({ phase: event.phase ?? "simulate", completed: Number(event.completed) || 0, total: Number(event.total) || 0 })
+        });
+        setDiagnostics(result);
+        setStatus(`Diagnostics complete: ${result.healthScore}/100`);
+      });
+    } finally {
+      reviewRunningRef.current = false;
+      setReviewProgress(null);
+    }
   }
 
-  async function buildAiEditPlan(form) {
+  async function buildAiEditPlan(form, onProgress = null) {
     return runAction("Building AI Assist draft", async () => {
-      const result = await api("/api/ai/edit/plan", {
-        method: "POST",
-        body: {
-          ...form,
-          credentials: {
-            apiKey: aiApiKey
-          }
-        }
-      });
-      setStatus(`AI Assist draft ready: ${result.proposals?.length ?? 0} proposals`);
-      return result;
+      try {
+        const result = await api("/api/ai/edit/plan", {
+          method: "POST",
+          body: {
+            ...form,
+            credentials: {
+              apiKey: aiApiKey
+            }
+          },
+          onProgress: typeof onProgress === "function" ? onProgress : undefined
+        });
+        setStatus(`AI Assist draft ready: ${result.proposals?.length ?? 0} proposals`);
+        return result;
+      } catch (error) {
+        // Tell the panel which real stage failed before the status bar shows the message.
+        if (typeof onProgress === "function") onProgress({ type: "failed", stage: error?.stage ?? null, message: error?.message ?? String(error) });
+        throw error;
+      }
     });
   }
 
@@ -1912,6 +1982,7 @@ function App() {
               diagnostics={diagnostics}
               aiAssistEnabled={aiAssistEnabled}
               onRun={runDiagnostics}
+              reviewProgress={reviewProgress}
               onOpen={openPanel}
               onFocusCard={focusOnCard}
               onAiAction={openAiAssistPreflight}
@@ -4716,7 +4787,8 @@ function drawChoiceHandle(ctx, x, y, label, colors) {
   ctx.fillText(label, x, y);
 }
 
-function ReviewPanel({ editor, diagnostics, aiAssistEnabled, onRun, onOpen, onFocusCard, onAiAction, activeAiAction }) {
+function ReviewPanel({ editor, diagnostics, aiAssistEnabled, onRun, onOpen, onFocusCard, onAiAction, activeAiAction, reviewProgress = null }) {
+  const reviewRunning = Boolean(reviewProgress);
   const [cycles, setCycles] = useState(500);
   const [maxTurns, setMaxTurns] = useState(40);
   const [seed, setSeed] = useState(1);
@@ -4747,8 +4819,9 @@ function ReviewPanel({ editor, diagnostics, aiAssistEnabled, onRun, onOpen, onFo
         <label>Cycles <input type="number" min="1" value={cycles} onChange={(event) => setCycles(Number(event.target.value))} /></label>
         <label>Max turns <input type="number" min="1" value={maxTurns} onChange={(event) => setMaxTurns(Number(event.target.value))} /></label>
         <label>Seed <input type="number" value={seed} onChange={(event) => setSeed(Number(event.target.value))} /></label>
-        <button className="btn btn--primary" onClick={() => void onRun({ cycles, maxTurns, seed })}>Run review</button>
+        <button className="btn btn--primary" disabled={reviewRunning} aria-busy={reviewRunning} onClick={() => void onRun({ cycles, maxTurns, seed })}>{reviewRunning ? "Running review..." : "Run review"}</button>
       </div>
+      {reviewRunning && <ReviewProgress progress={reviewProgress} />}
       {diagnostics ? (
         <>
           <ReviewSummary diagnostics={diagnostics} gaugeLabels={gaugeLabels} />
@@ -4796,6 +4869,30 @@ function ReviewPanel({ editor, diagnostics, aiAssistEnabled, onRun, onOpen, onFo
         </div>
       )}
     </section>
+  );
+}
+
+function ReviewProgress({ progress }) {
+  const total = Math.max(0, Number(progress?.total) || 0);
+  const completed = Math.min(total, Math.max(0, Number(progress?.completed) || 0));
+  const ratio = total > 0 ? completed / total : 0;
+  const summarizing = progress?.phase === "summarize";
+  const label = summarizing
+    ? `Summarizing ${total.toLocaleString("en-US")} simulated cycles`
+    : progress?.phase === "starting"
+      ? "Starting simulation"
+      : `Simulated ${completed.toLocaleString("en-US")} / ${total.toLocaleString("en-US")} cycles`;
+  return (
+    <div className="review-progress" data-testid="review-progress" role="status" aria-live="polite">
+      <div className="review-progress__head">
+        <strong>{summarizing ? "Summarizing" : "Simulating"}</strong>
+        <span>{label}</span>
+        <span className="review-progress__pct">{Math.round(ratio * 100)}%</span>
+      </div>
+      <div className="review-progress__track" role="progressbar" aria-label="Review progress" aria-valuemin={0} aria-valuemax={total || 1} aria-valuenow={completed}>
+        <span style={{ width: `${(ratio * 100).toFixed(1)}%` }} />
+      </div>
+    </div>
   );
 }
 
@@ -5496,6 +5593,7 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
   const [isBuilding, setIsBuilding] = useState(false);
   const [progressStep, setProgressStep] = useState(-1);
   const [progressStatus, setProgressStatus] = useState("idle");
+  const [progressDetail, setProgressDetail] = useState(null);
   const [buildError, setBuildError] = useState("");
   const [imageDraft, setImageDraft] = useState(null);
   const [selectedOutputId, setSelectedOutputId] = useState("");
@@ -5545,6 +5643,7 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
     setBuildError("");
     setProgressStep(-1);
     setProgressStatus("idle");
+    setProgressDetail(null);
     if (draftRequest.autoBuild && autoBuildRef.current !== draftRequest.id) {
       autoBuildRef.current = draftRequest.id;
       void buildPlan(draftRequest);
@@ -5578,13 +5677,11 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
     setBuildError("");
     setProgressStatus("building");
     setProgressStep(0);
-    await wait(110);
-    setProgressStep(1);
-    await wait(90);
-    setProgressStep(2);
+    setProgressDetail(initialAiProgressDetail(aiConfigured));
     const nextIsImageMode = IMAGE_OPERATIONS.some(([id]) => id === nextMode);
     if (nextIsImageMode) {
       if (!imageConfigured) {
+        setProgressStep(0);
         setProgressStatus("failed");
         setBuildError("Configure an Image Endpoint in Settings before generating art.");
         setIsBuilding(false);
@@ -5605,6 +5702,8 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
         effectiveMask = maskStage;
       }
       imageAbortRef.current = new AbortController();
+      setProgressStep(1);
+      setProgressDetail((current) => reduceAiProgressDetail(current, { stage: "request" }));
       const imageResult = await onRunImage({
         operation: nextMode,
         prompt: nextInstruction,
@@ -5631,6 +5730,17 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
       setIsBuilding(false);
       return;
     }
+    let failedStage = null;
+    const handleProgress = (event) => {
+      if (!event) return;
+      if (event.type === "failed") {
+        failedStage = event.stage ?? null;
+        return;
+      }
+      const index = AI_STAGE_TO_STEP[event.stage];
+      if (index !== undefined && event.stage !== "done") setProgressStep(index);
+      setProgressDetail((current) => reduceAiProgressDetail(current, event));
+    };
     const result = await onBuildPlan({
       mode: nextMode,
       config: buildAiConnectorConfig(
@@ -5643,18 +5753,15 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
       assetId: nextAssetId || null,
       diagnostics: nextRequiresDiagnostics ? diagnostics : null,
       ...(nextRequiresDiagnostics && nextRepairTarget ? { repairTarget: nextRepairTarget } : {})
-    });
+    }, handleProgress);
     if (!result || result === true) {
+      // Stop on the step that really failed (the server/loop reports error.stage).
+      if (failedStage && AI_STAGE_TO_STEP[failedStage] !== undefined) setProgressStep(AI_STAGE_TO_STEP[failedStage]);
       setProgressStatus("failed");
       setBuildError("AI Assist draft failed. Check the status bar, edit the prompt, or retry.");
       setIsBuilding(false);
       return;
     }
-    await wait(90);
-    setProgressStep(3);
-    await wait(90);
-    setProgressStep(4);
-    await wait(90);
     if (result && result !== true) {
       setPlan(result);
       setSelected(defaultSelectedProposalIds(result));
@@ -5788,7 +5895,8 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
             placeholder="Describe what the AI should draft, repair, generate, or inspect."
             rows={5}
           />
-          <AiProgress step={progressStep} active={isBuilding} status={progressStatus} />
+          <AiProgress step={progressStep} active={isBuilding} status={progressStatus} detail={progressDetail} />
+          <RepairLoopProgress detail={progressDetail} active={isBuilding} status={progressStatus} />
           {buildError && (
             <div className="ai-build-error" role="alert">
               <div>
@@ -7198,13 +7306,15 @@ function AiControlIcon({ id }) {
   );
 }
 
-function AiProgress({ step, active, status = "idle" }) {
+function AiProgress({ step, active, status = "idle", detail = null }) {
   if (step < 0) return null;
+  const labels = AI_PROGRESS_STEPS.map((label, index) => (index === 2 && detail?.responseLabel ? detail.responseLabel : label));
   return (
-    <div className="ai-progress" aria-label="AI Assist progress">
-      {AI_PROGRESS_STEPS.map((label, index) => (
+    <div className="ai-progress" aria-label="AI Assist progress" data-testid="ai-progress" data-stage={detail?.stage ?? ""} data-status={status}>
+      {labels.map((label, index) => (
         <span
-          key={label}
+          key={index}
+          aria-current={index === step && status === "building" ? "step" : undefined}
           className={[
             "ai-progress__step",
             index < step ? "ai-progress__step--done" : "",
@@ -7217,6 +7327,45 @@ function AiProgress({ step, active, status = "idle" }) {
           {label}
         </span>
       ))}
+    </div>
+  );
+}
+
+function RepairLoopProgress({ detail, active, status }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!active) return undefined;
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [active]);
+  if (!detail || !(detail.maxRounds > 1) || status === "ready") return null;
+  const phaseIndex = REPAIR_LOOP_PHASES.findIndex(([, , stages]) => stages.includes(detail.stage));
+  const failed = status === "failed";
+  const proposalNote = detail.proposalCount > 0 && ["trial", "scoring", "checks"].includes(detail.stage)
+    ? ` · proposal ${detail.proposalIndex}/${detail.proposalCount}`
+    : "";
+  const elapsed = Math.max(0, Math.round((now - (detail.stageStartedAt ?? now)) / 1000));
+  return (
+    <div className={`repair-loop-progress${failed ? " repair-loop-progress--failed" : ""}`} data-testid="repair-loop-progress" role="status" aria-live="polite">
+      <strong>{detail.round > 0 ? `Round ${detail.round}/${detail.maxRounds}` : "Preparing"}</strong>
+      <ol className="repair-loop-progress__phases">
+        {REPAIR_LOOP_PHASES.map(([id, label], index) => (
+          <li
+            key={id}
+            className={[
+              "repair-loop-progress__phase",
+              phaseIndex > index ? "repair-loop-progress__phase--done" : "",
+              phaseIndex === index ? (failed ? "repair-loop-progress__phase--failed" : "repair-loop-progress__phase--active") : ""
+            ].filter(Boolean).join(" ")}
+          >
+            {label}
+          </li>
+        ))}
+      </ol>
+      <span className="repair-loop-progress__text">
+        {failed ? `Stopped: ${AI_STAGE_TEXT[detail.stage] ?? detail.stage}` : `${AI_STAGE_TEXT[detail.stage] ?? detail.stage}${proposalNote}`}
+        {active && <span className="muted"> · {elapsed}s</span>}
+      </span>
     </div>
   );
 }
