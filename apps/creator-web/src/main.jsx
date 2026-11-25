@@ -5934,6 +5934,8 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
         outpaint
       }, imageAbortRef.current.signal);
       imageAbortRef.current = null;
+      // Image runs are logged and counted too: refresh the activity list and usage line.
+      setHistoryVersion((version) => version + 1);
       if (!imageResult || imageResult === true) {
         setProgressStatus("failed");
         setBuildError("Image generation failed. Check endpoint settings and retry.");

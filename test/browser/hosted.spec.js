@@ -752,6 +752,9 @@ test("generates and applies an OPFS-backed image through the browser backend", a
   await page.getByRole("button", { name: "Build draft" }).click();
   await expect(page.getByRole("heading", { name: "Generated images" })).toBeVisible({ timeout: 10_000 });
   await expect(page.locator(".image-result img")).toBeVisible();
+  // The image run is logged and counted right away, without remounting the panel.
+  await expect(page.getByTestId("repair-history").getByRole("button", { name: /^Images 1/ })).toBeVisible();
+  await expect(page.getByTestId("ai-session-usage")).toContainText(/AI requests this session: [1-9]/);
   await page.getByRole("button", { name: "Apply selected image" }).click();
   await expect(page.locator(".stage__status strong")).toContainText("Image asset applied");
   await expect.poll(() => page.evaluate(async () => {
