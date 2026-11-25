@@ -141,6 +141,9 @@ const AI_CAPABILITIES = [
   ["reasoning", "Reasoning"],
   ["streaming", "Streaming"]
 ];
+// Only structured JSON changes what ReignsAgent sends today; the other flags are recorded for the
+// endpoint profile but not used, and the UI says so.
+const AI_CAPABILITIES_IN_USE = new Set(["structuredJson"]);
 const IMAGE_PROTOCOLS = [
   ["openai_images", "OpenAI Images-compatible"],
   ["gemini_interactions", "Gemini Interactions"],
@@ -610,8 +613,23 @@ const AI_MODE_LABELS = {
   generate_cards: "Draft cards",
   repair_diagnostics: "Repair review",
   generate_asset: "Generate visual request",
-  analyze_asset: "Analyze visual request"
+  analyze_asset: "Analyze visual request",
+  explain_selection: "Explain selection",
+  edit_selection: "Edit selection"
 };
+// What each request may do. Shown before a request is sent; the backend enforces the same limits.
+const AI_CAPABILITY_RULES = {
+  generate_cards: ["May propose new cards, card edits, choice labels and effects, and metadata.", "Proposals are previews: nothing changes until you tick and apply them."],
+  repair_diagnostics: ["Up to 3 rounds; each proposal is applied to a copy, scored with a fixed-seed Review, and checked against anti-shortcut rules.", "Budgets: 256 KiB per request, 2 MiB in total, 5 minutes per loop. The model may ask to read up to 6 more cards or stop early; it cannot skip a check.", "Only proposals that pass every blocking check start ticked; nothing changes until you apply."],
+  explain_selection: ["Answers in text only; it cannot propose or apply any change."],
+  edit_selection: ["May change only the selected card's text and its choice labels.", "Any patch that touches another card, requirements, or effects is discarded before you see it."],
+  generate_asset: ["Generates image candidates; nothing is applied until you choose one."],
+  analyze_asset: ["Describes or plans visuals; no content changes."]
+};
+const AI_CAPABILITY_COMMON = [
+  "The API key is sent only in the request header. It is never written to the activity log, plans, or project files.",
+  "Selected text and card text are sent as content to work on, never as instructions."
+];
 const AI_AMBIENT_ACTIONS = [
   ["rewrite", "Rewrite", "Rewrite selected content"],
   ["translate", "Translate", "Translate to current locale"],
@@ -887,7 +905,8 @@ function defaultAiSettings() {
     routeMode: "auto",
     jsonMode: "auto",
     modelId: "",
-    capabilities: { ...DEFAULT_AI_CAPABILITIES }
+    capabilities: { ...DEFAULT_AI_CAPABILITIES },
+    sessionRequestLimit: 60
   };
 }
 
@@ -950,7 +969,9 @@ function normalizeAiSettings(settings = {}) {
   const capabilities = normalizeCapabilityState(settings.capabilities ?? defaults.capabilities);
   const modelId = typeof settings.modelId === "string" ? settings.modelId : "";
   const matchedModel = (endpointPreset?.models ?? []).find((model) => model.id === modelId);
+  const limit = Number(settings.sessionRequestLimit);
   return {
+    sessionRequestLimit: Number.isInteger(limit) && limit >= 0 && limit <= 1000 ? limit : defaults.sessionRequestLimit,
     baseUrl,
     protocol,
     endpointPresetId: endpointPreset?.id ?? "custom",
@@ -973,7 +994,8 @@ function aiSettingsFromConfig(config = {}) {
     modelId: config.modelId ?? "",
     routeMode: config.routeMode,
     jsonMode: config.jsonMode,
-    capabilities: Object.fromEntries(AI_CAPABILITIES.map(([id]) => [id, (config.capabilities ?? []).includes(id)]))
+    capabilities: Object.fromEntries(AI_CAPABILITIES.map(([id]) => [id, (config.capabilities ?? []).includes(id)])),
+    sessionRequestLimit: config.sessionRequestLimit
   });
 }
 
@@ -1254,7 +1276,8 @@ function App() {
           modelId: normalized.modelId,
           routeMode: normalized.routeMode,
           jsonMode: normalized.jsonMode,
-          capabilities: enabledAiCapabilities(normalized)
+          capabilities: enabledAiCapabilities(normalized),
+          sessionRequestLimit: normalized.sessionRequestLimit
         }
       }
     }).then((config) => setHasSavedApiKey(config.ai.hasApiKey));
@@ -1538,10 +1561,11 @@ function App() {
     }
   }
 
-  async function buildAiEditPlan(form, onProgress = null) {
+  async function buildAiEditPlan(form, onProgress = null, signal = null) {
     return runAction("Building AI Assist draft", async () => {
       try {
         const result = await api("/api/ai/edit/plan", {
+          signal: signal ?? undefined,
           method: "POST",
           body: {
             ...form,
@@ -1683,32 +1707,39 @@ function App() {
     const targetCardId = selection.targetCardId ?? null;
     const targetLocale = locale;
     const promptSuffix = prompt.trim() ? `\n\nCreator direction: ${prompt.trim()}` : "";
-    const selectedText = selection.text ? ` Selected text: "${selection.text}".` : "";
     const baseContext = `${selection.label}${selection.context ? ` · ${selection.context}` : ""}`;
+    // The selection travels as structured data (context.selection.focus), never inside the
+    // instruction text, so selected card text cannot act as an instruction to the model.
+    const structuredSelection = {
+      kind: selection.type ?? "selection",
+      label: selection.label ?? "",
+      cardId: targetCardId,
+      text: selection.text || selection.context || ""
+    };
     const actionMap = {
       rewrite: {
         actionLabel: "Rewrite selection",
-        mode: "generate_cards",
+        mode: targetCardId ? "edit_selection" : "generate_cards",
         cardCount: 1,
-        instruction: `Rewrite or improve the selected creator context. Context: ${baseContext}.${selectedText} Preserve binary left/right play and explain any story state impact.`
+        instruction: "Rewrite the selected content (context.selection.focus) for clarity and tension. Keep ids, tags, variables, and the left/right meaning."
       },
       translate: {
         actionLabel: "Translate selection",
-        mode: "generate_cards",
+        mode: targetCardId ? "edit_selection" : "generate_cards",
         cardCount: 1,
-        instruction: `Translate the selected creator context to ${targetLocale}. Context: ${baseContext}.${selectedText} Preserve ids, tags, variables, and left/right meaning unless the creator direction says otherwise.`
+        instruction: `Translate the selected content (context.selection.focus) to ${targetLocale}. Keep ids, tags, variables, and the left/right meaning.`
       },
       explain: {
         actionLabel: "Explain selection",
-        mode: "generate_cards",
+        mode: "explain_selection",
         cardCount: 1,
-        instruction: `Explain the selected creator context in actionable author-facing terms. Context: ${baseContext}.${selectedText} Identify what it controls and what to check next.`
+        instruction: "Explain the selected content (context.selection.focus) for the author: what it controls, which state it reads or changes, and what to check next."
       },
       branch: {
         actionLabel: "Branch from selection",
         mode: "generate_cards",
         cardCount: 2,
-        instruction: `Draft a narrative branch from the selected context. Context: ${baseContext}.${selectedText} Include clear trigger conditions through author-owned tags, variables, or gauge thresholds.`
+        instruction: "Draft a narrative branch that follows from the selected content (context.selection.focus). Use clear trigger conditions through author-owned tags, variables, or gauge thresholds."
       }
     };
     const action = actionMap[actionId] ?? actionMap.explain;
@@ -1720,6 +1751,7 @@ function App() {
       targetCardId,
       cardCount: action.cardCount,
       contextSummary: baseContext,
+      selection: structuredSelection,
       instruction: `${action.instruction}${promptSuffix}`
     });
   }
@@ -1813,6 +1845,7 @@ function App() {
           activePanelLabel={activePanelLabel}
           graphSelection={aiGraphSelection}
           onAction={openAmbientAiAction}
+          contextStatus={{ configured: aiConfigured, modelId: aiSettings.modelId, cardCount: editor?.cards?.length ?? 0, reviewScore: diagnostics?.healthScore ?? null }}
         />
       )}
       <header className="topbar">
@@ -5474,6 +5507,50 @@ function formatFileSize(bytes) {
   return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
 }
 
+/**
+ * AuthorBrief is a short, project-level setting (world, tone, glossary, no-go content) sent with
+ * every AI request as content, not as instructions. It is creator-only: builds strip it.
+ */
+function AuthorBrief({ editor }) {
+  const saved = typeof editor?.metadata?.aiBrief === "string" ? editor.metadata.aiBrief : "";
+  const [draft, setDraft] = useState(saved);
+  const [status, setStatus] = useState("");
+  useEffect(() => { setDraft(saved); }, [saved]);
+  async function save() {
+    try {
+      await api("/api/editor/metadata", { method: "PATCH", body: { metadata: { aiBrief: draft.trim().slice(0, 2000) } } });
+      setStatus("Saved. Sent with every AI request for this project.");
+    } catch (error) {
+      setStatus(error?.message ?? String(error));
+    }
+  }
+  return (
+    <details className="ai-author-brief" data-testid="ai-author-brief">
+      <summary>Author brief {saved ? `· ${saved.length} characters` : "· not set"}</summary>
+      <p className="muted">World, tone, glossary, and content to avoid. Sent with every AI request as content (not as instructions). Never included in player builds.</p>
+      <textarea value={draft} maxLength={2000} rows={3} onChange={(event) => setDraft(event.target.value)} placeholder="e.g. Fog-bound port city, 1890s. Terse, ominous tone. 灯油 = lamp oil guild. Avoid gore." />
+      <div className="action-row">
+        <button className="btn btn--compact" type="button" disabled={draft.trim() === saved.trim()} onClick={() => void save()}>Save brief</button>
+        {status && <small className="muted">{status}</small>}
+      </div>
+    </details>
+  );
+}
+
+function AiCapabilityCard({ mode, usage = null, compact = false }) {
+  const rules = AI_CAPABILITY_RULES[mode] ?? AI_CAPABILITY_RULES.generate_cards;
+  return (
+    <details className={`ai-capability-card${compact ? " ai-capability-card--compact" : ""}`} data-testid="ai-capability-card" open={!compact}>
+      <summary>What this request can do</summary>
+      <ul>
+        {rules.map((rule) => <li key={rule}>{rule}</li>)}
+        {AI_CAPABILITY_COMMON.map((rule) => <li key={rule}>{rule}</li>)}
+        {usage && <li>AI requests this session: {usage.used}{usage.limit > 0 ? ` of ${usage.limit}` : " (no limit set)"}.</li>}
+      </ul>
+    </details>
+  );
+}
+
 function AiAssistPreflight({ request, aiConfigured, diagnostics, onChange, onClose, onBuild, onOpenPanel }) {
   const needsDiagnostics = request.mode === "repair_diagnostics";
   const canBuild = !needsDiagnostics || Boolean(diagnostics);
@@ -5520,6 +5597,14 @@ function AiAssistPreflight({ request, aiConfigured, diagnostics, onChange, onClo
             rows={5}
           />
         </label>
+        {request.selection && (
+          <div className="ai-selection-chip" data-testid="ai-selection-chip">
+            <span>Selection</span>
+            <strong>{request.selection.cardId ? `${request.selection.kind} · ${request.selection.cardId}` : request.selection.kind}</strong>
+            {request.selection.text && <q>{request.selection.text.slice(0, 140)}{request.selection.text.length > 140 ? "…" : ""}</q>}
+          </div>
+        )}
+        <AiCapabilityCard mode={request.mode} compact />
         {needsDiagnostics && !diagnostics && (
           <p className="ai-preflight__warning">Run Review before building repair proposals.</p>
         )}
@@ -5698,6 +5783,10 @@ function MaskCanvas({ sourceUri, protocol, onExport }) {
 
 function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAssistEnabled, aiConfigured, draftRequest, onBuildPlan, onApplyPlan, onOpen, imageSettings, imageCapabilities, imageConfigured, onStageImage, onRunImage, onApplyImage, onDiscardImage, projectKey = null }) {
   const [historyVersion, setHistoryVersion] = useState(0);
+  const [selection, setSelection] = useState(null);
+  const [requestSource, setRequestSource] = useState("AI Assist");
+  const [usage, setUsage] = useState(null);
+  const textAbortRef = useRef(null);
   const [mode, setMode] = useState("generate_cards");
   const [theme, setTheme] = useState(editor?.metadata?.title ?? "small court");
   const [style, setStyle] = useState("ink wash card art");
@@ -5735,6 +5824,11 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
   const canBuild = !requiresDiagnostics || Boolean(diagnostics);
   const selectedSet = useMemo(() => new Set(selected), [selected]);
 
+  async function refreshUsage() {
+    try { setUsage(await api("/api/ai/session-usage")); } catch { setUsage(null); }
+  }
+  useEffect(() => { void refreshUsage(); }, [historyVersion]);
+
   useEffect(() => {
     if (!targetCardId && cards[0]?.id) {
       setTargetCardId(cards[0].id);
@@ -5756,6 +5850,8 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
     setTargetCardId(draftRequest.targetCardId ?? "");
     setAssetId(draftRequest.assetId ?? "");
     setRepairTarget(draftRequest.repairTarget ?? null);
+    setSelection(draftRequest.selection ?? null);
+    setRequestSource(draftRequest.source ?? "AI Assist");
     if (draftRequest.cardCount) setCardCount(draftRequest.cardCount);
     if (draftRequest.theme) setTheme(draftRequest.theme);
     setPlan(null);
@@ -5865,7 +5961,11 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
       if (index !== undefined && event.stage !== "done") setProgressStep(index);
       setProgressDetail((current) => reduceAiProgressDetail(current, event));
     };
+    textAbortRef.current = new AbortController();
     const result = await onBuildPlan({
+      // An auto-built request (from preflight) carries its own selection and source; state may lag.
+      source: overrides ? overrides.source ?? "AI Assist" : requestSource,
+      ...((overrides ? overrides.selection : selection) ? { selection: overrides ? overrides.selection : selection } : {}),
       mode: nextMode,
       config: buildAiConnectorConfig(
         aiSettings,
@@ -5877,14 +5977,17 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
       assetId: nextAssetId || null,
       diagnostics: nextRequiresDiagnostics ? diagnostics : null,
       ...(nextRequiresDiagnostics && nextRepairTarget ? { repairTarget: nextRepairTarget } : {})
-    }, handleProgress);
-    if (nextRequiresDiagnostics) setHistoryVersion((version) => version + 1);
+    }, handleProgress, textAbortRef.current.signal);
+    textAbortRef.current = null;
+    setHistoryVersion((version) => version + 1);
     if (!result || result === true) {
       // Stop on the step that really failed (the server/loop reports error.stage).
       const failedStep = failedStage && AI_STAGE_TO_STEP[failedStage] !== undefined ? AI_STAGE_TO_STEP[failedStage] : null;
       if (failedStep !== null) setProgressStep(failedStep);
       setProgressStatus("failed");
-      setBuildError(failedMessage
+      setBuildError(/cancelled by the author/i.test(failedMessage)
+        ? "Cancelled. Nothing was sent after the cancel, and nothing changed."
+        : failedMessage
         ? `${failedStep !== null ? `Failed at the ${failedStep === 2 ? "Response" : AI_PROGRESS_STEPS[failedStep]} step: ` : ""}${failedMessage}. Edit the prompt or retry.`
         : "AI Assist draft failed. Check the status bar, edit the prompt, or retry.");
       setIsBuilding(false);
@@ -5964,6 +6067,7 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
         <div>
           <span>{aiAssistEnabled ? "Assist layer visible" : "Assist layer hidden"}</span>
           <strong>{aiConfigured ? aiSettings.modelId : "Local draft planner"}</strong>
+          {usage && <small data-testid="ai-session-usage">AI requests this session: {usage.used}{usage.limit > 0 ? ` / ${usage.limit}` : ""}</small>}
           <small>
             {aiConfigured
               ? `${aiSettings.protocol} · ${aiSettings.baseUrl}`
@@ -5977,8 +6081,17 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
           <span>{draftRequest.source ?? "Contextual action"}</span>
           <strong>{draftRequest.actionLabel}</strong>
           <small>{draftRequest.contextSummary ?? "Current project context"}</small>
+          {selection && (
+            <div className="ai-selection-chip" data-testid="ai-selection-chip">
+              <span>Selection</span>
+              <strong>{selection.cardId ? `${selection.kind} · ${selection.cardId}` : selection.kind}</strong>
+              {selection.text && <q>{selection.text.slice(0, 140)}{selection.text.length > 140 ? "…" : ""}</q>}
+              <button className="btn btn--ghost btn--compact" type="button" onClick={() => { setSelection(null); if (mode.endsWith("_selection")) setMode("generate_cards"); }}>Drop selection</button>
+            </div>
+          )}
         </div>
       )}
+      <AuthorBrief editor={editor} />
       <div className="ai-edit-layout">
         <div className="subsection ai-edit-controls">
           <h3>Request</h3>
@@ -5988,6 +6101,8 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
               <option value="repair_diagnostics">Repair review</option>
               {IMAGE_OPERATIONS.filter(([id]) => !imageCapabilities || imageCapabilities.operations.includes(id)).map(([id, label]) => <option key={id} value={id}>{label} image</option>)}
               <option value="analyze_asset">Analyze visual request</option>
+              {(mode === "explain_selection" || selection) && <option value="explain_selection">Explain selection</option>}
+              {(mode === "edit_selection" || selection?.cardId) && <option value="edit_selection">Edit selection</option>}
             </select>
             <input value={theme} onChange={(event) => setTheme(event.target.value)} placeholder="theme" />
             <input type="number" min="1" max={isImageMode ? imageCapabilities?.maxOutputs ?? 1 : 12} value={isImageMode ? Math.min(imageCount, imageCapabilities?.maxOutputs ?? 1) : cardCount} onChange={(event) => isImageMode ? setImageCount(Number(event.target.value)) : setCardCount(Number(event.target.value))} aria-label={isImageMode ? "Candidate count" : "Card count"} />
@@ -6024,6 +6139,7 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
             placeholder="Describe what the AI should draft, repair, generate, or inspect."
             rows={5}
           />
+          <AiCapabilityCard mode={mode} usage={usage} compact />
           <AiProgress step={progressStep} active={isBuilding} status={progressStatus} detail={progressDetail} />
           <RepairLoopProgress detail={progressDetail} active={isBuilding} status={progressStatus} estimate={waitEstimate} />
           <AiWaitEstimate detail={progressDetail} active={isBuilding} estimate={waitEstimate} />
@@ -6045,7 +6161,7 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
             </button>
             <button className="btn" onClick={() => onOpen("content")}>Content</button>
             <button className="btn" onClick={() => onOpen("review")}>Review</button>
-            {isBuilding && isImageMode && <button className="btn btn--danger" type="button" onClick={() => imageAbortRef.current?.abort()}>Cancel</button>}
+            {isBuilding && <button className="btn btn--danger" type="button" onClick={() => (isImageMode ? imageAbortRef.current : textAbortRef.current)?.abort()}>Cancel</button>}
           </div>
           {requiresDiagnostics && !diagnostics && (
             <p className="muted">Repair proposals use the latest Review result. Run Review first, then return here.</p>
@@ -6063,6 +6179,13 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
           </div>
           {plan?.request?.context?.bundle?.cardSelection && (
             <ContextCardSelection selection={plan.request.context.bundle.cardSelection} totalCards={plan.request.context.bundle.cardCount} />
+          )}
+          {plan?.request?.context && (
+            <p className="muted context-extras" data-testid="context-extras">
+              {plan.request.context.authorBrief ? `Author brief included (${plan.request.context.authorBrief.text.length} characters).` : "No author brief."}
+              {plan.request.context.selection?.focus ? ` Selection sent as content: ${plan.request.context.selection.focus.kind}${plan.request.context.selection.focus.cardId ? ` on ${plan.request.context.selection.focus.cardId}` : ""}.` : ""}
+              {(plan.request.context.constraints?.repairLoop?.previousAttempts ?? []).some((attempt) => attempt.earlierRun) ? " Includes blocked attempts from an earlier run on this issue." : ""}
+            </p>
           )}
           <pre className="output output--compact">
             {plan ? JSON.stringify(plan.request.context, null, 2) : "Build a plan to preview the AI context."}
@@ -6088,6 +6211,17 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
           </>
         ) : plan ? (
           <>
+            {plan.answer && (
+              <div className="ai-answer" data-testid="ai-answer">
+                <strong>{plan.mode === "explain_selection" ? "Explanation" : "Note from the AI"}</strong>
+                <p>{plan.answer}</p>
+              </div>
+            )}
+            {(plan.scopeRejected ?? []).length > 0 && (
+              <p className="ai-scope-rejected" data-testid="ai-scope-rejected">
+                Discarded {plan.scopeRejected.length} proposal{plan.scopeRejected.length === 1 ? "" : "s"} outside the selection: {plan.scopeRejected.map((entry) => `${entry.title || entry.id} (${entry.reason})`).join("; ")}.
+              </p>
+            )}
             <div className="action-row">
               <button className="btn" onClick={() => setSelected((plan.proposals ?? []).map((proposal) => proposal.id))}>Select all</button>
               <button className="btn" onClick={() => setSelected([])}>Clear</button>
@@ -6131,8 +6265,18 @@ const REPAIR_HISTORY_STATUS_LABELS = {
   verified: "Verified",
   unverified: "Not verified",
   not_verifiable: "Not scored",
-  failed: "Failed"
+  failed: "Failed",
+  cancelled: "Cancelled",
+  ready: "Draft ready"
 };
+const AI_ACTIVITY_KINDS = [
+  ["all", "All"],
+  ["repair_loop", "Repair loops"],
+  ["draft", "Drafts"],
+  ["selection", "Selection"],
+  ["image", "Images"]
+];
+const AI_ACTIVITY_KIND_LABELS = { repair_loop: "Repair loop", draft: "Draft", selection: "Selection", image: "Image" };
 
 function formatHistoryTime(value) {
   const date = new Date(value);
@@ -6163,6 +6307,7 @@ function RepairHistory({ refreshKey }) {
   const [details, setDetails] = useState({});
   const [error, setError] = useState("");
   const [compareIds, setCompareIds] = useState([]);
+  const [kindFilter, setKindFilter] = useState("all");
   // Each refresh/detail request is tagged; answers that arrive after a newer refresh (for
   // example from the previously open project) are ignored instead of overwriting the list.
   const requestSeqRef = useRef(0);
@@ -6227,6 +6372,21 @@ function RepairHistory({ refreshKey }) {
     await refresh();
   }
 
+  async function exportLog() {
+    try {
+      const snapshot = await api("/api/ai/repair-history?full=1");
+      const blob = new Blob([`${JSON.stringify(snapshot, null, 2)}\n`], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `ai-activity-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.json`;
+      link.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (caught) {
+      setError(caught?.message ?? String(caught));
+    }
+  }
+
   async function clearAll() {
     if (!window.confirm("Delete every repair history record for this project?")) return;
     await api("/api/ai/repair-history", { method: "DELETE" });
@@ -6234,14 +6394,25 @@ function RepairHistory({ refreshKey }) {
     await refresh();
   }
 
-  const list = records ?? [];
+  const allRecords = records ?? [];
+  const list = kindFilter === "all" ? allRecords : allRecords.filter((entry) => (entry.kind ?? "repair_loop") === kindFilter);
   return (
     <div className="subsection repair-history" data-testid="repair-history">
       <div className="repair-history__head">
-        <h3>Repair history</h3>
-        <span className="muted">{list.length} of 40 kept for this project · stored locally without keys</span>
-        {list.length > 0 && <button className="btn btn--ghost btn--compact" type="button" onClick={() => void clearAll()}>Clear history</button>}
+        <h3>AI activity</h3>
+        <span className="muted">{allRecords.length} of 60 kept for this project · every AI request · stored locally without keys</span>
+        {allRecords.length > 0 && <button className="btn btn--ghost btn--compact" type="button" onClick={() => void exportLog()}>Export log</button>}
+        {allRecords.length > 0 && <button className="btn btn--ghost btn--compact" type="button" onClick={() => void clearAll()}>Clear history</button>}
       </div>
+      {allRecords.length > 0 && (
+        <div className="repair-history__filters" role="group" aria-label="Filter AI activity">
+          {AI_ACTIVITY_KINDS.map(([id, label]) => (
+            <button key={id} type="button" className={kindFilter === id ? "story-group-chip story-group-chip--active" : "story-group-chip"} aria-pressed={kindFilter === id} onClick={() => setKindFilter(id)}>
+              {label} {id === "all" ? allRecords.length : allRecords.filter((entry) => (entry.kind ?? "repair_loop") === id).length}
+            </button>
+          ))}
+        </div>
+      )}
       {error && <p className="muted">{error}</p>}
       {records !== null && list.length === 0 && !error && (
         <p className="muted">No repair loops yet. Every Review repair you build is kept here, so you can replay its rounds later.</p>
@@ -6259,16 +6430,19 @@ function RepairHistory({ refreshKey }) {
                 </label>
                 <button className="repair-history__toggle" type="button" aria-expanded={expanded} onClick={() => void toggle(entry.id)}>
                   <span className="repair-history__time">{formatHistoryTime(entry.createdAt)}</span>
-                  <span className="repair-history__target">{formatHistoryTargets(entry.targets)}</span>
+                  <span className="repair-history__kind">{AI_ACTIVITY_KIND_LABELS[entry.kind ?? "repair_loop"] ?? entry.kind}{entry.source ? ` · ${entry.source}` : ""}</span>
+                  <span className="repair-history__target">{(entry.kind ?? "repair_loop") === "repair_loop" ? formatHistoryTargets(entry.targets) : (AI_MODE_LABELS[entry.mode] ?? entry.mode ?? "Request")}{(entry.kind ?? "repair_loop") !== "repair_loop" && entry.instruction ? ` — ${entry.instruction.slice(0, 60)}${entry.instruction.length > 60 ? "…" : ""}` : ""}</span>
                   <span className={`repair-status repair-status--${entry.status === "failed" ? "unverified" : entry.status}`}>{REPAIR_HISTORY_STATUS_LABELS[entry.status] ?? entry.status}</span>
-                  <span className="repair-history__meta">{entry.roundsUsed}{entry.maxRounds ? `/${entry.maxRounds}` : ""} round{entry.roundsUsed === 1 ? "" : "s"}</span>
-                  <span className="repair-history__meta">{Number.isFinite(before) ? `${before} → ${Number.isFinite(entry.bestScore) ? entry.bestScore : "–"}` : "–"}</span>
+                  {(entry.kind ?? "repair_loop") === "repair_loop" && <span className="repair-history__meta">{entry.roundsUsed}{entry.maxRounds ? `/${entry.maxRounds}` : ""} round{entry.roundsUsed === 1 ? "" : "s"}</span>}
+                  {(entry.kind ?? "repair_loop") === "repair_loop" && <span className="repair-history__meta">{Number.isFinite(before) ? `${before} → ${Number.isFinite(entry.bestScore) ? entry.bestScore : "–"}` : "–"}</span>}
                   <span className="repair-history__meta">{formatHistoryOutcome(entry)}</span>
                   <span className="repair-history__chevron" aria-hidden="true">{expanded ? "Hide ⌃" : "Replay ⌄"}</span>
                 </button>
                 {expanded && (
                   details[entry.id]
-                    ? <RepairHistoryDetail record={details[entry.id]} onDelete={() => void remove(entry.id)} />
+                    ? ((details[entry.id].kind ?? "repair_loop") === "repair_loop"
+                      ? <RepairHistoryDetail record={details[entry.id]} onDelete={() => void remove(entry.id)} />
+                      : <AiActivityDetail record={details[entry.id]} onDelete={() => void remove(entry.id)} />)
                     : <p className="muted repair-history__loading">Loading record...</p>
                 )}
               </li>
@@ -6335,6 +6509,46 @@ function RepairHistoryCompare({ left, right, onClose }) {
           })}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+function AiActivityDetail({ record, onDelete }) {
+  const applied = record.appliedProposalIds ?? [];
+  const titles = new Map((record.finalProposals ?? []).map((proposal) => [proposal.id, proposal.title]));
+  return (
+    <div className="repair-history__detail" data-testid="ai-activity-detail">
+      <dl className="repair-history__facts">
+        <div><dt>Started</dt><dd>{formatHistoryTime(record.createdAt)}</dd></div>
+        <div><dt>Request</dt><dd>{AI_ACTIVITY_KIND_LABELS[record.kind] ?? record.kind}{record.source ? ` · ${record.source}` : ""}</dd></div>
+        <div><dt>Mode</dt><dd>{AI_MODE_LABELS[record.mode] ?? record.mode ?? "–"}</dd></div>
+        <div><dt>Model</dt><dd>{record.endpoint === "local_rules" ? "Local rules" : record.model || "Configured endpoint"}</dd></div>
+        <div><dt>Duration</dt><dd>{Number.isFinite(record.durationMs) ? `${(record.durationMs / 1000).toFixed(1)}s` : "–"}</dd></div>
+      </dl>
+      {record.instruction && <p className="repair-history__instruction">“{record.instruction}”</p>}
+      {record.selection && <p className="repair-history__agent">Selection: {record.selection.kind}{record.selection.cardId ? ` on ${record.selection.cardId}` : ""}{record.selection.text ? ` — “${record.selection.text.slice(0, 160)}”` : ""}</p>}
+      {record.status === "failed" && <p className="repair-history__error">Failed{record.error?.stage ? ` at ${record.error.stage}` : ""}: {record.error?.message}</p>}
+      {record.status === "cancelled" && <p className="repair-history__stop">Cancelled by the author.</p>}
+      {record.contextSelection && <ContextCardSelection selection={record.contextSelection} totalCards={(record.contextSelection.included ?? 0) + (record.contextSelection.omitted ?? 0)} />}
+      {record.answer && <div className="ai-answer"><strong>Answer</strong><p>{record.answer}</p></div>}
+      {record.image && <p className="repair-history__agent">Image {record.image.operation}: {record.image.outputs} candidate{record.image.outputs === 1 ? "" : "s"}.</p>}
+      {(record.finalProposals ?? []).length > 0 && (
+        <ul className="repair-history__proposals">
+          {record.finalProposals.map((proposal) => (
+            <li key={proposal.id} className="repair-history__proposal repair-history__proposal--passed">
+              <div className="repair-history__proposal-head"><strong>{proposal.title || proposal.id}</strong><span>{proposal.patchCount} patch{proposal.patchCount === 1 ? "" : "es"}</span></div>
+              {proposal.summary && <p>{proposal.summary}</p>}
+            </li>
+          ))}
+        </ul>
+      )}
+      {(record.scopeRejected ?? []).length > 0 && <p className="ai-scope-rejected">Discarded outside the selection: {record.scopeRejected.map((entry) => `${entry.title || entry.id} (${entry.reason})`).join("; ")}.</p>}
+      <RepairConversation entries={record.conversation ?? []} truncated={record.conversationTruncated} />
+      <div className="repair-history__final">
+        <strong>Author's choice</strong>
+        <span>{record.outcome === "applied" ? `Applied ${applied.map((id) => titles.get(id) ?? id).join(", ") || "nothing"}${record.appliedAt ? ` on ${formatHistoryTime(record.appliedAt)}` : ""}.` : record.status === "ready" ? "Not applied." : "Nothing to apply."}</span>
+        <button className="btn btn--ghost btn--compact" type="button" onClick={onDelete}>Delete record</button>
+      </div>
     </div>
   );
 }
@@ -7120,12 +7334,25 @@ function SettingsPanel({ editor, aiSettings, apiKey, apiKeySaved, locale, locale
                   className={normalizedAiSettings.capabilities?.[id] ? "capability-chip capability-chip--active" : "capability-chip"}
                   type="button"
                   onClick={() => toggleCapability(id)}
+                  title={AI_CAPABILITIES_IN_USE.has(id) ? undefined : "Declared only: ReignsAgent does not use this capability yet."}
                 >
-                  {label}
+                  {label}{AI_CAPABILITIES_IN_USE.has(id) ? "" : " · not used yet"}
                 </button>
               ))}
             </div>
+            <small className="muted">Only Structured JSON changes what ReignsAgent sends today. The other flags describe the endpoint and are not used yet.</small>
           </div>
+          <label className="ai-form-row ai-form-row--stack" data-testid="ai-session-limit">
+            <span className="ai-field-label">AI requests per session</span>
+            <input
+              type="number"
+              min="0"
+              max="1000"
+              value={normalizedAiSettings.sessionRequestLimit}
+              onChange={(event) => onAiSettingsChange({ ...normalizedAiSettings, sessionRequestLimit: Number(event.target.value) })}
+            />
+            <small className="muted">Counts every request sent to your endpoints (drafts, repair rounds, validation, model lists, images). 0 = no limit. Resets when the Creator restarts.</small>
+          </label>
         </div>
         <details className="ai-advanced">
           <summary>
@@ -7187,8 +7414,9 @@ function SettingsPanel({ editor, aiSettings, apiKey, apiKeySaved, locale, locale
   );
 }
 
-function AiAmbientLayer({ activePanelLabel, graphSelection, onAction }) {
-  const [phase, setPhase] = useState("loading");
+function AiAmbientLayer({ activePanelLabel, graphSelection, onAction, contextStatus = null }) {
+  // No artificial loading delay: the layer is ready at once and states what the AI will see.
+  const [phase, setPhase] = useState("ready");
   const [selection, setSelection] = useState(null);
   const [expanded, setExpanded] = useState(false);
   const [pinned, setPinned] = useState(false);
@@ -7198,11 +7426,6 @@ function AiAmbientLayer({ activePanelLabel, graphSelection, onAction }) {
   const borderCanvasRef = useRef(null);
   const dragRef = useRef(null);
 
-  useEffect(() => {
-    setPhase("loading");
-    const timer = window.setTimeout(() => setPhase("ready"), 920);
-    return () => window.clearTimeout(timer);
-  }, []);
 
   useEffect(() => {
     if (phase !== "ready") return undefined;
@@ -7622,6 +7845,14 @@ function AiAmbientLayer({ activePanelLabel, graphSelection, onAction }) {
       <div className="ai-ambient__frame" aria-hidden="true">
         <canvas ref={borderCanvasRef} className="ai-ambient__border-canvas" />
       </div>
+      {contextStatus && (
+        <div className="ai-ambient__status" role="status" data-testid="ai-ambient-status">
+          {contextStatus.configured ? `AI ready · ${contextStatus.modelId || "configured endpoint"}` : "Local planner · no endpoint configured"}
+          {` · ${contextStatus.cardCount} card${contextStatus.cardCount === 1 ? "" : "s"}`}
+          {contextStatus.reviewScore !== null ? ` · review ${contextStatus.reviewScore}/100` : " · review not run"}
+          {" · select text or a card to act on it"}
+        </div>
+      )}
       {phase === "loading" && (
         <div className="ai-ambient__loading" role="status">
           <span />

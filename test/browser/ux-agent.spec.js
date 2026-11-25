@@ -145,3 +145,38 @@ test("keeps short metric values in the repair popover on one line", async ({ pag
     expect(lines).toBeLessThanOrEqual(words);
   }
 });
+
+test("explains a selected card through the AI layer and logs it as selection activity", async ({ page }) => {
+  await openHosted(page, "workbench/content?ai=1");
+  await expect(page.getByTestId("ai-ambient-status")).toContainText(/Local planner · no endpoint configured · \d+ cards/);
+  const card = page.locator(".card-switcher__item").nth(1);
+  const cardId = await card.getAttribute("data-ai-card-id");
+  await card.click();
+  await page.locator(".ai-selection-handle").click();
+  await page.getByRole("button", { name: "Explain", exact: true }).click();
+  const preflight = page.getByRole("dialog", { name: "AI Assist preflight" });
+  await expect(preflight.getByTestId("ai-selection-chip")).toContainText(cardId);
+  await expect(preflight.getByTestId("ai-capability-card")).toContainText("What this request can do");
+  await preflight.getByRole("button", { name: "Build draft" }).click();
+  await expect(page.getByTestId("ai-answer")).toContainText(`Card ${cardId} appears`);
+  await expect(page.getByTestId("context-extras")).toContainText(`Selection sent as content: card on ${cardId}`);
+
+  const activity = page.getByTestId("repair-history");
+  await activity.getByRole("button", { name: /^Selection 1/ }).click();
+  await activity.getByTestId("repair-history-item").first().locator(".repair-history__toggle").click();
+  await expect(page.getByTestId("ai-activity-detail")).toContainText(`Selection: card on ${cardId}`);
+  await expect(activity.getByRole("button", { name: "Export log" })).toBeVisible();
+  await expect(page.getByTestId("ai-session-usage")).toContainText("AI requests this session: 0");
+});
+
+test("saves an author brief that is sent with requests", async ({ page }) => {
+  await openHosted(page, "workbench/ai-edit");
+  const brief = page.getByTestId("ai-author-brief");
+  await brief.locator("summary").click();
+  await brief.locator("textarea").fill("Fog-bound port, terse tone.");
+  await brief.getByRole("button", { name: "Save brief" }).click();
+  await expect(brief).toContainText("Saved.");
+  await page.locator("textarea[placeholder^='Describe what the AI']").fill("Draft one card.");
+  await page.getByRole("button", { name: "Build draft" }).first().click();
+  await expect(page.getByTestId("context-extras")).toContainText("Author brief included (27 characters)");
+});

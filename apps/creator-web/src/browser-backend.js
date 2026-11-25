@@ -3,7 +3,7 @@ import fogHarborBundle from "../../../fixtures/content/fog-harbor.cards.json";
 
 const BUNDLED_SAMPLES = { "oss-court": sampleBundle, "fog-harbor": fogHarborBundle };
 import {
-  applyAiEditPlan, applyImageDraftAsset, buildAiEditPlanAsync, buildVerifiedRepairPlan, createRepairHistoryRecord, markRepairHistoryApplied, buildImageOperationDraft, buildGenerationPlan, createConnectorConfig, createPlaySession,
+  applyAiEditPlan, applyImageDraftAsset, buildAiEditPlanAsync, buildVerifiedRepairPlan, createAiActivityRecord, createRepairHistoryRecord, markRepairHistoryApplied, buildImageOperationDraft, buildGenerationPlan, createConnectorConfig, createPlaySession,
   deriveStoryGroups, deriveTagCatalog, getCardGraph, listAiEditEndpointModels, loadEditorFromContent,
   prepareGameBuild, projectFactionGauges, summarizeDiagnostics, summarizeFeedback,
   inspectImageEndpointConfig, validateAiEditEndpointConfig, validatePlayerCards
@@ -14,7 +14,7 @@ import { corsFetch } from "./cors-fetch.js";
 
 export class BrowserCreatorBackend {
   static async create(options = {}) { const workspace = await createOpfsWorkspaceStore({ initialBundle: sampleBundle, ...options }); return new BrowserCreatorBackend(workspace, await workspace.readActiveBundle()); }
-  constructor(workspace, bundle) { this.workspace = workspace; this.editor = loadEditorFromContent(bundle); this.sessions = new Map(); this.imageDrafts = new Map(); this.assetUrls = new Map(); this.lastDiagnostics = null; }
+  constructor(workspace, bundle) { this.workspace = workspace; this.editor = loadEditorFromContent(bundle); this.sessions = new Map(); this.imageDrafts = new Map(); this.assetUrls = new Map(); this.lastDiagnostics = null; this.aiRequestsUsed = 0; }
   async request(path, options = {}) {
     try { return await this.#dispatch(path, options.method ?? "GET", options.body ?? null, options); }
     catch (error) { if (error?.code) throw error; throw backendError(error?.message ?? String(error), "browser_backend_error"); }
@@ -59,10 +59,12 @@ export class BrowserCreatorBackend {
     if (path === "/api/diagnostics/feedback" && method === "POST") return summarizeFeedback(body?.report ?? body);
     if (path === "/api/diagnostics/project" && method === "POST") return summarizeDiagnostics(body?.report ?? body);
     if (path === "/api/connector/plan" && method === "POST") return buildGenerationPlan({ config: createConnectorConfig(body?.config ?? body), diagnostics: body?.diagnostics ?? null });
-    if (path === "/api/ai/edit/plan" && method === "POST") { const diagnostics = body?.diagnostics ?? (body?.mode === "repair_diagnostics" ? this.lastDiagnostics : null); if (body?.mode === "repair_diagnostics" && !diagnostics) throw backendError("Run Review before building repair proposals", "diagnostics_required"); if (body?.mode === "repair_diagnostics" && body?.verify !== false) { const credentials = await this.#credentials(body?.credentials); const projectId = (await this.workspace.getConfig()).activeProjectId; let plan; try { plan = await this.#runRepairLoop({ config: body?.config ?? {}, credentials, instruction: body?.instruction ?? "", targetCardId: body?.targetCardId ?? null, repairTarget: body?.repairTarget ?? null, diagnostics }, options.onProgress); } catch (error) { await this.#recordRepairHistory({ error, body, credentials, projectId }); throw error; } const historyId = await this.#recordRepairHistory({ plan, body, credentials, projectId }); return historyId ? { ...plan, historyId } : plan; } return buildAiEditPlanAsync({ editor: this.editor, config: body?.config ?? {}, credentials: await this.#credentials(body?.credentials), mode: body?.mode ?? "generate_cards", instruction: body?.instruction ?? "", targetCardId: body?.targetCardId ?? null, assetId: body?.assetId ?? null, diagnostics, fetchImpl: corsFetch, onProgress: progressObserver(options.onProgress) }); }
-    if (path === "/api/ai/edit/validate" && method === "POST") return validateAiEditEndpointConfig({ editor: this.editor, config: body?.config ?? {}, credentials: await this.#credentials(body?.credentials), fetchImpl: corsFetch });
-    if (path === "/api/ai/edit/models" && method === "POST") return listAiEditEndpointModels({ config: body?.config ?? {}, credentials: await this.#credentials(body?.credentials), fetchImpl: corsFetch });
+    if (path === "/api/ai/edit/plan" && method === "POST") return this.#buildPlan(body, options);
+    if (path === "/api/ai/edit/validate" && method === "POST") return validateAiEditEndpointConfig({ editor: this.editor, config: body?.config ?? {}, credentials: await this.#credentials(body?.credentials), fetchImpl: await this.#countedFetch() });
+    if (path === "/api/ai/edit/models" && method === "POST") return listAiEditEndpointModels({ config: body?.config ?? {}, credentials: await this.#credentials(body?.credentials), fetchImpl: await this.#countedFetch() });
     if (path === "/api/ai/repair-history" && method === "GET") return { records: await this.workspace.listRepairHistory() };
+    if (path === "/api/ai/repair-history?full=1" && method === "GET") { const records = []; for (const entry of await this.workspace.listRepairHistory()) records.push(await this.workspace.readRepairHistoryRecord(entry.id)); return { exportedAt: new Date().toISOString(), records }; }
+    if (path === "/api/ai/session-usage" && method === "GET") { const limit = (await this.workspace.getConfig()).ai.sessionRequestLimit ?? 0; return { used: this.aiRequestsUsed, limit, remaining: limit > 0 ? Math.max(0, limit - this.aiRequestsUsed) : null }; }
     if (path === "/api/ai/repair-history" && method === "DELETE") return this.workspace.clearRepairHistory();
     const historyRoute = path.match(/^\/api\/ai\/repair-history\/([^/]+)$/);
     if (historyRoute && method === "GET") return { record: await this.workspace.readRepairHistoryRecord(decodeURIComponent(historyRoute[1])) };
@@ -78,7 +80,11 @@ export class BrowserCreatorBackend {
       let aggregateBytes = 0;
       for (const uri of [...new Set(request.references ?? [])]) { const bytes = await this.workspace.readActiveProjectAsset(uri); if (!bytes) throw backendError(`Project image '${uri}' was not found`, "image_input_not_found"); aggregateBytes += bytes.byteLength; if (aggregateBytes > 50 * 1024 * 1024) throw backendError("Image inputs exceed the 50 MiB request limit", "image_input_limit"); inputs.push({ id: uri, name: uri.split("/").at(-1), bytes, role: "reference" }); }
       if (request.mask) { const bytes = await this.workspace.readActiveProjectAsset(request.mask); if (!bytes) throw backendError(`Project image '${request.mask}' was not found`, "image_input_not_found"); aggregateBytes += bytes.byteLength; if (aggregateBytes > 50 * 1024 * 1024) throw backendError("Image inputs exceed the 50 MiB request limit", "image_input_limit"); inputs.push({ id: request.mask, name: request.mask.split("/").at(-1), bytes, role: "mask" }); }
-      const generated = await buildImageOperationDraft({ editor: this.editor, config: body?.config ?? {}, credentials: await this.#imageCredentials(body?.credentials, body?.config), request, inputs, fetchImpl: corsFetch, signal: options.signal });
+      const imageStartedAt = Date.now(); const projectId = (await this.workspace.getConfig()).activeProjectId; const imageCredentials = await this.#imageCredentials(body?.credentials, body?.config);
+      let generated;
+      try { generated = await buildImageOperationDraft({ editor: this.editor, config: body?.config ?? {}, credentials: imageCredentials, request, inputs, fetchImpl: await this.#countedFetch(), signal: options.signal }); }
+      catch (error) { await this.#recordActivity({ kind: "image", error: options.signal?.aborted ? Object.assign(error, { code: "ai_cancelled" }) : error, image: { operation: request.operation, prompt: request.prompt, model: body?.config?.modelId }, body: { source: "AI Assist" }, credentials: imageCredentials, projectId, durationMs: Date.now() - imageStartedAt }); throw error; }
+      await this.#recordActivity({ kind: "image", image: { operation: generated.operation ?? request.operation, prompt: request.prompt, model: generated.provider?.model ?? body?.config?.modelId, outputs: generated.outputs?.length ?? 0 }, body: { source: "AI Assist" }, credentials: imageCredentials, projectId, durationMs: Date.now() - imageStartedAt });
       const outputs = [];
       for (const [index, output] of generated.outputs.entries()) { const extension = output.mimeType === "image/jpeg" ? "jpg" : output.mimeType.split("/")[1]; const staged = await this.workspace.stageActiveProjectAsset({ draftId, fileName: `output-${index + 1}.${extension}`, bytes: output.bytes, mimeType: output.mimeType }); outputs.push({ id: `output-${index + 1}`, ...staged, previewUrl: await this.assetUrl(staged.uri) }); }
       const draft = { ...generated, draftId, outputs, inputDraftIds }; this.imageDrafts.set(draftId, draft); return draft;
@@ -92,20 +98,79 @@ export class BrowserCreatorBackend {
     if (path === "/api/build/export" && method === "POST") { const { downloadPlayerZip } = await import("./browser-build.js"); const result = await downloadPlayerZip({ editor: this.editor, config: body?.config ?? null, buildId: body?.buildId ?? null, assetReader: (uri) => this.workspace.readActiveProjectAsset(uri) }); return { exported: true, outputPath: result.fileName, buildId: result.buildId, downloaded: true }; }
     throw backendError(`Unknown API route: ${method} ${path}`, "route_not_found");
   }
+  async #buildPlan(body, options = {}) {
+    const mode = body?.mode ?? "generate_cards";
+    const diagnostics = body?.diagnostics ?? (mode === "repair_diagnostics" ? this.lastDiagnostics : null);
+    if (mode === "repair_diagnostics" && !diagnostics) throw backendError("Run Review before building repair proposals", "diagnostics_required");
+    const credentials = await this.#credentials(body?.credentials);
+    const projectId = (await this.workspace.getConfig()).activeProjectId;
+    const isRepairLoop = mode === "repair_diagnostics" && body?.verify !== false;
+    const startedAt = Date.now();
+    const record = (outcome) => isRepairLoop
+      ? this.#recordRepairHistory({ ...outcome, body, credentials, projectId })
+      : this.#recordActivity({ ...outcome, kind: body?.selection ? "selection" : "draft", body, credentials, projectId, durationMs: Date.now() - startedAt });
+    let plan;
+    try {
+      plan = isRepairLoop
+        ? await this.#runRepairLoop({ config: body?.config ?? {}, credentials, instruction: body?.instruction ?? "", targetCardId: body?.targetCardId ?? null, repairTarget: body?.repairTarget ?? null, diagnostics, priorAttempts: await this.#priorRepairAttempts(body?.repairTarget) }, options.onProgress, options.signal)
+        : await buildAiEditPlanAsync({ editor: this.editor, config: body?.config ?? {}, credentials, mode, instruction: body?.instruction ?? "", targetCardId: body?.targetCardId ?? null, assetId: body?.assetId ?? null, diagnostics, fetchImpl: await this.#countedFetch(), onProgress: progressObserver(options.onProgress), selection: body?.selection ?? null, signal: options.signal ?? null });
+    } catch (error) {
+      await record({ error });
+      throw error;
+    }
+    const historyId = await record({ plan });
+    return historyId ? { ...plan, historyId } : plan;
+  }
+  async #countedFetch() {
+    const limit = (await this.workspace.getConfig()).ai.sessionRequestLimit ?? 0;
+    return async (input, init) => {
+      if (limit > 0 && this.aiRequestsUsed >= limit) throw backendError(`This Creator session reached its AI request limit (${limit}). Raise it in Settings or reload the page.`, "ai_session_budget");
+      this.aiRequestsUsed += 1;
+      return corsFetch(input, init);
+    };
+  }
+  async #priorRepairAttempts(repairTarget) {
+    if (!repairTarget?.code) return [];
+    try {
+      const wanted = new Set((Array.isArray(repairTarget.cardIds) ? repairTarget.cardIds : []).map((cardId) => `card:${cardId}`));
+      const matches = (await this.workspace.listRepairHistory()).filter((entry) => entry.kind === "repair_loop" && entry.targets.some((target) => target.code === repairTarget.code && (wanted.size === 0 || wanted.has(target.entity)))).slice(0, 2);
+      const attempts = [];
+      for (const entry of matches) {
+        const stored = await this.workspace.readRepairHistoryRecord(entry.id);
+        for (const round of stored.rounds ?? []) for (const proposal of round.proposals ?? []) if (!proposal.passed && attempts.length < 4) attempts.push({ proposalId: proposal.id, title: proposal.title, failedChecks: (proposal.failedDetails ?? []).length ? proposal.failedDetails : (proposal.failedChecks ?? []).map((id) => ({ id })) });
+      }
+      return attempts;
+    } catch {
+      return [];
+    }
+  }
+  async #recordActivity({ kind, plan = null, error = null, image = null, body = {}, credentials = {}, projectId = null, durationMs = null }) {
+    try {
+      const record = createAiActivityRecord({ kind, plan, error, image, request: { source: body?.source, mode: body?.mode, instruction: body?.instruction, selection: body?.selection }, id: `rh-${Date.now().toString(36)}-${crypto.randomUUID().slice(0, 8)}`, durationMs, secrets: [credentials?.apiKey] });
+      return (await this.workspace.appendRepairHistoryRecord(record, { projectId })).record.id;
+    } catch {
+      return null; // The activity log never breaks drafting.
+    }
+  }
   // The verified repair loop runs in a worker; the page only checks for edits made meanwhile.
-  async #runRepairLoop(input, onProgress = null) {
+  async #runRepairLoop(input, onProgress = null, signal = null) {
     const bundle = this.editor.toBundle();
     const startedJson = JSON.stringify(bundle);
     let plan;
     if (typeof Worker === "function") {
+      const limit = (await this.workspace.getConfig()).ai.sessionRequestLimit ?? 0;
       plan = await new Promise((resolve, reject) => {
+        if (signal?.aborted) { reject(backendError("AI request cancelled by the author", "ai_cancelled")); return; }
         const worker = new Worker(new URL("./repair-worker.js", import.meta.url), { type: "module" });
+        // Cancel terminates the worker: the model call and scoring stop immediately.
+        signal?.addEventListener("abort", () => { worker.terminate(); if (this.repairWorker === worker) this.repairWorker = null; reject(backendError("AI request cancelled by the author", "ai_cancelled")); }, { once: true });
         this.repairWorker = worker;
         const id = crypto.randomUUID();
         const finish = () => { worker.terminate(); if (this.repairWorker === worker) this.repairWorker = null; };
         worker.addEventListener("message", (event) => {
           if (event.data?.id !== id) return;
           if (event.data.type === "progress") { progressObserver(onProgress)?.(event.data.event); return; }
+          if (event.data.type === "request") { this.aiRequestsUsed += 1; return; }
           finish();
           if (event.data.type === "result") resolve(event.data.result);
           else {
@@ -115,10 +180,10 @@ export class BrowserCreatorBackend {
           }
         });
         worker.addEventListener("error", (event) => { finish(); reject(backendError(event.message || "Repair worker failed", "ai_repair_worker_failed")); });
-        worker.postMessage({ id, input: { ...input, bundle } });
+        worker.postMessage({ id, input: { ...input, bundle, requestBudget: limit > 0 ? Math.max(0, limit - this.aiRequestsUsed) : null } });
       });
     } else {
-      plan = await buildVerifiedRepairPlan({ editor: this.editor, getEditor: () => this.editor, ...input, fetchImpl: corsFetch, onProgress: progressObserver(onProgress) });
+      plan = await buildVerifiedRepairPlan({ editor: this.editor, getEditor: () => this.editor, ...input, fetchImpl: await this.#countedFetch(), onProgress: progressObserver(onProgress), signal });
     }
     if (JSON.stringify(this.editor.toBundle()) !== startedJson) {
       // Keep the finished rounds for History even though the draft can no longer be applied.

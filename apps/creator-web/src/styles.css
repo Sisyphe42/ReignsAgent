@@ -9410,3 +9410,136 @@ summary:focus-visible {
     padding-right: 12px;
   }
 }
+
+/* Agent context, log, and boundaries. */
+.ai-capability-card {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  font-size: 0.78rem;
+}
+
+.ai-capability-card > summary {
+  cursor: pointer;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.ai-capability-card ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  color: var(--ink);
+}
+
+.ai-selection-chip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  margin: 6px 0;
+  padding: 6px 8px;
+  border: 1px dashed color-mix(in srgb, var(--accent) 55%, var(--border));
+  border-radius: var(--radius);
+  font-size: 0.78rem;
+}
+
+.ai-selection-chip > span {
+  color: var(--muted);
+  font-family: var(--font-data);
+  font-size: 0.7rem;
+}
+
+.ai-selection-chip q {
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.ai-answer {
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border-left: 3px solid var(--accent);
+  background: var(--surface);
+}
+
+.ai-answer p {
+  margin: 4px 0 0;
+  white-space: pre-wrap;
+}
+
+.ai-scope-rejected {
+  color: var(--ink);
+  font-size: 0.8rem;
+}
+
+.ai-author-brief {
+  margin: 10px 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.ai-author-brief > summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.ai-author-brief textarea {
+  width: 100%;
+  margin-top: 6px;
+}
+
+.ai-ambient__status {
+  position: fixed;
+  left: 50%;
+  bottom: 14px;
+  z-index: 40;
+  max-width: calc(100vw - 32px);
+  padding: 5px 12px;
+  transform: translateX(-50%);
+  color: var(--ink);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: 0 6px 18px var(--shadow);
+  font-family: var(--font-data);
+  font-size: 0.7rem;
+  pointer-events: none;
+}
+
+.repair-history__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.repair-history__kind {
+  color: var(--muted);
+  font-family: var(--font-data);
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+.context-extras {
+  margin: 0 0 10px;
+  font-size: 0.78rem;
+}
+
+:root[data-skin="phantom"] .ai-ambient__status {
+  color: #09090a;
+  background: #f7f2e9;
+  border-color: #09090a;
+}
+
+:root[data-skin="phantom"] :is(.ai-capability-card, .ai-author-brief, .ai-answer, .ai-selection-chip),
+:root[data-skin="phantom"] :is(.ai-capability-card, .ai-author-brief, .ai-answer, .ai-selection-chip) :is(li, p, strong, q, summary) {
+  color: #09090a;
+}
+
+:root[data-skin="phantom"] :is(.ai-capability-card, .ai-author-brief, .ai-answer, .ai-selection-chip) {
+  background: #f7f2e9;
+  border-color: #09090a;
+}
