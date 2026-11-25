@@ -162,8 +162,12 @@ export class BrowserCreatorBackend {
       plan = await new Promise((resolve, reject) => {
         if (signal?.aborted) { reject(backendError("AI request cancelled by the author", "ai_cancelled")); return; }
         const worker = new Worker(new URL("./repair-worker.js", import.meta.url), { type: "module" });
-        // Cancel terminates the worker: the model call and scoring stop immediately.
-        signal?.addEventListener("abort", () => { worker.terminate(); if (this.repairWorker === worker) this.repairWorker = null; reject(backendError("AI request cancelled by the author", "ai_cancelled")); }, { once: true });
+        // Ask the worker to cancel so it returns the rounds it already ran; terminate only if it
+        // does not answer within 2 s.
+        signal?.addEventListener("abort", () => {
+          worker.postMessage({ type: "cancel", id });
+          window.setTimeout(() => { worker.terminate(); if (this.repairWorker === worker) this.repairWorker = null; reject(backendError("AI request cancelled by the author", "ai_cancelled")); }, 2000);
+        }, { once: true });
         this.repairWorker = worker;
         const id = crypto.randomUUID();
         const finish = () => { worker.terminate(); if (this.repairWorker === worker) this.repairWorker = null; };
