@@ -1165,6 +1165,18 @@ function App() {
   const [deviceLocale, setDeviceLocale] = useState(readDeviceUiLocale);
   const [railCollapsed, setRailCollapsed] = useState(readRailCollapsed);
   const [railPinned, setRailPinned] = useState(readRailPinned);
+  const railRef = useRef(null);
+  // On narrow screens the rail is a horizontal tab strip: keep the active tab in view. Only the
+  // strip scrolls (never the page), and only when the tab is outside it.
+  useEffect(() => {
+    const rail = railRef.current;
+    if (!rail || rail.scrollWidth <= rail.clientWidth + 1) return;
+    const active = rail.querySelector(".rail__item--active");
+    if (!active) return;
+    const railBox = rail.getBoundingClientRect();
+    const box = active.getBoundingClientRect();
+    if (box.left < railBox.left || box.right > railBox.right) rail.scrollLeft += box.left - railBox.left - 12;
+  }, [activePanel]);
   const [aiAssistEnabled, setAiAssistEnabled] = useState(() => initialUrlState.aiAssist ?? false);
   const [aiSettings, setAiSettings] = useState(() => defaultAiSettings());
   const [aiApiKey, setAiApiKey] = useState("");
@@ -1915,7 +1927,7 @@ function App() {
       </header>
 
       <div className={`workspace ${railPinned ? "workspace--rail-pinned" : "workspace--rail-floating"} ${railCollapsed ? "workspace--rail-collapsed" : "workspace--rail-expanded"}`}>
-        <nav className="rail" aria-label="Creator panels">
+        <nav className="rail" aria-label="Creator panels" ref={railRef}>
           {PANELS.map(({ id, label }, index) => (
             <button
               key={id}

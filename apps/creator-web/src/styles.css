@@ -9620,3 +9620,77 @@ summary:focus-visible {
 :root[data-skin="phantom"] .panel :is(input, textarea)::placeholder {
   color: #c8c1b5;
 }
+
+/* Narrow screens (<= 800 px): the rail is a horizontally scrolling tab strip. Each tab is sized to
+   its icon, full label, and state badge, so a label is never cut to "O…" or "Cont…"; the strip
+   scrolls sideways and the page never does. Declared last, with skin-proof specificity, because
+   several skins (Phantom especially) pin the tab width and clip the label for the vertical rail. */
+@media (max-width: 800px) {
+  .workspace .rail,
+  :root[data-skin] .workspace .rail {
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    max-width: 100%;
+    height: auto;
+    padding: 8px 12px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    scroll-padding-inline: 12px;
+    scroll-snap-type: x proximity;
+    scrollbar-width: thin;
+  }
+
+  .workspace .rail .rail__item,
+  :root[data-skin] .workspace .rail .rail__item {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 8px;
+    width: auto;
+    min-width: max-content;
+    max-width: none;
+    height: 44px;
+    min-height: 44px;
+    max-height: 44px;
+    padding: 6px 12px 6px 10px;
+    scroll-snap-align: start;
+  }
+
+  .workspace .rail .rail__item > .rail__icon,
+  :root[data-skin] .workspace .rail .rail__item > .rail__icon {
+    position: static;
+    inset: auto;
+    flex: 0 0 auto;
+    width: 20px;
+    height: 20px;
+    transform: none;
+  }
+
+  .workspace .rail .rail__meta {
+    display: none;
+  }
+
+  .workspace .rail .rail__label,
+  :root[data-skin] .workspace .rail .rail__label {
+    display: block;
+    width: auto;
+    max-width: none;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: nowrap;
+    visibility: visible;
+    opacity: 1;
+  }
+
+  .workspace .rail .rail__item small,
+  :root[data-skin] .workspace .rail .rail__item small {
+    display: inline-block;
+    padding: 1px 5px;
+    font-size: 0.62rem;
+    visibility: visible;
+    opacity: 1;
+  }
+}
