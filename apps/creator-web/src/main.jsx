@@ -6163,13 +6163,19 @@ function RepairHistory({ refreshKey }) {
   const [details, setDetails] = useState({});
   const [error, setError] = useState("");
   const [compareIds, setCompareIds] = useState([]);
+  // Each refresh/detail request is tagged; answers that arrive after a newer refresh (for
+  // example from the previously open project) are ignored instead of overwriting the list.
+  const requestSeqRef = useRef(0);
 
   async function refresh() {
+    const seq = ++requestSeqRef.current;
     try {
       const result = await api("/api/ai/repair-history");
+      if (seq !== requestSeqRef.current) return;
       setRecords(result.records ?? []);
       setError("");
     } catch (caught) {
+      if (seq !== requestSeqRef.current) return;
       setRecords([]);
       setError(caught?.message ?? String(caught));
     }
@@ -6183,7 +6189,9 @@ function RepairHistory({ refreshKey }) {
 
   async function ensureDetail(id) {
     if (details[id]) return details[id];
+    const seq = requestSeqRef.current;
     const result = await api(`/api/ai/repair-history/${encodeURIComponent(id)}`);
+    if (seq !== requestSeqRef.current) return null;
     setDetails((current) => ({ ...current, [id]: result.record }));
     return result.record;
   }
@@ -6206,8 +6214,7 @@ function RepairHistory({ refreshKey }) {
     setExpandedId(id);
     if (!details[id]) {
       try {
-        const result = await api(`/api/ai/repair-history/${encodeURIComponent(id)}`);
-        setDetails((current) => ({ ...current, [id]: result.record }));
+        await ensureDetail(id);
       } catch (caught) {
         setError(caught?.message ?? String(caught));
       }
