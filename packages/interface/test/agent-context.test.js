@@ -100,6 +100,8 @@ describe("selection context", () => {
   });
 });
 
+let yieldToHostCalls = 0;
+
 describe("cancel, prior attempts, and activity records", () => {
   it("cancels a draft and a repair loop through the abort signal", async () => {
     const controller = new AbortController();
@@ -135,6 +137,23 @@ describe("cancel, prior attempts, and activity records", () => {
     const round = error.repairVerification.rounds[0];
     assert.equal(round.status, "cancelled");
     assert.equal(round.exchange.length, 1, "the answered request is kept");
+  });
+
+  it("honors a cancel that arrives while the last stage yields", async () => {
+    const controller = new AbortController();
+    const error = await buildVerifiedRepairPlan({
+      editor: createCardEditor(sealedWarehouseBundle()),
+      config: ENDPOINT_CONFIG,
+      fetchImpl: answering({ proposals: [{ id: "quarantine-board", title: "Add a producer", patches: [{ op: "addCard", card: { id: "quarantine-board", text: "The health board asks to end the quarantine.", weight: 1, requirements: { allTags: ["onWatch"] }, choices: [
+        { id: "left", label: "Lift it", effects: { factions: { gauge1: 4, gauge0: -3 }, tags: { quarantineLifted: true } } },
+        { id: "right", label: "Keep it", effects: { factions: { gauge0: 3, gauge1: -4 } } }
+      ] } }] }] }),
+      signal: controller.signal,
+      onProgress: () => {},
+      // The cancel lands during the yield after the final "checks" stage of a passing proposal.
+      yieldToHost: async () => { if (++yieldToHostCalls === 4) controller.abort(); }
+    }).catch((caught) => caught);
+    assert.equal(error?.code, "ai_cancelled", "a passing proposal is not returned after Cancel");
   });
 
   it("feeds blocked proposals from an earlier run into round one", async () => {

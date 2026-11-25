@@ -295,9 +295,12 @@ export async function buildVerifiedRepairPlan({
             if (signal?.aborted) throw new InterfaceError("AI request cancelled by the author", "ai_cancelled");
             progress.emit({ ...position, stage });
             await yieldToHost();
+            // A cancel can arrive during the yield; honor it before the next stage runs.
+            if (signal?.aborted) throw new InterfaceError("AI request cancelled by the author", "ai_cancelled");
           }
         });
         evaluated.push(withVerification(proposal, round, verdict));
+        if (signal?.aborted) throw new InterfaceError("AI request cancelled by the author", "ai_cancelled");
       }
     } catch (error) {
       if (error?.code !== "ai_cancelled") throw error;
@@ -346,6 +349,8 @@ export async function buildVerifiedRepairPlan({
     ), { stopReason, budget, scoringConfig, baseline, targets, rounds, requestedCardIds });
   }
 
+  // Last chance to honor a cancel before a draft is returned.
+  if (signal?.aborted) throw cancelled();
   progress.emit({ stage: "done", round: rounds.length, stopReason });
   const chosen = stopReason === "verified" ? finalRound : pickBestRound(evaluatedRounds);
   const status = stopReason === "verified" ? "verified" : "unverified";
