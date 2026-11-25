@@ -78,3 +78,12 @@ Limits on attribution:
   - court-variable-gate: the same kind of answer was blocked in run 1 and passed in run 2, which is the scope change.
   - court-gauge run 2: the 106.5 s call would have hit the 60 s limit, which is the timeout change.
 - Not attributable to either change: the fog-unreachable switch from a `clear-morning` edit to a new card, and the lower median latency. These may be run-to-run variation.
+
+## Live capture (2026-11-25)
+
+`live-capture-2026-11-25.json` is the key-free repair-history record of one live loop captured with
+`node scripts/repair-eval/live-capture.mjs --endpoint http://127.0.0.1:3425 --model auto/deepseek-v4.1-flash --out <dir> --max-requests 3`
+on the `fog-direct-fix` deck (sealed-warehouse unreachable). One real request was sent; the first round
+was verified (55 → 78, about 44 s for the request). The record includes the logged conversation
+(each message capped at 16 KiB). One run of one task: it shows the pipeline working live, not a success rate.
+
