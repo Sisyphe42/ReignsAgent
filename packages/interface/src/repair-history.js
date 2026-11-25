@@ -74,7 +74,7 @@ export function createRepairHistoryRecord({
     error: error ? {
       code: String(error.code ?? "error"),
       stage: typeof error.stage === "string" ? error.stage : null,
-      message: clip(error.message ?? String(error), TEXT_LIMITS.error)
+      message: clip(redactUrls(error.message ?? String(error)), TEXT_LIMITS.error)
     } : null
   };
   return scrubRecordSecrets(record, secrets);
@@ -114,7 +114,7 @@ function compactRound(round) {
       contextRequests: Array.isArray(round.agent.contextRequests) ? round.agent.contextRequests.slice(0, 6).map(String) : [],
       stop: round.agent.stop ? { reason: clip(round.agent.stop.reason, 400) } : null
     } : null,
-    error: round.error ? { code: String(round.error.code ?? "error"), message: clip(round.error.message, TEXT_LIMITS.error) } : null,
+    error: round.error ? { code: String(round.error.code ?? "error"), message: clip(redactUrls(round.error.message), TEXT_LIMITS.error) } : null,
     proposals: (Array.isArray(round.proposals) ? round.proposals : []).map((proposal) => ({
       id: String(proposal.id ?? ""),
       title: clip(proposal.title, TEXT_LIMITS.title),
@@ -154,6 +154,16 @@ function compactRepairTarget(target) {
     code: clip(target.code, 80),
     cardIds: Array.isArray(target.cardIds) ? target.cardIds.slice(0, 12).map(String) : []
   };
+}
+
+/**
+ * redactUrls removes URLs from error text before it is stored: a native fetch failure can echo
+ * the endpoint URL, which may carry user-info or signed query tokens.
+ */
+export function redactUrls(text) {
+  return String(text ?? "")
+    .replace(/\b[a-z][a-z0-9+.-]*:\/\/[^\s"'<>()]+/gi, "[url redacted]")
+    .replace(/\b[^\s:@/]+:[^\s:@/]+@[^\s/]+/g, "[credentials redacted]");
 }
 
 function clip(value, limit) {

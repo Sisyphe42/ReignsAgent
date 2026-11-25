@@ -93,10 +93,13 @@ describe("repair history workspace storage", () => {
 
       await store.createProject({ source: "blank" });
       assert.deepEqual(await store.listRepairHistory(), [], "history is per project");
+      // A run started in the first project and finished after the switch still lands there.
+      await store.appendRepairHistoryRecord(record(3), { projectId: activeProjectId });
+      assert.deepEqual(await store.listRepairHistory(), [], "the newly active project stays empty");
       await store.openProject(activeProjectId);
-      assert.equal((await store.listRepairHistory()).length, 2);
+      assert.equal((await store.listRepairHistory()).length, 3);
       await store.deleteRepairHistoryRecord("rh-test-0002");
-      assert.deepEqual(await store.clearRepairHistory(), { cleared: 1 });
+      assert.deepEqual(await store.clearRepairHistory(), { cleared: 2 });
       assert.deepEqual(await store.listRepairHistory(), []);
     } finally {
       await rm(dataRoot, { recursive: true, force: true });

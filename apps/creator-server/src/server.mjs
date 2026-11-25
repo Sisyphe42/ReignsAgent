@@ -423,18 +423,20 @@ async function handleApi(req, res, url) {
         onProgress
       });
     };
-    // Every verified repair-loop run (success or failure) leaves one key-free history record.
+    // Every verified repair-loop run (success or failure) leaves one key-free history record,
+    // written to the project that started it even if the author switches projects meanwhile.
     const recordsHistory = mode === "repair_diagnostics" && body?.verify !== false;
+    const historyProjectId = recordsHistory ? (await workspace.getConfig()).activeProjectId : null;
     const buildAndRecord = async (onProgress = null) => {
       if (!recordsHistory) return signPlan(await buildPlan(onProgress));
       let plan;
       try {
         plan = await buildPlan(onProgress);
       } catch (error) {
-        await recordRepairHistory({ error, body, credentials });
+        await recordRepairHistory({ error, body, credentials, projectId: historyProjectId });
         throw error;
       }
-      const historyId = await recordRepairHistory({ plan, body, credentials });
+      const historyId = await recordRepairHistory({ plan, body, credentials, projectId: historyProjectId });
       return signPlan(historyId ? { ...plan, historyId } : plan);
     };
     if (wantsProgressStream(req)) return streamWithProgress(res, buildAndRecord);
@@ -828,7 +830,7 @@ function planDigest(content) {
   return createHmac("sha256", planSigningKey).update(canonicalJson(content)).digest("base64url");
 }
 
-async function recordRepairHistory({ plan = null, error = null, body = {}, credentials = {} }) {
+async function recordRepairHistory({ plan = null, error = null, body = {}, credentials = {}, projectId = null }) {
   try {
     const record = createRepairHistoryRecord({
       plan,
@@ -837,7 +839,7 @@ async function recordRepairHistory({ plan = null, error = null, body = {}, crede
       id: `rh-${Date.now().toString(36)}-${randomBytes(4).toString("hex")}`,
       secrets: [credentials?.apiKey, body?.credentials?.apiKey]
     });
-    const stored = await workspace.appendRepairHistoryRecord(record);
+    const stored = await workspace.appendRepairHistoryRecord(record, { projectId });
     return stored.record.id;
   } catch (historyError) {
     // History is an audit aid; failing to write it must never break drafting.

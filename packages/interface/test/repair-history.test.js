@@ -46,6 +46,14 @@ describe("repair history records", () => {
     assert.deepEqual([applied.outcome, applied.appliedProposalIds], ["applied", ["p1"]]);
   });
 
+  it("never stores endpoint URLs or credentials from fetch error text", () => {
+    const error = Object.assign(new Error("AI endpoint request failed: fetch failed for https://user:s3cret@api.example.test/v1/chat?sig=abc123 (ECONNREFUSED)"), { code: "endpoint_network_error", stage: "request" });
+    error.repairVerification = { status: "failed", rounds: [{ round: 1, status: "endpoint_error", error: { code: "endpoint_network_error", message: "connect to http://admin:pw@10.0.0.5:8080/v1?token=t failed" } }] };
+    const text = JSON.stringify(createRepairHistoryRecord({ error, id: "rh-unit-url001" }));
+    for (const secret of ["s3cret", "sig=abc123", "api.example.test", "admin:pw", "token=t"]) assert.equal(text.includes(secret), false, secret);
+    assert.match(text, /\[url redacted\]/);
+  });
+
   it("records a failed loop with its error stage", () => {
     const error = Object.assign(new Error("AI endpoint request failed with status 503"), { code: "endpoint_http_error", stage: "request" });
     const record = createRepairHistoryRecord({ error, request: { instruction: "Repair" }, id: "rh-unit-000002" });

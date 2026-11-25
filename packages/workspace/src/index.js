@@ -274,10 +274,16 @@ class WorkspaceStore {
     return record;
   }
 
-  async appendRepairHistoryRecord(record) {
+  // projectId pins the write to the project that started the run (the author may have switched).
+  async appendRepairHistoryRecord(record, { projectId = null } = {}) {
     return this.#enqueue(async () => {
-      const result = appendRepairHistory(await this.#readRepairHistory(), record);
-      await this.#writeRepairHistory(result.history);
+      const target = projectId ?? this.#activeProjectId();
+      assertProjectId(target);
+      if (!(await exists(join(this.#projectRoot(target), "project.toml")))) {
+        throw new WorkspaceError(`Project '${target}' no longer exists`, "project_not_found");
+      }
+      const result = appendRepairHistory(await this.#readRepairHistory(target), record);
+      await this.#writeRepairHistory(result.history, target);
       return { record: result.record, pruned: result.pruned };
     });
   }
@@ -306,17 +312,17 @@ class WorkspaceStore {
     });
   }
 
-  async #readRepairHistory() {
+  async #readRepairHistory(projectId = this.#activeProjectId()) {
     try {
-      return parseRepairHistory(await readFile(join(this.#projectRoot(this.#activeProjectId()), REPAIR_HISTORY_FILE), "utf8"));
+      return parseRepairHistory(await readFile(join(this.#projectRoot(projectId), REPAIR_HISTORY_FILE), "utf8"));
     } catch (error) {
       if (error?.code === "ENOENT") return emptyRepairHistory();
       throw error;
     }
   }
 
-  async #writeRepairHistory(history) {
-    await atomicWrite(join(this.#projectRoot(this.#activeProjectId()), REPAIR_HISTORY_FILE), serializeRepairHistory(history));
+  async #writeRepairHistory(history, projectId = this.#activeProjectId()) {
+    await atomicWrite(join(this.#projectRoot(projectId), REPAIR_HISTORY_FILE), serializeRepairHistory(history));
   }
 
   async listReleases() {
