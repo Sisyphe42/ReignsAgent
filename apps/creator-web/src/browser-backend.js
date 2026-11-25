@@ -69,7 +69,7 @@ export class BrowserCreatorBackend {
     const historyRoute = path.match(/^\/api\/ai\/repair-history\/([^/]+)$/);
     if (historyRoute && method === "GET") return { record: await this.workspace.readRepairHistoryRecord(decodeURIComponent(historyRoute[1])) };
     if (historyRoute && method === "DELETE") return this.workspace.deleteRepairHistoryRecord(decodeURIComponent(historyRoute[1]));
-    if (path === "/api/ai/edit/apply" && method === "POST") { const result = applyAiEditPlan({ editor: this.editor, plan: body?.plan, proposalIds: body?.proposalIds ?? [] }); this.editor = result.editor; await this.#persist(true); const historyId = await this.#markRepairHistory(body?.historyId ?? body?.plan?.historyId, result.proposalIds); return { applied: result.applied, ...(historyId ? { historyId } : {}), proposalIds: result.proposalIds, patchCount: result.patchCount, bundle: result.bundle, validation: result.validation, playerValidation: result.playerValidation }; }
+    if (path === "/api/ai/edit/apply" && method === "POST") { const activeProjectId = (await this.workspace.getConfig()).activeProjectId; if (body?.plan?.projectId && body.plan.projectId !== activeProjectId) throw backendError("This draft was built in another project; open that project or build the draft again here", "ai_plan_other_project"); const result = applyAiEditPlan({ editor: this.editor, plan: body?.plan, proposalIds: body?.proposalIds ?? [] }); this.editor = result.editor; await this.#persist(true); const historyId = await this.#markRepairHistory(body?.historyId ?? body?.plan?.historyId, result.proposalIds, body?.plan?.projectId ?? activeProjectId); return { applied: result.applied, ...(historyId ? { historyId } : {}), proposalIds: result.proposalIds, patchCount: result.patchCount, bundle: result.bundle, validation: result.validation, playerValidation: result.playerValidation }; }
     if (path === "/api/ai/images/validate" && method === "POST") return inspectImageEndpointConfig({ config: body?.config ?? {} });
     if (path === "/api/ai/images/stage" && method === "POST") { const draftId = body?.draftId || `input-${crypto.randomUUID()}`; return this.workspace.stageActiveProjectAsset({ draftId, fileName: body?.fileName || "input.png", bytes: body?.bytes, mimeType: body?.mimeType }); }
     if (path === "/api/ai/images/run" && method === "POST") {
@@ -119,7 +119,7 @@ export class BrowserCreatorBackend {
       throw error;
     }
     const historyId = await record({ plan });
-    return historyId ? { ...plan, historyId } : plan;
+    return { ...plan, projectId, ...(historyId ? { historyId } : {}) };
   }
   async #countedFetch() {
     const limit = (await this.workspace.getConfig()).ai.sessionRequestLimit ?? 0;
@@ -201,9 +201,9 @@ export class BrowserCreatorBackend {
       return null; // History never breaks drafting.
     }
   }
-  async #markRepairHistory(historyId, proposalIds) {
+  async #markRepairHistory(historyId, proposalIds, projectId = null) {
     if (typeof historyId !== "string" || !historyId.startsWith("rh-")) return null;
-    try { await this.workspace.updateRepairHistoryRecord(historyId, (record) => markRepairHistoryApplied(record, { proposalIds })); return historyId; } catch { return null; }
+    try { await this.workspace.updateRepairHistoryRecord(historyId, (record) => markRepairHistoryApplied(record, { proposalIds }), { projectId }); return historyId; } catch { return null; }
   }
   #editorProjection() { return { metadata: this.editor.metadata, assets: this.editor.assets, cards: this.editor.toCards(), validation: this.editor.validate(), playerValidation: this.editor.validateForPlayer() }; }
   async #reload() { this.#replace(await this.workspace.readActiveBundle()); }

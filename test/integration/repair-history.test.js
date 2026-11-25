@@ -62,6 +62,16 @@ describe("repair history through the Creator Server", () => {
       const { planToken: _token, ...unsigned } = plan;
       assert.equal((await api("POST", "/api/ai/edit/apply", { plan: unsigned, proposalIds: ["quarantine-board"] }, { expectError: true })).code, "ai_plan_untrusted");
 
+      // A plan built in this project cannot be applied after switching to another project,
+      // even when that project's deck is identical (the record lives with the original project).
+      assert.ok(plan.projectId);
+      const original = (await api("GET", "/api/config")).activeProjectId;
+      const twin = (await api("POST", "/api/projects", { source: "blank" })).project.id;
+      await api("POST", "/api/editor/import", { bundle: brokenFogHarbor() });
+      assert.equal((await api("POST", "/api/ai/edit/apply", { plan, proposalIds: ["quarantine-board"] }, { expectError: true })).code, "ai_plan_other_project");
+      await api("POST", `/api/projects/${original}/open`, {});
+      await api("DELETE", `/api/projects/${twin}`);
+
       const applied = await api("POST", "/api/ai/edit/apply", { plan, proposalIds: ["quarantine-board"] });
       assert.equal(applied.historyId, plan.historyId);
 

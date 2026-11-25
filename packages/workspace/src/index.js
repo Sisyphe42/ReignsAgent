@@ -288,10 +288,12 @@ class WorkspaceStore {
     });
   }
 
-  async updateRepairHistoryRecord(id, update) {
+  async updateRepairHistoryRecord(id, update, { projectId = null } = {}) {
     return this.#enqueue(async () => {
-      const result = updateRepairHistory(await this.#readRepairHistory(), id, update);
-      await this.#writeRepairHistory(result.history);
+      const target = projectId ?? this.#activeProjectId();
+      assertProjectId(target);
+      const result = updateRepairHistory(await this.#readRepairHistory(target), id, update);
+      await this.#writeRepairHistory(result.history, target);
       return result.record;
     });
   }

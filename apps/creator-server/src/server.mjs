@@ -462,7 +462,8 @@ async function handleApi(req, res, url) {
         throw error;
       }
       const historyId = await record({ plan });
-      return signPlan(historyId ? { ...plan, historyId } : plan);
+      // The plan names its project (covered by the signature) so apply cannot cross projects.
+      return signPlan({ ...plan, projectId: historyProjectId, ...(historyId ? { historyId } : {}) });
     };
     if (wantsProgressStream(req)) return streamWithProgress(res, buildAndRecord);
     return sendJson(res, await buildAndRecord());
@@ -517,6 +518,10 @@ async function handleApi(req, res, url) {
 
   if (path === "/api/ai/edit/apply" && req.method === "POST") {
     assertSignedPlan(body?.plan);
+    const activeProjectId = (await workspace.getConfig()).activeProjectId;
+    if (body?.plan?.projectId && body.plan.projectId !== activeProjectId) {
+      throw apiError("This draft was built in another project; open that project or build the draft again here", "ai_plan_other_project", 409);
+    }
     const result = applyAiEditPlan({
       editor: store.editor,
       plan: body?.plan,
@@ -524,7 +529,7 @@ async function handleApi(req, res, url) {
     });
     store.replaceEditor(result.editor);
     await persistEditor();
-    const historyId = await markRepairHistory(body?.historyId ?? body?.plan?.historyId, result.proposalIds);
+    const historyId = await markRepairHistory(body?.historyId ?? body?.plan?.historyId, result.proposalIds, body?.plan?.projectId ?? activeProjectId);
     return sendJson(res, {
       applied: result.applied,
       ...(historyId ? { historyId } : {}),
@@ -953,10 +958,10 @@ async function recordRepairHistory({ plan = null, error = null, body = {}, crede
   }
 }
 
-async function markRepairHistory(historyId, proposalIds) {
+async function markRepairHistory(historyId, proposalIds, projectId = null) {
   if (typeof historyId !== "string" || !historyId.startsWith("rh-")) return null;
   try {
-    await workspace.updateRepairHistoryRecord(historyId, (record) => markRepairHistoryApplied(record, { proposalIds }));
+    await workspace.updateRepairHistoryRecord(historyId, (record) => markRepairHistoryApplied(record, { proposalIds }), { projectId });
     return historyId;
   } catch {
     return null;
