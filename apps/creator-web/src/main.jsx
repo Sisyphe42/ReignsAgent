@@ -2,6 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import { createRoot } from "react-dom/client";
 import { SKINS as SKIN_CATALOG, DEFAULT_SKIN, applySkinTheme, resolveSkinId as resolveSharedSkinId } from "../../../packages/interface/web/skin-catalog.js";
 import { cardArtworkStyle, normalizeCardArtworkDisplay } from "../../../packages/interface/web/assets/card-artwork.js";
+import { describeAiFailure, joinSentences, repairStopLabel, toSentence } from "./ai-status-copy.js";
 import { createCreatorBackend } from "./backend.js";
 import { getOnboardingSteps, markOnboardingComplete, OnboardingTour, readOnboardingCompletion } from "./onboarding.jsx";
 import "./styles.css";
@@ -890,7 +891,7 @@ async function registerHostedServiceWorker() {
 function formatAiEndpointError(error) {
   const message = error?.message ?? String(error);
   if (message.includes("Unknown API route")) {
-    return `${message}. Restart the local dashboard API server so it loads the latest backend routes.`;
+    return joinSentences(message, "Restart the local dashboard API server so it loads the latest backend routes");
   }
   return message;
 }
@@ -1584,7 +1585,7 @@ function App() {
           ? Object.assign(new Error("AI request cancelled by the author"), { code: "ai_cancelled", stage: error?.stage ?? null })
           : error;
         // Tell the panel which real stage failed before the status bar shows the message.
-        if (typeof onProgress === "function") onProgress({ type: "failed", stage: failure?.stage ?? null, message: failure?.message ?? String(failure) });
+        if (typeof onProgress === "function") onProgress({ type: "failed", stage: failure?.stage ?? null, code: failure?.code ?? null, message: failure?.message ?? String(failure) });
         throw failure;
       }
     });
@@ -4956,7 +4957,7 @@ function ReviewPanel({ editor, diagnostics, aiAssistEnabled, onRun, onOpen, onFo
       cardCount: 1,
       contextSummary: `${issue.severity} · ${issue.code}`,
       repairTarget: { code: issue.code, cardIds: issue.cardIds, entities: issue.otherTargets },
-      instruction: `Use the latest Review diagnostics to repair '${issue.code}'. Focus on: ${issue.message}. Targets: ${issue.cardIds.length > 0 ? issue.cardIds.join(", ") : "project-level issue"}. Keep changes as explicit patch proposals.`
+      instruction: `Use the latest Review diagnostics to repair '${issue.code}'. Focus on: ${toSentence(issue.message) || "the reported issue."} Targets: ${issue.cardIds.length > 0 ? issue.cardIds.join(", ") : "project-level issue"}. Keep changes as explicit patch proposals.`
     });
   }
 
@@ -5809,7 +5810,7 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
   const [progressStatus, setProgressStatus] = useState("idle");
   const [progressDetail, setProgressDetail] = useState(null);
   const [waitEstimate, setWaitEstimate] = useState(null);
-  const [buildError, setBuildError] = useState("");
+  const [buildNotice, setBuildNotice] = useState(null);
   const [imageDraft, setImageDraft] = useState(null);
   const [selectedOutputId, setSelectedOutputId] = useState("");
   const [referenceUris, setReferenceUris] = useState([]);
@@ -5862,7 +5863,7 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
     setPlan(null);
     setSelected([]);
     setApplyResult("");
-    setBuildError("");
+    setBuildNotice(null);
     setProgressStep(-1);
     setProgressStatus("idle");
     setProgressDetail(null);
@@ -5886,17 +5887,17 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
     if (nextRequiresDiagnostics && !diagnostics) {
       setProgressStep(0);
       setProgressStatus("failed");
-      setBuildError("Review repair needs a completed Review result before AI Assist can build repair proposals.");
+      setBuildNotice({ kind: "needs_review", tone: "error", title: "Run Review first", text: "Review repair needs a completed Review result before AI Assist can build repair proposals.", actions: ["review"] });
       return;
     }
     if (!nextInstruction?.trim()) {
       setProgressStep(0);
       setProgressStatus("failed");
-      setBuildError("Add a prompt before building the draft.");
+      setBuildNotice({ kind: "empty_prompt", tone: "error", title: "Add a prompt", text: "Add a prompt before building the draft.", actions: ["edit"] });
       return;
     }
     setIsBuilding(true);
-    setBuildError("");
+    setBuildNotice(null);
     setProgressStatus("building");
     setProgressStep(0);
     setProgressDetail(initialAiProgressDetail(aiConfigured));
@@ -5906,7 +5907,7 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
       if (!imageConfigured) {
         setProgressStep(0);
         setProgressStatus("failed");
-        setBuildError("Configure an Image Endpoint in Settings before generating art.");
+        setBuildNotice({ kind: "config", tone: "error", title: "No image endpoint", text: "Configure an Image Endpoint in Settings before generating art.", actions: ["settings"] });
         setIsBuilding(false);
         return;
       }
@@ -5925,6 +5926,7 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
         effectiveMask = maskStage;
       }
       imageAbortRef.current = new AbortController();
+      const imageSignal = imageAbortRef.current.signal;
       setProgressStep(1);
       setProgressDetail((current) => reduceAiProgressDetail(current, { stage: "request" }));
       const imageResult = await onRunImage({
@@ -5937,13 +5939,19 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
         mask: effectiveMask,
         output: { count: Math.min(nextCardCount, imageCapabilities?.maxOutputs ?? 1), format: imageFormat, aspectRatio },
         outpaint
-      }, imageAbortRef.current.signal);
+      }, imageSignal);
       imageAbortRef.current = null;
       // Image runs are logged and counted too: refresh the activity list and usage line.
       setHistoryVersion((version) => version + 1);
       if (!imageResult || imageResult === true) {
-        setProgressStatus("failed");
-        setBuildError("Image generation failed. Check endpoint settings and retry.");
+        if (imageSignal.aborted) {
+          // The author's own cancel is not a failure: neutral notice, nothing applied.
+          setProgressStatus("cancelled");
+          setBuildNotice(describeAiFailure({ code: "ai_cancelled" }));
+        } else {
+          setProgressStatus("failed");
+          setBuildNotice({ kind: "image", tone: "error", title: "Image generation failed", text: "Check the image endpoint settings and retry.", actions: ["settings", "retry"] });
+        }
         setIsBuilding(false);
         return;
       }
@@ -5957,18 +5965,25 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
     }
     let failedStage = null;
     let failedMessage = "";
+    let failedCode = null;
+    // The repair loop's round position, so a cancel can say which rounds had finished.
+    const loopProgress = { round: null, maxRounds: null };
     const handleProgress = (event) => {
       if (!event) return;
       if (event.type === "failed") {
         failedStage = event.stage ?? null;
         failedMessage = event.message ?? "";
+        failedCode = event.code ?? null;
         return;
       }
+      if (Number.isInteger(event.round)) loopProgress.round = event.round;
+      if (Number.isInteger(event.maxRounds)) loopProgress.maxRounds = event.maxRounds;
       const index = AI_STAGE_TO_STEP[event.stage];
       if (index !== undefined && event.stage !== "done") setProgressStep(index);
       setProgressDetail((current) => reduceAiProgressDetail(current, event));
     };
     textAbortRef.current = new AbortController();
+    const textSignal = textAbortRef.current.signal;
     const result = await onBuildPlan({
       // An auto-built request (from preflight) carries its own selection and source; state may lag.
       source: overrides ? overrides.source ?? "AI Assist" : requestSource,
@@ -5984,19 +5999,23 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
       assetId: nextAssetId || null,
       diagnostics: nextRequiresDiagnostics ? diagnostics : null,
       ...(nextRequiresDiagnostics && nextRepairTarget ? { repairTarget: nextRepairTarget } : {})
-    }, handleProgress, textAbortRef.current.signal);
+    }, handleProgress, textSignal);
     textAbortRef.current = null;
     setHistoryVersion((version) => version + 1);
     if (!result || result === true) {
       // Stop on the step that really failed (the server/loop reports error.stage).
       const failedStep = failedStage && AI_STAGE_TO_STEP[failedStage] !== undefined ? AI_STAGE_TO_STEP[failedStage] : null;
       if (failedStep !== null) setProgressStep(failedStep);
-      setProgressStatus("failed");
-      setBuildError(/cancelled by the author/i.test(failedMessage)
-        ? "Cancelled. Nothing was sent after the cancel, and nothing changed."
-        : failedMessage
-        ? `${failedStep !== null ? `Failed at the ${failedStep === 2 ? "Response" : AI_PROGRESS_STEPS[failedStep]} step: ` : ""}${failedMessage}. Edit the prompt or retry.`
-        : "AI Assist draft failed. Check the status bar, edit the prompt, or retry.");
+      const notice = describeAiFailure({
+        code: textSignal.aborted ? "ai_cancelled" : failedCode,
+        message: failedMessage,
+        stage: failedStage,
+        stepLabel: failedStep === null ? null : failedStep === 2 ? "Response" : AI_PROGRESS_STEPS[failedStep],
+        loop: loopProgress
+      });
+      // A cancel is the author's choice, not an error: the step and loop phase show it as cancelled.
+      setProgressStatus(notice.kind === "cancelled" ? "cancelled" : "failed");
+      setBuildNotice(notice);
       setIsBuilding(false);
       return;
     }
@@ -6150,18 +6169,7 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
           <AiProgress step={progressStep} active={isBuilding} status={progressStatus} detail={progressDetail} />
           <RepairLoopProgress detail={progressDetail} active={isBuilding} status={progressStatus} estimate={waitEstimate} />
           <AiWaitEstimate detail={progressDetail} active={isBuilding} estimate={waitEstimate} />
-          {buildError && (
-            <div className="ai-build-error" role="alert">
-              <div>
-                <strong>Draft failed</strong>
-                <span>{buildError}</span>
-              </div>
-              <div className="ai-build-error__actions">
-                <button className="btn btn--ghost btn--compact" type="button" disabled={isBuilding} onClick={() => void retryBuild()}>Retry</button>
-                <button className="btn btn--ghost btn--compact" type="button" onClick={focusPrompt}>Edit prompt</button>
-              </div>
-            </div>
-          )}
+          {buildNotice && <AiBuildNotice notice={buildNotice} busy={isBuilding} onRetry={() => void retryBuild()} onEdit={focusPrompt} onOpen={onOpen} />}
           <div className="action-row">
             <button className="btn btn--primary" disabled={!canBuild || isBuilding} onClick={() => void buildPlan()}>
               {isBuilding ? "Building draft..." : "Build draft"}
@@ -6608,7 +6616,7 @@ function RepairHistoryDetail({ record, onDelete }) {
       <p className="repair-history__stop">
         {record.status === "failed"
           ? `Failed${record.error?.stage ? ` at ${record.error.stage}` : ""}: ${record.error?.message ?? record.stopReason}`
-          : REPAIR_STOP_LABELS[record.stopReason] ?? record.stopReason ?? ""}
+          : repairStopLabel(record)}
       </p>
       {record.contextSelection && <ContextCardSelection selection={record.contextSelection} totalCards={(record.contextSelection.included ?? 0) + (record.contextSelection.omitted ?? 0)} />}
       <ol className="repair-history__rounds">
@@ -6651,6 +6659,8 @@ function RepairHistoryDetail({ record, onDelete }) {
             ? `Applied ${applied.map((id) => titles.get(id) ?? id).join(", ") || "nothing"}${record.appliedAt ? ` on ${formatHistoryTime(record.appliedAt)}` : ""}.`
             : record.status === "failed"
               ? "No draft was produced."
+              : record.status === "cancelled"
+                ? "Cancelled before a draft was shown; nothing was applied."
               : `Not applied. ${(record.preselectedProposalIds ?? []).length} proposal${(record.preselectedProposalIds ?? []).length === 1 ? " was" : "s were"} pre-selected.`}
         </span>
         <button className="btn btn--ghost btn--compact" type="button" onClick={onDelete}>Delete record</button>
@@ -6663,22 +6673,6 @@ const REPAIR_STATUS_LABELS = {
   verified: "Verified",
   unverified: "Not verified",
   not_verifiable: "Not scored"
-};
-
-const REPAIR_STOP_LABELS = {
-  verified: "Stopped at the first round with a proposal that passed every blocking check.",
-  max_rounds: "Stopped at the round limit; no proposal passed every blocking check.",
-  offline_single_round: "Local rule-based repair runs once; asking again would return the same proposals.",
-  endpoint_error: "Stopped because the endpoint failed in a later round; showing the best earlier round.",
-  deadline: "Stopped at the loop deadline; showing the best round so far.",
-  total_byte_budget: "Stopped at the total byte budget; showing the best round so far.",
-  ai_repair_request_budget: "Stopped: a round request exceeded the byte budget.",
-  ai_repair_response_budget: "Stopped: a round response exceeded the byte budget.",
-  ai_repair_total_budget: "Stopped at the total byte budget; showing the best round so far.",
-  target_not_scored: "This issue type is not scored by the Reviewer, so proposals are shown without verification.",
-  no_scored_issues: "The fixed-seed scoring review found no issue to verify against.",
-  target_entity_not_scored: "The selected issue target does not appear in the fixed-seed scoring review, so proposals are shown without verification.",
-  model_stopped: "Stopped by the model: it reported that the targets cannot be fixed without the author; showing the best round so far."
 };
 
 function defaultSelectedProposalIds(plan) {
@@ -6812,7 +6806,7 @@ function RepairVerificationSummary({ verification }) {
         <span className={`repair-status repair-status--${status}`}>{REPAIR_STATUS_LABELS[status] ?? status}</span>
         <div>
           <strong>Repair loop · {rounds.length}/{verification.limits?.maxRounds ?? 3} rounds · baseline {baselineScore}/100</strong>
-          <small>{verification.message ?? REPAIR_STOP_LABELS[verification.stopReason] ?? verification.stopReason}</small>
+          <small data-testid="repair-stop-reason">{verification.message ?? repairStopLabel(verification)}</small>
         </div>
       </div>
       <p className="muted repair-verification__note">
@@ -8115,6 +8109,53 @@ function AiControlIcon({ id }) {
   );
 }
 
+const AI_NOTICE_ACTIONS = {
+  rebuild: "Build again",
+  retry: "Retry",
+  edit: "Edit prompt",
+  settings: "Open Settings",
+  review: "Open Review"
+};
+
+/**
+ * AiBuildNotice reports how a draft ended when it did not produce one. A cancel is neutral
+ * (role="status"); real failures keep the error tone and role="alert". The actions follow the
+ * failure type: endpoint outages offer Retry, prompt problems offer Edit prompt.
+ */
+function AiBuildNotice({ notice, busy, onRetry, onEdit, onOpen }) {
+  const error = notice.tone !== "neutral";
+  return (
+    <div
+      className={`ai-build-notice ai-build-notice--${error ? "error" : "neutral"}${error ? " ai-build-error" : ""}`}
+      role={error ? "alert" : "status"}
+      data-testid="ai-build-notice"
+      data-kind={notice.kind}
+    >
+      <div>
+        <strong>{notice.title}</strong>
+        <span>{notice.text}</span>
+      </div>
+      <div className="ai-build-notice__actions">
+        {(notice.actions ?? []).map((action) => (
+          <button
+            key={action}
+            className={`btn btn--compact ${action === "rebuild" ? "" : "btn--ghost"}`.trim()}
+            type="button"
+            disabled={(action === "retry" || action === "rebuild") && busy}
+            onClick={() => {
+              if (action === "retry" || action === "rebuild") onRetry();
+              else if (action === "edit") onEdit();
+              else onOpen(action);
+            }}
+          >
+            {AI_NOTICE_ACTIONS[action] ?? action}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function AiProgress({ step, active, status = "idle", detail = null }) {
   if (step < 0) return null;
   const labels = AI_PROGRESS_STEPS.map((label, index) => (index === 2 && detail?.responseLabel ? detail.responseLabel : label));
@@ -8129,6 +8170,7 @@ function AiProgress({ step, active, status = "idle", detail = null }) {
             index < step ? "ai-progress__step--done" : "",
             index === step ? "ai-progress__step--active" : "",
             status === "failed" && index === step ? "ai-progress__step--failed" : "",
+            status === "cancelled" && index === step ? "ai-progress__step--cancelled" : "",
             status === "ready" && index === AI_PROGRESS_STEPS.length - 1 ? "ai-progress__step--ready" : "",
             active && index === step ? "ai-progress__step--pulse" : ""
           ].filter(Boolean).join(" ")}
@@ -8194,12 +8236,15 @@ function RepairLoopProgress({ detail, active, status, estimate = null }) {
   if (!detail || !(detail.maxRounds > 1) || status === "ready") return null;
   const phaseIndex = REPAIR_LOOP_PHASES.findIndex(([, , stages]) => stages.includes(detail.stage));
   const failed = status === "failed";
+  const cancelled = status === "cancelled";
   const proposalNote = detail.proposalCount > 0 && ["trial", "scoring", "checks"].includes(detail.stage)
     ? ` · proposal ${detail.proposalIndex}/${detail.proposalCount}`
     : "";
   const elapsed = Math.max(0, Math.round((now - (detail.stageStartedAt ?? now)) / 1000));
+  const phaseLabel = (REPAIR_LOOP_PHASES[phaseIndex]?.[1] ?? detail.stage ?? "").toLowerCase();
+  const stateClass = failed ? " repair-loop-progress--failed" : cancelled ? " repair-loop-progress--cancelled" : "";
   return (
-    <div className={`repair-loop-progress${failed ? " repair-loop-progress--failed" : ""}`} data-testid="repair-loop-progress" role="status" aria-live="polite">
+    <div className={`repair-loop-progress${stateClass}`} data-testid="repair-loop-progress" data-status={status} role="status" aria-live="polite">
       <strong>{detail.round > 0 ? `Round ${detail.round}/${detail.maxRounds}` : "Preparing"}</strong>
       <ol className="repair-loop-progress__phases">
         {REPAIR_LOOP_PHASES.map(([id, label], index) => (
@@ -8208,7 +8253,9 @@ function RepairLoopProgress({ detail, active, status, estimate = null }) {
             className={[
               "repair-loop-progress__phase",
               phaseIndex > index ? "repair-loop-progress__phase--done" : "",
-              phaseIndex === index ? (failed ? "repair-loop-progress__phase--failed" : "repair-loop-progress__phase--active") : ""
+              phaseIndex === index
+                ? (failed ? "repair-loop-progress__phase--failed" : cancelled ? "repair-loop-progress__phase--cancelled" : "repair-loop-progress__phase--active")
+                : ""
             ].filter(Boolean).join(" ")}
           >
             {label}
@@ -8216,7 +8263,11 @@ function RepairLoopProgress({ detail, active, status, estimate = null }) {
         ))}
       </ol>
       <span className="repair-loop-progress__text">
-        {failed ? `Stopped during ${(REPAIR_LOOP_PHASES[phaseIndex]?.[1] ?? detail.stage).toLowerCase()}${proposalNote}` : `${AI_STAGE_TEXT[detail.stage] ?? detail.stage}${proposalNote}`}
+        {failed
+          ? `Stopped during ${phaseLabel}${proposalNote}`
+          : cancelled
+            ? `Cancelled during ${phaseLabel}${proposalNote}`
+            : `${AI_STAGE_TEXT[detail.stage] ?? detail.stage}${proposalNote}`}
         {active && <span className="muted"> · {elapsed}s{["request", "response"].includes(detail.stage) ? formatWaitEstimate(estimate, elapsed) : ""}</span>}
       </span>
     </div>

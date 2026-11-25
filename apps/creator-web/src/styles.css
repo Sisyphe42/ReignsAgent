@@ -3103,6 +3103,13 @@ select {
   background: color-mix(in srgb, var(--danger) 10%, var(--surface-2));
 }
 
+.ai-progress__step--cancelled {
+  color: var(--muted);
+  border-color: var(--border-strong, var(--border));
+  border-style: dashed;
+  background: color-mix(in srgb, var(--surface-2) 70%, var(--surface));
+}
+
 .ai-progress__step--ready {
   color: var(--ok);
   border-color: color-mix(in srgb, var(--ok) 60%, var(--border));
@@ -3168,6 +3175,13 @@ select {
   color: var(--ink);
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+}
+
+.repair-loop-progress__phase--cancelled {
+  color: var(--muted);
+  border-color: var(--border-strong, var(--border));
+  border-style: dashed;
+  background: color-mix(in srgb, var(--surface-2) 70%, var(--surface));
 }
 
 .repair-loop-progress__phase--failed {
@@ -6237,7 +6251,7 @@ summary:focus-visible {
 }
 
 .ai-request-source,
-.ai-build-error {
+.ai-build-notice {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -6263,26 +6277,36 @@ summary:focus-visible {
   color: var(--muted);
 }
 
-.ai-build-error {
+.ai-build-notice--error {
   border-color: color-mix(in srgb, var(--danger) 50%, var(--border));
   background: color-mix(in srgb, var(--danger) 8%, var(--surface-2));
 }
 
-.ai-build-error > div:first-child {
+/* A cancel is the author's own choice: neutral ink and border, never the error red. */
+.ai-build-notice--neutral {
+  border-color: var(--border-strong, var(--border));
+  background: color-mix(in srgb, var(--surface-2) 80%, transparent);
+}
+
+.ai-build-notice > div:first-child {
   display: grid;
   gap: 3px;
 }
 
-.ai-build-error strong {
+.ai-build-notice strong {
+  color: var(--ink);
+}
+
+.ai-build-notice--error strong {
   color: var(--danger);
 }
 
-.ai-build-error span {
+.ai-build-notice span {
   color: var(--muted);
   font-size: 0.78rem;
 }
 
-.ai-build-error__actions {
+.ai-build-notice__actions {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
