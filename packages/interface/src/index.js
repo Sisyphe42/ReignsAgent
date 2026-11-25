@@ -23,6 +23,7 @@ export {
   DEFAULT_REPAIR_SCORING,
   REPAIR_CHECKS,
   buildVerifiedRepairPlan,
+  checkNarrativeQuality,
   collectIssueEntities,
   collectMissingProducerSignals,
   compareHealthScores,

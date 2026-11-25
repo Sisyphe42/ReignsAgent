@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { randomBytes, timingSafeEqual } from "node:crypto";
+import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { readFile, writeFile, mkdir, mkdtemp, rm, stat } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -116,6 +116,9 @@ const workspace = await createWorkspaceStore({
 const store = new SessionState(await workspace.readActiveBundle());
 const imageDrafts = new Map();
 const apiCapability = randomBytes(32).toString("base64url");
+// Plans are signed when issued and verified on apply, so a client cannot edit proposals,
+// patches, verification evidence, or the base fingerprint between review and apply.
+const planSigningKey = randomBytes(32);
 let trustedRequestHosts = new Set();
 
 const server = createServer(async (req, res) => {
@@ -423,7 +426,7 @@ async function handleApi(req, res, url) {
     // Every verified repair-loop run (success or failure) leaves one key-free history record.
     const recordsHistory = mode === "repair_diagnostics" && body?.verify !== false;
     const buildAndRecord = async (onProgress = null) => {
-      if (!recordsHistory) return buildPlan(onProgress);
+      if (!recordsHistory) return signPlan(await buildPlan(onProgress));
       let plan;
       try {
         plan = await buildPlan(onProgress);
@@ -432,7 +435,7 @@ async function handleApi(req, res, url) {
         throw error;
       }
       const historyId = await recordRepairHistory({ plan, body, credentials });
-      return historyId ? { ...plan, historyId } : plan;
+      return signPlan(historyId ? { ...plan, historyId } : plan);
     };
     if (wantsProgressStream(req)) return streamWithProgress(res, buildAndRecord);
     return sendJson(res, await buildAndRecord());
@@ -472,6 +475,7 @@ async function handleApi(req, res, url) {
   }
 
   if (path === "/api/ai/edit/apply" && req.method === "POST") {
+    assertSignedPlan(body?.plan);
     const result = applyAiEditPlan({
       editor: store.editor,
       plan: body?.plan,
@@ -806,6 +810,24 @@ async function readJsonBody(req) {
   }
 }
 
+function signPlan(plan) {
+  const { planToken: _ignored, ...content } = plan ?? {};
+  return { ...content, planToken: planDigest(content) };
+}
+
+function assertSignedPlan(plan) {
+  if (!plan || typeof plan !== "object" || Array.isArray(plan)) return; // applyAiEditPlan reports the shape error
+  const { planToken, ...content } = plan;
+  const expected = planDigest(content);
+  if (typeof planToken !== "string" || !safeTokenEqual(planToken, expected)) {
+    throw apiError("This AI edit plan was not issued by this Creator session or was changed after it was issued; build the draft again", "ai_plan_untrusted", 409);
+  }
+}
+
+function planDigest(content) {
+  return createHmac("sha256", planSigningKey).update(canonicalJson(content)).digest("base64url");
+}
+
 async function recordRepairHistory({ plan = null, error = null, body = {}, credentials = {} }) {
   try {
     const record = createRepairHistoryRecord({
@@ -832,6 +854,12 @@ async function markRepairHistory(historyId, proposalIds) {
   } catch {
     return null;
   }
+}
+
+function canonicalJson(value) {
+  if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
+  if (Array.isArray(value)) return `[${value.map((entry) => (entry === undefined ? "null" : canonicalJson(entry))).join(",")}]`;
+  return `{${Object.keys(value).filter((key) => value[key] !== undefined).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(",")}}`;
 }
 
 function wantsProgressStream(req) {

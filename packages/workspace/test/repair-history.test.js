@@ -47,12 +47,21 @@ describe("repair history contract", () => {
   });
 
   it("trims oversized records instead of storing unbounded detail", () => {
-    const proposals = Array.from({ length: 30 }, (_, index) => ({ id: `p${index}`, title: "t".repeat(150), summary: "s".repeat(240), passed: false, failedChecks: ["scope"], failedDetails: [{ id: "scope", detail: "d".repeat(200) }] }));
-    const big = record(1, { rounds: [1, 2, 3].map((round) => ({ round, status: "evaluated", proposalCount: 30, passedCount: 0, bestScore: 50, proposals })) });
+    const proposals = Array.from({ length: 80 }, (_, index) => ({ id: `p${index}`, title: "t".repeat(150), summary: "s".repeat(240), passed: false, failedChecks: ["scope"], failedDetails: [{ id: "scope", detail: "d".repeat(200) }] }));
+    const big = record(1, { rounds: [1, 2, 3].map((round) => ({ round, status: "evaluated", proposalCount: 80, passedCount: 0, bestScore: 50, proposals })) });
     const { record: stored } = appendRepairHistory(emptyRepairHistory(), big);
     assert.equal(stored.truncated, true);
     assert.ok(new TextEncoder().encode(JSON.stringify(stored)).length <= REPAIR_HISTORY_LIMITS.maxRecordBytes);
     assert.equal(stored.rounds.length, 3, "every round stays replayable");
+  });
+
+  it("shortens the stored conversation before touching round evidence", () => {
+    const conversation = [1, 2, 3].map((round) => ({ round, call: round, requestBody: "q".repeat(40_000), responseText: "a".repeat(10_000) }));
+    const { record: stored } = appendRepairHistory(emptyRepairHistory(), record(7, { conversation }));
+    assert.equal(stored.conversationTruncated, true);
+    assert.equal(stored.truncated, undefined, "round evidence untouched");
+    assert.ok(stored.conversation[0].requestBody.length < 3000);
+    assert.equal(summarizeRepairHistory({ records: [record(8, { rounds: [{ round: 1, requestMs: 1200 }, { round: 2, requestMs: 900 }] })] })[0].requestMs.join(), "1200,900");
   });
 
   it("updates, removes, rejects bad ids, and recovers from a corrupt file", () => {

@@ -54,6 +54,14 @@ describe("repair history through the Creator Server", () => {
       assert.equal(plan.verification.status, "verified");
       assert.match(plan.historyId, /^rh-/);
 
+      // The plan is signed when issued: edited or unsigned plans are refused before anything is written.
+      assert.match(plan.planToken, /^[A-Za-z0-9_-]{20,}$/);
+      const tampered = structuredClone(plan);
+      tampered.proposals[0].patches[0].card.text = "A quietly edited card";
+      assert.equal((await api("POST", "/api/ai/edit/apply", { plan: tampered, proposalIds: ["quarantine-board"] }, { expectError: true })).code, "ai_plan_untrusted");
+      const { planToken: _token, ...unsigned } = plan;
+      assert.equal((await api("POST", "/api/ai/edit/apply", { plan: unsigned, proposalIds: ["quarantine-board"] }, { expectError: true })).code, "ai_plan_untrusted");
+
       const applied = await api("POST", "/api/ai/edit/apply", { plan, proposalIds: ["quarantine-board"] });
       assert.equal(applied.historyId, plan.historyId);
 
@@ -78,6 +86,10 @@ describe("repair history through the Creator Server", () => {
       assert.equal(record.baseline.healthScore, 55);
       assert.ok(record.contextSelection.included > 0);
       assert.equal(record.instruction, request.instruction);
+      assert.equal(record.conversation.length, 2, "one logged request per round");
+      assert.match(record.conversation[0].requestBody, /sealed-warehouse/);
+      assert.match(record.conversation[1].responseText, /quarantine-board/);
+      assert.ok(record.rounds.every((round) => Number.isFinite(round.requestMs)));
       const failedRecord = (await api("GET", `/api/ai/repair-history/${records[0].id}`)).record;
       assert.deepEqual([failedRecord.error.code, failedRecord.error.stage], ["endpoint_http_error", "request"]);
 

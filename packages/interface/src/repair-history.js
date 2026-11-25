@@ -43,7 +43,20 @@ export function createRepairHistoryRecord({
     maxRounds: Number.isInteger(verification?.limits?.maxRounds) ? verification.limits.maxRounds : null,
     durationMs: numberOrNull(verification?.timing?.durationMs),
     contextSelection: compactCardSelection(plan?.request?.context?.bundle?.cardSelection),
+    agentStop: verification?.agentStop ? { round: Number(verification.agentStop.round) || null, reason: clip(verification.agentStop.reason, 400) } : null,
+    requestedCardIds: Array.isArray(verification?.requestedCardIds) ? verification.requestedCardIds.slice(0, 12).map(String) : [],
     rounds: rounds.map(compactRound),
+    // The model conversation as the loop logged it: already redacted, each message capped by the
+    // loop's logBytes. Endpoint URLs and headers are left out on purpose.
+    conversation: rounds.flatMap((round) => (Array.isArray(round.exchange) ? round.exchange : []).map((entry) => ({
+      round: Number(round.round) || 0,
+      call: Number(entry.call) || 0,
+      status: entry.status ?? null,
+      requestBytes: numberOrNull(entry.requestBytes),
+      responseBytes: numberOrNull(entry.responseBytes),
+      requestBody: String(entry.requestBody ?? ""),
+      responseText: String(entry.responseText ?? "")
+    }))),
     finalProposals: finalProposals.map((proposal) => ({
       id: String(proposal.id ?? ""),
       title: clip(proposal.title, TEXT_LIMITS.title),
@@ -95,6 +108,11 @@ function compactRound(round) {
     bestScore: numberOrNull(round.bestScore),
     blockedBy: isRecord(round.blockedBy) ? { ...round.blockedBy } : {},
     durationMs: numberOrNull(round.timing?.durationMs),
+    requestMs: numberOrNull(round.timing?.requestMs),
+    agent: round.agent ? {
+      contextRequests: Array.isArray(round.agent.contextRequests) ? round.agent.contextRequests.slice(0, 6).map(String) : [],
+      stop: round.agent.stop ? { reason: clip(round.agent.stop.reason, 400) } : null
+    } : null,
     error: round.error ? { code: String(round.error.code ?? "error"), message: clip(round.error.message, TEXT_LIMITS.error) } : null,
     proposals: (Array.isArray(round.proposals) ? round.proposals : []).map((proposal) => ({
       id: String(proposal.id ?? ""),

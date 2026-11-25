@@ -59,8 +59,10 @@ const AI_ENDPOINT_EDITOR_RULES = [
   "When repairing diagnostics, prioritize reachable story flow, missing tag or variable producers, stalled runs, ending coverage, and gauge pressure.",
   "For every addCard patch, include exactly left and right choices and keep effects valid for the supplied ReignsAgent schema.",
   "Summaries should explain the author-facing design intent and the expected narrative or balance effect.",
-  "When constraints.repairLoop is present, fix the listed targets without deleting cards, renaming ids, wiping requirements, or zeroing choice effects; read previousAttempts and change approach for every failed check it names."
+  "When constraints.repairLoop is present, fix the listed targets without deleting cards, renaming ids, wiping requirements, or zeroing choice effects; read previousAttempts and change approach for every failed check it names.",
+  "In a repair loop you may also return contextRequests (up to 6 existing card ids you need to read next round) and stop ({ reason }) when the targets cannot be fixed without the author; proposals may be empty when you stop."
 ];
+const AI_AGENT_CONTEXT_REQUEST_LIMIT = 6;
 const AI_CONTEXT_CARD_LIMIT = 40;
 const AI_CONTEXT_LEGACY_CARD_LIMIT = 12;
 const AI_CONTEXT_CARD_BUDGET_BYTES = 24 * 1024;
@@ -528,7 +530,8 @@ export function buildAiContext({
       cards: normalizedBundle.cards,
       targetCardIds: selectedIds,
       diagnostics,
-      focus: constraints?.repairLoop?.targets ?? null
+      focus: constraints?.repairLoop?.targets ?? null,
+      requestedCardIds: constraints?.repairLoop?.requestedCardIds ?? []
     })
     : selectFirstAiContextCards(normalizedBundle.cards);
 
@@ -776,12 +779,14 @@ async function runEndpointSuggestions({ bundle, mode, config, credentials, instr
     response: endpointResult.proposals
   });
 
+  const agent = endpointResult.agent && (endpointResult.agent.contextRequests.length > 0 || endpointResult.agent.stop) ? endpointResult.agent : null;
   return {
     schemaVersion: AI_EDIT_SCHEMA_VERSION,
     baseFingerprint: request.context.bundle.fingerprint,
     mode,
     config: descriptor,
     request,
+    ...(agent ? { agent } : {}),
     provider: {
       protocol,
       routeMode,
@@ -1485,9 +1490,11 @@ async function callAiEditEndpoint({ endpoint, protocol, routeMode = "auto", mode
   }
 
   stage.enter("parse");
+  const document = parseAiEndpointProposalDocument(result.text, protocol);
   return {
     url,
-    proposals: parseAiEndpointProposalResponse(result.text, protocol)
+    proposals: document.proposals,
+    agent: extractAgentDirectives(document)
   };
 }
 
@@ -1711,6 +1718,27 @@ function parseAiEndpointModelsResponse(text) {
 }
 
 function parseAiEndpointProposalResponse(text, protocol) {
+  return parseAiEndpointProposalDocument(text, protocol).proposals;
+}
+
+/**
+ * extractAgentDirectives reads the optional loop directives a model may return next to its
+ * proposals: `contextRequests` (card ids to read next round, bounded) and `stop { reason }`.
+ * Anything malformed is ignored; directives never carry patches.
+ */
+export function extractAgentDirectives(document) {
+  const requests = Array.isArray(document?.contextRequests) ? document.contextRequests : [];
+  const contextRequests = [...new Set(requests.map((entry) => (typeof entry === "string" ? entry : entry?.cardId)).filter(isNonEmptyString).map((entry) => entry.trim().slice(0, 120)))].slice(0, AI_AGENT_CONTEXT_REQUEST_LIMIT);
+  const rawStop = document?.stop;
+  const stop = rawStop === true
+    ? { reason: "The model reported that it cannot fix the targets." }
+    : isPlainRecord(rawStop) && (rawStop.stop !== false)
+      ? { reason: String(rawStop.reason ?? "The model reported that it cannot fix the targets.").slice(0, 400) }
+      : null;
+  return { contextRequests, stop };
+}
+
+function parseAiEndpointProposalDocument(text, protocol) {
   const raw = String(text ?? "").trim();
   if (!raw) {
     throw new PipelineError("AI endpoint returned an empty response", "endpoint_empty_response");
@@ -1720,7 +1748,7 @@ function parseAiEndpointProposalResponse(text, protocol) {
   if (!proposalDocument) {
     throw new PipelineError("AI endpoint response must contain a proposals array", "endpoint_invalid_response");
   }
-  return proposalDocument.proposals;
+  return proposalDocument;
 }
 
 function findProposalDocument(value) {
@@ -2254,6 +2282,7 @@ export function selectAiContextCards({
   targetCardIds = [],
   diagnostics = null,
   focus = null,
+  requestedCardIds = [],
   maxCards = AI_CONTEXT_CARD_LIMIT,
   budgetBytes = AI_CONTEXT_CARD_BUDGET_BYTES
 } = {}) {
@@ -2271,6 +2300,7 @@ export function selectAiContextCards({
 
   const focusEntries = Array.isArray(focus) ? focus.filter(isPlainRecord) : (isPlainRecord(focus) ? [focus] : []);
   for (const cardId of normalizeStringArray(targetCardIds)) assign(cardId, "target", "selected card");
+  for (const cardId of normalizeStringArray(requestedCardIds)) assign(cardId, "target", "requested by the model");
   for (const entry of focusEntries) {
     for (const cardId of normalizeStringArray(entry.cardIds)) assign(cardId, "target", `repair target (${entry.code ?? "issue"})`);
   }

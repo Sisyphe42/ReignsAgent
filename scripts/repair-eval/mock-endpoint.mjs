@@ -39,7 +39,9 @@ export async function startRepairMockEndpoint({ scripts, port = 0, host = "127.0
     if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
     const proposals = Array.isArray(step) ? step : Array.isArray(step?.proposals) ? step.proposals : null;
     if (!proposals) return send(res, step.status ?? 500, step.body ?? { error: "scripted failure" });
-    return send(res, 200, { choices: [{ message: { role: "assistant", content: JSON.stringify({ proposals }) } }] });
+    // Optional loop directives a model may add: contextRequests (cards to read next) and stop.
+    const directives = Array.isArray(step) ? {} : { ...(step.contextRequests ? { contextRequests: step.contextRequests } : {}), ...(step.stop ? { stop: step.stop } : {}) };
+    return send(res, 200, { choices: [{ message: { role: "assistant", content: JSON.stringify({ proposals, ...directives }) } }] });
   });
   await new Promise((resolve, reject) => {
     server.once("error", reject);

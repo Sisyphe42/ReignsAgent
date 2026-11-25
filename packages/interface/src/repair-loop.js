@@ -56,8 +56,11 @@ export const REPAIR_CHECKS = Object.freeze([
   { id: "score_not_lower", severity: "blocking", label: "Health score not lower", rule: "Fixed-seed health score after the patch is at least the score before." },
   { id: "gate_relaxed", severity: "advisory", label: "Dead gate removed", rule: "Reported when a never-satisfiable requirement was removed instead of adding a producer." },
   { id: "new_warnings", severity: "advisory", label: "No new review warnings", rule: "Reported when a new warning-level issue appears." },
-  { id: "stalled_rate", severity: "advisory", label: "Stalled runs not higher", rule: "Reported when the share of stalled simulated runs rises." }
+  { id: "stalled_rate", severity: "advisory", label: "Stalled runs not higher", rule: "Reported when the share of stalled simulated runs rises." },
+  { id: "narrative_quality", severity: "advisory", label: "Card writing reads like the deck", rule: "New or edited cards: card text is not empty, a placeholder, or a copy of another card; choice labels are distinct and not placeholders; the writing script matches the deck (a Chinese deck stays Chinese)." }
 ]);
+
+const PLACEHOLDER_TEXT = /^(?:left|right|todo|tbd|placeholder|lorem ipsum.*|text|card text|choice|option ?[ab12]?|\.\.\.|…|-+|x+)$/i;
 
 const CHECK_BY_ID = new Map(REPAIR_CHECKS.map((check) => [check.id, check]));
 
@@ -136,6 +139,9 @@ export async function buildVerifiedRepairPlan({
   let endpointUsed = false;
   let finalRound = null;
   let lastPlan = null;
+  // Cards the model asked to read; they join the next round's context (target tier).
+  let requestedCardIds = [];
+  let agentStop = null;
 
   for (let round = 1; round <= budget.maxRounds; round += 1) {
     const elapsed = now() - startedAt;
@@ -149,12 +155,14 @@ export async function buildVerifiedRepairPlan({
     }
 
     const meter = createMeter({ fetchImpl, budget, remainingMs: budget.deadlineMs - elapsed, remainingTotalBytes: budget.maxTotalBytes - totalBytes, apiKey });
-    const repairLoop = buildRepairLoopConstraints({ round, budget, targets, attempts });
+    const repairLoop = { ...buildRepairLoopConstraints({ round, budget, targets, attempts }), ...(requestedCardIds.length ? { requestedCardIds } : {}) };
     const roundConfig = {
       ...(isRecord(config) ? config : {}),
       constraints: { ...(isRecord(config?.constraints) ? config.constraints : {}), repairLoop }
     };
     const roundStartedAt = now();
+    // Wall-clock request time feeds the UI wait estimate; it never affects loop decisions.
+    const roundWallStart = Date.now();
     let plan;
     try {
       plan = await buildAiEditPlanAsync({
@@ -215,6 +223,7 @@ export async function buildVerifiedRepairPlan({
 
     totalBytes += meter.totalBytes;
     endpointUsed = endpointUsed || Boolean(plan.provider);
+    const requestMs = Date.now() - roundWallStart;
     if (plan.baseFingerprint !== baseFingerprint) {
       throw new InterfaceError("Repair loop content fingerprint changed between rounds", "ai_repair_fingerprint_mismatch");
     }
@@ -240,16 +249,18 @@ export async function buildVerifiedRepairPlan({
       evaluated.push(withVerification(proposal, round, verdict));
     }
     const passed = evaluated.filter((proposal) => proposal.verification.passed);
+    const directives = summarizeDirectives(plan.agent, context.baseById);
     const roundRecord = {
       round,
       status: "evaluated",
+      ...(directives ? { agent: directives } : {}),
       proposalCount: proposals.length,
       evaluatedCount: Math.min(proposals.length, budget.maxProposalsPerRound),
       passedCount: passed.length,
       bestScore: bestScoreOf(evaluated),
       blockedBy: countBlockedChecks(evaluated),
       usage: meter.usage(),
-      timing: { durationMs: now() - roundStartedAt },
+      timing: { durationMs: now() - roundStartedAt, requestMs },
       exchange: meter.exchange(),
       proposals: evaluated.map((proposal) => ({
         id: proposal.id,
@@ -272,6 +283,15 @@ export async function buildVerifiedRepairPlan({
     if (passed.length > 0) {
       stopReason = "verified";
       break;
+    }
+    if (directives?.stop) {
+      // The model judged the targets unfixable without the author: end the loop here.
+      agentStop = { round, reason: directives.stop.reason };
+      stopReason = "model_stopped";
+      break;
+    }
+    if (directives?.contextRequests?.length) {
+      requestedCardIds = [...new Set([...requestedCardIds, ...directives.contextRequests])].slice(-12);
     }
     if (proposals.length === 0) {
       attempts.push({ round, proposalId: null, title: "No proposals returned", failedChecks: [{ id: "patches_apply", detail: "The response contained no proposals." }] });
@@ -324,6 +344,8 @@ export async function buildVerifiedRepairPlan({
       targets: targets.map(({ code, severity, entity }) => ({ code, severity, entity })),
       unmatchedTargets: targetSelection.unmatchedTargets ?? [],
       relatedCardIds: [...context.relatedCards].sort(),
+      ...(agentStop ? { agentStop } : {}),
+      ...(requestedCardIds.length ? { requestedCardIds } : {}),
       rounds,
       usage: { totalBytes, estimatedTokens: Math.ceil(totalBytes / 4) },
       timing: { durationMs: now() - startedAt },
@@ -437,6 +459,11 @@ function* repairEvaluationSteps({ context, proposal }) {
   add("effects_preserved", effectResult.problems.length === 0, effectResult.problems.length > 0
     ? effectResult.problems.slice(0, 3).join("; ")
     : "Edited choices keep their tags, variables, and gauge weight.");
+
+  const narrative = checkNarrativeQuality(context.baseById, afterById, edited, afterCards.filter((card) => !context.baseById.has(card.id)).map((card) => card.id));
+  add("narrative_quality", narrative.length === 0, narrative.length > 0
+    ? narrative.slice(0, 4).join("; ")
+    : "New and edited card text looks like the rest of the deck.");
 
   yield "scoring";
   let afterDiagnostics;
@@ -826,6 +853,57 @@ function skippedVerdict(budget) {
     checks: [{ id: "evaluation_budget", severity: "blocking", passed: false, detail: `Not evaluated: only the first ${budget.maxProposalsPerRound} proposals per round are scored.` }],
     score: { before: null, after: null, delta: null },
     metrics: {}
+  };
+}
+
+/**
+ * checkNarrativeQuality is a cheap, deterministic writing sanity check (advisory only). It does not
+ * judge story quality; it catches placeholder text, copied cards, unusable choice labels, and a
+ * proposal written in a different script from the deck.
+ */
+export function checkNarrativeQuality(baseById, afterById, editedIds = [], addedIds = []) {
+  const problems = [];
+  const deckIsCjk = cjkShare([...baseById.values()].map((card) => card.text ?? "").join("")) >= 0.3;
+  const textsElsewhere = new Map();
+  for (const card of afterById.values()) {
+    const key = normalizeWriting(card.text);
+    if (key) textsElsewhere.set(key, [...(textsElsewhere.get(key) ?? []), card.id]);
+  }
+  for (const cardId of [...new Set([...editedIds, ...addedIds])]) {
+    const card = afterById.get(cardId);
+    if (!card) continue;
+    const text = String(card.text ?? "").trim();
+    if (text.length < 8 || PLACEHOLDER_TEXT.test(text)) problems.push(`${cardId}: card text is empty or a placeholder`);
+    const twins = (textsElsewhere.get(normalizeWriting(text)) ?? []).filter((id) => id !== cardId);
+    if (text && twins.length > 0) problems.push(`${cardId}: same text as ${twins[0]}`);
+    const labels = (card.choices ?? []).map((choice) => String(choice.label ?? "").trim());
+    if (labels.some((label) => !label || PLACEHOLDER_TEXT.test(label))) problems.push(`${cardId}: a choice label is empty or a placeholder`);
+    else if (labels.length === 2 && normalizeWriting(labels[0]) === normalizeWriting(labels[1])) problems.push(`${cardId}: both choices have the same label`);
+    const writing = [text, ...labels].join("");
+    if (writing && deckIsCjk !== (cjkShare(writing) >= 0.3)) problems.push(`${cardId}: written in a different script from the deck`);
+  }
+  return problems;
+}
+
+function cjkShare(text) {
+  const letters = [...String(text ?? "")].filter((char) => /[\p{L}]/u.test(char));
+  if (letters.length === 0) return 0;
+  return letters.filter((char) => /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u.test(char)).length / letters.length;
+}
+
+function normalizeWriting(text) {
+  return String(text ?? "").toLowerCase().replace(/[\s\p{P}]+/gu, "");
+}
+
+function summarizeDirectives(agent, baseById) {
+  if (!agent) return null;
+  const known = (agent.contextRequests ?? []).filter((cardId) => baseById.has(cardId));
+  const unknown = (agent.contextRequests ?? []).filter((cardId) => !baseById.has(cardId));
+  if (!known.length && !unknown.length && !agent.stop) return null;
+  return {
+    contextRequests: known,
+    ...(unknown.length ? { ignoredRequests: unknown } : {}),
+    ...(agent.stop ? { stop: { reason: String(agent.stop.reason ?? "").slice(0, 400) } } : {})
   };
 }
 

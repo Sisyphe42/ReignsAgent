@@ -275,6 +275,24 @@ export const REPAIR_EVAL_CASES = [
     ],
     expect: { status: "verified", rounds: 2, blocked: { gates_preserved: 1 } },
     real: { taskId: "night-watch-stall" }
+  },
+  {
+    id: "fog-model-reads-then-fixes",
+    description: "Round 1 wipes the gate and asks to read clear-morning and first-fog; round 2 sees them and adds a producer.",
+    deck: fogHarborSealedWarehouse,
+    repairTarget: { code: "unreachable_cards", cardIds: ["sealed-warehouse"] },
+    script: [{ proposals: [fog.wipeGate], contextRequests: ["clear-morning", "first-fog", "no-such-card"] }, [fog.addProducer]],
+    expect: { status: "verified", rounds: 2, blocked: { gates_preserved: 1 }, contextRequests: ["clear-morning", "first-fog"] },
+    realSkip: "Scripted agent directive (context request) on the fog-direct-fix deck."
+  },
+  {
+    id: "fog-model-stops",
+    description: "Round 1 wipes the gate (blocked); round 2 returns no proposals and stops, saying the author must decide.",
+    deck: fogHarborSealedWarehouse,
+    repairTarget: { code: "unreachable_cards", cardIds: ["sealed-warehouse"] },
+    script: [[fog.wipeGate], { proposals: [], stop: { reason: "Opening the warehouse needs an author decision about when the quarantine ends." } }],
+    expect: { status: "unverified", rounds: 2, stopReason: "model_stopped", blocked: { gates_preserved: 1 } },
+    realSkip: "Scripted agent directive (stop) on the fog-direct-fix deck."
   }
 ];
 

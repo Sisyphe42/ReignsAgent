@@ -64,7 +64,8 @@ function contractError(message, code) { const error = new Error(message); error.
 // Stored as one JSON file per project; newest first, bounded by count and per-record size.
 export const REPAIR_HISTORY_FILE = "repair-history.json";
 export const REPAIR_HISTORY_SCHEMA_VERSION = 1;
-export const REPAIR_HISTORY_LIMITS = Object.freeze({ maxRecords: 40, maxRecordBytes: 48 * 1024 });
+// 128 KiB fits three rounds of logged conversation (each message is capped at 16 KiB by the loop).
+export const REPAIR_HISTORY_LIMITS = Object.freeze({ maxRecords: 40, maxRecordBytes: 128 * 1024, conversationTrimBytes: 2 * 1024 });
 export const REPAIR_HISTORY_ID_PATTERN = /^rh-[a-z0-9-]{6,64}$/;
 
 export function emptyRepairHistory() { return { schemaVersion: REPAIR_HISTORY_SCHEMA_VERSION, records: [] }; }
@@ -129,6 +130,10 @@ export function summarizeRepairHistory(history) {
     bestScore: bestRecordScore(entry),
     outcome: entry.outcome ?? "draft",
     appliedProposalIds: Array.isArray(entry.appliedProposalIds) ? entry.appliedProposalIds : [],
+    model: typeof entry.model === "string" ? entry.model : null,
+    endpoint: entry.endpoint ?? null,
+    // Measured model request times (ms), newest record first; used for the UI wait estimate.
+    requestMs: (Array.isArray(entry.rounds) ? entry.rounds : []).map((round) => round?.requestMs).filter((value) => Number.isFinite(value) && value >= 0),
     truncated: Boolean(entry.truncated)
   }));
 }
@@ -140,6 +145,14 @@ function bestRecordScore(entry) {
 
 function fitRepairRecord(record, maxBytes) {
   if (byteLength(record) <= maxBytes) return record;
+  // First shorten the conversation, then drop it, before touching the round evidence.
+  if (Array.isArray(record.conversation) && record.conversation.length > 0) {
+    const keep = REPAIR_HISTORY_LIMITS.conversationTrimBytes;
+    const shortened = { ...record, conversationTruncated: true, conversation: record.conversation.map((entry) => ({ ...entry, requestBody: clipText(entry.requestBody, keep), responseText: clipText(entry.responseText, keep) })) };
+    if (byteLength(shortened) <= maxBytes) return shortened;
+    record = { ...shortened, conversation: [] };
+    if (byteLength(record) <= maxBytes) return record;
+  }
   const trimmed = { ...record, truncated: true, contextSelection: record.contextSelection ? { ...record.contextSelection, reasons: {} } : null };
   trimmed.rounds = (Array.isArray(record.rounds) ? record.rounds : []).map((round) => ({
     ...round,
@@ -153,6 +166,11 @@ function fitRepairRecord(record, maxBytes) {
   trimmed.instruction = String(trimmed.instruction ?? "").slice(0, 200);
   if (byteLength(trimmed) <= maxBytes) return trimmed;
   throw contractError("Repair history record exceeds the size limit", "repair_history_record_too_large");
+}
+
+function clipText(value, maxChars) {
+  const text = String(value ?? "");
+  return text.length > maxChars ? `${text.slice(0, maxChars)}… [trimmed to fit the history size limit]` : text;
 }
 
 function isStoredRepairRecord(value) { return isRecord(value) && typeof value.id === "string" && REPAIR_HISTORY_ID_PATTERN.test(value.id) && typeof value.createdAt === "string"; }

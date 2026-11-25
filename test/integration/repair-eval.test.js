@@ -10,7 +10,8 @@ describe("offline repair-loop eval", () => {
     const mismatched = report.cases.filter((result) => !result.matchesExpectation);
     assert.deepEqual(mismatched.map((result) => `${result.id}: ${result.mismatches.join("; ")}`), []);
 
-    assert.ok(REPAIR_EVAL_CASES.length >= 5 && REPAIR_EVAL_CASES.length <= 10);
+    // 10 harness cases plus 2 model-directive cases (contextRequests, stop).
+    assert.ok(REPAIR_EVAL_CASES.length >= 5 && REPAIR_EVAL_CASES.length <= 12);
     assert.equal(report.summary.harnessAgreement, 1);
     assert.equal(report.summary.verified, REPAIR_EVAL_CASES.filter((entry) => entry.expect.status === "verified").length);
     assert.ok(report.summary.antiShortcutBlocks > 0);
