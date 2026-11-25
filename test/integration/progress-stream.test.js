@@ -24,6 +24,19 @@ describe("Creator Server progress streams (opt-in NDJSON)", () => {
     });
   });
 
+  it("refuses to publish a streamed review when the deck changed while it ran", async () => {
+    await withCreator(async ({ call, stream, headers, base }) => {
+      const pending = stream("/api/diagnostics/run", { cycles: 4000, maxTurns: 40, seed: 1 });
+      // Edit the deck while the review yields between chunks.
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      await fetch(`${base}/api/editor/cards`, { method: "POST", headers, body: JSON.stringify({ card: { id: "late-edit", text: "A late edit arrives.", choices: [{ id: "left", label: "Yes", effects: {} }, { id: "right", label: "No", effects: {} }] } }) });
+      const { final } = await pending;
+      assert.equal(final.type, "error");
+      assert.equal(final.error.code, "diagnostics_stale");
+      await call("/api/diagnostics/run", { cycles: 50, maxTurns: 20, seed: 1 });
+    });
+  });
+
   it("streams draft stages and reports the failing stage of an endpoint error", async () => {
     const endpoint = await startEndpoint((count) => count === 1
       ? { status: 200, body: { choices: [{ message: { content: JSON.stringify({ proposals: [] }) } }] } }
@@ -65,7 +78,7 @@ async function withCreator(run) {
       const lines = (await response.text()).trim().split("\n").map((line) => JSON.parse(line));
       return { events: lines.filter((line) => line.type === "progress"), final: lines.at(-1) };
     };
-    await run({ call, stream });
+    await run({ call, stream, headers, base });
   } finally {
     await creator.close();
     await rm(dataRoot, { recursive: true, force: true });

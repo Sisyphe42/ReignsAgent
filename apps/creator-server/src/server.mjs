@@ -359,8 +359,16 @@ async function handleApi(req, res, url) {
     };
     if (wantsProgressStream(req)) {
       // Opt-in NDJSON: real simulated-cycle progress, then the same projection.
+      // The deck can change while the event loop is free: only publish a result for the deck
+      // (and project) it was computed from.
+      const startProjectId = (await workspace.getConfig()).activeProjectId;
+      const startDeck = JSON.stringify({ cards: reviewInput.cards, metadata: reviewInput.metadata });
       return streamWithProgress(res, async (progress) => {
         const projection = await runDiagnosticsAsync({ ...reviewInput, onProgress: progress });
+        const currentProjectId = (await workspace.getConfig()).activeProjectId;
+        if (currentProjectId !== startProjectId || JSON.stringify({ cards: store.editor.toCards(), metadata: store.editor.metadata }) !== startDeck) {
+          throw apiError("The deck changed while Review was running; run Review again", "diagnostics_stale", 409);
+        }
         store.lastDiagnostics = projection;
         return projection;
       });
