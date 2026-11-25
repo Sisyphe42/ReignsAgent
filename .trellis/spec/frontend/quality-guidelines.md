@@ -63,6 +63,19 @@ Required touch points:
 
 Why: skin state is shared through `localStorage` and the `skin` URL parameter. Missing one allowlist or template makes a valid workbench skin fall back to the default in player or deployable builds.
 
+### AI Outcome Notices
+
+When an AI Assist run ends without a draft, the panel copy comes from `apps/creator-web/src/ai-status-copy.js`, not from inline string concatenation:
+
+- The author's Cancel is not a failure. It uses the neutral tone (`role="status"`, no error red), the title "Cancelled", says which rounds finished and that no card changed, and offers "Build again". The interrupted progress step and repair-loop phase use the `--cancelled` classes, never `--failed`.
+- Advice follows the failure type: 5xx / 408 / 429 / network / timeout say the endpoint is temporarily unavailable and to retry later (never "edit the prompt"); 401 / 403 / 404 point at Settings; other 4xx and parse / invalid-response failures suggest editing the prompt; the session request limit points at Settings only.
+- Compose sentences with `joinSentences` / `toSentence` so a message that already ends in a period never becomes "..".
+- Repair-loop stop text comes from `repairStopLabel` and names rounds explicitly ("Passed in round 2 of 3: ..."); do not reintroduce phrases like "the first round with ..." that read as round 1.
+
+### Narrow Navigation
+
+At 800 px and below the rail is a horizontally scrolling tab strip declared at the end of `styles.css` with skin-proof selectors. Tabs size to icon + full label + state badge (`min-width: max-content`); labels are never ellipsized, only the strip scrolls, and the active tab is scrolled into the strip on panel change. Skin rules must not pin a fixed tab width at this breakpoint.
+
 ---
 
 ## Testing Requirements
