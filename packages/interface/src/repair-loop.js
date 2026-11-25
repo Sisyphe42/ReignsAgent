@@ -56,8 +56,11 @@ export const REPAIR_CHECKS = Object.freeze([
   { id: "score_not_lower", severity: "blocking", label: "Health score not lower", rule: "Fixed-seed health score after the patch is at least the score before." },
   { id: "gate_relaxed", severity: "advisory", label: "Dead gate removed", rule: "Reported when a never-satisfiable requirement was removed instead of adding a producer." },
   { id: "new_warnings", severity: "advisory", label: "No new review warnings", rule: "Reported when a new warning-level issue appears." },
-  { id: "stalled_rate", severity: "advisory", label: "Stalled runs not higher", rule: "Reported when the share of stalled simulated runs rises." }
+  { id: "stalled_rate", severity: "advisory", label: "Stalled runs not higher", rule: "Reported when the share of stalled simulated runs rises." },
+  { id: "narrative_quality", severity: "advisory", label: "Card writing reads like the deck", rule: "New or edited cards: card text is not empty, a placeholder, or a copy of another card; choice labels are distinct and not placeholders; the writing script matches the deck (a Chinese deck stays Chinese)." }
 ]);
+
+const PLACEHOLDER_TEXT = /^(?:left|right|todo|tbd|placeholder|lorem ipsum.*|text|card text|choice|option ?[ab12]?|\.\.\.|…|-+|x+)$/i;
 
 const CHECK_BY_ID = new Map(REPAIR_CHECKS.map((check) => [check.id, check]));
 
@@ -77,11 +80,18 @@ export async function buildVerifiedRepairPlan({
   scoring = {},
   limits = {},
   fetchImpl = globalThis.fetch,
-  now = () => Date.now()
+  now = () => Date.now(),
+  onProgress = null,
+  yieldToHost = defaultYield,
+  signal = null,
+  priorAttempts = []
 } = {}) {
   const startedAt = now();
   const budget = normalizeLimits(limits);
   const scoringConfig = normalizeScoring(scoring);
+  const progress = createLoopProgress(onProgress, budget.maxRounds);
+  progress.emit({ stage: "baseline" });
+  await yieldToHost();
   const baseBundle = toBundle(editor);
   const baseFingerprint = fingerprintBundle(baseBundle);
   const baseline = runDiagnostics({ cards: baseBundle.cards, metadata: baseBundle.metadata, ...scoringConfig });
@@ -90,17 +100,28 @@ export async function buildVerifiedRepairPlan({
   const apiKey = typeof credentials?.apiKey === "string" ? credentials.apiKey.trim() : "";
 
   if (targetSelection.status === "not_verifiable") {
-    const plan = await buildAiEditPlanAsync({
-      editor: baseBundle,
-      config,
-      credentials,
-      mode: "repair_diagnostics",
-      instruction,
-      targetCardId,
-      // Nothing to score: give the model the Review the author actually looked at.
-      diagnostics: diagnostics ?? baseline,
-      fetchImpl
-    });
+    const requestStartedAt = now();
+    let plan;
+    try {
+      plan = await buildAiEditPlanAsync({
+        editor: baseBundle,
+        config,
+        credentials,
+        mode: "repair_diagnostics",
+        instruction,
+        targetCardId,
+        // Nothing to score: give the model the Review the author actually looked at.
+        diagnostics: diagnostics ?? baseline,
+        fetchImpl,
+        signal,
+        onProgress: (event) => progress.emit({ ...event, round: 1, maxRounds: 1 })
+      });
+    } catch (error) {
+      // This path makes one unmetered request, so there is no exchange log; keep the failed round.
+      const failedRound = { round: 1, status: "endpoint_error", error: { code: error?.code ?? "endpoint_error", message: scrub(error?.message ?? String(error), apiKey) }, proposalCount: 0, evaluatedCount: 0, passedCount: 0, bestScore: null, blockedBy: {}, timing: { durationMs: now() - requestStartedAt } };
+      throw attachLoopEvidence(error, { stopReason: targetSelection.stopReason, budget, scoringConfig, baseline, targets: [], rounds: [failedRound], requestedCardIds: [] });
+    }
+    progress.emit({ stage: "done", round: 1, maxRounds: 1 });
     return {
       ...plan,
       verification: {
@@ -129,8 +150,16 @@ export async function buildVerifiedRepairPlan({
   let endpointUsed = false;
   let finalRound = null;
   let lastPlan = null;
+  // Cards the model asked to read; they join the next round's context (target tier).
+  let requestedCardIds = [];
+  let agentStop = null;
+
+  // Attempts from earlier runs on the same target (repair history) seed round 1's feedback.
+  attempts.push(...compactPriorAttempts(priorAttempts));
+  const cancelled = () => attachLoopEvidence(new InterfaceError("AI request cancelled by the author", "ai_cancelled"), { stopReason: "ai_cancelled", budget, scoringConfig, baseline, targets, rounds, requestedCardIds });
 
   for (let round = 1; round <= budget.maxRounds; round += 1) {
+    if (signal?.aborted) throw cancelled();
     const elapsed = now() - startedAt;
     if (elapsed >= budget.deadlineMs) {
       stopReason = "deadline";
@@ -142,12 +171,14 @@ export async function buildVerifiedRepairPlan({
     }
 
     const meter = createMeter({ fetchImpl, budget, remainingMs: budget.deadlineMs - elapsed, remainingTotalBytes: budget.maxTotalBytes - totalBytes, apiKey });
-    const repairLoop = buildRepairLoopConstraints({ round, budget, targets, attempts });
+    const repairLoop = { ...buildRepairLoopConstraints({ round, budget, targets, attempts }), ...(requestedCardIds.length ? { requestedCardIds } : {}) };
     const roundConfig = {
       ...(isRecord(config) ? config : {}),
       constraints: { ...(isRecord(config?.constraints) ? config.constraints : {}), repairLoop }
     };
     const roundStartedAt = now();
+    // Wall-clock request time feeds the UI wait estimate; it never affects loop decisions.
+    const roundWallStart = Date.now();
     let plan;
     try {
       plan = await buildAiEditPlanAsync({
@@ -158,9 +189,16 @@ export async function buildVerifiedRepairPlan({
         instruction,
         targetCardId,
         diagnostics: baseline,
-        fetchImpl: meter.fetch
+        fetchImpl: meter.fetch,
+        signal,
+        onProgress: (event) => progress.emit({ ...event, round })
       });
     } catch (error) {
+      if (signal?.aborted || error?.code === "ai_cancelled") {
+        totalBytes += meter.totalBytes;
+        rounds.push({ round, status: "cancelled", error: { code: "ai_cancelled", message: "Cancelled by the author while waiting for the endpoint." }, proposalCount: 0, evaluatedCount: 0, passedCount: 0, bestScore: null, blockedBy: {}, usage: meter.usage(), timing: { durationMs: now() - roundStartedAt }, exchange: meter.exchange() });
+        throw cancelled();
+      }
       const failure = { code: meter.budgetError?.code ?? error?.code ?? "endpoint_error", message: scrub(meter.budgetError?.message ?? error?.message ?? String(error), apiKey) };
       totalBytes += meter.totalBytes;
       if (!meter.budgetError && REJECTED_RESPONSE_CODES.has(error?.code)) {
@@ -196,10 +234,10 @@ export async function buildVerifiedRepairPlan({
         timing: { durationMs: now() - roundStartedAt },
         exchange: meter.exchange()
       });
-      // Round 1 has nothing to fall back to: surface the error unchanged.
+      // Round 1 has nothing to fall back to: surface the error, with the round evidence attached.
       if (round === 1) {
-        if (meter.budgetError) throw new InterfaceError(meter.budgetError.message, meter.budgetError.code);
-        throw error;
+        const failureError = meter.budgetError ? new InterfaceError(meter.budgetError.message, meter.budgetError.code) : error;
+        throw attachLoopEvidence(failureError, { stopReason: failure.code, budget, scoringConfig, baseline, targets, rounds, requestedCardIds });
       }
       stopReason = meter.budgetError ? meter.budgetError.code : "endpoint_error";
       break;
@@ -207,33 +245,34 @@ export async function buildVerifiedRepairPlan({
 
     totalBytes += meter.totalBytes;
     endpointUsed = endpointUsed || Boolean(plan.provider);
+    const requestMs = Date.now() - roundWallStart;
     if (plan.baseFingerprint !== baseFingerprint) {
-      throw new InterfaceError("Repair loop content fingerprint changed between rounds", "ai_repair_fingerprint_mismatch");
+      throw attachLoopEvidence(new InterfaceError("Repair loop content fingerprint changed between rounds", "ai_repair_fingerprint_mismatch"), { stopReason: "ai_repair_fingerprint_mismatch", budget, scoringConfig, baseline, targets, rounds, requestedCardIds });
     }
     lastPlan = plan;
 
     const proposals = Array.isArray(plan.proposals) ? plan.proposals : [];
-    const evaluated = proposals.map((proposal, index) => {
-      if (index >= budget.maxProposalsPerRound) {
-        return withVerification(proposal, round, skippedVerdict(budget));
-      }
-      return withVerification(proposal, round, evaluateRepairProposal({ context, proposal }));
-    });
-    const passed = evaluated.filter((proposal) => proposal.verification.passed);
-    const roundRecord = {
+    const evaluated = [];
+    const scoredCount = Math.min(proposals.length, budget.maxProposalsPerRound);
+    const directives = summarizeDirectives(plan.agent, context.baseById);
+    const buildRoundRecord = (status) => ({
       round,
-      status: "evaluated",
+      status,
+      ...(directives ? { agent: directives } : {}),
       proposalCount: proposals.length,
-      evaluatedCount: Math.min(proposals.length, budget.maxProposalsPerRound),
-      passedCount: passed.length,
+      evaluatedCount: status === "evaluated" ? Math.min(proposals.length, budget.maxProposalsPerRound) : evaluated.length,
+      passedCount: evaluated.filter((proposal) => proposal.verification.passed).length,
       bestScore: bestScoreOf(evaluated),
       blockedBy: countBlockedChecks(evaluated),
       usage: meter.usage(),
-      timing: { durationMs: now() - roundStartedAt },
+      timing: { durationMs: now() - roundStartedAt, requestMs },
       exchange: meter.exchange(),
       proposals: evaluated.map((proposal) => ({
         id: proposal.id,
         title: proposal.title,
+        summary: String(proposal.summary ?? "").slice(0, 240),
+        patchCount: Array.isArray(proposal.patches) ? proposal.patches.length : 0,
+        cardIds: patchedCardIds(proposal.patches),
         passed: proposal.verification.passed,
         failedChecks: proposal.verification.failedChecks,
         failedDetails: proposal.verification.checks
@@ -241,7 +280,36 @@ export async function buildVerifiedRepairPlan({
           .map((check) => ({ id: check.id, detail: String(check.detail ?? "").slice(0, 200) })),
         scoreAfter: proposal.verification.score.after
       }))
-    };
+    });
+    try {
+      for (const [index, proposal] of proposals.entries()) {
+        if (index >= budget.maxProposalsPerRound) {
+          evaluated.push(withVerification(proposal, round, skippedVerdict(budget)));
+          continue;
+        }
+        const position = { round, proposalIndex: index + 1, proposalCount: scoredCount };
+        const verdict = await evaluateRepairProposalStaged({
+          context,
+          proposal,
+          onStage: async (stage) => {
+            if (signal?.aborted) throw new InterfaceError("AI request cancelled by the author", "ai_cancelled");
+            progress.emit({ ...position, stage });
+            await yieldToHost();
+            // A cancel can arrive during the yield; honor it before the next stage runs.
+            if (signal?.aborted) throw new InterfaceError("AI request cancelled by the author", "ai_cancelled");
+          }
+        });
+        evaluated.push(withVerification(proposal, round, verdict));
+        if (signal?.aborted) throw new InterfaceError("AI request cancelled by the author", "ai_cancelled");
+      }
+    } catch (error) {
+      if (error?.code !== "ai_cancelled") throw error;
+      // Keep this round's exchange and the verdicts computed before the cancel.
+      rounds.push(buildRoundRecord("cancelled"));
+      throw cancelled();
+    }
+    const passed = evaluated.filter((proposal) => proposal.verification.passed);
+    const roundRecord = buildRoundRecord("evaluated");
     rounds.push(roundRecord);
     finalRound = { round, proposals: evaluated, plan };
     evaluatedRounds.push(finalRound);
@@ -249,6 +317,15 @@ export async function buildVerifiedRepairPlan({
     if (passed.length > 0) {
       stopReason = "verified";
       break;
+    }
+    if (directives?.stop) {
+      // The model judged the targets unfixable without the author: end the loop here.
+      agentStop = { round, reason: directives.stop.reason };
+      stopReason = "model_stopped";
+      break;
+    }
+    if (directives?.contextRequests?.length) {
+      requestedCardIds = [...new Set([...requestedCardIds, ...directives.contextRequests])].slice(-12);
     }
     if (proposals.length === 0) {
       attempts.push({ round, proposalId: null, title: "No proposals returned", failedChecks: [{ id: "patches_apply", detail: "The response contained no proposals." }] });
@@ -264,14 +341,17 @@ export async function buildVerifiedRepairPlan({
 
   if (!lastPlan) {
     const lastError = [...rounds].reverse().find((record) => record.error)?.error;
-    throw new InterfaceError(
+    throw attachLoopEvidence(new InterfaceError(
       `Repair loop produced no usable proposals (${stopReason})${lastError ? `: ${lastError.message}` : ""}`,
       lastError?.code === "endpoint_invalid_response" || lastError?.code === "endpoint_parse_error" || lastError?.code === "pipeline_error"
         ? "ai_repair_no_valid_response"
         : "ai_repair_no_rounds"
-    );
+    ), { stopReason, budget, scoringConfig, baseline, targets, rounds, requestedCardIds });
   }
 
+  // Last chance to honor a cancel before a draft is returned.
+  if (signal?.aborted) throw cancelled();
+  progress.emit({ stage: "done", round: rounds.length, stopReason });
   const chosen = stopReason === "verified" ? finalRound : pickBestRound(evaluatedRounds);
   const status = stopReason === "verified" ? "verified" : "unverified";
   const proposals = chosen?.proposals ?? [];
@@ -279,11 +359,12 @@ export async function buildVerifiedRepairPlan({
   // but failing here is clearer than a later apply rejection.
   const liveEditor = typeof getEditor === "function" ? getEditor() : editor;
   if (fingerprintBundle(toBundle(liveEditor)) !== baseFingerprint) {
-    throw new InterfaceError("Content changed while the repair loop was running; rebuild the repair draft", "ai_repair_stale");
+    throw attachLoopEvidence(new InterfaceError("Content changed while the repair loop was running; rebuild the repair draft", "ai_repair_stale"), { stopReason: "ai_repair_stale", budget, scoringConfig, baseline, targets, rounds, requestedCardIds });
   }
 
+  const { exchange: _lastPlanExchange, ...lastPlanWithoutExchange } = lastPlan;
   return {
-    ...lastPlan,
+    ...lastPlanWithoutExchange,
     baseFingerprint,
     config: stripRepairConstraints(lastPlan.config),
     proposals,
@@ -300,6 +381,8 @@ export async function buildVerifiedRepairPlan({
       targets: targets.map(({ code, severity, entity }) => ({ code, severity, entity })),
       unmatchedTargets: targetSelection.unmatchedTargets ?? [],
       relatedCardIds: [...context.relatedCards].sort(),
+      ...(agentStop ? { agentStop } : {}),
+      ...(requestedCardIds.length ? { requestedCardIds } : {}),
       rounds,
       usage: { totalBytes, estimatedTokens: Math.ceil(totalBytes / 4) },
       timing: { durationMs: now() - startedAt },
@@ -313,6 +396,29 @@ export async function buildVerifiedRepairPlan({
  * Deterministic for a fixed context (fixed Reviewer seed).
  */
 export function evaluateRepairProposal({ context, proposal }) {
+  const steps = repairEvaluationSteps({ context, proposal });
+  let next = steps.next();
+  while (!next.done) next = steps.next();
+  return next.value;
+}
+
+/**
+ * evaluateRepairProposalStaged is the same evaluation, reporting each real stage
+ * ("trial" = apply to a copy and structural checks, "scoring" = fixed-seed Reviewer run,
+ * "checks" = review-based checks) to `onStage` before it starts.
+ */
+export async function evaluateRepairProposalStaged({ context, proposal, onStage = null }) {
+  const steps = repairEvaluationSteps({ context, proposal });
+  let next = steps.next();
+  while (!next.done) {
+    if (typeof onStage === "function") await onStage(next.value);
+    next = steps.next();
+  }
+  return next.value;
+}
+
+function* repairEvaluationSteps({ context, proposal }) {
+  yield "trial";
   const checks = [];
   const add = (id, passed, detail) => checks.push({ id, severity: CHECK_BY_ID.get(id).severity, passed, detail });
   const patches = Array.isArray(proposal?.patches) ? proposal.patches : [];
@@ -391,6 +497,12 @@ export function evaluateRepairProposal({ context, proposal }) {
     ? effectResult.problems.slice(0, 3).join("; ")
     : "Edited choices keep their tags, variables, and gauge weight.");
 
+  const narrative = checkNarrativeQuality(context.baseById, afterById, edited, afterCards.filter((card) => !context.baseById.has(card.id)).map((card) => card.id));
+  add("narrative_quality", narrative.length === 0, narrative.length > 0
+    ? narrative.slice(0, 4).join("; ")
+    : "New and edited card text looks like the rest of the deck.");
+
+  yield "scoring";
   let afterDiagnostics;
   try {
     afterDiagnostics = runDiagnostics({ cards: afterCards, metadata: applied.bundle.metadata, ...context.scoring });
@@ -398,6 +510,7 @@ export function evaluateRepairProposal({ context, proposal }) {
     add("target_resolved", false, `Review could not run: ${error?.message ?? error}`);
     return finalizeVerdict({ checks, before, after: null, metrics: null });
   }
+  yield "checks";
 
   const afterIssues = collectIssueEntities(afterDiagnostics);
   const afterKeys = new Set(afterIssues.map((issue) => issue.key));
@@ -777,6 +890,132 @@ function skippedVerdict(budget) {
     checks: [{ id: "evaluation_budget", severity: "blocking", passed: false, detail: `Not evaluated: only the first ${budget.maxProposalsPerRound} proposals per round are scored.` }],
     score: { before: null, after: null, delta: null },
     metrics: {}
+  };
+}
+
+/**
+ * checkNarrativeQuality is a cheap, deterministic writing sanity check (advisory only). It does not
+ * judge story quality; it catches placeholder text, copied cards, unusable choice labels, and a
+ * proposal written in a different script from the deck.
+ */
+export function checkNarrativeQuality(baseById, afterById, editedIds = [], addedIds = []) {
+  const problems = [];
+  const deckIsCjk = cjkShare([...baseById.values()].map((card) => card.text ?? "").join("")) >= 0.3;
+  const textsElsewhere = new Map();
+  for (const card of afterById.values()) {
+    const key = normalizeWriting(card.text);
+    if (key) textsElsewhere.set(key, [...(textsElsewhere.get(key) ?? []), card.id]);
+  }
+  for (const cardId of [...new Set([...editedIds, ...addedIds])]) {
+    const card = afterById.get(cardId);
+    if (!card) continue;
+    const text = String(card.text ?? "").trim();
+    if (text.length < 8 || PLACEHOLDER_TEXT.test(text)) problems.push(`${cardId}: card text is empty or a placeholder`);
+    const twins = (textsElsewhere.get(normalizeWriting(text)) ?? []).filter((id) => id !== cardId);
+    if (text && twins.length > 0) problems.push(`${cardId}: same text as ${twins[0]}`);
+    const labels = (card.choices ?? []).map((choice) => String(choice.label ?? "").trim());
+    if (labels.some((label) => !label || PLACEHOLDER_TEXT.test(label))) problems.push(`${cardId}: a choice label is empty or a placeholder`);
+    else if (labels.length === 2 && normalizeWriting(labels[0]) === normalizeWriting(labels[1])) problems.push(`${cardId}: both choices have the same label`);
+    const writing = [text, ...labels].join("");
+    if (writing && deckIsCjk !== (cjkShare(writing) >= 0.3)) problems.push(`${cardId}: written in a different script from the deck`);
+  }
+  return problems;
+}
+
+function cjkShare(text) {
+  const letters = [...String(text ?? "")].filter((char) => /[\p{L}]/u.test(char));
+  if (letters.length === 0) return 0;
+  return letters.filter((char) => /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u.test(char)).length / letters.length;
+}
+
+function normalizeWriting(text) {
+  return String(text ?? "").toLowerCase().replace(/[\s\p{P}]+/gu, "");
+}
+
+/**
+ * attachLoopEvidence keeps what a failed loop already recorded (rounds with their redacted
+ * exchange logs, targets, baseline) on the thrown error as `error.repairVerification`, so a host
+ * can still store a replayable history record. The error itself is unchanged otherwise.
+ */
+function attachLoopEvidence(error, { stopReason, budget, scoringConfig, baseline, targets, rounds, requestedCardIds }) {
+  if (!error || typeof error !== "object") return error;
+  try {
+    error.repairVerification = {
+      schemaVersion: REPAIR_LOOP_SCHEMA_VERSION,
+      status: "failed",
+      stopReason,
+      scoring: scoringConfig,
+      limits: budget,
+      baseline: summarizeScore(baseline),
+      targets: targets.map(({ code, severity, entity }) => ({ code, severity, entity })),
+      roundsUsed: rounds.length,
+      ...(requestedCardIds.length ? { requestedCardIds } : {}),
+      rounds
+    };
+  } catch {
+    // Frozen errors keep their original shape.
+  }
+  return error;
+}
+
+/**
+ * compactPriorAttempts turns blocked proposals from earlier runs on the same target (supplied by
+ * the host from repair history) into bounded feedback entries marked as coming from an earlier run.
+ */
+function compactPriorAttempts(priorAttempts) {
+  return (Array.isArray(priorAttempts) ? priorAttempts : []).slice(0, 4).map((attempt) => ({
+    round: 0,
+    earlierRun: true,
+    proposalId: String(attempt?.proposalId ?? "").slice(0, 120) || null,
+    title: String(attempt?.title ?? "").slice(0, 160),
+    failedChecks: (Array.isArray(attempt?.failedChecks) ? attempt.failedChecks : []).slice(0, 4).map((check) => ({
+      id: String(check?.id ?? check ?? "").slice(0, 60),
+      detail: String(check?.detail ?? "").slice(0, 200)
+    }))
+  }));
+}
+
+function summarizeDirectives(agent, baseById) {
+  if (!agent) return null;
+  const known = (agent.contextRequests ?? []).filter((cardId) => baseById.has(cardId));
+  const unknown = (agent.contextRequests ?? []).filter((cardId) => !baseById.has(cardId));
+  if (!known.length && !unknown.length && !agent.stop) return null;
+  return {
+    contextRequests: known,
+    ...(unknown.length ? { ignoredRequests: unknown } : {}),
+    ...(agent.stop ? { stop: { reason: String(agent.stop.reason ?? "").slice(0, 400) } } : {})
+  };
+}
+
+function patchedCardIds(patches) {
+  const ids = new Set();
+  for (const patch of Array.isArray(patches) ? patches : []) {
+    const cardId = patch?.op === "addCard" ? patch?.card?.id : patch?.cardId;
+    if (typeof cardId === "string" && cardId) ids.add(cardId);
+  }
+  return [...ids].slice(0, 8);
+}
+
+function defaultYield() {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+/**
+ * createLoopProgress forwards loop progress to an optional observer. Events always carry
+ * maxRounds and the latest round, so a UI can render "Round r/3 · stage".
+ */
+function createLoopProgress(onProgress, maxRounds) {
+  let lastRound = 0;
+  return {
+    emit(event) {
+      if (typeof onProgress !== "function") return;
+      if (Number.isInteger(event.round)) lastRound = event.round;
+      try {
+        onProgress({ maxRounds, ...event, round: event.round ?? lastRound });
+      } catch {
+        // Progress observers must never break the loop.
+      }
+    }
   };
 }
 

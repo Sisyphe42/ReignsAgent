@@ -67,6 +67,7 @@ function scoreCase(entry, plan, error, durationMs) {
     if (verification.status !== entry.expect.status) mismatches.push(`status ${verification.status} (expected ${entry.expect.status})`);
     if (rounds.length !== entry.expect.rounds) mismatches.push(`rounds ${rounds.length} (expected ${entry.expect.rounds})`);
     if (entry.expect.stopReason && verification.stopReason !== entry.expect.stopReason) mismatches.push(`stopReason ${verification.stopReason} (expected ${entry.expect.stopReason})`);
+    if (entry.expect.contextRequests && JSON.stringify(verification.requestedCardIds ?? []) !== JSON.stringify(entry.expect.contextRequests)) mismatches.push(`requested cards ${JSON.stringify(verification.requestedCardIds ?? [])} (expected ${JSON.stringify(entry.expect.contextRequests)})`);
     if ((entry.expect.rejectedRounds ?? 0) !== rejectedRounds) mismatches.push(`rejected rounds ${rejectedRounds} (expected ${entry.expect.rejectedRounds ?? 0})`);
     for (const [id, count] of Object.entries(entry.expect.blocked ?? {})) {
       if ((blocked[id] ?? 0) !== count) mismatches.push(`${id} blocked ${blocked[id] ?? 0}× (expected ${count})`);

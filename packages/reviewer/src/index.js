@@ -21,44 +21,93 @@ export class ReviewerError extends Error {
   }
 }
 
+const PROGRESS_INTERVAL_CYCLES = 50;
+
+/**
+ * runMonteCarloReview runs every cycle synchronously. `onProgress({ completed, total })`
+ * is optional and called at most once per PROGRESS_INTERVAL_CYCLES cycles plus once at the end.
+ */
 export function runMonteCarloReview(options = {}) {
-  const config = normalizeReviewOptions(options);
+  const run = createReviewRun(options);
+  while (!run.step(Number.POSITIVE_INFINITY)) {
+    // step() only returns false while cycles remain.
+  }
+  return run.finish();
+}
+
+/**
+ * runMonteCarloReviewAsync produces exactly the same report as runMonteCarloReview
+ * (each cycle uses seed + cycle, so chunking cannot change results) but yields to the
+ * event loop between chunks so a host can stream progress while it runs.
+ */
+export async function runMonteCarloReviewAsync(options = {}) {
+  // Non-numeric or non-positive chunk sizes fall back to the default; NaN would never advance.
+  const requested = Math.floor(Number(options.chunkCycles));
+  const chunk = Number.isFinite(requested) && requested >= 1 ? requested : PROGRESS_INTERVAL_CYCLES * 2;
+  const yieldToHost = typeof options.yieldToHost === "function" ? options.yieldToHost : defaultYield;
+  const run = createReviewRun(options);
+  while (!run.step(chunk)) {
+    await yieldToHost();
+  }
+  return run.finish();
+}
+
+function defaultYield() {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+function createReviewRun(options) {
+  const { onProgress, chunkCycles, yieldToHost, ...reviewOptions } = options ?? {};
+  const config = normalizeReviewOptions(reviewOptions);
   const aggregate = createAggregate(config.cards);
   const samples = [];
+  const report = typeof onProgress === "function" ? onProgress : null;
+  let cycle = 0;
 
-  for (let cycle = 0; cycle < config.cycles; cycle += 1) {
-    const result = runSimulationCycle({
-      cards: config.cards,
-      maxTurns: config.maxTurns,
-      seed: config.seed + cycle,
-      choose: config.choose,
-      initialState: config.initialState,
-      includeEvents: config.includeSampleEvents && samples.length < config.sampleLimit
-    });
+  return {
+    step(limit) {
+      const end = Math.min(config.cycles, cycle + limit);
+      for (; cycle < end; cycle += 1) {
+        const result = runSimulationCycle({
+          cards: config.cards,
+          maxTurns: config.maxTurns,
+          seed: config.seed + cycle,
+          choose: config.choose,
+          initialState: config.initialState,
+          includeEvents: config.includeSampleEvents && samples.length < config.sampleLimit
+        });
 
-    recordCycle(aggregate, result);
+        recordCycle(aggregate, result);
 
-    if (samples.length < config.sampleLimit) {
-      samples.push(createCycleSample(result));
+        if (samples.length < config.sampleLimit) {
+          samples.push(createCycleSample(result));
+        }
+        const completed = cycle + 1;
+        if (report && (completed % PROGRESS_INTERVAL_CYCLES === 0 || completed === config.cycles)) {
+          report({ completed, total: config.cycles });
+        }
+      }
+      return cycle >= config.cycles;
+    },
+    finish() {
+      return buildReport({
+        aggregate,
+        cards: config.cards,
+        cycles: config.cycles,
+        maxTurns: config.maxTurns,
+        seed: config.seed,
+        thresholds: config.thresholds,
+        sampleLimit: config.sampleLimit,
+        includeSampleEvents: config.includeSampleEvents,
+        samples,
+        graph: analyzeCardGraph(config.cards, {
+          tags: config.initialState.tags ?? {},
+          variables: config.initialState.variables ?? {},
+          factions: config.initialState.factions ?? {}
+        })
+      });
     }
-  }
-
-  return buildReport({
-    aggregate,
-    cards: config.cards,
-    cycles: config.cycles,
-    maxTurns: config.maxTurns,
-    seed: config.seed,
-    thresholds: config.thresholds,
-    sampleLimit: config.sampleLimit,
-    includeSampleEvents: config.includeSampleEvents,
-    samples,
-    graph: analyzeCardGraph(config.cards, {
-      tags: config.initialState.tags ?? {},
-      variables: config.initialState.variables ?? {},
-      factions: config.initialState.factions ?? {}
-    })
-  });
+  };
 }
 
 export function runSimulationCycle(options = {}) {

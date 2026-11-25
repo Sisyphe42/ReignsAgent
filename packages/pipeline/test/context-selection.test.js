@@ -67,6 +67,9 @@ describe("AI context card selection", () => {
     assert.equal(selection.report.tiers.neighbour, 1);
     assert.equal(selection.report.omitted, 6);
     assert.ok(selection.report.usedBytes <= selection.report.budgetBytes);
+    assert.deepEqual(selection.report.omittedReasons, { count_limit: 0, byte_budget: 6 });
+    assert.equal(selection.report.omittedTiers.other, 6);
+    assert.deepEqual(selection.report.omittedDetails[selection.report.omittedCardIds[0]], { tier: "other", cause: "byte_budget" });
   });
 
   it("respects the card-count limit and keeps authored order", () => {
@@ -75,6 +78,8 @@ describe("AI context card selection", () => {
     assert.equal(selection.cards.length, 40);
     assert.deepEqual(selection.cards.map((entry) => entry.id), cards.slice(0, 40).map((entry) => entry.id));
     assert.equal(selection.report.omitted, 20);
+    assert.deepEqual(selection.report.omittedReasons, { count_limit: 20, byte_budget: 0 });
+    assert.equal(Object.keys(selection.report.omittedDetails).length, 20);
   });
 
   it("always keeps the first target card even when it alone exceeds the budget", () => {

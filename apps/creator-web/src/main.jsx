@@ -27,6 +27,7 @@ const DEFAULT_PANEL = "overview";
 const LEGACY_DRAFT_KEY = "reigns-agent.creator-web.editor-draft";
 const RAIL_COLLAPSED_KEY = "reigns-agent.creator-web.rail-collapsed";
 const RAIL_PINNED_KEY = "reigns-agent.creator-web.rail-pinned";
+const AI_STATUS_COLLAPSED_KEY = "reigns-agent.creator-web.ai-status-collapsed";
 const UI_LOCALES = [
   ["system", null],
   ["en", "English"],
@@ -91,6 +92,7 @@ const ZH_HANS_COPY = {
   Setup: "设置", Off: "关闭",
   "Project metadata saved": "项目资料已保存", "Project author": "项目作者", "Project description": "项目简介", "Project title link": "项目名称链接", "Project author link": "作者链接", "Project links must use http or https": "项目链接必须使用 http 或 https", "Save project details": "保存项目资料", ready: "就绪", loading: "加载中", new: "新增", draft: "草稿",
   blocked: "受阻", set: "已设置", Valid: "有效", "Needs work": "需要处理", Ready: "就绪", Blocked: "受阻",
+  "No cards": "暂无卡牌", "no cards": "暂无卡牌", empty: "空", "Add at least one card before previewing or releasing.": "预览或发布前请至少添加一张卡牌。",
   Cards: "卡牌", Validation: "验证", "Player-ready": "玩家端就绪", "Not run": "未运行", Prepared: "已准备", "Not prepared": "未准备",
   "Windows release": "Windows 发布", "Build Windows EXE": "生成 Windows EXE", "Release history": "发布历史",
   "No releases yet.": "尚无发布记录。", Download: "下载", "Delete release": "删除发布", Target: "目标平台",
@@ -140,6 +142,9 @@ const AI_CAPABILITIES = [
   ["reasoning", "Reasoning"],
   ["streaming", "Streaming"]
 ];
+// Only structured JSON changes what ReignsAgent sends today; the other flags are recorded for the
+// endpoint profile but not used, and the UI says so.
+const AI_CAPABILITIES_IN_USE = new Set(["structuredJson"]);
 const IMAGE_PROTOCOLS = [
   ["openai_images", "OpenAI Images-compatible"],
   ["gemini_interactions", "Gemini Interactions"],
@@ -553,12 +558,79 @@ function aiModel(id, label = id, capabilities = {}, protocol = "openai_chat") {
   };
 }
 const AI_PROGRESS_STEPS = ["Context", "Request", "Local draft", "Parse", "Validate", "Ready"];
+// Real backend stages (Pipeline AI_EDIT_PROGRESS_STAGES plus repair-loop stages) mapped onto the six steps.
+const AI_STAGE_TO_STEP = {
+  baseline: 0,
+  context: 0,
+  request: 1,
+  response: 2,
+  draft: 2,
+  parse: 3,
+  validate: 4,
+  trial: 4,
+  scoring: 4,
+  checks: 4,
+  done: 5
+};
+const REPAIR_LOOP_PHASES = [
+  ["request", "Request", ["request", "response", "parse", "validate", "context", "draft"]],
+  ["trial", "Trial apply", ["trial"]],
+  ["scoring", "Scoring", ["scoring"]],
+  ["checks", "Checks", ["checks"]]
+];
+const AI_STAGE_TEXT = {
+  baseline: "Scoring the current deck",
+  context: "Selecting context cards",
+  request: "Waiting for the endpoint",
+  response: "Receiving the response",
+  draft: "Drafting with local rules",
+  parse: "Parsing proposals",
+  validate: "Validating patches",
+  trial: "Applying to a copy",
+  scoring: "Fixed-seed review",
+  checks: "Running checks",
+  done: "Done"
+};
+
+function initialAiProgressDetail(endpointConfigured) {
+  const startedAt = Date.now();
+  return { stage: "context", round: 0, maxRounds: 0, proposalIndex: 0, proposalCount: 0, responseLabel: endpointConfigured ? "Response" : "Local draft", startedAt, stageStartedAt: startedAt };
+}
+
+function reduceAiProgressDetail(current, event) {
+  const base = current ?? initialAiProgressDetail(false);
+  const next = { ...base };
+  if (event.stage && event.stage !== base.stage) next.stageStartedAt = Date.now();
+  if (event.stage) next.stage = event.stage;
+  if (Number.isInteger(event.round)) next.round = event.round;
+  if (Number.isInteger(event.maxRounds)) next.maxRounds = event.maxRounds;
+  next.proposalIndex = Number.isInteger(event.proposalIndex) ? event.proposalIndex : 0;
+  next.proposalCount = Number.isInteger(event.proposalCount) ? event.proposalCount : 0;
+  if (event.stage === "response") next.responseLabel = "Response";
+  if (event.stage === "draft") next.responseLabel = "Local draft";
+  return next;
+}
 const AI_MODE_LABELS = {
   generate_cards: "Draft cards",
   repair_diagnostics: "Repair review",
   generate_asset: "Generate visual request",
-  analyze_asset: "Analyze visual request"
+  analyze_asset: "Analyze visual request",
+  explain_selection: "Explain selection",
+  edit_selection: "Edit selection"
 };
+// What each request may do. Shown before a request is sent; the backend enforces the same limits.
+const AI_CAPABILITY_RULES = {
+  generate_cards: ["May propose new cards, card edits, choice labels and effects, and metadata.", "Proposals are previews: nothing changes until you tick and apply them."],
+  repair_diagnostics: ["Up to 3 rounds; each proposal is applied to a copy, scored with a fixed-seed Review, and checked against anti-shortcut rules.", "Budgets: 256 KiB per request, 2 MiB in total, 5 minutes per loop. The model may ask to read up to 6 more cards or stop early; it cannot skip a check.", "Only proposals that pass every blocking check start ticked; nothing changes until you apply."],
+  explain_selection: ["Answers in text only; it cannot propose or apply any change."],
+  edit_selection: ["May change only the selected card's text and its choice labels.", "Any patch that touches another card, requirements, or effects is discarded before you see it."],
+  generate_asset: ["Generates image candidates; nothing is applied until you choose one."],
+  analyze_asset: ["Describes or plans visuals; no content changes."]
+};
+const AI_CAPABILITY_COMMON = [
+  "The API key is sent only in the request header. It is never written to the activity log, plans, or project files.",
+  "Selected text and card text are sent as content to work on, never as instructions."
+];
 const AI_AMBIENT_ACTIONS = [
   ["rewrite", "Rewrite", "Rewrite selected content"],
   ["translate", "Translate", "Translate to current locale"],
@@ -834,7 +906,8 @@ function defaultAiSettings() {
     routeMode: "auto",
     jsonMode: "auto",
     modelId: "",
-    capabilities: { ...DEFAULT_AI_CAPABILITIES }
+    capabilities: { ...DEFAULT_AI_CAPABILITIES },
+    sessionRequestLimit: 60
   };
 }
 
@@ -897,7 +970,9 @@ function normalizeAiSettings(settings = {}) {
   const capabilities = normalizeCapabilityState(settings.capabilities ?? defaults.capabilities);
   const modelId = typeof settings.modelId === "string" ? settings.modelId : "";
   const matchedModel = (endpointPreset?.models ?? []).find((model) => model.id === modelId);
+  const limit = Number(settings.sessionRequestLimit);
   return {
+    sessionRequestLimit: Number.isInteger(limit) && limit >= 0 && limit <= 1000 ? limit : defaults.sessionRequestLimit,
     baseUrl,
     protocol,
     endpointPresetId: endpointPreset?.id ?? "custom",
@@ -920,7 +995,8 @@ function aiSettingsFromConfig(config = {}) {
     modelId: config.modelId ?? "",
     routeMode: config.routeMode,
     jsonMode: config.jsonMode,
-    capabilities: Object.fromEntries(AI_CAPABILITIES.map(([id]) => [id, (config.capabilities ?? []).includes(id)]))
+    capabilities: Object.fromEntries(AI_CAPABILITIES.map(([id]) => [id, (config.capabilities ?? []).includes(id)])),
+    sessionRequestLimit: config.sessionRequestLimit
   });
 }
 
@@ -1078,10 +1154,6 @@ function AiOptionGroup({ label, value, options, onChange }) {
   );
 }
 
-function wait(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 function App() {
   const initialUrlState = useMemo(() => readUrlState(), []);
   const [activePanel, setActivePanel] = useState(initialUrlState.panel);
@@ -1111,6 +1183,8 @@ function App() {
   const [build, setBuild] = useState(null);
   const [releaseState, setReleaseState] = useState({ capability: { windowsX64: false, reason: "loading" }, releases: [] });
   const [busy, setBusy] = useState("");
+  const [reviewProgress, setReviewProgress] = useState(null);
+  const reviewRunningRef = useRef(false);
   const [draftInfo, setDraftInfo] = useState(null);
   const [focusCardId, setFocusCardId] = useState(null);
   const [aiGraphSelection, setAiGraphSelection] = useState(null);
@@ -1148,7 +1222,9 @@ function App() {
   }
 
   const assetsByCard = useMemo(() => createAssetMap(editor?.assets ?? []), [editor]);
-  const playerReady = editor?.playerValidation?.valid === true;
+  // An empty deck validates structurally but has nothing to play: it is never "ready".
+  const deckEmpty = Boolean(editor) && (editor.cards?.length ?? 0) === 0;
+  const playerReady = editor?.playerValidation?.valid === true && !deckEmpty;
   const aiConfigured = isAiEndpointConfigured(aiSettings);
   const activePanelLabel = PANELS.find((panel) => panel.id === activePanel)?.label ?? "Workspace";
   const desktopClient = initialUrlState.client === "desktop";
@@ -1201,7 +1277,8 @@ function App() {
           modelId: normalized.modelId,
           routeMode: normalized.routeMode,
           jsonMode: normalized.jsonMode,
-          capabilities: enabledAiCapabilities(normalized)
+          capabilities: enabledAiCapabilities(normalized),
+          sessionRequestLimit: normalized.sessionRequestLimit
         }
       }
     }).then((config) => setHasSavedApiKey(config.ai.hasApiKey));
@@ -1464,26 +1541,52 @@ function App() {
   }
 
   async function runDiagnostics(form) {
-    await runAction("Running diagnostics", async () => {
-      const result = await api("/api/diagnostics/run", { method: "POST", body: form });
-      setDiagnostics(result);
-      setStatus(`Diagnostics complete: ${result.healthScore}/100`);
-    });
+    // One review at a time: the button is disabled too, this also covers keyboard repeats.
+    if (reviewRunningRef.current) return;
+    reviewRunningRef.current = true;
+    const startedAt = Date.now();
+    setReviewProgress({ phase: "starting", completed: 0, total: Number(form?.cycles) || 0, startedAt });
+    try {
+      await runAction("Running diagnostics", async () => {
+        const result = await api("/api/diagnostics/run", {
+          method: "POST",
+          body: form,
+          onProgress: (event) => setReviewProgress({ phase: event.phase ?? "simulate", completed: Number(event.completed) || 0, total: Number(event.total) || 0, startedAt })
+        });
+        setDiagnostics(result);
+        setStatus(`Diagnostics complete: ${result.healthScore}/100`);
+      });
+    } finally {
+      reviewRunningRef.current = false;
+      setReviewProgress(null);
+    }
   }
 
-  async function buildAiEditPlan(form) {
+  async function buildAiEditPlan(form, onProgress = null, signal = null) {
     return runAction("Building AI Assist draft", async () => {
-      const result = await api("/api/ai/edit/plan", {
-        method: "POST",
-        body: {
-          ...form,
-          credentials: {
-            apiKey: aiApiKey
-          }
-        }
-      });
-      setStatus(`AI Assist draft ready: ${result.proposals?.length ?? 0} proposals`);
-      return result;
+      try {
+        const result = await api("/api/ai/edit/plan", {
+          signal: signal ?? undefined,
+          method: "POST",
+          body: {
+            ...form,
+            credentials: {
+              apiKey: aiApiKey
+            }
+          },
+          onProgress: typeof onProgress === "function" ? onProgress : undefined
+        });
+        setStatus(`AI Assist draft ready: ${result.proposals?.length ?? 0} proposals`);
+        return result;
+      } catch (error) {
+        // A browser abort (Cancel) surfaces as a generic AbortError; report it as the author's cancel.
+        const failure = signal?.aborted
+          ? Object.assign(new Error("AI request cancelled by the author"), { code: "ai_cancelled", stage: error?.stage ?? null })
+          : error;
+        // Tell the panel which real stage failed before the status bar shows the message.
+        if (typeof onProgress === "function") onProgress({ type: "failed", stage: failure?.stage ?? null, message: failure?.message ?? String(failure) });
+        throw failure;
+      }
     });
   }
 
@@ -1609,32 +1712,39 @@ function App() {
     const targetCardId = selection.targetCardId ?? null;
     const targetLocale = locale;
     const promptSuffix = prompt.trim() ? `\n\nCreator direction: ${prompt.trim()}` : "";
-    const selectedText = selection.text ? ` Selected text: "${selection.text}".` : "";
     const baseContext = `${selection.label}${selection.context ? ` · ${selection.context}` : ""}`;
+    // The selection travels as structured data (context.selection.focus), never inside the
+    // instruction text, so selected card text cannot act as an instruction to the model.
+    const structuredSelection = {
+      kind: selection.type ?? "selection",
+      label: selection.label ?? "",
+      cardId: targetCardId,
+      text: selection.text || selection.context || ""
+    };
     const actionMap = {
       rewrite: {
         actionLabel: "Rewrite selection",
-        mode: "generate_cards",
+        mode: targetCardId ? "edit_selection" : "generate_cards",
         cardCount: 1,
-        instruction: `Rewrite or improve the selected creator context. Context: ${baseContext}.${selectedText} Preserve binary left/right play and explain any story state impact.`
+        instruction: "Rewrite the selected content (context.selection.focus) for clarity and tension. Keep ids, tags, variables, and the left/right meaning."
       },
       translate: {
         actionLabel: "Translate selection",
-        mode: "generate_cards",
+        mode: targetCardId ? "edit_selection" : "generate_cards",
         cardCount: 1,
-        instruction: `Translate the selected creator context to ${targetLocale}. Context: ${baseContext}.${selectedText} Preserve ids, tags, variables, and left/right meaning unless the creator direction says otherwise.`
+        instruction: `Translate the selected content (context.selection.focus) to ${targetLocale}. Keep ids, tags, variables, and the left/right meaning.`
       },
       explain: {
         actionLabel: "Explain selection",
-        mode: "generate_cards",
+        mode: "explain_selection",
         cardCount: 1,
-        instruction: `Explain the selected creator context in actionable author-facing terms. Context: ${baseContext}.${selectedText} Identify what it controls and what to check next.`
+        instruction: "Explain the selected content (context.selection.focus) for the author: what it controls, which state it reads or changes, and what to check next."
       },
       branch: {
         actionLabel: "Branch from selection",
         mode: "generate_cards",
         cardCount: 2,
-        instruction: `Draft a narrative branch from the selected context. Context: ${baseContext}.${selectedText} Include clear trigger conditions through author-owned tags, variables, or gauge thresholds.`
+        instruction: "Draft a narrative branch that follows from the selected content (context.selection.focus). Use clear trigger conditions through author-owned tags, variables, or gauge thresholds."
       }
     };
     const action = actionMap[actionId] ?? actionMap.explain;
@@ -1646,6 +1756,7 @@ function App() {
       targetCardId,
       cardCount: action.cardCount,
       contextSummary: baseContext,
+      selection: structuredSelection,
       instruction: `${action.instruction}${promptSuffix}`
     });
   }
@@ -1739,6 +1850,7 @@ function App() {
           activePanelLabel={activePanelLabel}
           graphSelection={aiGraphSelection}
           onAction={openAmbientAiAction}
+          contextStatus={{ configured: aiConfigured, modelId: aiSettings.modelId, cardCount: editor?.cards?.length ?? 0, reviewScore: diagnostics?.healthScore ?? null }}
         />
       )}
       <header className="topbar">
@@ -1763,7 +1875,7 @@ function App() {
         <div className="topbar__readout" aria-label="Current workspace state">
           <span>{tr(locale, activePanelLabel)}</span>
           <span>{editor?.cards?.length ?? 0} {tr(locale, "cards")}</span>
-          <span>{tr(locale, playerReady ? "player ready" : "player blocked")}</span>
+          <span>{tr(locale, deckEmpty ? "no cards" : playerReady ? "player ready" : "player blocked")}</span>
         </div>
         <div className="topbar__tools">
           <button
@@ -1819,7 +1931,7 @@ function App() {
               <span className="rail__icon"><PanelIcon id={id} /></span>
               <span className="rail__meta"><span className="rail__index">{String(index + 1).padStart(2, "0")}</span></span>
               <span className="rail__label">{tr(locale, label)}</span>
-              <small>{tr(locale, panelStatus(id, { editor, playerReady, diagnostics, build }))}</small>
+              <small>{tr(locale, panelStatus(id, { editor, playerReady, diagnostics, build, deckEmpty }))}</small>
             </button>
           ))}
           <div className="rail__footer">
@@ -1889,6 +2001,7 @@ function App() {
               aiAssistEnabled={aiAssistEnabled}
               onAiAction={openAiAssistPreflight}
               activeAiAction={aiPreflight}
+              onOpen={openPanel}
             />
           )}
           {activePanel === "story" && (
@@ -1912,6 +2025,7 @@ function App() {
               diagnostics={diagnostics}
               aiAssistEnabled={aiAssistEnabled}
               onRun={runDiagnostics}
+              reviewProgress={reviewProgress}
               onOpen={openPanel}
               onFocusCard={focusOnCard}
               onAiAction={openAiAssistPreflight}
@@ -1937,6 +2051,7 @@ function App() {
               onRunImage={runImageOperation}
               onApplyImage={applyImageOutput}
               onDiscardImage={discardImageDraft}
+              projectKey={activeProjectId}
             />
           )}
           {activePanel === "preview" && (
@@ -2015,6 +2130,7 @@ function App() {
 }
 
 function Overview({ editor, playerReady, diagnostics, build, aiAssistEnabled, aiConfigured, onOpen, onToggleAi, onAiAction, activeAiAction }) {
+  const deckEmpty = (editor?.cards?.length ?? 0) === 0;
   const [brief, setBrief] = useState("");
   const cardCount = editor?.cards?.length ?? 0;
   const title = editor?.metadata?.title ?? "Untitled";
@@ -2026,8 +2142,17 @@ function Overview({ editor, playerReady, diagnostics, build, aiAssistEnabled, ai
       <div className="metric-grid">
         <Metric label="Project" value={title} />
         <Metric label="Cards" value={String(cardCount)} />
-        <Metric label="Validation" value={editor?.validation?.valid ? "Valid" : "Needs work"} tone={editor?.validation?.valid ? "good" : "bad"} localizeValue />
-        <Metric label="Player-ready" value={playerReady ? "Ready" : "Blocked"} tone={playerReady ? "good" : "bad"} localizeValue />
+        {deckEmpty ? (
+          <>
+            <Metric label="Validation" value="No cards" localizeValue />
+            <Metric label="Player-ready" value="No cards" localizeValue />
+          </>
+        ) : (
+          <>
+            <Metric label="Validation" value={editor?.validation?.valid ? "Valid" : "Needs work"} tone={editor?.validation?.valid ? "good" : "bad"} localizeValue />
+            <Metric label="Player-ready" value={playerReady ? "Ready" : "Blocked"} tone={playerReady ? "good" : "bad"} localizeValue />
+          </>
+        )}
         <Metric label="Review" value={diagnostics ? `${diagnostics.healthScore}/100` : "Not run"} localizeValue={!diagnostics} />
         <Metric label="Build" value={build ? "Prepared" : "Not prepared"} localizeValue />
       </div>
@@ -2101,7 +2226,7 @@ function DraftBanner({ draftInfo, onRestore, onDiscard }) {
   );
 }
 
-function ContentPanel({ editor, assetsByCard, onImport, onMutate, onStatus, focusCardId, aiAssistEnabled, onAiAction, activeAiAction }) {
+function ContentPanel({ editor, assetsByCard, onImport, onMutate, onStatus, focusCardId, aiAssistEnabled, onAiAction, activeAiAction, onOpen = null }) {
   const [paste, setPaste] = useState("");
   const [query, setQuery] = useState("");
   const [validationFilter, setValidationFilter] = useState("all");
@@ -2170,6 +2295,28 @@ function ContentPanel({ editor, assetsByCard, onImport, onMutate, onStatus, focu
     }
   }
 
+  const deckEmpty = cardItems.length === 0;
+  const filtersActive = Boolean(query.trim()) || validationFilter !== "all";
+
+  function clearFilters() {
+    setQuery("");
+    setValidationFilter("all");
+  }
+
+  function draftStartingDeck() {
+    const request = {
+      source: "Content",
+      actionId: "empty-deck-draft",
+      actionLabel: "Start project",
+      mode: "generate_cards",
+      cardCount: 6,
+      contextSummary: `${editor?.metadata?.title ?? "Untitled"} · 0 cards`,
+      instruction: "Draft a compact playable starting set with at least two visible story branches, clear tags or variables, and binary left/right choices."
+    };
+    if (aiAssistEnabled || !onOpen) onAiAction(request);
+    else onOpen("ai-edit");
+  }
+
   function selectRelative(step) {
     if (activeIndex < 0) return;
     const next = visibleItems[activeIndex + step];
@@ -2187,7 +2334,7 @@ function ContentPanel({ editor, assetsByCard, onImport, onMutate, onStatus, focu
         <button className="btn" onClick={() => void loadSample()}>Load sample deck</button>
         <span className="muted">{editor?.cards?.length ?? 0} cards</span>
       </div>
-      <div className="editor-controls" aria-label="Card filters">
+      {!deckEmpty && <div className="editor-controls" aria-label="Card filters">
         <label>
           Search
           <input
@@ -2205,7 +2352,16 @@ function ContentPanel({ editor, assetsByCard, onImport, onMutate, onStatus, focu
           </select>
         </label>
         <span className="muted">{visibleItems.length} shown</span>
-      </div>
+      </div>}
+      {deckEmpty && (
+        <EmptyDeck
+          onDraft={draftStartingDeck}
+          onLoadSample={() => void loadSample()}
+          onMutate={onMutate}
+          onCreated={setSelectedCardId}
+          aiAssistEnabled={aiAssistEnabled}
+        />
+      )}
       <textarea
         className="json-paste"
         value={paste}
@@ -2213,8 +2369,8 @@ function ContentPanel({ editor, assetsByCard, onImport, onMutate, onStatus, focu
         placeholder="Paste content bundle JSON"
         rows={4}
       />
-      <button className="btn btn--primary" disabled={!paste.trim()} onClick={() => void importPasted()}>Import pasted JSON</button>
-      <div className="content-workspace">
+      <button className={deckEmpty ? "btn" : "btn btn--primary"} disabled={!paste.trim()} onClick={() => void importPasted()}>Import pasted JSON</button>
+      {!deckEmpty && <div className="content-workspace">
         <aside className="card-switcher">
           <div className="card-switcher__head">
             <strong>{visibleItems.length} cards</strong>
@@ -2244,7 +2400,12 @@ function ContentPanel({ editor, assetsByCard, onImport, onMutate, onStatus, focu
                 <small>{validation.messages.length > 0 ? `${validation.messages.length} messages` : "No validation messages"}</small>
               </button>
             ))}
-            {visibleItems.length === 0 && <div className="empty-inline">No cards match the current filters.</div>}
+            {visibleItems.length === 0 && (
+              <div className="empty-inline" data-testid="filter-empty">
+                No cards match the current filters.
+                {filtersActive && <button className="btn btn--ghost btn--compact" type="button" onClick={clearFilters}>Clear filters</button>}
+              </div>
+            )}
           </div>
           <AddCard onMutate={onMutate} onCreated={setSelectedCardId} />
         </aside>
@@ -2277,11 +2438,69 @@ function ContentPanel({ editor, assetsByCard, onImport, onMutate, onStatus, focu
           ) : (
             <div className="empty-state">
               <p>No cards match the current filters.</p>
+              {filtersActive && <button className="btn" type="button" onClick={clearFilters}>Clear filters</button>}
             </div>
           )}
         </div>
-      </div>
+      </div>}
     </section>
+  );
+}
+
+/**
+ * EmptyDeck is the first-run state of a project with no cards. It is deliberately different
+ * from the "no cards match the current filters" message: it explains what a card is and
+ * offers one primary next step (an AI starting draft) and one secondary step (write the first card).
+ */
+function EmptyDeck({ onDraft, onLoadSample, onMutate, onCreated, aiAssistEnabled }) {
+  const [writing, setWriting] = useState(false);
+  const [id, setId] = useState("opening");
+  const [text, setText] = useState("");
+  const textRef = useRef(null);
+
+  useEffect(() => {
+    if (writing) textRef.current?.focus();
+  }, [writing]);
+
+  async function createFirstCard(event) {
+    event.preventDefault();
+    const created = await onMutate(
+      "Creating card",
+      async () => api("/api/editor/cards", {
+        method: "POST",
+        body: { card: { id: id.trim(), text: text.trim(), choices: [{ id: "left", label: "Left", effects: { factions: {} } }, { id: "right", label: "Right", effects: { factions: {} } }] } }
+      }),
+      "First card created"
+    );
+    if (created) onCreated?.(id.trim());
+  }
+
+  return (
+    <div className="empty-deck" data-testid="empty-deck">
+      <div className="empty-deck__copy">
+        <span className="empty-deck__eyebrow">Empty deck</span>
+        <h3>This project has no cards yet</h3>
+        <p>
+          A card is one situation the player reads, with a left and a right choice. Let AI Assist draft a small
+          starting deck you can review before anything is added, or write the opening card yourself.
+        </p>
+      </div>
+      <div className="empty-deck__actions">
+        <button className="btn btn--primary" type="button" onClick={onDraft}>
+          {aiAssistEnabled ? "Draft a starting deck with AI" : "Open AI Assist to draft a deck"}
+        </button>
+        <button className="btn" type="button" aria-expanded={writing} onClick={() => setWriting((value) => !value)}>Write the first card</button>
+        <button className="btn btn--ghost" type="button" onClick={onLoadSample}>Load the sample deck</button>
+      </div>
+      {writing && (
+        <form className="empty-deck__form" onSubmit={(event) => void createFirstCard(event)}>
+          <label>Card id<input value={id} onChange={(event) => setId(event.target.value)} placeholder="opening" /></label>
+          <label className="empty-deck__text">Card text<input ref={textRef} value={text} onChange={(event) => setText(event.target.value)} placeholder="A messenger waits at the gate with news from the harbor." /></label>
+          <button className="btn btn--primary" type="submit" disabled={!id.trim() || !text.trim()}>Create card</button>
+        </form>
+      )}
+      <p className="empty-deck__note">Already have content? Use Import project or paste a content bundle below.</p>
+    </div>
   );
 }
 
@@ -4716,7 +4935,8 @@ function drawChoiceHandle(ctx, x, y, label, colors) {
   ctx.fillText(label, x, y);
 }
 
-function ReviewPanel({ editor, diagnostics, aiAssistEnabled, onRun, onOpen, onFocusCard, onAiAction, activeAiAction }) {
+function ReviewPanel({ editor, diagnostics, aiAssistEnabled, onRun, onOpen, onFocusCard, onAiAction, activeAiAction, reviewProgress = null }) {
+  const reviewRunning = Boolean(reviewProgress);
   const [cycles, setCycles] = useState(500);
   const [maxTurns, setMaxTurns] = useState(40);
   const [seed, setSeed] = useState(1);
@@ -4747,8 +4967,9 @@ function ReviewPanel({ editor, diagnostics, aiAssistEnabled, onRun, onOpen, onFo
         <label>Cycles <input type="number" min="1" value={cycles} onChange={(event) => setCycles(Number(event.target.value))} /></label>
         <label>Max turns <input type="number" min="1" value={maxTurns} onChange={(event) => setMaxTurns(Number(event.target.value))} /></label>
         <label>Seed <input type="number" value={seed} onChange={(event) => setSeed(Number(event.target.value))} /></label>
-        <button className="btn btn--primary" onClick={() => void onRun({ cycles, maxTurns, seed })}>Run review</button>
+        <button className="btn btn--primary" disabled={reviewRunning} aria-busy={reviewRunning} onClick={() => void onRun({ cycles, maxTurns, seed })}>{reviewRunning ? "Running review..." : "Run review"}</button>
       </div>
+      {reviewRunning && <ReviewProgress progress={reviewProgress} />}
       {diagnostics ? (
         <>
           <ReviewSummary diagnostics={diagnostics} gaugeLabels={gaugeLabels} />
@@ -4796,6 +5017,36 @@ function ReviewPanel({ editor, diagnostics, aiAssistEnabled, onRun, onOpen, onFo
         </div>
       )}
     </section>
+  );
+}
+
+function ReviewProgress({ progress }) {
+  const total = Math.max(0, Number(progress?.total) || 0);
+  const completed = Math.min(total, Math.max(0, Number(progress?.completed) || 0));
+  const ratio = total > 0 ? completed / total : 0;
+  const summarizing = progress?.phase === "summarize";
+  // Remaining time from measured throughput so far (cycles are independent and similar in cost).
+  const elapsedMs = progress?.startedAt ? Date.now() - progress.startedAt : 0;
+  const etaSeconds = !summarizing && completed > 0 && completed < total && elapsedMs > 300
+    ? Math.max(1, Math.round((elapsedMs * (total - completed)) / completed / 1000))
+    : null;
+  const label = summarizing
+    ? `Summarizing ${total.toLocaleString("en-US")} simulated cycles`
+    : progress?.phase === "starting"
+      ? "Starting simulation"
+      : `Simulated ${completed.toLocaleString("en-US")} / ${total.toLocaleString("en-US")} cycles`;
+  return (
+    <div className="review-progress" data-testid="review-progress" role="status" aria-live="polite">
+      <div className="review-progress__head">
+        <strong>{summarizing ? "Summarizing" : "Simulating"}</strong>
+        <span>{label}</span>
+        {etaSeconds !== null && <span className="review-progress__eta" data-testid="review-eta">about {etaSeconds}s left</span>}
+        <span className="review-progress__pct">{Math.round(ratio * 100)}%</span>
+      </div>
+      <div className="review-progress__track" role="progressbar" aria-label="Review progress" aria-valuemin={0} aria-valuemax={total || 1} aria-valuenow={completed}>
+        <span style={{ width: `${(ratio * 100).toFixed(1)}%` }} />
+      </div>
+    </div>
   );
 }
 
@@ -5184,6 +5435,7 @@ function PreviewPanel({ play, assetsByCard, playerReady, onStart, onSwipe }) {
 }
 
 function BuildPanel({ editor, diagnostics, playerReady, build, releaseState, busy, onPrepare, onRelease, onDeleteRelease }) {
+  const deckEmpty = (editor?.cards?.length ?? 0) === 0;
   const locale = useUiLocale();
   const hosted = import.meta.env.VITE_CREATOR_HOST === "browser";
   const capability = releaseState?.capability ?? { windowsX64: false, reason: "loading" };
@@ -5195,11 +5447,13 @@ function BuildPanel({ editor, diagnostics, playerReady, build, releaseState, bus
         <Metric label="Project" value={editor?.metadata?.title ?? "Untitled"} />
         <Metric label="Version" value={editor?.metadata?.version ?? "0.0.0"} />
         <Metric label="Cards" value={String(editor?.cards?.length ?? 0)} />
-        <Metric label="Player-ready" value={playerReady ? "Ready" : "Blocked"} localizeValue tone={playerReady ? "good" : "bad"} />
+        <Metric label="Player-ready" value={deckEmpty ? "No cards" : playerReady ? "Ready" : "Blocked"} localizeValue tone={deckEmpty ? "" : playerReady ? "good" : "bad"} />
         <Metric label="Target" value={hosted ? "Web ZIP" : "Windows x64"} />
         <Metric label="Review" value={diagnostics ? "Ready" : "Not run"} localizeValue />
       </div>
-      {!playerReady && <p className="release-notice release-notice--danger">{tr(locale, "Player validation must pass before release.")}</p>}
+      {deckEmpty
+        ? <p className="release-notice">{tr(locale, "Add at least one card before previewing or releasing.")}</p>
+        : !playerReady && <p className="release-notice release-notice--danger">{tr(locale, "Player validation must pass before release.")}</p>}
       {!diagnostics && <p className="release-notice">{tr(locale, "Review is optional")}</p>}
       <div className="action-row">
         <button className="btn" onClick={() => void onPrepare(false)}>Preview build</button>
@@ -5258,6 +5512,50 @@ function formatFileSize(bytes) {
   return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
 }
 
+/**
+ * AuthorBrief is a short, project-level setting (world, tone, glossary, no-go content) sent with
+ * every AI request as content, not as instructions. It is creator-only: builds strip it.
+ */
+function AuthorBrief({ editor }) {
+  const saved = typeof editor?.metadata?.aiBrief === "string" ? editor.metadata.aiBrief : "";
+  const [draft, setDraft] = useState(saved);
+  const [status, setStatus] = useState("");
+  useEffect(() => { setDraft(saved); }, [saved]);
+  async function save() {
+    try {
+      await api("/api/editor/metadata", { method: "PATCH", body: { metadata: { aiBrief: draft.trim().slice(0, 2000) } } });
+      setStatus("Saved. Sent with every AI request for this project.");
+    } catch (error) {
+      setStatus(error?.message ?? String(error));
+    }
+  }
+  return (
+    <details className="ai-author-brief" data-testid="ai-author-brief">
+      <summary>Author brief {saved ? `· ${saved.length} characters` : "· not set"}</summary>
+      <p className="muted">World, tone, glossary, and content to avoid. Sent with every AI request as content (not as instructions). Never included in player builds.</p>
+      <textarea value={draft} maxLength={2000} rows={3} onChange={(event) => setDraft(event.target.value)} placeholder="e.g. Fog-bound port city, 1890s. Terse, ominous tone. 灯油 = lamp oil guild. Avoid gore." />
+      <div className="action-row">
+        <button className="btn btn--compact" type="button" disabled={draft.trim() === saved.trim()} onClick={() => void save()}>Save brief</button>
+        {status && <small className="muted">{status}</small>}
+      </div>
+    </details>
+  );
+}
+
+function AiCapabilityCard({ mode, usage = null, compact = false }) {
+  const rules = AI_CAPABILITY_RULES[mode] ?? AI_CAPABILITY_RULES.generate_cards;
+  return (
+    <details className={`ai-capability-card${compact ? " ai-capability-card--compact" : ""}`} data-testid="ai-capability-card" open={!compact}>
+      <summary>What this request can do</summary>
+      <ul>
+        {rules.map((rule) => <li key={rule}>{rule}</li>)}
+        {AI_CAPABILITY_COMMON.map((rule) => <li key={rule}>{rule}</li>)}
+        {usage && <li>AI requests this session: {usage.used}{usage.limit > 0 ? ` of ${usage.limit}` : " (no limit set)"}.</li>}
+      </ul>
+    </details>
+  );
+}
+
 function AiAssistPreflight({ request, aiConfigured, diagnostics, onChange, onClose, onBuild, onOpenPanel }) {
   const needsDiagnostics = request.mode === "repair_diagnostics";
   const canBuild = !needsDiagnostics || Boolean(diagnostics);
@@ -5304,6 +5602,14 @@ function AiAssistPreflight({ request, aiConfigured, diagnostics, onChange, onClo
             rows={5}
           />
         </label>
+        {request.selection && (
+          <div className="ai-selection-chip" data-testid="ai-selection-chip">
+            <span>Selection</span>
+            <strong>{request.selection.cardId ? `${request.selection.kind} · ${request.selection.cardId}` : request.selection.kind}</strong>
+            {request.selection.text && <q>{request.selection.text.slice(0, 140)}{request.selection.text.length > 140 ? "…" : ""}</q>}
+          </div>
+        )}
+        <AiCapabilityCard mode={request.mode} compact />
         {needsDiagnostics && !diagnostics && (
           <p className="ai-preflight__warning">Run Review before building repair proposals.</p>
         )}
@@ -5480,7 +5786,12 @@ function MaskCanvas({ sourceUri, protocol, onExport }) {
   );
 }
 
-function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAssistEnabled, aiConfigured, draftRequest, onBuildPlan, onApplyPlan, onOpen, imageSettings, imageCapabilities, imageConfigured, onStageImage, onRunImage, onApplyImage, onDiscardImage }) {
+function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAssistEnabled, aiConfigured, draftRequest, onBuildPlan, onApplyPlan, onOpen, imageSettings, imageCapabilities, imageConfigured, onStageImage, onRunImage, onApplyImage, onDiscardImage, projectKey = null }) {
+  const [historyVersion, setHistoryVersion] = useState(0);
+  const [selection, setSelection] = useState(null);
+  const [requestSource, setRequestSource] = useState("AI Assist");
+  const [usage, setUsage] = useState(null);
+  const textAbortRef = useRef(null);
   const [mode, setMode] = useState("generate_cards");
   const [theme, setTheme] = useState(editor?.metadata?.title ?? "small court");
   const [style, setStyle] = useState("ink wash card art");
@@ -5496,6 +5807,8 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
   const [isBuilding, setIsBuilding] = useState(false);
   const [progressStep, setProgressStep] = useState(-1);
   const [progressStatus, setProgressStatus] = useState("idle");
+  const [progressDetail, setProgressDetail] = useState(null);
+  const [waitEstimate, setWaitEstimate] = useState(null);
   const [buildError, setBuildError] = useState("");
   const [imageDraft, setImageDraft] = useState(null);
   const [selectedOutputId, setSelectedOutputId] = useState("");
@@ -5515,6 +5828,11 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
   const isImageMode = IMAGE_OPERATIONS.some(([id]) => id === mode);
   const canBuild = !requiresDiagnostics || Boolean(diagnostics);
   const selectedSet = useMemo(() => new Set(selected), [selected]);
+
+  async function refreshUsage() {
+    try { setUsage(await api("/api/ai/session-usage")); } catch { setUsage(null); }
+  }
+  useEffect(() => { void refreshUsage(); }, [historyVersion]);
 
   useEffect(() => {
     if (!targetCardId && cards[0]?.id) {
@@ -5537,6 +5855,8 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
     setTargetCardId(draftRequest.targetCardId ?? "");
     setAssetId(draftRequest.assetId ?? "");
     setRepairTarget(draftRequest.repairTarget ?? null);
+    setSelection(draftRequest.selection ?? null);
+    setRequestSource(draftRequest.source ?? "AI Assist");
     if (draftRequest.cardCount) setCardCount(draftRequest.cardCount);
     if (draftRequest.theme) setTheme(draftRequest.theme);
     setPlan(null);
@@ -5545,6 +5865,7 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
     setBuildError("");
     setProgressStep(-1);
     setProgressStatus("idle");
+    setProgressDetail(null);
     if (draftRequest.autoBuild && autoBuildRef.current !== draftRequest.id) {
       autoBuildRef.current = draftRequest.id;
       void buildPlan(draftRequest);
@@ -5578,13 +5899,12 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
     setBuildError("");
     setProgressStatus("building");
     setProgressStep(0);
-    await wait(110);
-    setProgressStep(1);
-    await wait(90);
-    setProgressStep(2);
+    setProgressDetail(initialAiProgressDetail(aiConfigured));
+    if (aiConfigured) void loadWaitEstimate(aiSettings.modelId).then(setWaitEstimate);
     const nextIsImageMode = IMAGE_OPERATIONS.some(([id]) => id === nextMode);
     if (nextIsImageMode) {
       if (!imageConfigured) {
+        setProgressStep(0);
         setProgressStatus("failed");
         setBuildError("Configure an Image Endpoint in Settings before generating art.");
         setIsBuilding(false);
@@ -5605,6 +5925,8 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
         effectiveMask = maskStage;
       }
       imageAbortRef.current = new AbortController();
+      setProgressStep(1);
+      setProgressDetail((current) => reduceAiProgressDetail(current, { stage: "request" }));
       const imageResult = await onRunImage({
         operation: nextMode,
         prompt: nextInstruction,
@@ -5617,6 +5939,8 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
         outpaint
       }, imageAbortRef.current.signal);
       imageAbortRef.current = null;
+      // Image runs are logged and counted too: refresh the activity list and usage line.
+      setHistoryVersion((version) => version + 1);
       if (!imageResult || imageResult === true) {
         setProgressStatus("failed");
         setBuildError("Image generation failed. Check endpoint settings and retry.");
@@ -5631,7 +5955,24 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
       setIsBuilding(false);
       return;
     }
+    let failedStage = null;
+    let failedMessage = "";
+    const handleProgress = (event) => {
+      if (!event) return;
+      if (event.type === "failed") {
+        failedStage = event.stage ?? null;
+        failedMessage = event.message ?? "";
+        return;
+      }
+      const index = AI_STAGE_TO_STEP[event.stage];
+      if (index !== undefined && event.stage !== "done") setProgressStep(index);
+      setProgressDetail((current) => reduceAiProgressDetail(current, event));
+    };
+    textAbortRef.current = new AbortController();
     const result = await onBuildPlan({
+      // An auto-built request (from preflight) carries its own selection and source; state may lag.
+      source: overrides ? overrides.source ?? "AI Assist" : requestSource,
+      ...((overrides ? overrides.selection : selection) ? { selection: overrides ? overrides.selection : selection } : {}),
       mode: nextMode,
       config: buildAiConnectorConfig(
         aiSettings,
@@ -5643,18 +5984,22 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
       assetId: nextAssetId || null,
       diagnostics: nextRequiresDiagnostics ? diagnostics : null,
       ...(nextRequiresDiagnostics && nextRepairTarget ? { repairTarget: nextRepairTarget } : {})
-    });
+    }, handleProgress, textAbortRef.current.signal);
+    textAbortRef.current = null;
+    setHistoryVersion((version) => version + 1);
     if (!result || result === true) {
+      // Stop on the step that really failed (the server/loop reports error.stage).
+      const failedStep = failedStage && AI_STAGE_TO_STEP[failedStage] !== undefined ? AI_STAGE_TO_STEP[failedStage] : null;
+      if (failedStep !== null) setProgressStep(failedStep);
       setProgressStatus("failed");
-      setBuildError("AI Assist draft failed. Check the status bar, edit the prompt, or retry.");
+      setBuildError(/cancelled by the author/i.test(failedMessage)
+        ? "Cancelled. Nothing was sent after the cancel, and nothing changed."
+        : failedMessage
+        ? `${failedStep !== null ? `Failed at the ${failedStep === 2 ? "Response" : AI_PROGRESS_STEPS[failedStep]} step: ` : ""}${failedMessage}. Edit the prompt or retry.`
+        : "AI Assist draft failed. Check the status bar, edit the prompt, or retry.");
       setIsBuilding(false);
       return;
     }
-    await wait(90);
-    setProgressStep(3);
-    await wait(90);
-    setProgressStep(4);
-    await wait(90);
     if (result && result !== true) {
       setPlan(result);
       setSelected(defaultSelectedProposalIds(result));
@@ -5676,6 +6021,7 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
   async function applySelected() {
     if (!plan || selected.length === 0) return;
     const result = await onApplyPlan(plan, selected);
+    if (plan.historyId) setHistoryVersion((version) => version + 1);
     if (result) {
       setApplyResult(`Applied ${selected.length} proposal${selected.length === 1 ? "" : "s"}.`);
       setPlan(null);
@@ -5728,6 +6074,7 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
         <div>
           <span>{aiAssistEnabled ? "Assist layer visible" : "Assist layer hidden"}</span>
           <strong>{aiConfigured ? aiSettings.modelId : "Local draft planner"}</strong>
+          {usage && <small data-testid="ai-session-usage">AI requests this session: {usage.used}{usage.limit > 0 ? ` / ${usage.limit}` : ""}</small>}
           <small>
             {aiConfigured
               ? `${aiSettings.protocol} · ${aiSettings.baseUrl}`
@@ -5741,8 +6088,17 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
           <span>{draftRequest.source ?? "Contextual action"}</span>
           <strong>{draftRequest.actionLabel}</strong>
           <small>{draftRequest.contextSummary ?? "Current project context"}</small>
+          {selection && (
+            <div className="ai-selection-chip" data-testid="ai-selection-chip">
+              <span>Selection</span>
+              <strong>{selection.cardId ? `${selection.kind} · ${selection.cardId}` : selection.kind}</strong>
+              {selection.text && <q>{selection.text.slice(0, 140)}{selection.text.length > 140 ? "…" : ""}</q>}
+              <button className="btn btn--ghost btn--compact" type="button" onClick={() => { setSelection(null); if (mode.endsWith("_selection")) setMode("generate_cards"); }}>Drop selection</button>
+            </div>
+          )}
         </div>
       )}
+      <AuthorBrief editor={editor} />
       <div className="ai-edit-layout">
         <div className="subsection ai-edit-controls">
           <h3>Request</h3>
@@ -5752,6 +6108,8 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
               <option value="repair_diagnostics">Repair review</option>
               {IMAGE_OPERATIONS.filter(([id]) => !imageCapabilities || imageCapabilities.operations.includes(id)).map(([id, label]) => <option key={id} value={id}>{label} image</option>)}
               <option value="analyze_asset">Analyze visual request</option>
+              {(mode === "explain_selection" || selection) && <option value="explain_selection">Explain selection</option>}
+              {(mode === "edit_selection" || selection?.cardId) && <option value="edit_selection">Edit selection</option>}
             </select>
             <input value={theme} onChange={(event) => setTheme(event.target.value)} placeholder="theme" />
             <input type="number" min="1" max={isImageMode ? imageCapabilities?.maxOutputs ?? 1 : 12} value={isImageMode ? Math.min(imageCount, imageCapabilities?.maxOutputs ?? 1) : cardCount} onChange={(event) => isImageMode ? setImageCount(Number(event.target.value)) : setCardCount(Number(event.target.value))} aria-label={isImageMode ? "Candidate count" : "Card count"} />
@@ -5788,7 +6146,10 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
             placeholder="Describe what the AI should draft, repair, generate, or inspect."
             rows={5}
           />
-          <AiProgress step={progressStep} active={isBuilding} status={progressStatus} />
+          <AiCapabilityCard mode={mode} usage={usage} compact />
+          <AiProgress step={progressStep} active={isBuilding} status={progressStatus} detail={progressDetail} />
+          <RepairLoopProgress detail={progressDetail} active={isBuilding} status={progressStatus} estimate={waitEstimate} />
+          <AiWaitEstimate detail={progressDetail} active={isBuilding} estimate={waitEstimate} />
           {buildError && (
             <div className="ai-build-error" role="alert">
               <div>
@@ -5807,7 +6168,7 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
             </button>
             <button className="btn" onClick={() => onOpen("content")}>Content</button>
             <button className="btn" onClick={() => onOpen("review")}>Review</button>
-            {isBuilding && isImageMode && <button className="btn btn--danger" type="button" onClick={() => imageAbortRef.current?.abort()}>Cancel</button>}
+            {isBuilding && <button className="btn btn--danger" type="button" onClick={() => (isImageMode ? imageAbortRef.current : textAbortRef.current)?.abort()}>Cancel</button>}
           </div>
           {requiresDiagnostics && !diagnostics && (
             <p className="muted">Repair proposals use the latest Review result. Run Review first, then return here.</p>
@@ -5823,6 +6184,16 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
             <Metric label="Endpoint" value={aiConfigured ? aiSettings.protocol : "Local"} />
             <Metric label="Target" value={targetCardId || "None"} />
           </div>
+          {plan?.request?.context?.bundle?.cardSelection && (
+            <ContextCardSelection selection={plan.request.context.bundle.cardSelection} totalCards={plan.request.context.bundle.cardCount} />
+          )}
+          {plan?.request?.context && (
+            <p className="muted context-extras" data-testid="context-extras">
+              {plan.request.context.authorBrief ? `Author brief included (${plan.request.context.authorBrief.text.length} characters).` : "No author brief."}
+              {plan.request.context.selection?.focus ? ` Selection sent as content: ${plan.request.context.selection.focus.kind}${plan.request.context.selection.focus.cardId ? ` on ${plan.request.context.selection.focus.cardId}` : ""}.` : ""}
+              {(plan.request.context.constraints?.repairLoop?.previousAttempts ?? []).some((attempt) => attempt.earlierRun) ? " Includes blocked attempts from an earlier run on this issue." : ""}
+            </p>
+          )}
           <pre className="output output--compact">
             {plan ? JSON.stringify(plan.request.context, null, 2) : "Build a plan to preview the AI context."}
           </pre>
@@ -5847,6 +6218,17 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
           </>
         ) : plan ? (
           <>
+            {plan.answer && (
+              <div className="ai-answer" data-testid="ai-answer">
+                <strong>{plan.mode === "explain_selection" ? "Explanation" : "Note from the AI"}</strong>
+                <p>{plan.answer}</p>
+              </div>
+            )}
+            {(plan.scopeRejected ?? []).length > 0 && (
+              <p className="ai-scope-rejected" data-testid="ai-scope-rejected">
+                Discarded {plan.scopeRejected.length} proposal{plan.scopeRejected.length === 1 ? "" : "s"} outside the selection: {plan.scopeRejected.map((entry) => `${entry.title || entry.id} (${entry.reason})`).join("; ")}.
+              </p>
+            )}
             <div className="action-row">
               <button className="btn" onClick={() => setSelected((plan.proposals ?? []).map((proposal) => proposal.id))}>Select all</button>
               <button className="btn" onClick={() => setSelected([])}>Clear</button>
@@ -5881,7 +6263,399 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
         )}
         {applyResult && <p className="muted">{applyResult}</p>}
       </div>
+      <RepairHistory refreshKey={`${projectKey ?? ""}:${historyVersion}`} />
     </section>
+  );
+}
+
+const REPAIR_HISTORY_STATUS_LABELS = {
+  verified: "Verified",
+  unverified: "Not verified",
+  not_verifiable: "Not scored",
+  failed: "Failed",
+  cancelled: "Cancelled",
+  ready: "Draft ready"
+};
+const AI_ACTIVITY_KINDS = [
+  ["all", "All"],
+  ["repair_loop", "Repair loops"],
+  ["draft", "Drafts"],
+  ["selection", "Selection"],
+  ["image", "Images"]
+];
+const AI_ACTIVITY_KIND_LABELS = { repair_loop: "Repair loop", draft: "Draft", selection: "Selection", image: "Image" };
+
+function formatHistoryTime(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value ?? "");
+  return date.toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
+}
+
+function formatHistoryTargets(targets, fallback = null) {
+  const list = Array.isArray(targets) ? targets : [];
+  if (list.length === 0) return fallback?.code ? fallback.code : "Review repair";
+  const first = formatRepairTarget(list[0]);
+  return list.length > 1 ? `${first} +${list.length - 1}` : first;
+}
+
+function formatHistoryOutcome(entry) {
+  if (entry.outcome === "applied") return `Applied ${entry.appliedProposalIds?.length ?? 0}`;
+  if (entry.outcome === "failed" || entry.status === "failed") return "Nothing to apply";
+  return "Not applied";
+}
+
+/**
+ * RepairHistory lists the project's stored repair-loop runs (newest first) and replays
+ * one run round by round. Records live in the project's local data and contain no keys.
+ */
+function RepairHistory({ refreshKey }) {
+  const [records, setRecords] = useState(null);
+  const [expandedId, setExpandedId] = useState("");
+  const [details, setDetails] = useState({});
+  const [error, setError] = useState("");
+  const [compareIds, setCompareIds] = useState([]);
+  const [kindFilter, setKindFilter] = useState("all");
+  // Each refresh/detail request is tagged; answers that arrive after a newer refresh (for
+  // example from the previously open project) are ignored instead of overwriting the list.
+  const requestSeqRef = useRef(0);
+
+  async function refresh() {
+    const seq = ++requestSeqRef.current;
+    try {
+      const result = await api("/api/ai/repair-history");
+      if (seq !== requestSeqRef.current) return;
+      setRecords(result.records ?? []);
+      setError("");
+    } catch (caught) {
+      if (seq !== requestSeqRef.current) return;
+      setRecords([]);
+      setError(caught?.message ?? String(caught));
+    }
+  }
+
+  useEffect(() => {
+    setDetails({});
+    setCompareIds([]);
+    void refresh();
+  }, [refreshKey]);
+
+  async function ensureDetail(id) {
+    if (details[id]) return details[id];
+    const seq = requestSeqRef.current;
+    const result = await api(`/api/ai/repair-history/${encodeURIComponent(id)}`);
+    if (seq !== requestSeqRef.current) return null;
+    setDetails((current) => ({ ...current, [id]: result.record }));
+    return result.record;
+  }
+
+  async function toggleCompare(id) {
+    const next = compareIds.includes(id) ? compareIds.filter((entry) => entry !== id) : [...compareIds, id].slice(-2);
+    setCompareIds(next);
+    try {
+      await Promise.all(next.map(ensureDetail));
+    } catch (caught) {
+      setError(caught?.message ?? String(caught));
+    }
+  }
+
+  async function toggle(id) {
+    if (expandedId === id) {
+      setExpandedId("");
+      return;
+    }
+    setExpandedId(id);
+    if (!details[id]) {
+      try {
+        await ensureDetail(id);
+      } catch (caught) {
+        setError(caught?.message ?? String(caught));
+      }
+    }
+  }
+
+  async function remove(id) {
+    await api(`/api/ai/repair-history/${encodeURIComponent(id)}`, { method: "DELETE" });
+    if (expandedId === id) setExpandedId("");
+    await refresh();
+  }
+
+  async function exportLog() {
+    try {
+      const snapshot = await api("/api/ai/repair-history?full=1");
+      const blob = new Blob([`${JSON.stringify(snapshot, null, 2)}\n`], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `ai-activity-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.json`;
+      link.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (caught) {
+      setError(caught?.message ?? String(caught));
+    }
+  }
+
+  async function clearAll() {
+    if (!window.confirm("Delete every repair history record for this project?")) return;
+    await api("/api/ai/repair-history", { method: "DELETE" });
+    setExpandedId("");
+    await refresh();
+  }
+
+  const allRecords = records ?? [];
+  const list = kindFilter === "all" ? allRecords : allRecords.filter((entry) => (entry.kind ?? "repair_loop") === kindFilter);
+  return (
+    <div className="subsection repair-history" data-testid="repair-history">
+      <div className="repair-history__head">
+        <h3>AI activity</h3>
+        <span className="muted">{allRecords.length} of 60 kept for this project · every AI request · stored locally without keys</span>
+        {allRecords.length > 0 && <button className="btn btn--ghost btn--compact" type="button" onClick={() => void exportLog()}>Export log</button>}
+        {allRecords.length > 0 && <button className="btn btn--ghost btn--compact" type="button" onClick={() => void clearAll()}>Clear history</button>}
+      </div>
+      {allRecords.length > 0 && (
+        <div className="repair-history__filters" role="group" aria-label="Filter AI activity">
+          {AI_ACTIVITY_KINDS.map(([id, label]) => (
+            <button key={id} type="button" className={kindFilter === id ? "story-group-chip story-group-chip--active" : "story-group-chip"} aria-pressed={kindFilter === id} onClick={() => setKindFilter(id)}>
+              {label} {id === "all" ? allRecords.length : allRecords.filter((entry) => (entry.kind ?? "repair_loop") === id).length}
+            </button>
+          ))}
+        </div>
+      )}
+      {error && <p className="muted">{error}</p>}
+      {records !== null && list.length === 0 && !error && (
+        <p className="muted">No repair loops yet. Every Review repair you build is kept here, so you can replay its rounds later.</p>
+      )}
+      {list.length > 0 && (
+        <ol className="repair-history__list">
+          {list.map((entry) => {
+            const expanded = expandedId === entry.id;
+            const before = entry.baseline?.healthScore;
+            return (
+              <li key={entry.id} className={`repair-history__item${expanded ? " repair-history__item--open" : ""}`} data-testid="repair-history-item">
+                <label className="repair-history__compare-pick">
+                  <input type="checkbox" checked={compareIds.includes(entry.id)} onChange={() => void toggleCompare(entry.id)} />
+                  Compare
+                </label>
+                <button className="repair-history__toggle" type="button" aria-expanded={expanded} onClick={() => void toggle(entry.id)}>
+                  <span className="repair-history__time">{formatHistoryTime(entry.createdAt)}</span>
+                  <span className="repair-history__kind">{AI_ACTIVITY_KIND_LABELS[entry.kind ?? "repair_loop"] ?? entry.kind}{entry.source ? ` · ${entry.source}` : ""}</span>
+                  <span className="repair-history__target">{(entry.kind ?? "repair_loop") === "repair_loop" ? formatHistoryTargets(entry.targets) : (AI_MODE_LABELS[entry.mode] ?? entry.mode ?? "Request")}{(entry.kind ?? "repair_loop") !== "repair_loop" && entry.instruction ? ` — ${entry.instruction.slice(0, 60)}${entry.instruction.length > 60 ? "…" : ""}` : ""}</span>
+                  <span className={`repair-status repair-status--${entry.status === "failed" ? "unverified" : entry.status}`}>{REPAIR_HISTORY_STATUS_LABELS[entry.status] ?? entry.status}</span>
+                  {(entry.kind ?? "repair_loop") === "repair_loop" && <span className="repair-history__meta">{entry.roundsUsed}{entry.maxRounds ? `/${entry.maxRounds}` : ""} round{entry.roundsUsed === 1 ? "" : "s"}</span>}
+                  {(entry.kind ?? "repair_loop") === "repair_loop" && <span className="repair-history__meta">{Number.isFinite(before) ? `${before} → ${Number.isFinite(entry.bestScore) ? entry.bestScore : "–"}` : "–"}</span>}
+                  <span className="repair-history__meta">{formatHistoryOutcome(entry)}</span>
+                  <span className="repair-history__chevron" aria-hidden="true">{expanded ? "Hide ⌃" : "Replay ⌄"}</span>
+                </button>
+                {expanded && (
+                  details[entry.id]
+                    ? ((details[entry.id].kind ?? "repair_loop") === "repair_loop"
+                      ? <RepairHistoryDetail record={details[entry.id]} onDelete={() => void remove(entry.id)} />
+                      : <AiActivityDetail record={details[entry.id]} onDelete={() => void remove(entry.id)} />)
+                    : <p className="muted repair-history__loading">Loading record...</p>
+                )}
+              </li>
+            );
+          })}
+        </ol>
+      )}
+      {compareIds.length === 1 && <p className="muted">Pick one more record to compare side by side.</p>}
+      {compareIds.length === 2 && details[compareIds[0]] && details[compareIds[1]] && (
+        <RepairHistoryCompare left={details[compareIds[0]]} right={details[compareIds[1]]} onClose={() => setCompareIds([])} />
+      )}
+    </div>
+  );
+}
+
+function summarizeHistoryRound(round) {
+  if (!round) return "–";
+  if (round.error) return `${round.status.replace(/_/g, " ")}: ${round.error.code}`;
+  const blocked = Object.entries(round.blockedBy ?? {}).map(([id, count]) => `${id} ×${count}`).join(", ");
+  return `${round.passedCount}/${round.proposalCount} passed · best ${Number.isFinite(round.bestScore) ? round.bestScore : "–"}${blocked ? ` · blocked by ${blocked}` : ""}`;
+}
+
+/**
+ * RepairHistoryCompare lines two stored runs up round by round, e.g. the same issue before and
+ * after a prompt change or on two models.
+ */
+function RepairHistoryCompare({ left, right, onClose }) {
+  const [older, newer] = [left, right].sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
+  const roundCount = Math.max(older.rounds?.length ?? 0, newer.rounds?.length ?? 0);
+  const best = (record) => {
+    const scores = (record.rounds ?? []).map((round) => round.bestScore).filter((value) => Number.isFinite(value));
+    return scores.length ? Math.max(...scores) : null;
+  };
+  // Rows adapt to what is being compared: repair loops show targets, scores, and rounds;
+  // drafts, selection actions, and images show mode, instruction, and outcome.
+  const anyLoop = [older, newer].some((record) => (record.kind ?? "repair_loop") === "repair_loop");
+  const anyOther = [older, newer].some((record) => (record.kind ?? "repair_loop") !== "repair_loop");
+  const rows = [
+    ["Started", (record) => formatHistoryTime(record.createdAt)],
+    ["Request", (record) => `${AI_ACTIVITY_KIND_LABELS[record.kind ?? "repair_loop"] ?? record.kind}${record.source ? ` · ${record.source}` : ""}${record.mode ? ` · ${AI_MODE_LABELS[record.mode] ?? record.mode}` : ""}`],
+    ["Status", (record) => `${REPAIR_HISTORY_STATUS_LABELS[record.status] ?? record.status}${record.error?.code ? ` (${record.error.code})` : ""}`],
+    ["Model", (record) => (record.endpoint === "local_rules" ? "Local rules" : record.model || "Configured endpoint")],
+    ["Instruction", (record) => (record.instruction ? `${record.instruction.slice(0, 90)}${record.instruction.length > 90 ? "…" : ""}` : "–")],
+    ...(anyLoop ? [
+      ["Targets", (record) => (record.targets ?? []).map(formatRepairTarget).join(", ") || "–"],
+      ["Score", (record) => `${record.baseline?.healthScore ?? "–"} → ${best(record) ?? "–"}`],
+      ["Rounds", (record) => `${record.roundsUsed ?? record.rounds?.length ?? 0}${record.maxRounds ? `/${record.maxRounds}` : ""}`]
+    ] : []),
+    ...(anyOther ? [
+      ["Proposals", (record) => `${(record.finalProposals ?? []).length}${(record.scopeRejected ?? []).length ? ` (+${record.scopeRejected.length} discarded)` : ""}`],
+      ["Answer", (record) => (record.answer ? `${record.answer.slice(0, 90)}${record.answer.length > 90 ? "…" : ""}` : "–")]
+    ] : []),
+    ["Duration", (record) => (Number.isFinite(record.durationMs) ? `${(record.durationMs / 1000).toFixed(1)}s` : "–")],
+    ["Author applied", (record) => (record.outcome === "applied" ? (record.appliedProposalIds ?? []).join(", ") || "nothing" : "not applied")],
+    ...Array.from({ length: roundCount }, (_, index) => [`Round ${index + 1}`, (record) => summarizeHistoryRound(record.rounds?.[index])])
+  ];
+  return (
+    <div className="repair-history__compare" data-testid="repair-history-compare">
+      <div className="repair-history__compare-head">
+        <strong>Comparing two runs</strong>
+        <button className="btn btn--ghost btn--compact" type="button" onClick={onClose}>Close comparison</button>
+      </div>
+      <table className="repair-history__compare-table">
+        <thead><tr><th scope="col" /><th scope="col">Earlier</th><th scope="col">Later</th></tr></thead>
+        <tbody>
+          {rows.map(([label, read]) => {
+            const a = read(older);
+            const b = read(newer);
+            return (
+              <tr key={label} className={a !== b ? "repair-history__compare-row--diff" : ""}>
+                <th scope="row">{label}</th>
+                <td>{a}</td>
+                <td>{b}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function AiActivityDetail({ record, onDelete }) {
+  const applied = record.appliedProposalIds ?? [];
+  const titles = new Map((record.finalProposals ?? []).map((proposal) => [proposal.id, proposal.title]));
+  return (
+    <div className="repair-history__detail" data-testid="ai-activity-detail">
+      <dl className="repair-history__facts">
+        <div><dt>Started</dt><dd>{formatHistoryTime(record.createdAt)}</dd></div>
+        <div><dt>Request</dt><dd>{AI_ACTIVITY_KIND_LABELS[record.kind] ?? record.kind}{record.source ? ` · ${record.source}` : ""}</dd></div>
+        <div><dt>Mode</dt><dd>{AI_MODE_LABELS[record.mode] ?? record.mode ?? "–"}</dd></div>
+        <div><dt>Model</dt><dd>{record.endpoint === "local_rules" ? "Local rules" : record.model || "Configured endpoint"}</dd></div>
+        <div><dt>Duration</dt><dd>{Number.isFinite(record.durationMs) ? `${(record.durationMs / 1000).toFixed(1)}s` : "–"}</dd></div>
+      </dl>
+      {record.instruction && <p className="repair-history__instruction">“{record.instruction}”</p>}
+      {record.selection && <p className="repair-history__agent">Selection: {record.selection.kind}{record.selection.cardId ? ` on ${record.selection.cardId}` : ""}{record.selection.text ? ` — “${record.selection.text.slice(0, 160)}”` : ""}</p>}
+      {record.status === "failed" && <p className="repair-history__error">Failed{record.error?.stage ? ` at ${record.error.stage}` : ""}: {record.error?.message}</p>}
+      {record.status === "cancelled" && <p className="repair-history__stop">Cancelled by the author.</p>}
+      {record.contextSelection && <ContextCardSelection selection={record.contextSelection} totalCards={(record.contextSelection.included ?? 0) + (record.contextSelection.omitted ?? 0)} />}
+      {record.answer && <div className="ai-answer"><strong>Answer</strong><p>{record.answer}</p></div>}
+      {record.image && <p className="repair-history__agent">Image {record.image.operation}: {record.image.outputs} candidate{record.image.outputs === 1 ? "" : "s"}.</p>}
+      {(record.finalProposals ?? []).length > 0 && (
+        <ul className="repair-history__proposals">
+          {record.finalProposals.map((proposal) => (
+            <li key={proposal.id} className="repair-history__proposal repair-history__proposal--passed">
+              <div className="repair-history__proposal-head"><strong>{proposal.title || proposal.id}</strong><span>{proposal.patchCount} patch{proposal.patchCount === 1 ? "" : "es"}</span></div>
+              {proposal.summary && <p>{proposal.summary}</p>}
+            </li>
+          ))}
+        </ul>
+      )}
+      {(record.scopeRejected ?? []).length > 0 && <p className="ai-scope-rejected">Discarded outside the selection: {record.scopeRejected.map((entry) => `${entry.title || entry.id} (${entry.reason})`).join("; ")}.</p>}
+      <RepairConversation entries={record.conversation ?? []} truncated={record.conversationTruncated} />
+      <div className="repair-history__final">
+        <strong>Author's choice</strong>
+        <span>{record.outcome === "applied" ? `Applied ${applied.map((id) => titles.get(id) ?? id).join(", ") || "nothing"}${record.appliedAt ? ` on ${formatHistoryTime(record.appliedAt)}` : ""}.` : record.status === "ready" ? "Not applied." : "Nothing to apply."}</span>
+        <button className="btn btn--ghost btn--compact" type="button" onClick={onDelete}>Delete record</button>
+      </div>
+    </div>
+  );
+}
+
+function RepairConversation({ entries, truncated = false }) {
+  if (!entries || entries.length === 0) return null;
+  return (
+    <details className="repair-history__conversation" data-testid="repair-conversation">
+      <summary>Conversation · {entries.length} request{entries.length === 1 ? "" : "s"} · keys redacted{truncated ? " · shortened to fit the history limit" : ""}</summary>
+      {entries.map((entry) => (
+        <div key={`${entry.round}:${entry.call}`} className="repair-history__message">
+          <strong>Request {entry.call} · {entry.requestBytes ?? "?"} B → {entry.status ?? "no response"} · {entry.responseBytes ?? 0} B</strong>
+          <span className="repair-history__role">Sent to the model</span>
+          <pre className="output output--compact">{entry.requestBody}</pre>
+          <span className="repair-history__role">Model answer</span>
+          <pre className="output output--compact">{entry.responseText || "(no response body)"}</pre>
+        </div>
+      ))}
+    </details>
+  );
+}
+
+function RepairHistoryDetail({ record, onDelete }) {
+  const titles = new Map((record.finalProposals ?? []).map((proposal) => [proposal.id, proposal.title]));
+  for (const round of record.rounds ?? []) for (const proposal of round.proposals ?? []) if (!titles.has(proposal.id)) titles.set(proposal.id, proposal.title);
+  const applied = record.appliedProposalIds ?? [];
+  return (
+    <div className="repair-history__detail" data-testid="repair-history-detail">
+      <dl className="repair-history__facts">
+        <div><dt>Started</dt><dd>{formatHistoryTime(record.createdAt)}</dd></div>
+        <div><dt>Model</dt><dd>{record.endpoint === "local_rules" ? "Local rules" : record.model || "Configured endpoint"}</dd></div>
+        <div><dt>Targets</dt><dd>{(record.targets ?? []).length ? record.targets.map(formatRepairTarget).join(", ") : record.repairTarget?.code || "–"}</dd></div>
+        <div><dt>Baseline</dt><dd>{Number.isFinite(record.baseline?.healthScore) ? `${record.baseline.healthScore}/100` : "–"}</dd></div>
+        <div><dt>Duration</dt><dd>{Number.isFinite(record.durationMs) ? `${(record.durationMs / 1000).toFixed(1)}s` : "–"}</dd></div>
+      </dl>
+      {record.instruction && <p className="repair-history__instruction">“{record.instruction}”</p>}
+      {record.agentStop && <p className="repair-history__agent">The model stopped the loop in round {record.agentStop.round}: “{record.agentStop.reason}”</p>}
+      <p className="repair-history__stop">
+        {record.status === "failed"
+          ? `Failed${record.error?.stage ? ` at ${record.error.stage}` : ""}: ${record.error?.message ?? record.stopReason}`
+          : REPAIR_STOP_LABELS[record.stopReason] ?? record.stopReason ?? ""}
+      </p>
+      {record.contextSelection && <ContextCardSelection selection={record.contextSelection} totalCards={(record.contextSelection.included ?? 0) + (record.contextSelection.omitted ?? 0)} />}
+      <ol className="repair-history__rounds">
+        {(record.rounds ?? []).map((round) => (
+          <li key={round.round} className="repair-history__round">
+            <div className="repair-history__round-head">
+              <strong>Round {round.round}</strong>
+              <span>{round.status === "evaluated" ? `${round.passedCount}/${round.proposalCount} passed` : round.status.replace(/_/g, " ")}</span>
+              <span>{Number.isFinite(round.bestScore) ? `best ${round.bestScore}` : "not scored"}</span>
+              {Number.isFinite(round.durationMs) && <span className="muted">{(round.durationMs / 1000).toFixed(1)}s</span>}
+              {record.selectedRound === round.round && <span className="repair-status repair-status--verified">Shown to author</span>}
+            </div>
+            {round.error && <p className="repair-history__error">{round.error.code}: {round.error.message}</p>}
+            {round.agent?.contextRequests?.length > 0 && <p className="repair-history__agent">Model asked to read next: {round.agent.contextRequests.join(", ")}</p>}
+            {round.agent?.stop && <p className="repair-history__agent">Model stopped here: “{round.agent.stop.reason}”</p>}
+            <RepairConversation entries={(record.conversation ?? []).filter((entry) => entry.round === round.round)} truncated={record.conversationTruncated} />
+            <ul className="repair-history__proposals">
+              {(round.proposals ?? []).map((proposal) => (
+                <li key={proposal.id} className={proposal.passed ? "repair-history__proposal repair-history__proposal--passed" : "repair-history__proposal"}>
+                  <div className="repair-history__proposal-head">
+                    <strong>{proposal.title || proposal.id}</strong>
+                    <span>{Number.isFinite(proposal.scoreAfter) ? `score ${proposal.scoreAfter}` : "not scored"}</span>
+                    <span className={proposal.passed ? "repair-history__pass" : "repair-history__block"}>{proposal.passed ? "Passed every blocking check" : `Blocked by ${(proposal.failedChecks ?? []).join(", ") || "checks"}`}</span>
+                  </div>
+                  {proposal.summary && <p>{proposal.summary}</p>}
+                  {(proposal.failedDetails ?? []).map((failure) => (
+                    <p key={failure.id} className="repair-history__reason"><code>{failure.id}</code> {failure.detail}</p>
+                  ))}
+                </li>
+              ))}
+              {(round.proposals ?? []).length === 0 && !round.error && <li className="muted">No proposals returned{record.truncated ? " (detail trimmed to fit the size limit)" : ""}.</li>}
+            </ul>
+          </li>
+        ))}
+      </ol>
+      <div className="repair-history__final">
+        <strong>Author's choice</strong>
+        <span>
+          {record.outcome === "applied"
+            ? `Applied ${applied.map((id) => titles.get(id) ?? id).join(", ") || "nothing"}${record.appliedAt ? ` on ${formatHistoryTime(record.appliedAt)}` : ""}.`
+            : record.status === "failed"
+              ? "No draft was produced."
+              : `Not applied. ${(record.preselectedProposalIds ?? []).length} proposal${(record.preselectedProposalIds ?? []).length === 1 ? " was" : "s were"} pre-selected.`}
+        </span>
+        <button className="btn btn--ghost btn--compact" type="button" onClick={onDelete}>Delete record</button>
+      </div>
+    </div>
   );
 }
 
@@ -5903,7 +6677,8 @@ const REPAIR_STOP_LABELS = {
   ai_repair_total_budget: "Stopped at the total byte budget; showing the best round so far.",
   target_not_scored: "This issue type is not scored by the Reviewer, so proposals are shown without verification.",
   no_scored_issues: "The fixed-seed scoring review found no issue to verify against.",
-  target_entity_not_scored: "The selected issue target does not appear in the fixed-seed scoring review, so proposals are shown without verification."
+  target_entity_not_scored: "The selected issue target does not appear in the fixed-seed scoring review, so proposals are shown without verification.",
+  model_stopped: "Stopped by the model: it reported that the targets cannot be fixed without the author; showing the best round so far."
 };
 
 function defaultSelectedProposalIds(plan) {
@@ -5918,6 +6693,112 @@ function defaultSelectedProposalIds(plan) {
 
 function formatRepairTarget(target) {
   return target.entity === "*" ? target.code : `${target.code} · ${target.entity}`;
+}
+
+const CONTEXT_TIER_LABELS = {
+  target: "Target",
+  diagnostic: "Diagnostic",
+  neighbour: "Neighbour",
+  other: "Other"
+};
+
+const CONTEXT_OMIT_LABELS = {
+  count_limit: "card limit",
+  byte_budget: "byte budget"
+};
+
+function splitContextReason(reason) {
+  const text = String(reason ?? "");
+  const match = text.match(/^(target|diagnostic|neighbour|other):\s*(.*)$/);
+  return match ? { tier: match[1], why: match[2] } : { tier: "other", why: text };
+}
+
+function formatKiB(bytes) {
+  const value = Number(bytes);
+  if (!Number.isFinite(value)) return "?";
+  return `${(value / 1024).toFixed(value < 10240 ? 1 : 0)} KB`;
+}
+
+/**
+ * ContextCardSelection shows which cards this request sent to the model and why
+ * (Pipeline cardSelection report): tier and reason per included card, plus how many
+ * cards were left out and which limit cut them.
+ */
+function ContextCardSelection({ selection, totalCards = null }) {
+  const included = Number(selection?.included) || 0;
+  const omitted = Number(selection?.omitted) || 0;
+  const total = Number.isFinite(Number(totalCards)) ? Number(totalCards) : included + omitted;
+  const relevance = selection?.strategy !== "first_n";
+  const rows = Object.entries(selection?.reasons ?? {}).map(([cardId, reason]) => ({ cardId, ...splitContextReason(reason) }));
+  const tiers = selection?.tiers ?? {};
+  const omittedReasons = selection?.omittedReasons ?? {};
+  const omittedIds = Array.isArray(selection?.omittedCardIds) ? selection.omittedCardIds : [];
+  const omittedDetails = selection?.omittedDetails ?? {};
+  const omitNote = omitted === 0
+    ? "Nothing left out."
+    : Object.entries(omittedReasons)
+      .filter(([, count]) => Number(count) > 0)
+      .map(([cause, count]) => `${count} by the ${CONTEXT_OMIT_LABELS[cause] ?? cause}`)
+      .join(" · ") || `${omitted} left out`;
+  return (
+    <div className="context-selection" data-testid="context-selection">
+      <div className="context-selection__head">
+        <strong>AI saw {included} of {total} cards</strong>
+        <span>{relevance ? "Ranked by relevance to the request" : `First ${selection?.maxCards ?? included} cards in deck order`}</span>
+      </div>
+      {relevance && (
+        <div className="context-selection__tiers">
+          {Object.keys(CONTEXT_TIER_LABELS).map((tier) => (
+            <span key={tier} className={`context-tier context-tier--${tier}`}>
+              {CONTEXT_TIER_LABELS[tier]} <b>{Number(tiers[tier]) || 0}</b>
+            </span>
+          ))}
+        </div>
+      )}
+      <p className="context-selection__omitted">
+        {omitted > 0 ? <><b>{omitted} not sent:</b> {omitNote}.</> : omitNote}
+        {relevance && Number.isFinite(Number(selection?.usedBytes)) && (
+          <span className="muted"> Card context {formatKiB(selection.usedBytes)} of {formatKiB(selection.budgetBytes)}; at most {selection.maxCards} cards.</span>
+        )}
+      </p>
+      <details className="context-selection__details">
+        <summary>Show the {included} card{included === 1 ? "" : "s"} and why{omitted > 0 ? `, and the ${omitted} left out` : ""}</summary>
+        {rows.length > 0 ? (
+          <table className="context-selection__table">
+            <thead><tr><th scope="col">Card</th><th scope="col">Picked as</th><th scope="col">Why</th></tr></thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.cardId}>
+                  <td><code>{row.cardId}</code></td>
+                  <td><span className={`context-tier context-tier--${row.tier}`}>{CONTEXT_TIER_LABELS[row.tier] ?? row.tier}</span></td>
+                  <td>{row.why}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <p className="muted">The first {included} cards of the deck were sent in authored order.</p>
+        )}
+        {omittedIds.length > 0 && (
+          <div className="context-selection__left-out">
+            <strong>Left out</strong>
+            <ul>
+              {omittedIds.map((cardId) => {
+                const detail = omittedDetails[cardId];
+                return (
+                  <li key={cardId}>
+                    <code>{cardId}</code>
+                    {detail ? <span className="muted"> {CONTEXT_TIER_LABELS[detail.tier] ?? detail.tier} · cut by the {CONTEXT_OMIT_LABELS[detail.cause] ?? detail.cause}</span> : <span className="muted"> cut by the card limit</span>}
+                  </li>
+                );
+              })}
+              {omitted > omittedIds.length && <li className="muted">and {omitted - omittedIds.length} more</li>}
+            </ul>
+          </div>
+        )}
+      </details>
+    </div>
+  );
 }
 
 function RepairVerificationSummary({ verification }) {
@@ -5966,6 +6847,14 @@ function RepairVerificationSummary({ verification }) {
             ))}
           </tbody>
         </table>
+      )}
+      {(verification.agentStop || rounds.some((round) => round.agent)) && (
+        <ul className="repair-agent-notes" data-testid="repair-agent-notes">
+          {rounds.filter((round) => round.agent?.contextRequests?.length).map((round) => (
+            <li key={`ask-${round.round}`}>Round {round.round}: the model asked to read {round.agent.contextRequests.map((cardId) => <code key={cardId}>{cardId}</code>)} next round{round.agent.ignoredRequests?.length ? ` (ignored unknown ids: ${round.agent.ignoredRequests.join(", ")})` : ""}.</li>
+          ))}
+          {verification.agentStop && <li>Round {verification.agentStop.round}: the model stopped the loop — “{verification.agentStop.reason}”</li>}
+        </ul>
       )}
       {rounds.some((round) => round.round !== verification.selectedRound && (round.proposals ?? []).length > 0) && (
         <ul className="repair-attempts">
@@ -6464,12 +7353,25 @@ function SettingsPanel({ editor, aiSettings, apiKey, apiKeySaved, locale, locale
                   className={normalizedAiSettings.capabilities?.[id] ? "capability-chip capability-chip--active" : "capability-chip"}
                   type="button"
                   onClick={() => toggleCapability(id)}
+                  title={AI_CAPABILITIES_IN_USE.has(id) ? undefined : "Declared only: ReignsAgent does not use this capability yet."}
                 >
-                  {label}
+                  {label}{AI_CAPABILITIES_IN_USE.has(id) ? "" : " · not used yet"}
                 </button>
               ))}
             </div>
+            <small className="muted">Only Structured JSON changes what ReignsAgent sends today. The other flags describe the endpoint and are not used yet.</small>
           </div>
+          <label className="ai-form-row ai-form-row--stack" data-testid="ai-session-limit">
+            <span className="ai-field-label">AI requests per session</span>
+            <input
+              type="number"
+              min="0"
+              max="1000"
+              value={normalizedAiSettings.sessionRequestLimit}
+              onChange={(event) => onAiSettingsChange({ ...normalizedAiSettings, sessionRequestLimit: Number(event.target.value) })}
+            />
+            <small className="muted">Counts every request sent to your endpoints (drafts, repair rounds, validation, model lists, images). 0 = no limit. Resets when the Creator restarts.</small>
+          </label>
         </div>
         <details className="ai-advanced">
           <summary>
@@ -6531,8 +7433,13 @@ function SettingsPanel({ editor, aiSettings, apiKey, apiKeySaved, locale, locale
   );
 }
 
-function AiAmbientLayer({ activePanelLabel, graphSelection, onAction }) {
-  const [phase, setPhase] = useState("loading");
+function AiAmbientLayer({ activePanelLabel, graphSelection, onAction, contextStatus = null }) {
+  // No artificial loading delay: the layer is ready at once and states what the AI will see.
+  const [phase, setPhase] = useState("ready");
+  // The status pill can be collapsed to a small chip so it never covers the end of a long page;
+  // the choice is a per-viewer convenience (guarded storage, defaults to expanded).
+  const [statusCollapsed, setStatusCollapsed] = useState(() => readOptionalStorage(AI_STATUS_COLLAPSED_KEY) === "true");
+  useEffect(() => { writeOptionalStorage(AI_STATUS_COLLAPSED_KEY, String(statusCollapsed)); }, [statusCollapsed]);
   const [selection, setSelection] = useState(null);
   const [expanded, setExpanded] = useState(false);
   const [pinned, setPinned] = useState(false);
@@ -6542,11 +7449,6 @@ function AiAmbientLayer({ activePanelLabel, graphSelection, onAction }) {
   const borderCanvasRef = useRef(null);
   const dragRef = useRef(null);
 
-  useEffect(() => {
-    setPhase("loading");
-    const timer = window.setTimeout(() => setPhase("ready"), 920);
-    return () => window.clearTimeout(timer);
-  }, []);
 
   useEffect(() => {
     if (phase !== "ready") return undefined;
@@ -6966,6 +7868,21 @@ function AiAmbientLayer({ activePanelLabel, graphSelection, onAction }) {
       <div className="ai-ambient__frame" aria-hidden="true">
         <canvas ref={borderCanvasRef} className="ai-ambient__border-canvas" />
       </div>
+      {contextStatus && (statusCollapsed ? (
+        <button className="ai-ambient__status ai-ambient__status--collapsed" type="button" data-testid="ai-ambient-status-chip" aria-label="Show AI status" onClick={() => setStatusCollapsed(false)}>
+          AI {contextStatus.configured ? "ready" : "local"}
+        </button>
+      ) : (
+        <div className="ai-ambient__status" role="status" data-testid="ai-ambient-status">
+          <span>
+            {contextStatus.configured ? `AI ready · ${contextStatus.modelId || "configured endpoint"}` : "Local planner · no endpoint configured"}
+            {` · ${contextStatus.cardCount} card${contextStatus.cardCount === 1 ? "" : "s"}`}
+            {contextStatus.reviewScore !== null ? ` · review ${contextStatus.reviewScore}/100` : " · review not run"}
+            {" · select text or a card to act on it"}
+          </span>
+          <button className="ai-ambient__status-close" type="button" aria-label="Collapse AI status" onClick={() => setStatusCollapsed(true)}>×</button>
+        </div>
+      ))}
       {phase === "loading" && (
         <div className="ai-ambient__loading" role="status">
           <span />
@@ -7198,13 +8115,15 @@ function AiControlIcon({ id }) {
   );
 }
 
-function AiProgress({ step, active, status = "idle" }) {
+function AiProgress({ step, active, status = "idle", detail = null }) {
   if (step < 0) return null;
+  const labels = AI_PROGRESS_STEPS.map((label, index) => (index === 2 && detail?.responseLabel ? detail.responseLabel : label));
   return (
-    <div className="ai-progress" aria-label="AI Assist progress">
-      {AI_PROGRESS_STEPS.map((label, index) => (
+    <div className="ai-progress" aria-label="AI Assist progress" data-testid="ai-progress" data-stage={detail?.stage ?? ""} data-status={status}>
+      {labels.map((label, index) => (
         <span
-          key={label}
+          key={index}
+          aria-current={index === step && status === "building" ? "step" : undefined}
           className={[
             "ai-progress__step",
             index < step ? "ai-progress__step--done" : "",
@@ -7217,6 +8136,89 @@ function AiProgress({ step, active, status = "idle" }) {
           {label}
         </span>
       ))}
+    </div>
+  );
+}
+
+/**
+ * loadWaitEstimate turns measured model request times from this project's repair history into a
+ * typical wait: the median of up to 12 recent requests (same model when there are enough samples).
+ */
+async function loadWaitEstimate(modelId) {
+  try {
+    const { records = [] } = await api("/api/ai/repair-history");
+    const configured = records.filter((entry) => entry.endpoint === "configured");
+    const sameModel = configured.filter((entry) => entry.model && entry.model === modelId);
+    const useSameModel = sameModel.flatMap((entry) => entry.requestMs ?? []).length >= 3;
+    const pool = (useSameModel ? sameModel : configured).flatMap((entry) => entry.requestMs ?? []).slice(0, 12);
+    if (pool.length === 0) return null;
+    const sorted = [...pool].sort((a, b) => a - b);
+    const middle = Math.floor(sorted.length / 2);
+    const medianMs = sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+    return { medianMs, samples: pool.length, sameModel: useSameModel };
+  } catch {
+    return null;
+  }
+}
+
+function formatWaitEstimate(estimate, stageElapsedSeconds) {
+  if (!estimate) return "";
+  const typical = Math.max(1, Math.round(estimate.medianMs / 1000));
+  const left = typical - stageElapsedSeconds;
+  return ` · usually ~${typical}s (median of ${estimate.samples} earlier request${estimate.samples === 1 ? "" : "s"})${left > 0 ? ` · about ${left}s left` : " · taking longer than usual"}`;
+}
+
+function AiWaitEstimate({ detail, active, estimate }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!active) return undefined;
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [active]);
+  if (!active || !detail || detail.maxRounds > 1 || !["request", "response"].includes(detail.stage)) return null;
+  const elapsed = Math.max(0, Math.round((now - (detail.stageStartedAt ?? now)) / 1000));
+  return (
+    <p className="ai-wait-estimate" data-testid="ai-wait-estimate" role="status">
+      {AI_STAGE_TEXT[detail.stage]} · {elapsed}s{formatWaitEstimate(estimate, elapsed) || " · no earlier requests to estimate from"}
+    </p>
+  );
+}
+
+function RepairLoopProgress({ detail, active, status, estimate = null }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!active) return undefined;
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [active]);
+  if (!detail || !(detail.maxRounds > 1) || status === "ready") return null;
+  const phaseIndex = REPAIR_LOOP_PHASES.findIndex(([, , stages]) => stages.includes(detail.stage));
+  const failed = status === "failed";
+  const proposalNote = detail.proposalCount > 0 && ["trial", "scoring", "checks"].includes(detail.stage)
+    ? ` · proposal ${detail.proposalIndex}/${detail.proposalCount}`
+    : "";
+  const elapsed = Math.max(0, Math.round((now - (detail.stageStartedAt ?? now)) / 1000));
+  return (
+    <div className={`repair-loop-progress${failed ? " repair-loop-progress--failed" : ""}`} data-testid="repair-loop-progress" role="status" aria-live="polite">
+      <strong>{detail.round > 0 ? `Round ${detail.round}/${detail.maxRounds}` : "Preparing"}</strong>
+      <ol className="repair-loop-progress__phases">
+        {REPAIR_LOOP_PHASES.map(([id, label], index) => (
+          <li
+            key={id}
+            className={[
+              "repair-loop-progress__phase",
+              phaseIndex > index ? "repair-loop-progress__phase--done" : "",
+              phaseIndex === index ? (failed ? "repair-loop-progress__phase--failed" : "repair-loop-progress__phase--active") : ""
+            ].filter(Boolean).join(" ")}
+          >
+            {label}
+          </li>
+        ))}
+      </ol>
+      <span className="repair-loop-progress__text">
+        {failed ? `Stopped during ${(REPAIR_LOOP_PHASES[phaseIndex]?.[1] ?? detail.stage).toLowerCase()}${proposalNote}` : `${AI_STAGE_TEXT[detail.stage] ?? detail.stage}${proposalNote}`}
+        {active && <span className="muted"> · {elapsed}s{["request", "response"].includes(detail.stage) ? formatWaitEstimate(estimate, elapsed) : ""}</span>}
+      </span>
     </div>
   );
 }
@@ -7243,7 +8245,8 @@ function Metric({ label, value, tone = "", localizeValue = false }) {
   );
 }
 
-function panelStatus(id, { editor, playerReady, diagnostics, build }) {
+function panelStatus(id, { editor, playerReady, diagnostics, build, deckEmpty = false }) {
+  if (deckEmpty && (id === "preview" || id === "build")) return "empty";
   if (id === "overview") return editor ? "ready" : "loading";
   if (id === "content") return `${editor?.cards?.length ?? 0}`;
   if (id === "story") return `${editor?.cards?.length ?? 0}`;

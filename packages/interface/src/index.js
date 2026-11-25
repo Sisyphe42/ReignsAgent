@@ -16,19 +16,21 @@ import {
   validateCardSet,
   validateContentBundle
 } from "../../pipeline/src/index.js";
-import { analyzeCardGraph, runMonteCarloReview } from "../../reviewer/src/index.js";
+import { analyzeCardGraph, runMonteCarloReview, runMonteCarloReviewAsync } from "../../reviewer/src/index.js";
 export { stitchPlayerRuntime } from "./player-build.js";
 export {
   DEFAULT_REPAIR_LOOP_LIMITS,
   DEFAULT_REPAIR_SCORING,
   REPAIR_CHECKS,
   buildVerifiedRepairPlan,
+  checkNarrativeQuality,
   collectIssueEntities,
   collectMissingProducerSignals,
   compareHealthScores,
   evaluateRepairProposal,
   producerOnlyEdit
 } from "./repair-loop.js";
+export { REPAIR_HISTORY_RECORD_VERSION, createAiActivityRecord, createRepairHistoryRecord, markRepairHistoryApplied, scrubRecordSecrets } from "./repair-history.js";
 
 const PLAYER_SCHEMA_VERSION = 1;
 const BUILD_SCHEMA_VERSION = 1;
@@ -464,12 +466,39 @@ export function createPlaySession(options = {}) {
 /**
  * runDiagnostics runs the headless reviewer and returns a render-ready projection.
  */
-export function runDiagnostics({ cards, metadata = {}, cycles = 1000, maxTurns = 50, seed = 1, thresholds }) {
+export function runDiagnostics({ cards, metadata = {}, cycles = 1000, maxTurns = 50, seed = 1, thresholds, onProgress = null }) {
+  const reviewOptions = diagnosticReviewOptions({ cards, cycles, maxTurns, seed, thresholds, onProgress });
+  const report = runMonteCarloReview(reviewOptions);
+  emitReviewPhase(onProgress, "summarize", report.parameters?.cycles ?? cycles);
+  return summarizeDiagnostics(report, { cards, metadata });
+}
+
+/**
+ * runDiagnosticsAsync returns the same projection as runDiagnostics but yields to the
+ * host event loop while simulating, so a server can stream real progress events:
+ * `{ phase: "simulate", completed, total }` then `{ phase: "summarize", completed: total, total }`.
+ */
+export async function runDiagnosticsAsync({ cards, metadata = {}, cycles = 1000, maxTurns = 50, seed = 1, thresholds, onProgress = null, yieldToHost }) {
+  const reviewOptions = diagnosticReviewOptions({ cards, cycles, maxTurns, seed, thresholds, onProgress });
+  if (typeof yieldToHost === "function") reviewOptions.yieldToHost = yieldToHost;
+  const report = await runMonteCarloReviewAsync(reviewOptions);
+  emitReviewPhase(onProgress, "summarize", report.parameters?.cycles ?? cycles);
+  return summarizeDiagnostics(report, { cards, metadata });
+}
+
+function diagnosticReviewOptions({ cards, cycles, maxTurns, seed, thresholds, onProgress }) {
   const reviewOptions = { cards: cloneCards(cards), cycles, maxTurns, seed };
   if (thresholds) {
     reviewOptions.thresholds = cloneJsonSafe(thresholds, "Reviewer thresholds");
   }
-  return summarizeDiagnostics(runMonteCarloReview(reviewOptions), { cards, metadata });
+  if (typeof onProgress === "function") {
+    reviewOptions.onProgress = ({ completed, total }) => onProgress({ phase: "simulate", completed, total });
+  }
+  return reviewOptions;
+}
+
+function emitReviewPhase(onProgress, phase, total) {
+  if (typeof onProgress === "function") onProgress({ phase, completed: total, total });
 }
 
 /**
@@ -761,10 +790,14 @@ export async function buildAiEditPlanAsync({
   targetCardId = null,
   assetId = null,
   diagnostics = null,
-  fetchImpl = globalThis.fetch
+  fetchImpl = globalThis.fetch,
+  onProgress = null,
+  selection = null,
+  signal = null
 }) {
   const bundle = editor?.toBundle ? editor.toBundle() : createContentBundle(editor ?? {});
   const descriptor = normalizeAiEditConnectorConfig(config);
+  if (signal?.aborted) throw new InterfaceError("AI request cancelled by the author", "ai_cancelled");
   if (!shouldUseAiEndpoint(descriptor)) {
     return createAiEditSuggestions({
       bundle,
@@ -773,7 +806,9 @@ export async function buildAiEditPlanAsync({
       instruction,
       targetCardId,
       assetId,
-      diagnostics
+      diagnostics,
+      onProgress,
+      selection
     });
   }
 
@@ -786,7 +821,10 @@ export async function buildAiEditPlanAsync({
     targetCardId,
     assetId,
     diagnostics,
-    fetchImpl
+    fetchImpl,
+    onProgress,
+    selection,
+    signal
   });
 }
 
@@ -872,6 +910,12 @@ export function applyImageDraftAsset({ editor, draft, outputId, asset }) {
   return { applied: true, outputId, asset: committedAsset, bundle: nextEditor.toBundle(), validation: applied.validation, playerValidation: nextEditor.validateForPlayer(), editor: nextEditor };
 }
 
+function withoutCreatorOnlyMetadata(bundle) {
+  if (!bundle?.metadata || !("aiBrief" in bundle.metadata)) return bundle;
+  const { aiBrief: _creatorOnly, ...metadata } = bundle.metadata;
+  return { ...bundle, metadata };
+}
+
 export function applyAiEditPlan({ editor, plan, proposalIds = [] }) {
   if (!plan || typeof plan !== "object" || Array.isArray(plan)) {
     throw new InterfaceError("AI edit plan must be an object");
@@ -954,7 +998,8 @@ export function prepareGameBuild({ editor, config = null, buildId = null }) {
       i18n
     },
     presentation,
-    content: bundle,
+    // Creator-only metadata (the AI author brief) never ships in player builds.
+    content: withoutCreatorOnlyMetadata(bundle),
     config: config ? cloneJsonSafe(config, "Build config") : null
   };
 

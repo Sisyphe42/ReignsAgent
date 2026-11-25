@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { randomBytes, timingSafeEqual } from "node:crypto";
+import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { readFile, writeFile, mkdir, mkdtemp, rm, stat } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -14,8 +14,11 @@ import {
   buildImageOperationDraft,
   buildVerifiedRepairPlan,
   buildGenerationPlan,
+  createAiActivityRecord,
   createCardEditor,
   createConnectorConfig,
+  createRepairHistoryRecord,
+  markRepairHistoryApplied,
   createPlaySession,
   deriveStoryGroups,
   deriveTagCatalog,
@@ -25,6 +28,7 @@ import {
   prepareGameBuild,
   projectFactionGauges,
   runDiagnostics,
+  runDiagnosticsAsync,
   serializeBuild,
   summarizeDiagnostics,
   summarizeFeedback,
@@ -113,6 +117,12 @@ const workspace = await createWorkspaceStore({
 const store = new SessionState(await workspace.readActiveBundle());
 const imageDrafts = new Map();
 const apiCapability = randomBytes(32).toString("base64url");
+// Plans are signed when issued and verified on apply, so a client cannot edit proposals,
+// patches, verification evidence, or the base fingerprint between review and apply.
+const planSigningKey = randomBytes(32);
+// AI endpoint requests sent by this Creator session (text drafts, repair rounds, validation,
+// model listing, images). config.ai.sessionRequestLimit caps it; 0 means no limit.
+let aiRequestsUsed = 0;
 let trustedRequestHosts = new Set();
 
 const server = createServer(async (req, res) => {
@@ -344,13 +354,30 @@ async function handleApi(req, res, url) {
 
   if (path === "/api/diagnostics/run" && req.method === "POST") {
     const cards = store.editor.toCards();
-    const projection = runDiagnostics({
+    const reviewInput = {
       cards,
       metadata: store.editor.metadata,
       cycles: normalizeDiagnosticLimit(body?.cycles ?? 1000, "cycles", MAX_CREATOR_DIAGNOSTIC_CYCLES),
       maxTurns: normalizeDiagnosticLimit(body?.maxTurns ?? 50, "maxTurns", MAX_DIAGNOSTIC_TURNS),
       seed: Number(body?.seed ?? 1)
-    });
+    };
+    if (wantsProgressStream(req)) {
+      // Opt-in NDJSON: real simulated-cycle progress, then the same projection.
+      // The deck can change while the event loop is free: only publish a result for the deck
+      // (and project) it was computed from.
+      const startProjectId = (await workspace.getConfig()).activeProjectId;
+      const startDeck = JSON.stringify({ cards: reviewInput.cards, metadata: reviewInput.metadata });
+      return streamWithProgress(res, async (progress) => {
+        const projection = await runDiagnosticsAsync({ ...reviewInput, onProgress: progress });
+        const currentProjectId = (await workspace.getConfig()).activeProjectId;
+        if (currentProjectId !== startProjectId || JSON.stringify({ cards: store.editor.toCards(), metadata: store.editor.metadata }) !== startDeck) {
+          throw apiError("The deck changed while Review was running; run Review again", "diagnostics_stale", 409);
+        }
+        store.lastDiagnostics = projection;
+        return projection;
+      });
+    }
+    const projection = runDiagnostics(reviewInput);
     store.lastDiagnostics = projection;
     return sendJson(res, projection);
   }
@@ -380,38 +407,102 @@ async function handleApi(req, res, url) {
         }
       });
     }
-    if (mode === "repair_diagnostics" && body?.verify !== false) {
-      // Verified repair loop: proposals are scored on copies; nothing is written here.
-      const plan = await buildVerifiedRepairPlan({
+    const credentials = await resolveCredentials(body?.credentials, body?.config);
+    // Closing the request (Cancel in the UI, or a closed tab) cancels the model call and the loop.
+    const cancel = new AbortController();
+    res.once("close", () => { if (!res.writableEnded) cancel.abort(); });
+    const fetchImpl = await countedFetch();
+    const isRepairLoop = mode === "repair_diagnostics" && body?.verify !== false;
+    const buildPlan = async (onProgress = null) => {
+      if (isRepairLoop) {
+        // Verified repair loop: proposals are scored on copies; nothing is written here.
+        return buildVerifiedRepairPlan({
+          editor: store.editor,
+          getEditor: () => store.editor,
+          config: body?.config ?? {},
+          credentials,
+          instruction: body?.instruction ?? "",
+          targetCardId: body?.targetCardId ?? null,
+          repairTarget: body?.repairTarget ?? null,
+          diagnostics,
+          onProgress,
+          fetchImpl,
+          signal: cancel.signal,
+          priorAttempts: await priorRepairAttempts(body?.repairTarget)
+        });
+      }
+      return buildAiEditPlanAsync({
         editor: store.editor,
-        getEditor: () => store.editor,
         config: body?.config ?? {},
-        credentials: await resolveCredentials(body?.credentials, body?.config),
+        credentials,
+        mode,
         instruction: body?.instruction ?? "",
         targetCardId: body?.targetCardId ?? null,
-        repairTarget: body?.repairTarget ?? null,
-        diagnostics
+        assetId: body?.assetId ?? null,
+        diagnostics,
+        onProgress,
+        fetchImpl,
+        signal: cancel.signal,
+        selection: body?.selection ?? null
       });
-      return sendJson(res, plan);
+    };
+    // Every AI request (repair loop, draft, selection action) leaves one key-free activity record,
+    // written to the project that started it even if the author switches projects meanwhile.
+    const historyProjectId = (await workspace.getConfig()).activeProjectId;
+    const startedAt = Date.now();
+    const record = (outcome) => isRepairLoop
+      ? recordRepairHistory({ ...outcome, body, credentials, projectId: historyProjectId })
+      : recordAiActivity({ ...outcome, kind: body?.selection ? "selection" : "draft", body, credentials, projectId: historyProjectId, durationMs: Date.now() - startedAt });
+    const buildAndRecord = async (onProgress = null) => {
+      let plan;
+      try {
+        plan = await buildPlan(onProgress);
+      } catch (error) {
+        await record({ error });
+        throw error;
+      }
+      const historyId = await record({ plan });
+      // The plan names its project (covered by the signature) so apply cannot cross projects.
+      return signPlan({ ...plan, projectId: historyProjectId, ...(historyId ? { historyId } : {}) });
+    };
+    if (wantsProgressStream(req)) return streamWithProgress(res, buildAndRecord);
+    return sendJson(res, await buildAndRecord());
+  }
+
+  if (path === "/api/ai/repair-history" && req.method === "GET") {
+    if (url.searchParams.get("full") === "1") {
+      // Export: every stored record in full (already key-free and URL-redacted).
+      const summaries = await workspace.listRepairHistory();
+      const records = [];
+      for (const entry of summaries) records.push(await workspace.readRepairHistoryRecord(entry.id));
+      return sendJson(res, { exportedAt: new Date().toISOString(), records });
     }
-    const plan = await buildAiEditPlanAsync({
-      editor: store.editor,
-      config: body?.config ?? {},
-      credentials: await resolveCredentials(body?.credentials, body?.config),
-      mode,
-      instruction: body?.instruction ?? "",
-      targetCardId: body?.targetCardId ?? null,
-      assetId: body?.assetId ?? null,
-      diagnostics
-    });
-    return sendJson(res, plan);
+    return sendJson(res, { records: await workspace.listRepairHistory() });
+  }
+
+  if (path === "/api/ai/session-usage" && req.method === "GET") {
+    const limit = (await workspace.getConfig()).ai.sessionRequestLimit ?? 0;
+    return sendJson(res, { used: aiRequestsUsed, limit, remaining: limit > 0 ? Math.max(0, limit - aiRequestsUsed) : null });
+  }
+
+  if (path === "/api/ai/repair-history" && req.method === "DELETE") {
+    return sendJson(res, await workspace.clearRepairHistory());
+  }
+
+  const historyRoute = path.match(/^\/api\/ai\/repair-history\/([^/]+)$/);
+  if (historyRoute && req.method === "GET") {
+    return sendJson(res, { record: await workspace.readRepairHistoryRecord(decodeURIComponent(historyRoute[1])) });
+  }
+  if (historyRoute && req.method === "DELETE") {
+    return sendJson(res, await workspace.deleteRepairHistoryRecord(decodeURIComponent(historyRoute[1])));
   }
 
   if (path === "/api/ai/edit/validate" && req.method === "POST") {
     const result = await validateAiEditEndpointConfig({
       editor: store.editor,
       config: body?.config ?? {},
-      credentials: await resolveCredentials(body?.credentials, body?.config)
+      credentials: await resolveCredentials(body?.credentials, body?.config),
+      fetchImpl: await countedFetch()
     });
     return sendJson(res, result);
   }
@@ -419,12 +510,18 @@ async function handleApi(req, res, url) {
   if (path === "/api/ai/edit/models" && req.method === "POST") {
     const result = await listAiEditEndpointModels({
       config: body?.config ?? {},
-      credentials: await resolveCredentials(body?.credentials, body?.config)
+      credentials: await resolveCredentials(body?.credentials, body?.config),
+      fetchImpl: await countedFetch()
     });
     return sendJson(res, result);
   }
 
   if (path === "/api/ai/edit/apply" && req.method === "POST") {
+    assertSignedPlan(body?.plan);
+    const activeProjectId = (await workspace.getConfig()).activeProjectId;
+    if (body?.plan?.projectId && body.plan.projectId !== activeProjectId) {
+      throw apiError("This draft was built in another project; open that project or build the draft again here", "ai_plan_other_project", 409);
+    }
     const result = applyAiEditPlan({
       editor: store.editor,
       plan: body?.plan,
@@ -432,8 +529,10 @@ async function handleApi(req, res, url) {
     });
     store.replaceEditor(result.editor);
     await persistEditor();
+    const historyId = await markRepairHistory(body?.historyId ?? body?.plan?.historyId, result.proposalIds, body?.plan?.projectId ?? activeProjectId);
     return sendJson(res, {
       applied: result.applied,
+      ...(historyId ? { historyId } : {}),
       proposalIds: result.proposalIds,
       patchCount: result.patchCount,
       bundle: result.bundle,
@@ -470,14 +569,25 @@ async function handleApi(req, res, url) {
       if (aggregateBytes > 50 * 1024 * 1024) throw apiError("Image inputs exceed the 50 MiB request limit", "image_input_limit");
       inputs.push({ id: request.mask, name: basename(request.mask), bytes, role: "mask" });
     }
-    const generated = await buildImageOperationDraft({
-      editor: store.editor,
-      config: body?.config ?? {},
-      credentials: await resolveImageCredentials(body?.credentials, body?.config),
-      request,
-      inputs,
-      signal: controller.signal
-    });
+    const imageStartedAt = Date.now();
+    const imageProjectId = (await workspace.getConfig()).activeProjectId;
+    const imageCredentials = await resolveImageCredentials(body?.credentials, body?.config);
+    let generated;
+    try {
+      generated = await buildImageOperationDraft({
+        editor: store.editor,
+        config: body?.config ?? {},
+        credentials: imageCredentials,
+        request,
+        inputs,
+        signal: controller.signal,
+        fetchImpl: await countedFetch()
+      });
+    } catch (error) {
+      await recordAiActivity({ kind: "image", error: controller.signal.aborted ? Object.assign(error, { code: "ai_cancelled" }) : error, image: { operation: request.operation, prompt: request.prompt, model: body?.config?.modelId }, body: { source: "AI Assist" }, credentials: imageCredentials, projectId: imageProjectId, durationMs: Date.now() - imageStartedAt });
+      throw error;
+    }
+    await recordAiActivity({ kind: "image", image: { operation: generated.operation ?? request.operation, prompt: request.prompt, model: generated.provider?.model ?? body?.config?.modelId, outputs: generated.outputs?.length ?? 0 }, body: { source: "AI Assist" }, credentials: imageCredentials, projectId: imageProjectId, durationMs: Date.now() - imageStartedAt });
     const outputs = [];
     for (const [index, output] of generated.outputs.entries()) {
       const extension = output.mimeType === "image/jpeg" ? "jpg" : output.mimeType.split("/")[1];
@@ -754,6 +864,142 @@ async function readJsonBody(req) {
     return JSON.parse(text);
   } catch (error) {
     throw new Error(`Request body is not valid JSON: ${error.message}`);
+  }
+}
+
+function signPlan(plan) {
+  const { planToken: _ignored, ...content } = plan ?? {};
+  return { ...content, planToken: planDigest(content) };
+}
+
+function assertSignedPlan(plan) {
+  if (!plan || typeof plan !== "object" || Array.isArray(plan)) return; // applyAiEditPlan reports the shape error
+  const { planToken, ...content } = plan;
+  const expected = planDigest(content);
+  if (typeof planToken !== "string" || !safeTokenEqual(planToken, expected)) {
+    throw apiError("This AI edit plan was not issued by this Creator session or was changed after it was issued; build the draft again", "ai_plan_untrusted", 409);
+  }
+}
+
+function planDigest(content) {
+  return createHmac("sha256", planSigningKey).update(canonicalJson(content)).digest("base64url");
+}
+
+// countedFetch counts every AI endpoint request against the session limit before sending it.
+async function countedFetch() {
+  const limit = (await workspace.getConfig()).ai.sessionRequestLimit ?? 0;
+  return async (input, init) => {
+    if (limit > 0 && aiRequestsUsed >= limit) {
+      throw apiError(`This Creator session reached its AI request limit (${limit}). Raise it in Settings or restart the Creator.`, "ai_session_budget", 429);
+    }
+    aiRequestsUsed += 1;
+    return fetch(input, init);
+  };
+}
+
+// Blocked proposals from the last runs on the same issue, so round 1 does not repeat them.
+async function priorRepairAttempts(repairTarget) {
+  if (!repairTarget?.code) return [];
+  try {
+    const wanted = new Set((Array.isArray(repairTarget.cardIds) ? repairTarget.cardIds : []).map((cardId) => `card:${cardId}`));
+    const matches = (await workspace.listRepairHistory())
+      .filter((entry) => entry.kind === "repair_loop" && entry.targets.some((target) => target.code === repairTarget.code && (wanted.size === 0 || wanted.has(target.entity))))
+      .slice(0, 2);
+    const attempts = [];
+    for (const entry of matches) {
+      const stored = await workspace.readRepairHistoryRecord(entry.id);
+      for (const round of stored.rounds ?? []) {
+        for (const proposal of round.proposals ?? []) {
+          if (!proposal.passed && attempts.length < 4) attempts.push({ proposalId: proposal.id, title: proposal.title, failedChecks: (proposal.failedDetails ?? []).length ? proposal.failedDetails : (proposal.failedChecks ?? []).map((id) => ({ id })) });
+        }
+      }
+    }
+    return attempts;
+  } catch {
+    return [];
+  }
+}
+
+async function recordAiActivity({ kind, plan = null, error = null, image = null, body = {}, credentials = {}, projectId = null, durationMs = null }) {
+  try {
+    const record = createAiActivityRecord({
+      kind,
+      plan,
+      error,
+      image,
+      request: { source: body?.source, mode: body?.mode, instruction: body?.instruction, selection: body?.selection },
+      id: `rh-${Date.now().toString(36)}-${randomBytes(4).toString("hex")}`,
+      durationMs,
+      secrets: [credentials?.apiKey, body?.credentials?.apiKey]
+    });
+    const stored = await workspace.appendRepairHistoryRecord(record, { projectId });
+    return stored.record.id;
+  } catch (historyError) {
+    console.warn(`AI activity was not saved: ${historyError?.message ?? historyError}`);
+    return null;
+  }
+}
+
+async function recordRepairHistory({ plan = null, error = null, body = {}, credentials = {}, projectId = null }) {
+  try {
+    const record = createRepairHistoryRecord({
+      plan,
+      error,
+      request: { instruction: body?.instruction, repairTarget: body?.repairTarget, source: body?.source },
+      id: `rh-${Date.now().toString(36)}-${randomBytes(4).toString("hex")}`,
+      secrets: [credentials?.apiKey, body?.credentials?.apiKey]
+    });
+    const stored = await workspace.appendRepairHistoryRecord(record, { projectId });
+    return stored.record.id;
+  } catch (historyError) {
+    // History is an audit aid; failing to write it must never break drafting.
+    console.warn(`Repair history was not saved: ${historyError?.message ?? historyError}`);
+    return null;
+  }
+}
+
+async function markRepairHistory(historyId, proposalIds, projectId = null) {
+  if (typeof historyId !== "string" || !historyId.startsWith("rh-")) return null;
+  try {
+    await workspace.updateRepairHistoryRecord(historyId, (record) => markRepairHistoryApplied(record, { proposalIds }), { projectId });
+    return historyId;
+  } catch {
+    return null;
+  }
+}
+
+function canonicalJson(value) {
+  if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
+  if (Array.isArray(value)) return `[${value.map((entry) => (entry === undefined ? "null" : canonicalJson(entry))).join(",")}]`;
+  return `{${Object.keys(value).filter((key) => value[key] !== undefined).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(",")}}`;
+}
+
+function wantsProgressStream(req) {
+  return String(req.headers.accept ?? "").includes("application/x-ndjson");
+}
+
+/**
+ * streamWithProgress answers with NDJSON: `{"type":"progress",...}` lines while `work`
+ * runs, then one `{"type":"result","result":...}` or `{"type":"error","error":...}` line.
+ * Errors after the header keep the 200 status; the client reads the error line.
+ */
+async function streamWithProgress(res, work) {
+  res.writeHead(200, {
+    "content-type": "application/x-ndjson; charset=utf-8",
+    "cache-control": "no-store",
+    "x-content-type-options": "nosniff"
+  });
+  let lastStage = null;
+  const progress = (event) => {
+    if (event?.stage) lastStage = event.stage;
+    if (!res.writableEnded && !res.destroyed) res.write(`${JSON.stringify({ type: "progress", ...event })}\n`);
+  };
+  try {
+    const result = await work(progress);
+    if (!res.destroyed) res.end(`${JSON.stringify({ type: "result", result })}\n`);
+  } catch (error) {
+    const payload = { name: error?.name, message: error?.message ?? String(error), code: error?.code ?? "internal_error", stage: error?.stage ?? lastStage };
+    if (!res.writableEnded && !res.destroyed) res.end(`${JSON.stringify({ type: "error", error: payload })}\n`);
   }
 }
 

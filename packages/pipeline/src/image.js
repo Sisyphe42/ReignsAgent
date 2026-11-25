@@ -476,6 +476,8 @@ async function providerFetch(fetchImpl, url, init, errorCode = "image_endpoint_n
   } catch (error) {
     if (error?.name === "AbortError") throw new ImagePipelineError("Image request was cancelled", "image_request_cancelled");
     if (error?.name === "TimeoutError") throw new ImagePipelineError("Image endpoint request timed out", "image_request_timeout");
+    // Host policy errors (session request limit) keep their code and message.
+    if (typeof error?.code === "string" && error.code.startsWith("ai_")) throw error;
     throw new ImagePipelineError(`Image endpoint request failed: ${error.message}`, errorCode);
   }
   if (!response?.ok) {
