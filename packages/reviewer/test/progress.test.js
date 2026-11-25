@@ -30,6 +30,16 @@ describe("reviewer progress", () => {
     assert.equal(events.at(-1).completed, 300);
   });
 
+  it("falls back to the default chunk size for non-numeric or non-positive chunkCycles", async () => {
+    const options = { cards: FOG.cards, cycles: 120, maxTurns: 20, seed: 4 };
+    const expected = runMonteCarloReview(options);
+    for (const chunkCycles of [Number.NaN, "fast", 0, -5, Infinity]) {
+      let yields = 0;
+      const report = await runMonteCarloReviewAsync({ ...options, chunkCycles, yieldToHost: async () => { yields += 1; if (yields > 50) throw new Error("did not advance"); } });
+      assert.deepEqual(report, expected, `chunkCycles ${String(chunkCycles)}`);
+    }
+  });
+
   it("never lets the progress option leak into the report parameters", () => {
     const report = runMonteCarloReview({ cards: FOG.cards, cycles: 10, maxTurns: 5, seed: 1, onProgress: () => {} });
     assert.equal(Object.hasOwn(report.parameters, "onProgress"), false);

@@ -41,7 +41,9 @@ export function runMonteCarloReview(options = {}) {
  * event loop between chunks so a host can stream progress while it runs.
  */
 export async function runMonteCarloReviewAsync(options = {}) {
-  const chunk = Math.max(1, Math.floor(Number(options.chunkCycles ?? PROGRESS_INTERVAL_CYCLES * 2)));
+  // Non-numeric or non-positive chunk sizes fall back to the default; NaN would never advance.
+  const requested = Math.floor(Number(options.chunkCycles));
+  const chunk = Number.isFinite(requested) && requested >= 1 ? requested : PROGRESS_INTERVAL_CYCLES * 2;
   const yieldToHost = typeof options.yieldToHost === "function" ? options.yieldToHost : defaultYield;
   const run = createReviewRun(options);
   while (!run.step(chunk)) {
