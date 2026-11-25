@@ -14,6 +14,7 @@ import {
   buildImageOperationDraft,
   buildVerifiedRepairPlan,
   buildGenerationPlan,
+  createAiActivityRecord,
   createCardEditor,
   createConnectorConfig,
   createRepairHistoryRecord,
@@ -119,6 +120,9 @@ const apiCapability = randomBytes(32).toString("base64url");
 // Plans are signed when issued and verified on apply, so a client cannot edit proposals,
 // patches, verification evidence, or the base fingerprint between review and apply.
 const planSigningKey = randomBytes(32);
+// AI endpoint requests sent by this Creator session (text drafts, repair rounds, validation,
+// model listing, images). config.ai.sessionRequestLimit caps it; 0 means no limit.
+let aiRequestsUsed = 0;
 let trustedRequestHosts = new Set();
 
 const server = createServer(async (req, res) => {
@@ -404,8 +408,13 @@ async function handleApi(req, res, url) {
       });
     }
     const credentials = await resolveCredentials(body?.credentials, body?.config);
+    // Closing the request (Cancel in the UI, or a closed tab) cancels the model call and the loop.
+    const cancel = new AbortController();
+    res.once("close", () => { if (!res.writableEnded) cancel.abort(); });
+    const fetchImpl = await countedFetch();
+    const isRepairLoop = mode === "repair_diagnostics" && body?.verify !== false;
     const buildPlan = async (onProgress = null) => {
-      if (mode === "repair_diagnostics" && body?.verify !== false) {
+      if (isRepairLoop) {
         // Verified repair loop: proposals are scored on copies; nothing is written here.
         return buildVerifiedRepairPlan({
           editor: store.editor,
@@ -416,7 +425,10 @@ async function handleApi(req, res, url) {
           targetCardId: body?.targetCardId ?? null,
           repairTarget: body?.repairTarget ?? null,
           diagnostics,
-          onProgress
+          onProgress,
+          fetchImpl,
+          signal: cancel.signal,
+          priorAttempts: await priorRepairAttempts(body?.repairTarget)
         });
       }
       return buildAiEditPlanAsync({
@@ -428,23 +440,28 @@ async function handleApi(req, res, url) {
         targetCardId: body?.targetCardId ?? null,
         assetId: body?.assetId ?? null,
         diagnostics,
-        onProgress
+        onProgress,
+        fetchImpl,
+        signal: cancel.signal,
+        selection: body?.selection ?? null
       });
     };
-    // Every verified repair-loop run (success or failure) leaves one key-free history record,
+    // Every AI request (repair loop, draft, selection action) leaves one key-free activity record,
     // written to the project that started it even if the author switches projects meanwhile.
-    const recordsHistory = mode === "repair_diagnostics" && body?.verify !== false;
-    const historyProjectId = recordsHistory ? (await workspace.getConfig()).activeProjectId : null;
+    const historyProjectId = (await workspace.getConfig()).activeProjectId;
+    const startedAt = Date.now();
+    const record = (outcome) => isRepairLoop
+      ? recordRepairHistory({ ...outcome, body, credentials, projectId: historyProjectId })
+      : recordAiActivity({ ...outcome, kind: body?.selection ? "selection" : "draft", body, credentials, projectId: historyProjectId, durationMs: Date.now() - startedAt });
     const buildAndRecord = async (onProgress = null) => {
-      if (!recordsHistory) return signPlan(await buildPlan(onProgress));
       let plan;
       try {
         plan = await buildPlan(onProgress);
       } catch (error) {
-        await recordRepairHistory({ error, body, credentials, projectId: historyProjectId });
+        await record({ error });
         throw error;
       }
-      const historyId = await recordRepairHistory({ plan, body, credentials, projectId: historyProjectId });
+      const historyId = await record({ plan });
       return signPlan(historyId ? { ...plan, historyId } : plan);
     };
     if (wantsProgressStream(req)) return streamWithProgress(res, buildAndRecord);
@@ -452,7 +469,19 @@ async function handleApi(req, res, url) {
   }
 
   if (path === "/api/ai/repair-history" && req.method === "GET") {
+    if (url.searchParams.get("full") === "1") {
+      // Export: every stored record in full (already key-free and URL-redacted).
+      const summaries = await workspace.listRepairHistory();
+      const records = [];
+      for (const entry of summaries) records.push(await workspace.readRepairHistoryRecord(entry.id));
+      return sendJson(res, { exportedAt: new Date().toISOString(), records });
+    }
     return sendJson(res, { records: await workspace.listRepairHistory() });
+  }
+
+  if (path === "/api/ai/session-usage" && req.method === "GET") {
+    const limit = (await workspace.getConfig()).ai.sessionRequestLimit ?? 0;
+    return sendJson(res, { used: aiRequestsUsed, limit, remaining: limit > 0 ? Math.max(0, limit - aiRequestsUsed) : null });
   }
 
   if (path === "/api/ai/repair-history" && req.method === "DELETE") {
@@ -471,7 +500,8 @@ async function handleApi(req, res, url) {
     const result = await validateAiEditEndpointConfig({
       editor: store.editor,
       config: body?.config ?? {},
-      credentials: await resolveCredentials(body?.credentials, body?.config)
+      credentials: await resolveCredentials(body?.credentials, body?.config),
+      fetchImpl: await countedFetch()
     });
     return sendJson(res, result);
   }
@@ -479,7 +509,8 @@ async function handleApi(req, res, url) {
   if (path === "/api/ai/edit/models" && req.method === "POST") {
     const result = await listAiEditEndpointModels({
       config: body?.config ?? {},
-      credentials: await resolveCredentials(body?.credentials, body?.config)
+      credentials: await resolveCredentials(body?.credentials, body?.config),
+      fetchImpl: await countedFetch()
     });
     return sendJson(res, result);
   }
@@ -533,14 +564,25 @@ async function handleApi(req, res, url) {
       if (aggregateBytes > 50 * 1024 * 1024) throw apiError("Image inputs exceed the 50 MiB request limit", "image_input_limit");
       inputs.push({ id: request.mask, name: basename(request.mask), bytes, role: "mask" });
     }
-    const generated = await buildImageOperationDraft({
-      editor: store.editor,
-      config: body?.config ?? {},
-      credentials: await resolveImageCredentials(body?.credentials, body?.config),
-      request,
-      inputs,
-      signal: controller.signal
-    });
+    const imageStartedAt = Date.now();
+    const imageProjectId = (await workspace.getConfig()).activeProjectId;
+    const imageCredentials = await resolveImageCredentials(body?.credentials, body?.config);
+    let generated;
+    try {
+      generated = await buildImageOperationDraft({
+        editor: store.editor,
+        config: body?.config ?? {},
+        credentials: imageCredentials,
+        request,
+        inputs,
+        signal: controller.signal,
+        fetchImpl: await countedFetch()
+      });
+    } catch (error) {
+      await recordAiActivity({ kind: "image", error: controller.signal.aborted ? Object.assign(error, { code: "ai_cancelled" }) : error, image: { operation: request.operation, prompt: request.prompt, model: body?.config?.modelId }, body: { source: "AI Assist" }, credentials: imageCredentials, projectId: imageProjectId, durationMs: Date.now() - imageStartedAt });
+      throw error;
+    }
+    await recordAiActivity({ kind: "image", image: { operation: generated.operation ?? request.operation, prompt: request.prompt, model: generated.provider?.model ?? body?.config?.modelId, outputs: generated.outputs?.length ?? 0 }, body: { source: "AI Assist" }, credentials: imageCredentials, projectId: imageProjectId, durationMs: Date.now() - imageStartedAt });
     const outputs = [];
     for (const [index, output] of generated.outputs.entries()) {
       const extension = output.mimeType === "image/jpeg" ? "jpg" : output.mimeType.split("/")[1];
@@ -838,12 +880,67 @@ function planDigest(content) {
   return createHmac("sha256", planSigningKey).update(canonicalJson(content)).digest("base64url");
 }
 
+// countedFetch counts every AI endpoint request against the session limit before sending it.
+async function countedFetch() {
+  const limit = (await workspace.getConfig()).ai.sessionRequestLimit ?? 0;
+  return async (input, init) => {
+    if (limit > 0 && aiRequestsUsed >= limit) {
+      throw apiError(`This Creator session reached its AI request limit (${limit}). Raise it in Settings or restart the Creator.`, "ai_session_budget", 429);
+    }
+    aiRequestsUsed += 1;
+    return fetch(input, init);
+  };
+}
+
+// Blocked proposals from the last runs on the same issue, so round 1 does not repeat them.
+async function priorRepairAttempts(repairTarget) {
+  if (!repairTarget?.code) return [];
+  try {
+    const wanted = new Set((Array.isArray(repairTarget.cardIds) ? repairTarget.cardIds : []).map((cardId) => `card:${cardId}`));
+    const matches = (await workspace.listRepairHistory())
+      .filter((entry) => entry.kind === "repair_loop" && entry.targets.some((target) => target.code === repairTarget.code && (wanted.size === 0 || wanted.has(target.entity))))
+      .slice(0, 2);
+    const attempts = [];
+    for (const entry of matches) {
+      const stored = await workspace.readRepairHistoryRecord(entry.id);
+      for (const round of stored.rounds ?? []) {
+        for (const proposal of round.proposals ?? []) {
+          if (!proposal.passed && attempts.length < 4) attempts.push({ proposalId: proposal.id, title: proposal.title, failedChecks: (proposal.failedDetails ?? []).length ? proposal.failedDetails : (proposal.failedChecks ?? []).map((id) => ({ id })) });
+        }
+      }
+    }
+    return attempts;
+  } catch {
+    return [];
+  }
+}
+
+async function recordAiActivity({ kind, plan = null, error = null, image = null, body = {}, credentials = {}, projectId = null, durationMs = null }) {
+  try {
+    const record = createAiActivityRecord({
+      kind,
+      plan,
+      error,
+      image,
+      request: { source: body?.source, mode: body?.mode, instruction: body?.instruction, selection: body?.selection },
+      id: `rh-${Date.now().toString(36)}-${randomBytes(4).toString("hex")}`,
+      durationMs,
+      secrets: [credentials?.apiKey, body?.credentials?.apiKey]
+    });
+    const stored = await workspace.appendRepairHistoryRecord(record, { projectId });
+    return stored.record.id;
+  } catch (historyError) {
+    console.warn(`AI activity was not saved: ${historyError?.message ?? historyError}`);
+    return null;
+  }
+}
+
 async function recordRepairHistory({ plan = null, error = null, body = {}, credentials = {}, projectId = null }) {
   try {
     const record = createRepairHistoryRecord({
       plan,
       error,
-      request: { instruction: body?.instruction, repairTarget: body?.repairTarget },
+      request: { instruction: body?.instruction, repairTarget: body?.repairTarget, source: body?.source },
       id: `rh-${Date.now().toString(36)}-${randomBytes(4).toString("hex")}`,
       secrets: [credentials?.apiKey, body?.credentials?.apiKey]
     });
@@ -890,14 +987,14 @@ async function streamWithProgress(res, work) {
   let lastStage = null;
   const progress = (event) => {
     if (event?.stage) lastStage = event.stage;
-    if (!res.writableEnded) res.write(`${JSON.stringify({ type: "progress", ...event })}\n`);
+    if (!res.writableEnded && !res.destroyed) res.write(`${JSON.stringify({ type: "progress", ...event })}\n`);
   };
   try {
     const result = await work(progress);
-    res.end(`${JSON.stringify({ type: "result", result })}\n`);
+    if (!res.destroyed) res.end(`${JSON.stringify({ type: "result", result })}\n`);
   } catch (error) {
     const payload = { name: error?.name, message: error?.message ?? String(error), code: error?.code ?? "internal_error", stage: error?.stage ?? lastStage };
-    if (!res.writableEnded) res.end(`${JSON.stringify({ type: "error", error: payload })}\n`);
+    if (!res.writableEnded && !res.destroyed) res.end(`${JSON.stringify({ type: "error", error: payload })}\n`);
   }
 }
 

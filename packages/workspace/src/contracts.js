@@ -9,7 +9,7 @@ export function defaultConfig() {
   return {
     schemaVersion: CONFIG_SCHEMA_VERSION, theme: "github-light", locale: "system", aiAssistEnabled: false,
     activeProjectId: "", recentProjectIds: [], build: { defaultOutputDir: "Builds" },
-    ai: { endpoint: "", protocol: "openai_chat", endpointPresetId: "custom", compatibilityFamily: "custom", modelId: "", routeMode: "auto", jsonMode: "auto", capabilities: ["structuredJson"], apiKey: "", image: { endpoint: "", protocol: "openai_images", modelId: "", routeMode: "auto", credentialMode: "inherit_text", capabilities: ["generate", "edit", "inpaint", "outpaint"], variant: "core", apiKey: "" } }
+    ai: { endpoint: "", protocol: "openai_chat", endpointPresetId: "custom", compatibilityFamily: "custom", modelId: "", routeMode: "auto", jsonMode: "auto", capabilities: ["structuredJson"], sessionRequestLimit: 60, apiKey: "", image: { endpoint: "", protocol: "openai_images", modelId: "", routeMode: "auto", credentialMode: "inherit_text", capabilities: ["generate", "edit", "inpaint", "outpaint"], variant: "core", apiKey: "" } }
   };
 }
 
@@ -26,7 +26,7 @@ export function normalizeConfig(value) {
     aiAssistEnabled: typeof value.aiAssistEnabled === "boolean" ? value.aiAssistEnabled : defaults.aiAssistEnabled,
     activeProjectId: string(value.activeProjectId, ""), recentProjectIds: stringArray(value.recentProjectIds),
     build: { defaultOutputDir: string(build.defaultOutputDir, defaults.build.defaultOutputDir) },
-    ai: { endpoint: string(ai.endpoint, ""), protocol: string(ai.protocol, defaults.ai.protocol), endpointPresetId: string(ai.endpointPresetId, defaults.ai.endpointPresetId), compatibilityFamily: string(ai.compatibilityFamily, defaults.ai.compatibilityFamily), modelId: string(ai.modelId, ""), routeMode: string(ai.routeMode, defaults.ai.routeMode), jsonMode: string(ai.jsonMode, defaults.ai.jsonMode), capabilities: Array.isArray(ai.capabilities) ? ai.capabilities.filter((entry) => typeof entry === "string") : defaults.ai.capabilities, apiKey: typeof ai.apiKey === "string" ? ai.apiKey : "", image: { endpoint: string(image.endpoint, ""), protocol: string(image.protocol, defaults.ai.image.protocol), modelId: string(image.modelId, ""), routeMode: string(image.routeMode, defaults.ai.image.routeMode), credentialMode: image.credentialMode === "dedicated" ? "dedicated" : "inherit_text", capabilities: Array.isArray(image.capabilities) ? image.capabilities.filter((entry) => typeof entry === "string") : defaults.ai.image.capabilities, variant: string(image.variant, defaults.ai.image.variant), apiKey: typeof image.apiKey === "string" ? image.apiKey : "" } }
+    ai: { endpoint: string(ai.endpoint, ""), protocol: string(ai.protocol, defaults.ai.protocol), endpointPresetId: string(ai.endpointPresetId, defaults.ai.endpointPresetId), compatibilityFamily: string(ai.compatibilityFamily, defaults.ai.compatibilityFamily), modelId: string(ai.modelId, ""), routeMode: string(ai.routeMode, defaults.ai.routeMode), jsonMode: string(ai.jsonMode, defaults.ai.jsonMode), capabilities: Array.isArray(ai.capabilities) ? ai.capabilities.filter((entry) => typeof entry === "string") : defaults.ai.capabilities, sessionRequestLimit: boundedInteger(ai.sessionRequestLimit, defaults.ai.sessionRequestLimit, 0, 1000), apiKey: typeof ai.apiKey === "string" ? ai.apiKey : "", image: { endpoint: string(image.endpoint, ""), protocol: string(image.protocol, defaults.ai.image.protocol), modelId: string(image.modelId, ""), routeMode: string(image.routeMode, defaults.ai.image.routeMode), credentialMode: image.credentialMode === "dedicated" ? "dedicated" : "inherit_text", capabilities: Array.isArray(image.capabilities) ? image.capabilities.filter((entry) => typeof entry === "string") : defaults.ai.image.capabilities, variant: string(image.variant, defaults.ai.image.variant), apiKey: typeof image.apiKey === "string" ? image.apiKey : "" } }
   };
 }
 
@@ -39,7 +39,7 @@ export function mergeConfig(current, patch) {
 }
 
 export function projectConfig(config) {
-  return { schemaVersion: config.schemaVersion, theme: config.theme, locale: config.locale, aiAssistEnabled: config.aiAssistEnabled, activeProjectId: config.activeProjectId || null, recentProjectIds: [...config.recentProjectIds], build: clone(config.build), ai: { endpoint: config.ai.endpoint, protocol: config.ai.protocol, endpointPresetId: config.ai.endpointPresetId, compatibilityFamily: config.ai.compatibilityFamily, modelId: config.ai.modelId, routeMode: config.ai.routeMode, jsonMode: config.ai.jsonMode, capabilities: [...config.ai.capabilities], hasApiKey: Boolean(config.ai.apiKey), image: { endpoint: config.ai.image.endpoint, protocol: config.ai.image.protocol, modelId: config.ai.image.modelId, routeMode: config.ai.image.routeMode, credentialMode: config.ai.image.credentialMode, capabilities: [...config.ai.image.capabilities], variant: config.ai.image.variant, hasApiKey: Boolean(config.ai.image.apiKey) } } };
+  return { schemaVersion: config.schemaVersion, theme: config.theme, locale: config.locale, aiAssistEnabled: config.aiAssistEnabled, activeProjectId: config.activeProjectId || null, recentProjectIds: [...config.recentProjectIds], build: clone(config.build), ai: { endpoint: config.ai.endpoint, protocol: config.ai.protocol, endpointPresetId: config.ai.endpointPresetId, compatibilityFamily: config.ai.compatibilityFamily, modelId: config.ai.modelId, routeMode: config.ai.routeMode, jsonMode: config.ai.jsonMode, capabilities: [...config.ai.capabilities], sessionRequestLimit: config.ai.sessionRequestLimit, hasApiKey: Boolean(config.ai.apiKey), image: { endpoint: config.ai.image.endpoint, protocol: config.ai.image.protocol, modelId: config.ai.image.modelId, routeMode: config.ai.image.routeMode, credentialMode: config.ai.image.credentialMode, capabilities: [...config.ai.image.capabilities], variant: config.ai.image.variant, hasApiKey: Boolean(config.ai.image.apiKey) } } };
 }
 
 export function defaultWorkspaceState() { return { schemaVersion: WORKSPACE_SCHEMA_VERSION, activePanel: "overview", selectedCardId: "", previewSkin: "" }; }
@@ -54,6 +54,8 @@ export function parseBundle(source, id = "active") { try { const value = typeof 
 export function parseToml(source) { return parse(source); }
 export function stringifyToml(value) { return stringify(value); }
 export function assertProjectId(id) { if (typeof id !== "string" || !PROJECT_ID_PATTERN.test(id)) throw contractError(`Invalid project id '${id}'`, "project_id_invalid"); }
+// 0 means "no limit"; anything else caps AI endpoint requests per Creator session.
+function boundedInteger(value, fallback, min, max) { const number = Number(value); return Number.isInteger(number) && number >= min && number <= max ? number : fallback; }
 function string(value, fallback) { return typeof value === "string" ? value : fallback; }
 function stringArray(value) { return Array.isArray(value) ? [...new Set(value.filter((entry) => typeof entry === "string" && PROJECT_ID_PATTERN.test(entry)))] : []; }
 function isRecord(value) { return value !== null && typeof value === "object" && !Array.isArray(value); }
@@ -65,7 +67,8 @@ function contractError(message, code) { const error = new Error(message); error.
 export const REPAIR_HISTORY_FILE = "repair-history.json";
 export const REPAIR_HISTORY_SCHEMA_VERSION = 1;
 // 128 KiB fits three rounds of logged conversation (each message is capped at 16 KiB by the loop).
-export const REPAIR_HISTORY_LIMITS = Object.freeze({ maxRecords: 40, maxRecordBytes: 128 * 1024, conversationTrimBytes: 2 * 1024 });
+// The same file now holds the whole AI activity log (repair loops, drafts, selection actions, images).
+export const REPAIR_HISTORY_LIMITS = Object.freeze({ maxRecords: 60, maxRecordBytes: 128 * 1024, conversationTrimBytes: 2 * 1024 });
 export const REPAIR_HISTORY_ID_PATTERN = /^rh-[a-z0-9-]{6,64}$/;
 
 export function emptyRepairHistory() { return { schemaVersion: REPAIR_HISTORY_SCHEMA_VERSION, records: [] }; }
@@ -120,6 +123,10 @@ export function removeRepairHistory(history, id) {
 export function summarizeRepairHistory(history) {
   return parseRepairHistory(history).records.map((entry) => ({
     id: entry.id,
+    kind: typeof entry.kind === "string" ? entry.kind : "repair_loop",
+    source: typeof entry.source === "string" ? entry.source : null,
+    mode: typeof entry.mode === "string" ? entry.mode : null,
+    instruction: typeof entry.instruction === "string" ? entry.instruction.slice(0, 120) : "",
     createdAt: entry.createdAt,
     status: entry.status,
     stopReason: entry.stopReason ?? null,

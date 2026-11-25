@@ -30,7 +30,7 @@ export {
   evaluateRepairProposal,
   producerOnlyEdit
 } from "./repair-loop.js";
-export { REPAIR_HISTORY_RECORD_VERSION, createRepairHistoryRecord, markRepairHistoryApplied, scrubRecordSecrets } from "./repair-history.js";
+export { REPAIR_HISTORY_RECORD_VERSION, createAiActivityRecord, createRepairHistoryRecord, markRepairHistoryApplied, scrubRecordSecrets } from "./repair-history.js";
 
 const PLAYER_SCHEMA_VERSION = 1;
 const BUILD_SCHEMA_VERSION = 1;
@@ -791,10 +791,13 @@ export async function buildAiEditPlanAsync({
   assetId = null,
   diagnostics = null,
   fetchImpl = globalThis.fetch,
-  onProgress = null
+  onProgress = null,
+  selection = null,
+  signal = null
 }) {
   const bundle = editor?.toBundle ? editor.toBundle() : createContentBundle(editor ?? {});
   const descriptor = normalizeAiEditConnectorConfig(config);
+  if (signal?.aborted) throw new InterfaceError("AI request cancelled by the author", "ai_cancelled");
   if (!shouldUseAiEndpoint(descriptor)) {
     return createAiEditSuggestions({
       bundle,
@@ -804,7 +807,8 @@ export async function buildAiEditPlanAsync({
       targetCardId,
       assetId,
       diagnostics,
-      onProgress
+      onProgress,
+      selection
     });
   }
 
@@ -818,7 +822,9 @@ export async function buildAiEditPlanAsync({
     assetId,
     diagnostics,
     fetchImpl,
-    onProgress
+    onProgress,
+    selection,
+    signal
   });
 }
 
@@ -904,6 +910,12 @@ export function applyImageDraftAsset({ editor, draft, outputId, asset }) {
   return { applied: true, outputId, asset: committedAsset, bundle: nextEditor.toBundle(), validation: applied.validation, playerValidation: nextEditor.validateForPlayer(), editor: nextEditor };
 }
 
+function withoutCreatorOnlyMetadata(bundle) {
+  if (!bundle?.metadata || !("aiBrief" in bundle.metadata)) return bundle;
+  const { aiBrief: _creatorOnly, ...metadata } = bundle.metadata;
+  return { ...bundle, metadata };
+}
+
 export function applyAiEditPlan({ editor, plan, proposalIds = [] }) {
   if (!plan || typeof plan !== "object" || Array.isArray(plan)) {
     throw new InterfaceError("AI edit plan must be an object");
@@ -986,7 +998,8 @@ export function prepareGameBuild({ editor, config = null, buildId = null }) {
       i18n
     },
     presentation,
-    content: bundle,
+    // Creator-only metadata (the AI author brief) never ships in player builds.
+    content: withoutCreatorOnlyMetadata(bundle),
     config: config ? cloneJsonSafe(config, "Build config") : null
   };
 

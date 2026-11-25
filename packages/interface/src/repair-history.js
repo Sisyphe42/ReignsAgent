@@ -25,9 +25,11 @@ export function createRepairHistoryRecord({
   const finalProposals = Array.isArray(plan?.proposals) ? plan.proposals : [];
   const record = {
     schemaVersion: REPAIR_HISTORY_RECORD_VERSION,
+    kind: "repair_loop",
+    source: clip(request.source, 40) || null,
     id: String(id ?? ""),
     createdAt,
-    status: error ? "failed" : String(verification?.status ?? "unverified"),
+    status: error ? (error.code === "ai_cancelled" ? "cancelled" : "failed") : String(verification?.status ?? "unverified"),
     stopReason: error ? (error.code ?? "error") : (verification?.stopReason ?? null),
     instruction: clip(request.instruction, TEXT_LIMITS.instruction),
     repairTarget: compactRepairTarget(request.repairTarget),
@@ -68,7 +70,80 @@ export function createRepairHistoryRecord({
     preselectedProposalIds: finalProposals
       .filter((proposal) => proposal.verification?.passed)
       .map((proposal) => String(proposal.id ?? "")),
-    outcome: error ? "failed" : "draft",
+    outcome: error ? (error.code === "ai_cancelled" ? "cancelled" : "failed") : "draft",
+    appliedProposalIds: [],
+    appliedAt: null,
+    error: error ? {
+      code: String(error.code ?? "error"),
+      stage: typeof error.stage === "string" ? error.stage : null,
+      message: clip(redactUrls(error.message ?? String(error)), TEXT_LIMITS.error)
+    } : null
+  };
+  return scrubRecordSecrets(record, secrets);
+}
+
+/**
+ * createAiActivityRecord is the activity-log record for every other AI request: ordinary drafts,
+ * selection actions (explain / edit), and image runs. Same whitelisting and redaction rules as
+ * repair-loop records; kind tells the UI which replay to show.
+ */
+export function createAiActivityRecord({
+  kind = "draft",
+  plan = null,
+  error = null,
+  request = {},
+  image = null,
+  id,
+  createdAt = new Date().toISOString(),
+  durationMs = null,
+  secrets = []
+} = {}) {
+  const proposals = Array.isArray(plan?.proposals) ? plan.proposals : [];
+  const exchange = Array.isArray(plan?.exchange) ? plan.exchange : Array.isArray(error?.exchange) ? error.exchange : [];
+  const focus = plan?.request?.context?.selection?.focus ?? (request.selection && typeof request.selection === "object" ? request.selection : null);
+  const record = {
+    schemaVersion: REPAIR_HISTORY_RECORD_VERSION,
+    kind,
+    source: clip(request.source, 40) || null,
+    mode: clip(request.mode ?? plan?.mode ?? image?.operation, 40) || null,
+    id: String(id ?? ""),
+    createdAt,
+    status: error ? (error.code === "ai_cancelled" ? "cancelled" : "failed") : "ready",
+    stopReason: error ? (error.code ?? "error") : null,
+    instruction: clip(request.instruction ?? image?.prompt, TEXT_LIMITS.instruction),
+    endpoint: plan ? (plan.provider ? "configured" : "local_rules") : image ? "configured" : null,
+    model: clip(plan?.provider?.model ?? image?.model, 120) || null,
+    durationMs: numberOrNull(durationMs),
+    selection: focus ? {
+      kind: clip(focus.kind, 60),
+      label: clip(focus.label, 160),
+      cardId: focus.cardId ? String(focus.cardId) : null,
+      text: clip(focus.text, 400)
+    } : null,
+    contextSelection: compactCardSelection(plan?.request?.context?.bundle?.cardSelection),
+    answer: plan?.answer ? clip(plan.answer, 4000) : null,
+    finalProposals: proposals.map((proposal) => ({
+      id: String(proposal.id ?? ""),
+      title: clip(proposal.title, TEXT_LIMITS.title),
+      summary: clip(proposal.summary, TEXT_LIMITS.summary),
+      passed: null,
+      scoreAfter: null,
+      patchCount: Array.isArray(proposal.patches) ? proposal.patches.length : 0
+    })),
+    scopeRejected: (Array.isArray(plan?.scopeRejected) ? plan.scopeRejected : []).slice(0, 12).map((entry) => ({ id: String(entry.id ?? ""), title: clip(entry.title, TEXT_LIMITS.title), reason: clip(entry.reason, TEXT_LIMITS.detail) })),
+    image: image ? { operation: clip(image.operation, 40), outputs: Number(image.outputs) || 0 } : null,
+    rounds: [],
+    conversation: exchange.map((entry, index) => ({
+      round: 1,
+      call: Number(entry.call) || index + 1,
+      status: entry.status ?? null,
+      requestBytes: numberOrNull(entry.requestBytes),
+      responseBytes: numberOrNull(entry.responseBytes),
+      requestBody: String(entry.requestBody ?? ""),
+      responseText: String(entry.responseText ?? "")
+    })),
+    preselectedProposalIds: [],
+    outcome: error ? (error.code === "ai_cancelled" ? "cancelled" : "failed") : "draft",
     appliedProposalIds: [],
     appliedAt: null,
     error: error ? {

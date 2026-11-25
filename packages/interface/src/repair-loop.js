@@ -82,7 +82,9 @@ export async function buildVerifiedRepairPlan({
   fetchImpl = globalThis.fetch,
   now = () => Date.now(),
   onProgress = null,
-  yieldToHost = defaultYield
+  yieldToHost = defaultYield,
+  signal = null,
+  priorAttempts = []
 } = {}) {
   const startedAt = now();
   const budget = normalizeLimits(limits);
@@ -111,6 +113,7 @@ export async function buildVerifiedRepairPlan({
         // Nothing to score: give the model the Review the author actually looked at.
         diagnostics: diagnostics ?? baseline,
         fetchImpl,
+        signal,
         onProgress: (event) => progress.emit({ ...event, round: 1, maxRounds: 1 })
       });
     } catch (error) {
@@ -151,7 +154,12 @@ export async function buildVerifiedRepairPlan({
   let requestedCardIds = [];
   let agentStop = null;
 
+  // Attempts from earlier runs on the same target (repair history) seed round 1's feedback.
+  attempts.push(...compactPriorAttempts(priorAttempts));
+  const cancelled = () => attachLoopEvidence(new InterfaceError("AI request cancelled by the author", "ai_cancelled"), { stopReason: "ai_cancelled", budget, scoringConfig, baseline, targets, rounds, requestedCardIds });
+
   for (let round = 1; round <= budget.maxRounds; round += 1) {
+    if (signal?.aborted) throw cancelled();
     const elapsed = now() - startedAt;
     if (elapsed >= budget.deadlineMs) {
       stopReason = "deadline";
@@ -182,9 +190,15 @@ export async function buildVerifiedRepairPlan({
         targetCardId,
         diagnostics: baseline,
         fetchImpl: meter.fetch,
+        signal,
         onProgress: (event) => progress.emit({ ...event, round })
       });
     } catch (error) {
+      if (signal?.aborted || error?.code === "ai_cancelled") {
+        totalBytes += meter.totalBytes;
+        rounds.push({ round, status: "cancelled", error: { code: "ai_cancelled", message: "Cancelled by the author while waiting for the endpoint." }, proposalCount: 0, evaluatedCount: 0, passedCount: 0, bestScore: null, blockedBy: {}, usage: meter.usage(), timing: { durationMs: now() - roundStartedAt }, exchange: meter.exchange() });
+        throw cancelled();
+      }
       const failure = { code: meter.budgetError?.code ?? error?.code ?? "endpoint_error", message: scrub(meter.budgetError?.message ?? error?.message ?? String(error), apiKey) };
       totalBytes += meter.totalBytes;
       if (!meter.budgetError && REJECTED_RESPONSE_CODES.has(error?.code)) {
@@ -250,6 +264,7 @@ export async function buildVerifiedRepairPlan({
         context,
         proposal,
         onStage: async (stage) => {
+          if (signal?.aborted) throw cancelled();
           progress.emit({ ...position, stage });
           await yieldToHost();
         }
@@ -334,8 +349,9 @@ export async function buildVerifiedRepairPlan({
     throw attachLoopEvidence(new InterfaceError("Content changed while the repair loop was running; rebuild the repair draft", "ai_repair_stale"), { stopReason: "ai_repair_stale", budget, scoringConfig, baseline, targets, rounds, requestedCardIds });
   }
 
+  const { exchange: _lastPlanExchange, ...lastPlanWithoutExchange } = lastPlan;
   return {
-    ...lastPlan,
+    ...lastPlanWithoutExchange,
     baseFingerprint,
     config: stripRepairConstraints(lastPlan.config),
     proposals,
@@ -927,6 +943,23 @@ function attachLoopEvidence(error, { stopReason, budget, scoringConfig, baseline
     // Frozen errors keep their original shape.
   }
   return error;
+}
+
+/**
+ * compactPriorAttempts turns blocked proposals from earlier runs on the same target (supplied by
+ * the host from repair history) into bounded feedback entries marked as coming from an earlier run.
+ */
+function compactPriorAttempts(priorAttempts) {
+  return (Array.isArray(priorAttempts) ? priorAttempts : []).slice(0, 4).map((attempt) => ({
+    round: 0,
+    earlierRun: true,
+    proposalId: String(attempt?.proposalId ?? "").slice(0, 120) || null,
+    title: String(attempt?.title ?? "").slice(0, 160),
+    failedChecks: (Array.isArray(attempt?.failedChecks) ? attempt.failedChecks : []).slice(0, 4).map((check) => ({
+      id: String(check?.id ?? check ?? "").slice(0, 60),
+      detail: String(check?.detail ?? "").slice(0, 200)
+    }))
+  }));
 }
 
 function summarizeDirectives(agent, baseById) {
