@@ -120,6 +120,23 @@ describe("cancel, prior attempts, and activity records", () => {
     assert.equal(loop.repairVerification.rounds[0].status, "cancelled");
   });
 
+  it("keeps the current round when the author cancels during proposal evaluation", async () => {
+    const controller = new AbortController();
+    let stages = 0;
+    const error = await buildVerifiedRepairPlan({
+      editor: createCardEditor(sealedWarehouseBundle()),
+      config: ENDPOINT_CONFIG,
+      fetchImpl: answering({ proposals: [{ id: "wipe", title: "Open the warehouse", patches: [{ op: "updateCard", cardId: "sealed-warehouse", changes: { requirements: {} } }] }] }),
+      signal: controller.signal,
+      onProgress: (event) => { if (event.stage === "scoring" && ++stages === 1) controller.abort(); },
+      yieldToHost: async () => {}
+    }).catch((caught) => caught);
+    assert.equal(error.code, "ai_cancelled");
+    const round = error.repairVerification.rounds[0];
+    assert.equal(round.status, "cancelled");
+    assert.equal(round.exchange.length, 1, "the answered request is kept");
+  });
+
   it("feeds blocked proposals from an earlier run into round one", async () => {
     const calls = [];
     await buildVerifiedRepairPlan({

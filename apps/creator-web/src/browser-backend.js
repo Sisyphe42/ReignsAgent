@@ -121,11 +121,16 @@ export class BrowserCreatorBackend {
     const historyId = await record({ plan });
     return { ...plan, projectId, ...(historyId ? { historyId } : {}) };
   }
+  // The one session counter: page requests and worker requests are admitted here, synchronously.
+  #admitRequest(limit) {
+    if (limit > 0 && this.aiRequestsUsed >= limit) return false;
+    this.aiRequestsUsed += 1;
+    return true;
+  }
   async #countedFetch() {
     const limit = (await this.workspace.getConfig()).ai.sessionRequestLimit ?? 0;
     return async (input, init) => {
-      if (limit > 0 && this.aiRequestsUsed >= limit) throw backendError(`This Creator session reached its AI request limit (${limit}). Raise it in Settings or reload the page.`, "ai_session_budget");
-      this.aiRequestsUsed += 1;
+      if (!this.#admitRequest(limit)) throw backendError(`This Creator session reached its AI request limit (${limit}). Raise it in Settings or reload the page.`, "ai_session_budget");
       return corsFetch(input, init);
     };
   }
@@ -174,7 +179,7 @@ export class BrowserCreatorBackend {
         worker.addEventListener("message", (event) => {
           if (event.data?.id !== id) return;
           if (event.data.type === "progress") { progressObserver(onProgress)?.(event.data.event); return; }
-          if (event.data.type === "request") { this.aiRequestsUsed += 1; return; }
+          if (event.data.type === "request-slot") { worker.postMessage({ type: "slot", seq: event.data.seq, granted: this.#admitRequest(limit) }); return; }
           finish();
           if (event.data.type === "result") resolve(event.data.result);
           else {
@@ -184,7 +189,7 @@ export class BrowserCreatorBackend {
           }
         });
         worker.addEventListener("error", (event) => { finish(); reject(backendError(event.message || "Repair worker failed", "ai_repair_worker_failed")); });
-        worker.postMessage({ id, input: { ...input, bundle, requestBudget: limit > 0 ? Math.max(0, limit - this.aiRequestsUsed) : null } });
+        worker.postMessage({ id, input: { ...input, bundle } });
       });
     } else {
       plan = await buildVerifiedRepairPlan({ editor: this.editor, getEditor: () => this.editor, ...input, fetchImpl: await this.#countedFetch(), onProgress: progressObserver(onProgress), signal });

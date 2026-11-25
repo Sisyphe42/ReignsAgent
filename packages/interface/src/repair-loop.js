@@ -254,32 +254,14 @@ export async function buildVerifiedRepairPlan({
     const proposals = Array.isArray(plan.proposals) ? plan.proposals : [];
     const evaluated = [];
     const scoredCount = Math.min(proposals.length, budget.maxProposalsPerRound);
-    for (const [index, proposal] of proposals.entries()) {
-      if (index >= budget.maxProposalsPerRound) {
-        evaluated.push(withVerification(proposal, round, skippedVerdict(budget)));
-        continue;
-      }
-      const position = { round, proposalIndex: index + 1, proposalCount: scoredCount };
-      const verdict = await evaluateRepairProposalStaged({
-        context,
-        proposal,
-        onStage: async (stage) => {
-          if (signal?.aborted) throw cancelled();
-          progress.emit({ ...position, stage });
-          await yieldToHost();
-        }
-      });
-      evaluated.push(withVerification(proposal, round, verdict));
-    }
-    const passed = evaluated.filter((proposal) => proposal.verification.passed);
     const directives = summarizeDirectives(plan.agent, context.baseById);
-    const roundRecord = {
+    const buildRoundRecord = (status) => ({
       round,
-      status: "evaluated",
+      status,
       ...(directives ? { agent: directives } : {}),
       proposalCount: proposals.length,
-      evaluatedCount: Math.min(proposals.length, budget.maxProposalsPerRound),
-      passedCount: passed.length,
+      evaluatedCount: status === "evaluated" ? Math.min(proposals.length, budget.maxProposalsPerRound) : evaluated.length,
+      passedCount: evaluated.filter((proposal) => proposal.verification.passed).length,
       bestScore: bestScoreOf(evaluated),
       blockedBy: countBlockedChecks(evaluated),
       usage: meter.usage(),
@@ -298,7 +280,33 @@ export async function buildVerifiedRepairPlan({
           .map((check) => ({ id: check.id, detail: String(check.detail ?? "").slice(0, 200) })),
         scoreAfter: proposal.verification.score.after
       }))
-    };
+    });
+    try {
+      for (const [index, proposal] of proposals.entries()) {
+        if (index >= budget.maxProposalsPerRound) {
+          evaluated.push(withVerification(proposal, round, skippedVerdict(budget)));
+          continue;
+        }
+        const position = { round, proposalIndex: index + 1, proposalCount: scoredCount };
+        const verdict = await evaluateRepairProposalStaged({
+          context,
+          proposal,
+          onStage: async (stage) => {
+            if (signal?.aborted) throw new InterfaceError("AI request cancelled by the author", "ai_cancelled");
+            progress.emit({ ...position, stage });
+            await yieldToHost();
+          }
+        });
+        evaluated.push(withVerification(proposal, round, verdict));
+      }
+    } catch (error) {
+      if (error?.code !== "ai_cancelled") throw error;
+      // Keep this round's exchange and the verdicts computed before the cancel.
+      rounds.push(buildRoundRecord("cancelled"));
+      throw cancelled();
+    }
+    const passed = evaluated.filter((proposal) => proposal.verification.passed);
+    const roundRecord = buildRoundRecord("evaluated");
     rounds.push(roundRecord);
     finalRound = { round, proposals: evaluated, plan };
     evaluatedRounds.push(finalRound);
