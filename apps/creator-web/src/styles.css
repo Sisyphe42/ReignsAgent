@@ -44,9 +44,9 @@
   --border: #ccd0da;
   --border-strong: #9ca0b0;
   --accent: #8839ef;
-  --accent-2: #ea76cb;
+  --accent-2: #b0378f;
   --danger: #d20f39;
-  --ok: #179299;
+  --ok: #0a6b71;
   --button-ink: #ffffff;
   --shadow: rgba(76, 79, 105, 0.12);
   --radius: 8px;
@@ -1297,7 +1297,7 @@ select {
 .rail__meta {
   grid-area: meta;
   white-space: nowrap;
-  color: var(--subtle);
+  color: var(--muted);
   font-family: var(--font-data);
   font-size: 0.67rem;
 }
@@ -2832,13 +2832,13 @@ select {
 .ai-dropdown__button small,
 .ai-dropdown__option small {
   margin-top: 2px;
-  color: var(--subtle);
+  color: var(--muted);
   font-size: 0.62rem;
   text-transform: none;
 }
 
 .ai-dropdown__chevron {
-  color: var(--subtle);
+  color: var(--muted);
   font-size: 1rem;
 }
 
@@ -2887,7 +2887,7 @@ select {
 .ai-dropdown__empty {
   min-height: 34px;
   padding: 9px 8px;
-  color: var(--subtle);
+  color: var(--muted);
   font-family: var(--font-data);
   font-size: 0.68rem;
 }
@@ -2952,7 +2952,7 @@ select {
 .ai-advanced summary span:not(.ai-field-label) {
   min-width: 0;
   overflow: hidden;
-  color: var(--subtle);
+  color: var(--muted);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -3246,7 +3246,7 @@ select {
 }
 
 :root[data-skin="phantom"] .metric--bad strong {
-  color: #d71920;
+  color: #c0141b;
 }
 
 .action-row,
@@ -3941,7 +3941,7 @@ select {
 }
 
 .about-settings__separator {
-  color: var(--border-strong);
+  color: var(--muted);
   user-select: none;
 }
 
@@ -5404,8 +5404,8 @@ select {
 
 :root[data-skin="phantom"] .content-detail .author-summary__chip--negative,
 :root[data-skin="phantom"] .content-detail .author-summary__chip--danger {
-  color: #d71920;
-  border-color: #d71920;
+  color: #c0141b;
+  border-color: #c0141b;
 }
 
 :root[data-skin="phantom"] .content-detail .author-summary__chip--gate,
@@ -5424,7 +5424,7 @@ select {
 }
 
 :root[data-skin="phantom"] .content-detail .author-summary__status--invalid {
-  color: #d71920;
+  color: #c0141b;
 }
 
 details {
@@ -7956,8 +7956,10 @@ summary:focus-visible {
 }
 
 :root[data-skin="phantom"] .rail__item--active .phantom-shape--cyan {
-  background: #ffe100;
-  opacity: 0.64;
+  /* Black (not yellow) behind the cream active label: cream on black/red stays above 6:1. */
+  background: #09090a;
+  mix-blend-mode: normal;
+  opacity: 1;
 }
 
 :root[data-skin="phantom"] .rail__item:hover,
@@ -9246,4 +9248,165 @@ summary:focus-visible {
 
 :root[data-skin="phantom"] .overview-ai p {
   color: #4b443c;
+}
+
+/* Phantom panels are cream paper on a black page. The skin tokens (--ink, --muted, --subtle)
+   are tuned for the black page, so inside panels they are redefined for the paper. Elements that
+   paint their own black or red surface (inputs, active chips, buttons) set their colors explicitly. */
+:root[data-skin="phantom"] .panel {
+  --ink: #09090a;
+  --muted: #4b443c;
+  --subtle: #5d554c;
+  /* Brand red one step darker on paper: #c0141b is 5.6:1 on #f7f2e9 (the page red #d71920 is 4.49:1). */
+  --accent: #c0141b;
+  --danger: #c0141b;
+}
+
+:root[data-skin="phantom"] .panel :is(.story-group-chip--active, .capability-chip--active, .ai-option-pill--active) {
+  color: #f7f2e9;
+  border-color: #09090a;
+  background: #09090a;
+}
+
+:root[data-skin="phantom"] .project-menu__group-label,
+:root[data-skin="phantom"] .story-issues__meta code {
+  color: #09090a;
+}
+
+:root[data-skin="phantom"] .graph-icon-btn span {
+  color: #f7f2e9;
+}
+
+/* Follow-ups: wait estimates, model directives, conversation replay, history comparison. */
+.review-progress__eta {
+  color: var(--muted);
+  font-family: var(--font-data);
+}
+
+.ai-wait-estimate {
+  margin: -4px 0 10px;
+  color: var(--muted);
+  font-family: var(--font-data);
+  font-size: 0.74rem;
+}
+
+.repair-agent-notes {
+  display: grid;
+  gap: 4px;
+  margin: 8px 0;
+  padding-left: 18px;
+  font-size: 0.8rem;
+}
+
+.repair-agent-notes code {
+  margin: 0 3px;
+  font-family: var(--font-data);
+}
+
+.repair-history__agent {
+  margin: 4px 0 0;
+  color: var(--ink);
+  font-size: 0.8rem;
+}
+
+.repair-history__conversation {
+  margin-top: 6px;
+}
+
+.repair-history__conversation > summary {
+  cursor: pointer;
+  color: var(--accent);
+  font-size: 0.76rem;
+}
+
+.repair-history__message {
+  display: grid;
+  gap: 4px;
+  margin-top: 6px;
+  font-size: 0.74rem;
+}
+
+.repair-history__message pre {
+  max-height: 260px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.repair-history__role {
+  color: var(--muted);
+  font-family: var(--font-data);
+  font-size: 0.7rem;
+}
+
+.repair-history__item {
+  position: relative;
+}
+
+.repair-history__compare-pick {
+  position: absolute;
+  top: 9px;
+  right: 96px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.repair-history__toggle {
+  padding-right: 190px;
+}
+
+.repair-history__compare {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 50%, var(--border));
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.repair-history__compare-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.repair-history__compare-table {
+  width: 100%;
+  margin-top: 8px;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+  table-layout: fixed;
+}
+
+.repair-history__compare-table th,
+.repair-history__compare-table td {
+  padding: 5px 6px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.repair-history__compare-table th[scope="row"] {
+  width: 26%;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.repair-history__compare-row--diff td {
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+}
+
+@media (max-width: 720px) {
+  .repair-history__compare-pick {
+    position: static;
+    padding: 8px 12px 0;
+  }
+
+  .repair-history__toggle {
+    padding-right: 12px;
+  }
 }

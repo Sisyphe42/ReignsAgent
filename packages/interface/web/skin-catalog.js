@@ -10,8 +10,8 @@ export const SKINS = Object.freeze([
   }),
   skin("catppuccin-latte", "Catppuccin Latte", "Soft café pastels", "#eff1f5", "#8839ef", {
     bg: "#eff1f5", surface: "#fafafa", surface2: "#e6e9ef", surface3: "#dce0e8", ink: "#4c4f69",
-    muted: "#6c6f85", border: "#ccd0da", accent: "#8839ef", accent2: "#ea76cb", danger: "#d20f39",
-    ok: "#179299", buttonInk: "#ffffff", radius: "8px", shadow: "rgba(76, 79, 105, 0.12)", colorScheme: "light"
+    muted: "#5c5f77", border: "#ccd0da", accent: "#8839ef", accent2: "#b0378f", danger: "#d20f39",
+    ok: "#0a6b71", buttonInk: "#ffffff", radius: "8px", shadow: "rgba(76, 79, 105, 0.12)", colorScheme: "light"
   }),
   skin("classic", "Classic", "Candlelit court", "#10110f", "#d8a83a", {
     bg: "#10110f", surface: "#171915", surface2: "#20241d", surface3: "#292e25", ink: "#f1eee4",
@@ -21,7 +21,7 @@ export const SKINS = Object.freeze([
   skin("famicom", "Famicom", "8-bit family console", "#efe4cc", "#b52222", {
     bg: "#efe4cc", surface: "#f8efd9", surface2: "#fff8e8", surface3: "#e8dac2", ink: "#211f1c",
     muted: "#6d6256", border: "#24211d", accent: "#b52222", accent2: "#275c9a", danger: "#b52222",
-    ok: "#1f8b58", buttonInk: "#fff8e8", radius: "0px", shadow: "rgba(36, 33, 29, 0.24)", colorScheme: "light"
+    ok: "#17703f", buttonInk: "#fff8e8", radius: "0px", shadow: "rgba(36, 33, 29, 0.24)", colorScheme: "light"
   }),
   skin("phantom", "Phantom", "Noir cut-paper dossier", "#09090a", "#d71920", {
     bg: "#09090a", surface: "#151515", surface2: "#f4f0e8", surface3: "#d71920", ink: "#f7f2e9",

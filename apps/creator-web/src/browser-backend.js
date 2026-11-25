@@ -10,6 +10,7 @@ import {
 } from "../../../packages/interface/src/index.js";
 import { createOpfsWorkspaceStore } from "./opfs-workspace.js";
 import { backendError } from "./backend.js";
+import { corsFetch } from "./cors-fetch.js";
 
 export class BrowserCreatorBackend {
   static async create(options = {}) { const workspace = await createOpfsWorkspaceStore({ initialBundle: sampleBundle, ...options }); return new BrowserCreatorBackend(workspace, await workspace.readActiveBundle()); }
@@ -58,7 +59,7 @@ export class BrowserCreatorBackend {
     if (path === "/api/diagnostics/feedback" && method === "POST") return summarizeFeedback(body?.report ?? body);
     if (path === "/api/diagnostics/project" && method === "POST") return summarizeDiagnostics(body?.report ?? body);
     if (path === "/api/connector/plan" && method === "POST") return buildGenerationPlan({ config: createConnectorConfig(body?.config ?? body), diagnostics: body?.diagnostics ?? null });
-    if (path === "/api/ai/edit/plan" && method === "POST") { const diagnostics = body?.diagnostics ?? (body?.mode === "repair_diagnostics" ? this.lastDiagnostics : null); if (body?.mode === "repair_diagnostics" && !diagnostics) throw backendError("Run Review before building repair proposals", "diagnostics_required"); if (body?.mode === "repair_diagnostics" && body?.verify !== false) { const credentials = await this.#credentials(body?.credentials); let plan; try { plan = await buildVerifiedRepairPlan({ editor: this.editor, getEditor: () => this.editor, config: body?.config ?? {}, credentials, instruction: body?.instruction ?? "", targetCardId: body?.targetCardId ?? null, repairTarget: body?.repairTarget ?? null, diagnostics, fetchImpl: corsFetch, onProgress: progressObserver(options.onProgress) }); } catch (error) { await this.#recordRepairHistory({ error, body, credentials }); throw error; } const historyId = await this.#recordRepairHistory({ plan, body, credentials }); return historyId ? { ...plan, historyId } : plan; } return buildAiEditPlanAsync({ editor: this.editor, config: body?.config ?? {}, credentials: await this.#credentials(body?.credentials), mode: body?.mode ?? "generate_cards", instruction: body?.instruction ?? "", targetCardId: body?.targetCardId ?? null, assetId: body?.assetId ?? null, diagnostics, fetchImpl: corsFetch, onProgress: progressObserver(options.onProgress) }); }
+    if (path === "/api/ai/edit/plan" && method === "POST") { const diagnostics = body?.diagnostics ?? (body?.mode === "repair_diagnostics" ? this.lastDiagnostics : null); if (body?.mode === "repair_diagnostics" && !diagnostics) throw backendError("Run Review before building repair proposals", "diagnostics_required"); if (body?.mode === "repair_diagnostics" && body?.verify !== false) { const credentials = await this.#credentials(body?.credentials); let plan; try { plan = await this.#runRepairLoop({ config: body?.config ?? {}, credentials, instruction: body?.instruction ?? "", targetCardId: body?.targetCardId ?? null, repairTarget: body?.repairTarget ?? null, diagnostics }, options.onProgress); } catch (error) { await this.#recordRepairHistory({ error, body, credentials }); throw error; } const historyId = await this.#recordRepairHistory({ plan, body, credentials }); return historyId ? { ...plan, historyId } : plan; } return buildAiEditPlanAsync({ editor: this.editor, config: body?.config ?? {}, credentials: await this.#credentials(body?.credentials), mode: body?.mode ?? "generate_cards", instruction: body?.instruction ?? "", targetCardId: body?.targetCardId ?? null, assetId: body?.assetId ?? null, diagnostics, fetchImpl: corsFetch, onProgress: progressObserver(options.onProgress) }); }
     if (path === "/api/ai/edit/validate" && method === "POST") return validateAiEditEndpointConfig({ editor: this.editor, config: body?.config ?? {}, credentials: await this.#credentials(body?.credentials), fetchImpl: corsFetch });
     if (path === "/api/ai/edit/models" && method === "POST") return listAiEditEndpointModels({ config: body?.config ?? {}, credentials: await this.#credentials(body?.credentials), fetchImpl: corsFetch });
     if (path === "/api/ai/repair-history" && method === "GET") return { records: await this.workspace.listRepairHistory() };
@@ -90,6 +91,33 @@ export class BrowserCreatorBackend {
     if (path === "/api/build/prepare" && method === "POST") return { build: prepareGameBuild({ editor: this.editor, config: body?.config ?? null, buildId: body?.buildId ?? null }) };
     if (path === "/api/build/export" && method === "POST") { const { downloadPlayerZip } = await import("./browser-build.js"); const result = await downloadPlayerZip({ editor: this.editor, config: body?.config ?? null, buildId: body?.buildId ?? null, assetReader: (uri) => this.workspace.readActiveProjectAsset(uri) }); return { exported: true, outputPath: result.fileName, buildId: result.buildId, downloaded: true }; }
     throw backendError(`Unknown API route: ${method} ${path}`, "route_not_found");
+  }
+  // The verified repair loop runs in a worker; the page only checks for edits made meanwhile.
+  async #runRepairLoop(input, onProgress = null) {
+    const bundle = this.editor.toBundle();
+    const startedJson = JSON.stringify(bundle);
+    let plan;
+    if (typeof Worker === "function") {
+      plan = await new Promise((resolve, reject) => {
+        const worker = new Worker(new URL("./repair-worker.js", import.meta.url), { type: "module" });
+        this.repairWorker = worker;
+        const id = crypto.randomUUID();
+        const finish = () => { worker.terminate(); if (this.repairWorker === worker) this.repairWorker = null; };
+        worker.addEventListener("message", (event) => {
+          if (event.data?.id !== id) return;
+          if (event.data.type === "progress") { progressObserver(onProgress)?.(event.data.event); return; }
+          finish();
+          if (event.data.type === "result") resolve(event.data.result);
+          else reject(backendError(event.data.error?.message ?? "Repair loop failed", event.data.error?.code ?? "ai_repair_failed", event.data.error?.stage ?? null));
+        });
+        worker.addEventListener("error", (event) => { finish(); reject(backendError(event.message || "Repair worker failed", "ai_repair_worker_failed")); });
+        worker.postMessage({ id, input: { ...input, bundle } });
+      });
+    } else {
+      plan = await buildVerifiedRepairPlan({ editor: this.editor, getEditor: () => this.editor, ...input, fetchImpl: corsFetch, onProgress: progressObserver(onProgress) });
+    }
+    if (JSON.stringify(this.editor.toBundle()) !== startedJson) throw backendError("Content changed while the repair loop was running; rebuild the repair draft", "ai_repair_stale");
+    return plan;
   }
   async #recordRepairHistory({ plan = null, error = null, body = {}, credentials = {} }) {
     try {
@@ -124,7 +152,6 @@ export class BrowserCreatorBackend {
 function progressObserver(onProgress) { return typeof onProgress === "function" ? (event) => { try { onProgress(event); } catch { /* observers never break drafting */ } } : null; }
 function matchChoice(path) { const match = path.match(/^\/api\/editor\/cards\/([^/]+)\/choices\/([^/]+)(?:\/effects\/(faction|tag|variable)\/([^/]+))?$/); return match ? { cardId: decodeURIComponent(match[1]), choiceId: decodeURIComponent(match[2]), kind: match[3] ?? null, target: match[4] ? decodeURIComponent(match[4]) : null } : null; }
 function playProjection(sessionId, session, card, metadata, result = null) { const factions = result?.factions ?? session.factions; return { sessionId, turn: session.turn, factions, gauges: projectFactionGauges(factions, metadata?.presentation), currentCard: card, gameOver: result?.gameOver ?? session.gameOver }; }
-async function corsFetch(input, init) { const url = new URL(typeof input === "string" ? input : input.url, location.href); if (location.protocol === "https:" && url.protocol !== "https:" && !["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)) throw backendError("HTTPS Creator cannot call an insecure AI endpoint. Use HTTPS or localhost.", "mixed_content_blocked"); try { return await fetch(input, init); } catch (error) { throw backendError(`The AI endpoint could not be reached. Confirm that it allows CORS for ${location.origin} and permits Authorization and Content-Type headers.`, "cors_or_network_error"); } }
 function stagedInputDraftIds(request) { return [...new Set([...(request?.references ?? []), request?.mask].filter((uri) => typeof uri === "string" && uri.startsWith("assets/.drafts/")).map((uri) => uri.split("/")[2]).filter(Boolean))]; }
 function clone(value) { return JSON.parse(JSON.stringify(value)); }
 function resolveSample(id = "oss-court") {

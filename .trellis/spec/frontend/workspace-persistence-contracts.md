@@ -248,12 +248,13 @@ await workspace.saveRelease(record); // verifies active Project, size, and SHA-2
 - Applies to `repair-history.json` in each project directory (Node workspace store and Hosted OPFS store).
 
 ### 2. Signatures
-- `packages/workspace/src/contracts.js`: `REPAIR_HISTORY_FILE`, `REPAIR_HISTORY_LIMITS { maxRecords: 40, maxRecordBytes: 48 KiB }`, `parseRepairHistory`, `appendRepairHistory`, `updateRepairHistory`, `removeRepairHistory`, `summarizeRepairHistory`.
+- `packages/workspace/src/contracts.js`: `REPAIR_HISTORY_FILE`, `REPAIR_HISTORY_LIMITS { maxRecords: 40, maxRecordBytes: 128 KiB, conversationTrimBytes: 2 KiB }`, `parseRepairHistory`, `appendRepairHistory`, `updateRepairHistory`, `removeRepairHistory`, `summarizeRepairHistory`.
 - Stores: `listRepairHistory`, `readRepairHistoryRecord(id)`, `appendRepairHistoryRecord(record)`, `updateRepairHistoryRecord(id, update)`, `deleteRepairHistoryRecord(id)`, `clearRepairHistory()`.
 
 ### 3. Contracts
 - Ids match `^rh-[a-z0-9-]{6,64}$`; records are newest first; the oldest beyond 40 are pruned on append.
-- Oversized records drop per-proposal detail (then proposal lists) and get `truncated: true`; every round stays listed.
+- Oversized records first shorten each logged conversation message to 2 KiB (`conversationTruncated: true`), then drop the conversation, then drop per-proposal detail (then proposal lists) with `truncated: true`; every round stays listed.
+- The list projection includes `model`, `endpoint`, and `requestMs[]` so a client can estimate a typical model wait without loading full records.
 - A corrupt file reads as an empty history and is replaced on the next write. Deleting a project deletes its history.
 - Records never contain keys, endpoint URLs, connector config, or request/response bodies.
 

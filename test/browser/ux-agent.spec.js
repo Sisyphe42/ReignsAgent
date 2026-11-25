@@ -24,6 +24,8 @@ test("shows real review progress and blocks a second run while the worker simula
   await expect(progress).toBeVisible();
   await expect(page.getByRole("button", { name: "Running review..." })).toBeDisabled();
   await expect(progress).toContainText(/Simulated [\d,]+ \/ 10,000 cycles|Summarizing 10,000/);
+  // A remaining-time estimate appears once throughput has been measured.
+  await expect(page.getByTestId("review-eta")).toContainText(/about \d+s left/, { timeout: 10_000 });
   await expect(progress).toBeHidden({ timeout: 30_000 });
   await expect(page.getByRole("button", { name: "Run review" })).toBeEnabled();
   await expect(page.locator(".review-score")).toBeVisible();
@@ -38,6 +40,8 @@ test("shows the AI context cards, real loop stages, and replays the stored repai
   await page.getByRole("button", { name: "Build draft" }).first().click();
   await expect(page.getByTestId("repair-verification")).toBeVisible({ timeout: 30_000 });
 
+  // Hosted runs the loop in a dedicated worker, not on the page's main thread.
+  expect(await page.evaluate(() => performance.getEntriesByType("resource").some((entry) => /repair-worker/.test(entry.name)))).toBe(true);
   const progress = page.getByTestId("ai-progress");
   await expect(progress).toHaveAttribute("data-status", "ready");
   await expect(progress).toHaveAttribute("data-stage", "done");
@@ -60,13 +64,28 @@ test("shows the AI context cards, real loop stages, and replays the stored repai
   await expect(detail).toContainText("Author's choice");
   await expect(detail.locator(".repair-history__proposal").first()).toBeVisible();
 
+  // A second run on the same issue can be compared side by side with the first.
+  await page.locator('.rail__item[aria-label="Review"]').click();
+  await page.getByRole("button", { name: "Run review" }).click();
+  await page.getByRole("tab", { name: /^Issues/ }).click();
+  await page.locator(".review-issue").first().getByRole("button", { name: "AI Repair" }).click();
+  await page.getByRole("button", { name: "Build draft" }).first().click();
+  await expect(page.getByTestId("repair-verification")).toBeVisible({ timeout: 30_000 });
+  await expect(history.getByTestId("repair-history-item")).toHaveCount(2);
+  await history.getByRole("checkbox", { name: "Compare" }).nth(0).check();
+  await history.getByRole("checkbox", { name: "Compare" }).nth(1).check();
+  const compare = page.getByTestId("repair-history-compare");
+  await expect(compare).toContainText("Earlier");
+  await expect(compare).toContainText("Round 1");
+  await expect(compare).toContainText("Author applied");
+
   // The record survives a reload because it lives in the project's OPFS data.
   await page.reload();
   await page.locator('.rail__item[aria-label="AI Assist"]').click();
-  await expect(page.getByTestId("repair-history-item")).toHaveCount(1);
+  await expect(page.getByTestId("repair-history-item")).toHaveCount(2);
   await page.getByTestId("repair-history-item").first().locator(".repair-history__toggle").click();
   await page.getByRole("button", { name: "Delete record" }).click();
-  await expect(page.getByTestId("repair-history-item")).toHaveCount(0);
+  await expect(page.getByTestId("repair-history-item")).toHaveCount(1);
 });
 
 test("separates the empty-deck guide from the no-filter-match message", async ({ page }) => {
@@ -80,6 +99,11 @@ test("separates the empty-deck guide from the no-filter-match message", async ({
   await page.locator(".project-menu > summary").click();
   await page.getByRole("button", { name: "New blank project" }).click();
   await expect(page.locator(".brand p")).toHaveText("Untitled");
+  // An empty deck is neither "Valid" nor "Ready": the Overview says there is nothing yet.
+  await page.locator('.rail__item[aria-label="Overview"]').click();
+  await expect(page.locator(".metric", { hasText: "Validation" })).toContainText("No cards");
+  await expect(page.locator(".metric", { hasText: "Player-ready" })).toContainText("No cards");
+  await expect(page.locator(".topbar__readout")).toContainText("no cards");
   await page.locator('.rail__item[aria-label="Content"]').click();
   const empty = page.getByTestId("empty-deck");
   await expect(empty).toContainText("This project has no cards yet");
