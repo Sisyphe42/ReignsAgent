@@ -21,6 +21,6 @@ self.addEventListener("message", async (event) => {
     });
     self.postMessage({ id, type: "result", result: plan });
   } catch (error) {
-    self.postMessage({ id, type: "error", error: { message: error?.message ?? String(error), code: error?.code ?? "ai_repair_failed", stage: error?.stage ?? null } });
+    self.postMessage({ id, type: "error", error: { message: error?.message ?? String(error), code: error?.code ?? "ai_repair_failed", stage: error?.stage ?? null, repairVerification: error?.repairVerification ?? null } });
   }
 });

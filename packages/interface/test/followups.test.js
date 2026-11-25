@@ -89,6 +89,28 @@ describe("model loop directives", () => {
   });
 });
 
+describe("failed loops keep their evidence", () => {
+  it("attaches the recorded round to a round-one endpoint failure", async () => {
+    const fetchImpl = async () => ({ ok: false, status: 503, text: async () => "{}" });
+    const error = await buildVerifiedRepairPlan({ editor: createCardEditor(sealedWarehouseBundle()), config: ENDPOINT_CONFIG, fetchImpl, yieldToHost: async () => {} }).catch((caught) => caught);
+    assert.equal(error.repairVerification.status, "failed");
+    assert.equal(error.repairVerification.rounds[0].status, "endpoint_error");
+    assert.ok(error.repairVerification.rounds[0].exchange.length >= 1);
+    const record = createRepairHistoryRecord({ error, id: "rh-unit-fail01" });
+    assert.equal(record.status, "failed");
+    assert.equal(record.rounds.length, 1);
+    assert.ok(record.conversation.length >= 1);
+    assert.equal(record.baseline.healthScore, 55);
+  });
+
+  it("keeps a failed round when the target cannot be scored", async () => {
+    const fetchImpl = async () => ({ ok: false, status: 503, text: async () => "{}" });
+    const error = await buildVerifiedRepairPlan({ editor: createCardEditor(sealedWarehouseBundle()), config: ENDPOINT_CONFIG, repairTarget: { code: "never_reported_issue" }, fetchImpl, yieldToHost: async () => {} }).catch((caught) => caught);
+    assert.equal(error.code, "endpoint_http_error");
+    assert.equal(error.repairVerification.rounds[0].error.code, "endpoint_http_error");
+  });
+});
+
 describe("narrative quality advisory", () => {
   it("flags placeholder text, copied cards, unusable labels, and a different script; passes deck-like writing", () => {
     const base = new Map(FOG.cards.map((card) => [card.id, card]));

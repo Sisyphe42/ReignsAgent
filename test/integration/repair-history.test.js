@@ -65,9 +65,11 @@ describe("repair history through the Creator Server", () => {
       const applied = await api("POST", "/api/ai/edit/apply", { plan, proposalIds: ["quarantine-board"] });
       assert.equal(applied.historyId, plan.historyId);
 
-      // A later loop fails in round one (503): it is recorded as failed at the request stage.
+      // A later loop on the broken deck fails in round one (503): it is recorded as failed at the
+      // request stage, with the failed round and its logged request kept for replay.
+      await api("POST", "/api/editor/import", { bundle: brokenFogHarbor() });
       await api("POST", "/api/diagnostics/run", { cycles: 500, maxTurns: 40, seed: 1 });
-      const failed = await api("POST", "/api/ai/edit/plan", { ...request, repairTarget: null }, { expectError: true });
+      const failed = await api("POST", "/api/ai/edit/plan", request, { expectError: true });
       assert.equal(failed.code, "endpoint_http_error");
 
       const { records } = await api("GET", "/api/ai/repair-history");
@@ -92,6 +94,12 @@ describe("repair history through the Creator Server", () => {
       assert.ok(record.rounds.every((round) => Number.isFinite(round.requestMs)));
       const failedRecord = (await api("GET", `/api/ai/repair-history/${records[0].id}`)).record;
       assert.deepEqual([failedRecord.error.code, failedRecord.error.stage], ["endpoint_http_error", "request"]);
+      // The failed run stays replayable: its round and logged request are kept.
+      assert.equal(failedRecord.rounds.length, 1);
+      assert.equal(failedRecord.rounds[0].status, "endpoint_error");
+      assert.equal(failedRecord.conversation.length, 1);
+      assert.equal(failedRecord.baseline.healthScore, 55);
+      assert.equal(failedRecord.targets[0].code, "unreachable_cards");
 
       const { activeProjectId } = await api("GET", "/api/config");
       const stored = await readFile(join(dataRoot, "projects", activeProjectId, "repair-history.json"), "utf8");

@@ -19,7 +19,8 @@ export function createRepairHistoryRecord({
   createdAt = new Date().toISOString(),
   secrets = []
 } = {}) {
-  const verification = plan?.verification ?? null;
+  // A failed loop carries what it recorded before failing on error.repairVerification.
+  const verification = plan?.verification ?? error?.repairVerification ?? null;
   const rounds = Array.isArray(verification?.rounds) ? verification.rounds : [];
   const finalProposals = Array.isArray(plan?.proposals) ? plan.proposals : [];
   const record = {

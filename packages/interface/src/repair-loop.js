@@ -98,18 +98,26 @@ export async function buildVerifiedRepairPlan({
   const apiKey = typeof credentials?.apiKey === "string" ? credentials.apiKey.trim() : "";
 
   if (targetSelection.status === "not_verifiable") {
-    const plan = await buildAiEditPlanAsync({
-      editor: baseBundle,
-      config,
-      credentials,
-      mode: "repair_diagnostics",
-      instruction,
-      targetCardId,
-      // Nothing to score: give the model the Review the author actually looked at.
-      diagnostics: diagnostics ?? baseline,
-      fetchImpl,
-      onProgress: (event) => progress.emit({ ...event, round: 1, maxRounds: 1 })
-    });
+    const requestStartedAt = now();
+    let plan;
+    try {
+      plan = await buildAiEditPlanAsync({
+        editor: baseBundle,
+        config,
+        credentials,
+        mode: "repair_diagnostics",
+        instruction,
+        targetCardId,
+        // Nothing to score: give the model the Review the author actually looked at.
+        diagnostics: diagnostics ?? baseline,
+        fetchImpl,
+        onProgress: (event) => progress.emit({ ...event, round: 1, maxRounds: 1 })
+      });
+    } catch (error) {
+      // This path makes one unmetered request, so there is no exchange log; keep the failed round.
+      const failedRound = { round: 1, status: "endpoint_error", error: { code: error?.code ?? "endpoint_error", message: scrub(error?.message ?? String(error), apiKey) }, proposalCount: 0, evaluatedCount: 0, passedCount: 0, bestScore: null, blockedBy: {}, timing: { durationMs: now() - requestStartedAt } };
+      throw attachLoopEvidence(error, { stopReason: targetSelection.stopReason, budget, scoringConfig, baseline, targets: [], rounds: [failedRound], requestedCardIds: [] });
+    }
     progress.emit({ stage: "done", round: 1, maxRounds: 1 });
     return {
       ...plan,
@@ -212,10 +220,10 @@ export async function buildVerifiedRepairPlan({
         timing: { durationMs: now() - roundStartedAt },
         exchange: meter.exchange()
       });
-      // Round 1 has nothing to fall back to: surface the error unchanged.
+      // Round 1 has nothing to fall back to: surface the error, with the round evidence attached.
       if (round === 1) {
-        if (meter.budgetError) throw new InterfaceError(meter.budgetError.message, meter.budgetError.code);
-        throw error;
+        const failureError = meter.budgetError ? new InterfaceError(meter.budgetError.message, meter.budgetError.code) : error;
+        throw attachLoopEvidence(failureError, { stopReason: failure.code, budget, scoringConfig, baseline, targets, rounds, requestedCardIds });
       }
       stopReason = meter.budgetError ? meter.budgetError.code : "endpoint_error";
       break;
@@ -225,7 +233,7 @@ export async function buildVerifiedRepairPlan({
     endpointUsed = endpointUsed || Boolean(plan.provider);
     const requestMs = Date.now() - roundWallStart;
     if (plan.baseFingerprint !== baseFingerprint) {
-      throw new InterfaceError("Repair loop content fingerprint changed between rounds", "ai_repair_fingerprint_mismatch");
+      throw attachLoopEvidence(new InterfaceError("Repair loop content fingerprint changed between rounds", "ai_repair_fingerprint_mismatch"), { stopReason: "ai_repair_fingerprint_mismatch", budget, scoringConfig, baseline, targets, rounds, requestedCardIds });
     }
     lastPlan = plan;
 
@@ -307,12 +315,12 @@ export async function buildVerifiedRepairPlan({
 
   if (!lastPlan) {
     const lastError = [...rounds].reverse().find((record) => record.error)?.error;
-    throw new InterfaceError(
+    throw attachLoopEvidence(new InterfaceError(
       `Repair loop produced no usable proposals (${stopReason})${lastError ? `: ${lastError.message}` : ""}`,
       lastError?.code === "endpoint_invalid_response" || lastError?.code === "endpoint_parse_error" || lastError?.code === "pipeline_error"
         ? "ai_repair_no_valid_response"
         : "ai_repair_no_rounds"
-    );
+    ), { stopReason, budget, scoringConfig, baseline, targets, rounds, requestedCardIds });
   }
 
   progress.emit({ stage: "done", round: rounds.length, stopReason });
@@ -893,6 +901,32 @@ function cjkShare(text) {
 
 function normalizeWriting(text) {
   return String(text ?? "").toLowerCase().replace(/[\s\p{P}]+/gu, "");
+}
+
+/**
+ * attachLoopEvidence keeps what a failed loop already recorded (rounds with their redacted
+ * exchange logs, targets, baseline) on the thrown error as `error.repairVerification`, so a host
+ * can still store a replayable history record. The error itself is unchanged otherwise.
+ */
+function attachLoopEvidence(error, { stopReason, budget, scoringConfig, baseline, targets, rounds, requestedCardIds }) {
+  if (!error || typeof error !== "object") return error;
+  try {
+    error.repairVerification = {
+      schemaVersion: REPAIR_LOOP_SCHEMA_VERSION,
+      status: "failed",
+      stopReason,
+      scoring: scoringConfig,
+      limits: budget,
+      baseline: summarizeScore(baseline),
+      targets: targets.map(({ code, severity, entity }) => ({ code, severity, entity })),
+      roundsUsed: rounds.length,
+      ...(requestedCardIds.length ? { requestedCardIds } : {}),
+      rounds
+    };
+  } catch {
+    // Frozen errors keep their original shape.
+  }
+  return error;
 }
 
 function summarizeDirectives(agent, baseById) {

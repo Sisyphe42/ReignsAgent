@@ -108,7 +108,11 @@ export class BrowserCreatorBackend {
           if (event.data.type === "progress") { progressObserver(onProgress)?.(event.data.event); return; }
           finish();
           if (event.data.type === "result") resolve(event.data.result);
-          else reject(backendError(event.data.error?.message ?? "Repair loop failed", event.data.error?.code ?? "ai_repair_failed", event.data.error?.stage ?? null));
+          else {
+            const failure = backendError(event.data.error?.message ?? "Repair loop failed", event.data.error?.code ?? "ai_repair_failed", event.data.error?.stage ?? null);
+            if (event.data.error?.repairVerification) failure.repairVerification = event.data.error.repairVerification;
+            reject(failure);
+          }
         });
         worker.addEventListener("error", (event) => { finish(); reject(backendError(event.message || "Repair worker failed", "ai_repair_worker_failed")); });
         worker.postMessage({ id, input: { ...input, bundle } });
