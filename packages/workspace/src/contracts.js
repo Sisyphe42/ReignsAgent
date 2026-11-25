@@ -59,3 +59,101 @@ function stringArray(value) { return Array.isArray(value) ? [...new Set(value.fi
 function isRecord(value) { return value !== null && typeof value === "object" && !Array.isArray(value); }
 function clone(value) { return JSON.parse(JSON.stringify(value)); }
 function contractError(message, code) { const error = new Error(message); error.name = "WorkspaceError"; error.code = code; return error; }
+
+// Repair history: project-local, key-free records of verified repair-loop runs.
+// Stored as one JSON file per project; newest first, bounded by count and per-record size.
+export const REPAIR_HISTORY_FILE = "repair-history.json";
+export const REPAIR_HISTORY_SCHEMA_VERSION = 1;
+export const REPAIR_HISTORY_LIMITS = Object.freeze({ maxRecords: 40, maxRecordBytes: 48 * 1024 });
+export const REPAIR_HISTORY_ID_PATTERN = /^rh-[a-z0-9-]{6,64}$/;
+
+export function emptyRepairHistory() { return { schemaVersion: REPAIR_HISTORY_SCHEMA_VERSION, records: [] }; }
+
+export function parseRepairHistory(source) {
+  if (source === null || source === undefined || source === "") return emptyRepairHistory();
+  let value;
+  try { value = typeof source === "string" ? JSON.parse(source) : clone(source); } catch { return emptyRepairHistory(); }
+  const records = Array.isArray(value?.records) ? value.records.filter(isStoredRepairRecord) : [];
+  return { schemaVersion: REPAIR_HISTORY_SCHEMA_VERSION, records: records.slice(0, REPAIR_HISTORY_LIMITS.maxRecords) };
+}
+
+export function serializeRepairHistory(history) { return `${JSON.stringify(parseRepairHistory(history))}\n`; }
+
+export function assertRepairHistoryId(id) { if (typeof id !== "string" || !REPAIR_HISTORY_ID_PATTERN.test(id)) throw contractError(`Invalid repair history id '${id}'`, "repair_history_id_invalid"); }
+
+/**
+ * appendRepairHistory adds a record (newest first). Oversized records keep their rounds
+ * summary but drop per-proposal detail and get `truncated: true`; the oldest records beyond
+ * maxRecords are pruned. Returns { history, record, pruned }.
+ */
+export function appendRepairHistory(history, record, limits = REPAIR_HISTORY_LIMITS) {
+  if (!isRecord(record)) throw contractError("Repair history record must be an object", "repair_history_record_invalid");
+  assertRepairHistoryId(record.id);
+  const stored = fitRepairRecord(clone(record), limits.maxRecordBytes);
+  const current = parseRepairHistory(history).records.filter((entry) => entry.id !== stored.id);
+  const records = [stored, ...current];
+  const pruned = records.slice(limits.maxRecords).map((entry) => entry.id);
+  return { history: { schemaVersion: REPAIR_HISTORY_SCHEMA_VERSION, records: records.slice(0, limits.maxRecords) }, record: stored, pruned };
+}
+
+export function updateRepairHistory(history, id, update) {
+  assertRepairHistoryId(id);
+  const parsed = parseRepairHistory(history);
+  const index = parsed.records.findIndex((entry) => entry.id === id);
+  if (index < 0) throw contractError(`Unknown repair history record '${id}'`, "repair_history_not_found");
+  const next = fitRepairRecord(typeof update === "function" ? update(clone(parsed.records[index])) : { ...parsed.records[index], ...update }, REPAIR_HISTORY_LIMITS.maxRecordBytes);
+  if (next.id !== id) throw contractError("Repair history record id cannot change", "repair_history_record_invalid");
+  parsed.records[index] = next;
+  return { history: parsed, record: next };
+}
+
+export function removeRepairHistory(history, id) {
+  assertRepairHistoryId(id);
+  const parsed = parseRepairHistory(history);
+  const records = parsed.records.filter((entry) => entry.id !== id);
+  if (records.length === parsed.records.length) throw contractError(`Unknown repair history record '${id}'`, "repair_history_not_found");
+  return { history: { ...parsed, records }, removed: id };
+}
+
+/** summarizeRepairHistory is the list projection (no per-round detail). */
+export function summarizeRepairHistory(history) {
+  return parseRepairHistory(history).records.map((entry) => ({
+    id: entry.id,
+    createdAt: entry.createdAt,
+    status: entry.status,
+    stopReason: entry.stopReason ?? null,
+    targets: Array.isArray(entry.targets) ? entry.targets.slice(0, 3) : [],
+    roundsUsed: entry.roundsUsed ?? (Array.isArray(entry.rounds) ? entry.rounds.length : 0),
+    maxRounds: entry.maxRounds ?? null,
+    baseline: entry.baseline ?? null,
+    bestScore: bestRecordScore(entry),
+    outcome: entry.outcome ?? "draft",
+    appliedProposalIds: Array.isArray(entry.appliedProposalIds) ? entry.appliedProposalIds : [],
+    truncated: Boolean(entry.truncated)
+  }));
+}
+
+function bestRecordScore(entry) {
+  const scores = (Array.isArray(entry.rounds) ? entry.rounds : []).map((round) => round?.bestScore).filter((value) => Number.isFinite(value));
+  return scores.length ? Math.max(...scores) : null;
+}
+
+function fitRepairRecord(record, maxBytes) {
+  if (byteLength(record) <= maxBytes) return record;
+  const trimmed = { ...record, truncated: true, contextSelection: record.contextSelection ? { ...record.contextSelection, reasons: {} } : null };
+  trimmed.rounds = (Array.isArray(record.rounds) ? record.rounds : []).map((round) => ({
+    ...round,
+    proposals: (Array.isArray(round.proposals) ? round.proposals : []).slice(0, 6).map((proposal) => ({
+      id: proposal.id, title: String(proposal.title ?? "").slice(0, 80), passed: proposal.passed, scoreAfter: proposal.scoreAfter ?? null,
+      failedChecks: Array.isArray(proposal.failedChecks) ? proposal.failedChecks.slice(0, 6) : []
+    }))
+  }));
+  if (byteLength(trimmed) <= maxBytes) return trimmed;
+  trimmed.rounds = trimmed.rounds.map((round) => ({ ...round, proposals: [] }));
+  trimmed.instruction = String(trimmed.instruction ?? "").slice(0, 200);
+  if (byteLength(trimmed) <= maxBytes) return trimmed;
+  throw contractError("Repair history record exceeds the size limit", "repair_history_record_too_large");
+}
+
+function isStoredRepairRecord(value) { return isRecord(value) && typeof value.id === "string" && REPAIR_HISTORY_ID_PATTERN.test(value.id) && typeof value.createdAt === "string"; }
+function byteLength(value) { return new TextEncoder().encode(JSON.stringify(value)).length; }

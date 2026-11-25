@@ -2322,12 +2322,22 @@ export function selectAiContextCards({
   const includedSet = new Set();
   const reasons = {};
   const tiers = Object.fromEntries(AI_CONTEXT_TIERS.map((tier) => [tier, 0]));
+  const omittedTiers = Object.fromEntries(AI_CONTEXT_TIERS.map((tier) => [tier, 0]));
+  const omittedReasons = { count_limit: 0, byte_budget: 0 };
+  const omittedCauseOf = new Map();
   let usedBytes = 0;
   for (const card of ranked) {
     const tier = tierOf.get(card.id) ?? "other";
     const size = utf8ByteLength(JSON.stringify(compactCardForAi(card)));
     const forced = includedSet.size === 0 && tier === "target";
-    if (!forced && (includedSet.size >= maxCards || usedBytes + size > budgetBytes)) continue;
+    if (!forced && (includedSet.size >= maxCards || usedBytes + size > budgetBytes)) {
+      // Explain every omission: the count limit wins when both apply.
+      const cause = includedSet.size >= maxCards ? "count_limit" : "byte_budget";
+      omittedReasons[cause] += 1;
+      omittedTiers[tier] += 1;
+      omittedCauseOf.set(card.id, { tier, cause });
+      continue;
+    }
     includedSet.add(card.id);
     usedBytes += size;
     tiers[tier] += 1;
@@ -2343,6 +2353,9 @@ export function selectAiContextCards({
       included: ordered.length,
       omitted: omittedCardIds.length,
       omittedCardIds: omittedCardIds.slice(0, 50),
+      omittedReasons,
+      omittedTiers,
+      omittedDetails: Object.fromEntries(omittedCardIds.slice(0, 50).map((cardId) => [cardId, omittedCauseOf.get(cardId)])),
       maxCards,
       budgetBytes,
       usedBytes,
@@ -2393,6 +2406,7 @@ function selectFirstAiContextCards(cards) {
       included: included.length,
       omitted: cards.length - included.length,
       omittedCardIds: cards.slice(AI_CONTEXT_LEGACY_CARD_LIMIT).map((card) => card.id).slice(0, 50),
+      omittedReasons: { count_limit: cards.length - included.length, byte_budget: 0 },
       maxCards: AI_CONTEXT_LEGACY_CARD_LIMIT
     }
   };

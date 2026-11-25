@@ -3,7 +3,7 @@ import fogHarborBundle from "../../../fixtures/content/fog-harbor.cards.json";
 
 const BUNDLED_SAMPLES = { "oss-court": sampleBundle, "fog-harbor": fogHarborBundle };
 import {
-  applyAiEditPlan, applyImageDraftAsset, buildAiEditPlanAsync, buildVerifiedRepairPlan, buildImageOperationDraft, buildGenerationPlan, createConnectorConfig, createPlaySession,
+  applyAiEditPlan, applyImageDraftAsset, buildAiEditPlanAsync, buildVerifiedRepairPlan, createRepairHistoryRecord, markRepairHistoryApplied, buildImageOperationDraft, buildGenerationPlan, createConnectorConfig, createPlaySession,
   deriveStoryGroups, deriveTagCatalog, getCardGraph, listAiEditEndpointModels, loadEditorFromContent,
   prepareGameBuild, projectFactionGauges, summarizeDiagnostics, summarizeFeedback,
   inspectImageEndpointConfig, validateAiEditEndpointConfig, validatePlayerCards
@@ -58,10 +58,15 @@ export class BrowserCreatorBackend {
     if (path === "/api/diagnostics/feedback" && method === "POST") return summarizeFeedback(body?.report ?? body);
     if (path === "/api/diagnostics/project" && method === "POST") return summarizeDiagnostics(body?.report ?? body);
     if (path === "/api/connector/plan" && method === "POST") return buildGenerationPlan({ config: createConnectorConfig(body?.config ?? body), diagnostics: body?.diagnostics ?? null });
-    if (path === "/api/ai/edit/plan" && method === "POST") { const diagnostics = body?.diagnostics ?? (body?.mode === "repair_diagnostics" ? this.lastDiagnostics : null); if (body?.mode === "repair_diagnostics" && !diagnostics) throw backendError("Run Review before building repair proposals", "diagnostics_required"); if (body?.mode === "repair_diagnostics" && body?.verify !== false) return buildVerifiedRepairPlan({ editor: this.editor, getEditor: () => this.editor, config: body?.config ?? {}, credentials: await this.#credentials(body?.credentials), instruction: body?.instruction ?? "", targetCardId: body?.targetCardId ?? null, repairTarget: body?.repairTarget ?? null, diagnostics, fetchImpl: corsFetch, onProgress: progressObserver(options.onProgress) }); return buildAiEditPlanAsync({ editor: this.editor, config: body?.config ?? {}, credentials: await this.#credentials(body?.credentials), mode: body?.mode ?? "generate_cards", instruction: body?.instruction ?? "", targetCardId: body?.targetCardId ?? null, assetId: body?.assetId ?? null, diagnostics, fetchImpl: corsFetch, onProgress: progressObserver(options.onProgress) }); }
+    if (path === "/api/ai/edit/plan" && method === "POST") { const diagnostics = body?.diagnostics ?? (body?.mode === "repair_diagnostics" ? this.lastDiagnostics : null); if (body?.mode === "repair_diagnostics" && !diagnostics) throw backendError("Run Review before building repair proposals", "diagnostics_required"); if (body?.mode === "repair_diagnostics" && body?.verify !== false) { const credentials = await this.#credentials(body?.credentials); let plan; try { plan = await buildVerifiedRepairPlan({ editor: this.editor, getEditor: () => this.editor, config: body?.config ?? {}, credentials, instruction: body?.instruction ?? "", targetCardId: body?.targetCardId ?? null, repairTarget: body?.repairTarget ?? null, diagnostics, fetchImpl: corsFetch, onProgress: progressObserver(options.onProgress) }); } catch (error) { await this.#recordRepairHistory({ error, body, credentials }); throw error; } const historyId = await this.#recordRepairHistory({ plan, body, credentials }); return historyId ? { ...plan, historyId } : plan; } return buildAiEditPlanAsync({ editor: this.editor, config: body?.config ?? {}, credentials: await this.#credentials(body?.credentials), mode: body?.mode ?? "generate_cards", instruction: body?.instruction ?? "", targetCardId: body?.targetCardId ?? null, assetId: body?.assetId ?? null, diagnostics, fetchImpl: corsFetch, onProgress: progressObserver(options.onProgress) }); }
     if (path === "/api/ai/edit/validate" && method === "POST") return validateAiEditEndpointConfig({ editor: this.editor, config: body?.config ?? {}, credentials: await this.#credentials(body?.credentials), fetchImpl: corsFetch });
     if (path === "/api/ai/edit/models" && method === "POST") return listAiEditEndpointModels({ config: body?.config ?? {}, credentials: await this.#credentials(body?.credentials), fetchImpl: corsFetch });
-    if (path === "/api/ai/edit/apply" && method === "POST") { const result = applyAiEditPlan({ editor: this.editor, plan: body?.plan, proposalIds: body?.proposalIds ?? [] }); this.editor = result.editor; await this.#persist(true); return { applied: result.applied, proposalIds: result.proposalIds, patchCount: result.patchCount, bundle: result.bundle, validation: result.validation, playerValidation: result.playerValidation }; }
+    if (path === "/api/ai/repair-history" && method === "GET") return { records: await this.workspace.listRepairHistory() };
+    if (path === "/api/ai/repair-history" && method === "DELETE") return this.workspace.clearRepairHistory();
+    const historyRoute = path.match(/^\/api\/ai\/repair-history\/([^/]+)$/);
+    if (historyRoute && method === "GET") return { record: await this.workspace.readRepairHistoryRecord(decodeURIComponent(historyRoute[1])) };
+    if (historyRoute && method === "DELETE") return this.workspace.deleteRepairHistoryRecord(decodeURIComponent(historyRoute[1]));
+    if (path === "/api/ai/edit/apply" && method === "POST") { const result = applyAiEditPlan({ editor: this.editor, plan: body?.plan, proposalIds: body?.proposalIds ?? [] }); this.editor = result.editor; await this.#persist(true); const historyId = await this.#markRepairHistory(body?.historyId ?? body?.plan?.historyId, result.proposalIds); return { applied: result.applied, ...(historyId ? { historyId } : {}), proposalIds: result.proposalIds, patchCount: result.patchCount, bundle: result.bundle, validation: result.validation, playerValidation: result.playerValidation }; }
     if (path === "/api/ai/images/validate" && method === "POST") return inspectImageEndpointConfig({ config: body?.config ?? {} });
     if (path === "/api/ai/images/stage" && method === "POST") { const draftId = body?.draftId || `input-${crypto.randomUUID()}`; return this.workspace.stageActiveProjectAsset({ draftId, fileName: body?.fileName || "input.png", bytes: body?.bytes, mimeType: body?.mimeType }); }
     if (path === "/api/ai/images/run" && method === "POST") {
@@ -85,6 +90,18 @@ export class BrowserCreatorBackend {
     if (path === "/api/build/prepare" && method === "POST") return { build: prepareGameBuild({ editor: this.editor, config: body?.config ?? null, buildId: body?.buildId ?? null }) };
     if (path === "/api/build/export" && method === "POST") { const { downloadPlayerZip } = await import("./browser-build.js"); const result = await downloadPlayerZip({ editor: this.editor, config: body?.config ?? null, buildId: body?.buildId ?? null, assetReader: (uri) => this.workspace.readActiveProjectAsset(uri) }); return { exported: true, outputPath: result.fileName, buildId: result.buildId, downloaded: true }; }
     throw backendError(`Unknown API route: ${method} ${path}`, "route_not_found");
+  }
+  async #recordRepairHistory({ plan = null, error = null, body = {}, credentials = {} }) {
+    try {
+      const record = createRepairHistoryRecord({ plan, error, request: { instruction: body?.instruction, repairTarget: body?.repairTarget }, id: `rh-${Date.now().toString(36)}-${crypto.randomUUID().slice(0, 8)}`, secrets: [credentials?.apiKey] });
+      return (await this.workspace.appendRepairHistoryRecord(record)).record.id;
+    } catch {
+      return null; // History never breaks drafting.
+    }
+  }
+  async #markRepairHistory(historyId, proposalIds) {
+    if (typeof historyId !== "string" || !historyId.startsWith("rh-")) return null;
+    try { await this.workspace.updateRepairHistoryRecord(historyId, (record) => markRepairHistoryApplied(record, { proposalIds })); return historyId; } catch { return null; }
   }
   #editorProjection() { return { metadata: this.editor.metadata, assets: this.editor.assets, cards: this.editor.toCards(), validation: this.editor.validate(), playerValidation: this.editor.validateForPlayer() }; }
   async #reload() { this.#replace(await this.workspace.readActiveBundle()); }

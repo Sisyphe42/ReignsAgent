@@ -254,6 +254,9 @@ export async function buildVerifiedRepairPlan({
       proposals: evaluated.map((proposal) => ({
         id: proposal.id,
         title: proposal.title,
+        summary: String(proposal.summary ?? "").slice(0, 240),
+        patchCount: Array.isArray(proposal.patches) ? proposal.patches.length : 0,
+        cardIds: patchedCardIds(proposal.patches),
         passed: proposal.verification.passed,
         failedChecks: proposal.verification.failedChecks,
         failedDetails: proposal.verification.checks
@@ -824,6 +827,15 @@ function skippedVerdict(budget) {
     score: { before: null, after: null, delta: null },
     metrics: {}
   };
+}
+
+function patchedCardIds(patches) {
+  const ids = new Set();
+  for (const patch of Array.isArray(patches) ? patches : []) {
+    const cardId = patch?.op === "addCard" ? patch?.card?.id : patch?.cardId;
+    if (typeof cardId === "string" && cardId) ids.add(cardId);
+  }
+  return [...ids].slice(0, 8);
 }
 
 function defaultYield() {

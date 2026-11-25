@@ -16,6 +16,8 @@ import {
   buildGenerationPlan,
   createCardEditor,
   createConnectorConfig,
+  createRepairHistoryRecord,
+  markRepairHistoryApplied,
   createPlaySession,
   deriveStoryGroups,
   deriveTagCatalog,
@@ -418,8 +420,38 @@ async function handleApi(req, res, url) {
         onProgress
       });
     };
-    if (wantsProgressStream(req)) return streamWithProgress(res, buildPlan);
-    return sendJson(res, await buildPlan());
+    // Every verified repair-loop run (success or failure) leaves one key-free history record.
+    const recordsHistory = mode === "repair_diagnostics" && body?.verify !== false;
+    const buildAndRecord = async (onProgress = null) => {
+      if (!recordsHistory) return buildPlan(onProgress);
+      let plan;
+      try {
+        plan = await buildPlan(onProgress);
+      } catch (error) {
+        await recordRepairHistory({ error, body, credentials });
+        throw error;
+      }
+      const historyId = await recordRepairHistory({ plan, body, credentials });
+      return historyId ? { ...plan, historyId } : plan;
+    };
+    if (wantsProgressStream(req)) return streamWithProgress(res, buildAndRecord);
+    return sendJson(res, await buildAndRecord());
+  }
+
+  if (path === "/api/ai/repair-history" && req.method === "GET") {
+    return sendJson(res, { records: await workspace.listRepairHistory() });
+  }
+
+  if (path === "/api/ai/repair-history" && req.method === "DELETE") {
+    return sendJson(res, await workspace.clearRepairHistory());
+  }
+
+  const historyRoute = path.match(/^\/api\/ai\/repair-history\/([^/]+)$/);
+  if (historyRoute && req.method === "GET") {
+    return sendJson(res, { record: await workspace.readRepairHistoryRecord(decodeURIComponent(historyRoute[1])) });
+  }
+  if (historyRoute && req.method === "DELETE") {
+    return sendJson(res, await workspace.deleteRepairHistoryRecord(decodeURIComponent(historyRoute[1])));
   }
 
   if (path === "/api/ai/edit/validate" && req.method === "POST") {
@@ -447,8 +479,10 @@ async function handleApi(req, res, url) {
     });
     store.replaceEditor(result.editor);
     await persistEditor();
+    const historyId = await markRepairHistory(body?.historyId ?? body?.plan?.historyId, result.proposalIds);
     return sendJson(res, {
       applied: result.applied,
+      ...(historyId ? { historyId } : {}),
       proposalIds: result.proposalIds,
       patchCount: result.patchCount,
       bundle: result.bundle,
@@ -769,6 +803,34 @@ async function readJsonBody(req) {
     return JSON.parse(text);
   } catch (error) {
     throw new Error(`Request body is not valid JSON: ${error.message}`);
+  }
+}
+
+async function recordRepairHistory({ plan = null, error = null, body = {}, credentials = {} }) {
+  try {
+    const record = createRepairHistoryRecord({
+      plan,
+      error,
+      request: { instruction: body?.instruction, repairTarget: body?.repairTarget },
+      id: `rh-${Date.now().toString(36)}-${randomBytes(4).toString("hex")}`,
+      secrets: [credentials?.apiKey, body?.credentials?.apiKey]
+    });
+    const stored = await workspace.appendRepairHistoryRecord(record);
+    return stored.record.id;
+  } catch (historyError) {
+    // History is an audit aid; failing to write it must never break drafting.
+    console.warn(`Repair history was not saved: ${historyError?.message ?? historyError}`);
+    return null;
+  }
+}
+
+async function markRepairHistory(historyId, proposalIds) {
+  if (typeof historyId !== "string" || !historyId.startsWith("rh-")) return null;
+  try {
+    await workspace.updateRepairHistoryRecord(historyId, (record) => markRepairHistoryApplied(record, { proposalIds }));
+    return historyId;
+  } catch {
+    return null;
   }
 }
 

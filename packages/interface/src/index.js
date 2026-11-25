@@ -29,6 +29,7 @@ export {
   evaluateRepairProposal,
   producerOnlyEdit
 } from "./repair-loop.js";
+export { REPAIR_HISTORY_RECORD_VERSION, createRepairHistoryRecord, markRepairHistoryApplied, scrubRecordSecrets } from "./repair-history.js";
 
 const PLAYER_SCHEMA_VERSION = 1;
 const BUILD_SCHEMA_VERSION = 1;

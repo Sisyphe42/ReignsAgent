@@ -6,7 +6,9 @@ import { parse, stringify } from "./toml.js";
 import {
   PROJECT_SCHEMA_VERSION, PROJECT_ID_PATTERN, assertProjectId, blankBundle, defaultConfig,
   defaultWorkspaceState, mergeConfig, normalizeConfig, normalizeWorkspaceState, parseBundle,
-  projectConfig, serializeBundle
+  projectConfig, serializeBundle, REPAIR_HISTORY_FILE, appendRepairHistory, assertRepairHistoryId,
+  emptyRepairHistory, parseRepairHistory, removeRepairHistory, serializeRepairHistory, summarizeRepairHistory,
+  updateRepairHistory
 } from "./contracts.js";
 import { createReleaseRecord, normalizeArtifactRelativePath, normalizeReleaseRecord, WINDOWS_RELEASE_TARGET } from "./release-contracts.js";
 
@@ -256,6 +258,65 @@ class WorkspaceStore {
       await rm(draftRoot, { recursive: true, force: true });
       return { discarded: true, draftId: normalizedDraftId };
     });
+  }
+
+  // Repair history (project-local, key-free; see contracts.js REPAIR_HISTORY_LIMITS).
+  async listRepairHistory() {
+    await this.#settled();
+    return summarizeRepairHistory(await this.#readRepairHistory());
+  }
+
+  async readRepairHistoryRecord(id) {
+    assertRepairHistoryId(id);
+    await this.#settled();
+    const record = (await this.#readRepairHistory()).records.find((entry) => entry.id === id);
+    if (!record) throw new WorkspaceError(`Unknown repair history record '${id}'`, "repair_history_not_found");
+    return record;
+  }
+
+  async appendRepairHistoryRecord(record) {
+    return this.#enqueue(async () => {
+      const result = appendRepairHistory(await this.#readRepairHistory(), record);
+      await this.#writeRepairHistory(result.history);
+      return { record: result.record, pruned: result.pruned };
+    });
+  }
+
+  async updateRepairHistoryRecord(id, update) {
+    return this.#enqueue(async () => {
+      const result = updateRepairHistory(await this.#readRepairHistory(), id, update);
+      await this.#writeRepairHistory(result.history);
+      return result.record;
+    });
+  }
+
+  async deleteRepairHistoryRecord(id) {
+    return this.#enqueue(async () => {
+      const result = removeRepairHistory(await this.#readRepairHistory(), id);
+      await this.#writeRepairHistory(result.history);
+      return { removed: result.removed };
+    });
+  }
+
+  async clearRepairHistory() {
+    return this.#enqueue(async () => {
+      const count = (await this.#readRepairHistory()).records.length;
+      await this.#writeRepairHistory(emptyRepairHistory());
+      return { cleared: count };
+    });
+  }
+
+  async #readRepairHistory() {
+    try {
+      return parseRepairHistory(await readFile(join(this.#projectRoot(this.#activeProjectId()), REPAIR_HISTORY_FILE), "utf8"));
+    } catch (error) {
+      if (error?.code === "ENOENT") return emptyRepairHistory();
+      throw error;
+    }
+  }
+
+  async #writeRepairHistory(history) {
+    await atomicWrite(join(this.#projectRoot(this.#activeProjectId()), REPAIR_HISTORY_FILE), serializeRepairHistory(history));
   }
 
   async listReleases() {

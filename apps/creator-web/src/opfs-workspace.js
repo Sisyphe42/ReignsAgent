@@ -1,7 +1,9 @@
 import {
   PROJECT_SCHEMA_VERSION, assertProjectId, blankBundle, defaultConfig, defaultWorkspaceState,
   mergeConfig, normalizeConfig, normalizeWorkspaceState, parseBundle, parseToml, projectConfig,
-  serializeBundle, stringifyToml
+  serializeBundle, stringifyToml, REPAIR_HISTORY_FILE, appendRepairHistory, assertRepairHistoryId,
+  emptyRepairHistory, parseRepairHistory, removeRepairHistory, serializeRepairHistory, summarizeRepairHistory,
+  updateRepairHistory
 } from "../../../packages/workspace/src/contracts.js";
 
 export async function createOpfsWorkspaceStore({ rootName = "ReignsAgentData", initialBundle = null, storageManager = globalThis.navigator?.storage } = {}) {
@@ -42,6 +44,15 @@ class OpfsWorkspaceStore {
   }
   async createProject({ bundle = blankBundle(), source = "blank" } = {}) { return this.#enqueue(async () => { const id = crypto.randomUUID(); const now = new Date().toISOString(); const dir = await this.#projectDir(id, true); await Promise.all(["assets", "reviews", "builds"].map((name) => dir.getDirectoryHandle(name, { create: true }))); await writeText(dir, ["project.toml"], stringifyToml({ schemaVersion: PROJECT_SCHEMA_VERSION, id, source, createdAt: now, updatedAt: now, contentPath: "content.json" })); await writeText(dir, ["content.json"], serializeBundle(bundle)); await writeText(dir, ["workspace.toml"], stringifyToml(defaultWorkspaceState())); await this.#select(id); return this.#readProject(id); }); }
   async openProject(id) { assertProjectId(id); return this.#enqueue(async () => { const project = await this.#readProject(id); await this.#select(id); return project; }); }
+  // Repair history mirrors the Node workspace store (same contract, same file name).
+  async listRepairHistory() { await this.#settled(); return summarizeRepairHistory(await this.#readRepairHistory()); }
+  async readRepairHistoryRecord(id) { assertRepairHistoryId(id); await this.#settled(); const record = (await this.#readRepairHistory()).records.find((entry) => entry.id === id); if (!record) throw workspaceError(`Unknown repair history record '${id}'`, "repair_history_not_found"); return record; }
+  async appendRepairHistoryRecord(record) { return this.#enqueue(async () => { const result = appendRepairHistory(await this.#readRepairHistory(), record); await this.#writeRepairHistory(result.history); return { record: result.record, pruned: result.pruned }; }); }
+  async updateRepairHistoryRecord(id, update) { return this.#enqueue(async () => { const result = updateRepairHistory(await this.#readRepairHistory(), id, update); await this.#writeRepairHistory(result.history); return result.record; }); }
+  async deleteRepairHistoryRecord(id) { return this.#enqueue(async () => { const result = removeRepairHistory(await this.#readRepairHistory(), id); await this.#writeRepairHistory(result.history); return { removed: result.removed }; }); }
+  async clearRepairHistory() { return this.#enqueue(async () => { const count = (await this.#readRepairHistory()).records.length; await this.#writeRepairHistory(emptyRepairHistory()); return { cleared: count }; }); }
+  async #readRepairHistory() { try { return parseRepairHistory(await readText(await this.#projectDir(this.#active()), [REPAIR_HISTORY_FILE])); } catch (error) { if (error?.name === "NotFoundError") return emptyRepairHistory(); throw error; } }
+  async #writeRepairHistory(history) { await writeText(await this.#projectDir(this.#active()), [REPAIR_HISTORY_FILE], serializeRepairHistory(history)); }
   async readActiveBundle() { await this.#settled(); return parseBundle(await readText(await this.#projectDir(this.#active()), ["content.json"]), this.#active()); }
   async saveActiveBundle(bundle) { return this.#enqueue(async () => { const id = this.#active(); const dir = await this.#projectDir(id); await writeText(dir, ["content.json"], serializeBundle(bundle)); const manifest = await this.#manifest(id); manifest.updatedAt = new Date().toISOString(); await writeText(dir, ["project.toml"], stringifyToml(manifest)); return this.#readProject(id); }); }
   async readActiveProjectAsset(uri) { await this.#settled(); const parts = normalizeAssetUri(uri).split("/"); try { const file = await readFileHandle(await this.#projectDir(this.#active()), parts); return new Uint8Array(await (await file.getFile()).arrayBuffer()); } catch (error) { if (error?.name === "NotFoundError") return null; throw error; } }
