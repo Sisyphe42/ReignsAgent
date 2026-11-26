@@ -58,6 +58,7 @@ function measureTopbar() {
     selectText: context.measureText(select.selectedOptions[0].textContent).width,
     ai: box(topbar.querySelector(".ai-presence")),
     player: box(topbar.querySelector(".player-launch")),
+    playerText: topbar.querySelector(".player-launch span").getBoundingClientRect().width,
     rail: box(rail),
     railItems: [...rail.querySelectorAll(".rail__item")].slice(0, 2).map(box),
     pageOverflow: document.documentElement.scrollWidth - window.innerWidth,
@@ -116,8 +117,10 @@ test("fits the phone top bar into two short rows for every skin (390 px)", async
     expect(Math.abs(m.trigger.middle - m.select.middle), `${skin}: project and skin are not on one row`).toBeLessThan(4);
     expect(m.trigger.top, `${skin}: project row overlaps the brand row`).toBeGreaterThan(m.ai.bottom);
     expect(m.trigger.right, `${skin}: project trigger overlaps the skin select`).toBeLessThan(m.select.left);
-    // Player is a compact button and the AI capsule is just its orb.
-    expect(m.player.width, `${skin}: Player width`).toBeLessThanOrEqual(100);
+    // Player is a compact button (its label plus padding; skins' type differs by OS, e.g. Phantom
+    // is 79 px on Windows and 102 px on Linux CI) and the AI capsule is just its orb.
+    expect(m.player.width, `${skin}: Player is wider than its label`).toBeLessThanOrEqual(m.playerText + 40);
+    expect(m.player.width, `${skin}: Player width`).toBeLessThanOrEqual(120);
     expect(m.player.height, `${skin}: Player height`).toBeLessThanOrEqual(40);
     expect(m.ai.width, `${skin}: AI width`).toBeLessThanOrEqual(40);
     expectContentSizedControls(m, skin);

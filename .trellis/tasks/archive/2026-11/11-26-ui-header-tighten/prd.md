@@ -26,7 +26,7 @@ Skin dropdowns are too wide. Tighten the bar on the `fix/ui-polish-states` branc
 ## Acceptance Criteria
 
 - [x] Browser test: 834 px, 7 skins, top bar ≤ 64 px (was 133–140) and all controls on one row.
-- [x] Browser test: 390 px, 7 skins, top bar ≤ 116 px (was 347–373), two rows, Player ≤ 100×40,
+- [x] Browser test: 390 px, 7 skins, top bar ≤ 116 px (was 347–373), two rows, Player ≤ its label + 40 px (and ≤ 120) × 40,
       AI ≤ 40 wide, tab strip horizontal under the bar.
 - [x] Browser test: Project trigger ≤ max(120, name width + 60); Skin select ≤ shown skin text
       width + 60; long name capped (1440: 240, 834: 200, 390: 220) with ellipsis and title.
