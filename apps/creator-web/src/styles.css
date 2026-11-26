@@ -409,7 +409,7 @@ select {
   top: 0;
   z-index: 10;
   display: grid;
-  grid-template-columns: minmax(220px, 250px) minmax(190px, 260px) minmax(220px, 0.7fr) auto;
+  grid-template-columns: minmax(220px, 250px) auto minmax(220px, 0.7fr) auto;
   gap: 18px;
   align-items: center;
   min-height: 76px;
@@ -577,11 +577,14 @@ select {
   display: inline-grid;
 }
 
+/* The skin select is as wide as the skin it shows (browsers without field-sizing fall back to
+   the longest option, which is still only a few characters longer). */
 .skin-select select {
   min-height: 34px;
   padding-inline-end: 38px;
   appearance: none;
   -webkit-appearance: none;
+  field-sizing: content;
 }
 
 .select-chevron {
@@ -608,19 +611,27 @@ select {
   background: color-mix(in srgb, var(--surface-2) 82%, transparent);
 }
 
+/* The project trigger is as wide as the project name, between a floor that keeps it a
+   recognizable control and a cap; longer names end in an ellipsis (full name in the title). */
 .project-menu-field {
+  --project-trigger-min: 120px;
+  --project-trigger-max: 240px;
   position: relative;
-  width: min(260px, 100%);
+  width: auto;
+  max-width: 100%;
   min-width: 0;
   justify-self: start;
 }
 
+/* The bounds sit on the <details> flex item (not the trigger) so its intrinsic width, and the
+   rows the top bar lays out from it, already respect the cap. */
 .project-menu {
   position: static;
   gap: 0;
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   width: auto;
-  min-width: 0;
+  min-width: var(--project-trigger-min);
+  max-width: var(--project-trigger-max);
 }
 
 .project-menu__trigger {
@@ -3065,18 +3076,23 @@ select {
   background: color-mix(in srgb, var(--accent) 15%, var(--surface));
 }
 
+/* Six even steps in one row when they fit; on narrow screens (or wide skin fonts such as
+   Phantom's) a step never shrinks below its label and the row wraps instead of clipping it. */
 .ai-progress {
-  display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  display: flex;
+  flex-wrap: wrap;
   gap: 6px;
   margin: 10px 0;
 }
 
 .ai-progress__step {
   position: relative;
+  flex: 1 1 0;
+  min-width: max-content;
   overflow: hidden;
   min-height: 28px;
   padding: 6px 5px;
+  white-space: nowrap;
   color: var(--muted);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -3086,8 +3102,10 @@ select {
   text-align: center;
 }
 
+/* Finished steps keep the green border and tint; their text leans toward ink so it stays at AA
+   contrast on light papers (pure --ok text was 2.5–4.4:1 on Phantom, GitHub Light, and Latte). */
 .ai-progress__step--done {
-  color: var(--ok);
+  color: color-mix(in srgb, var(--ok) 45%, var(--ink));
   border-color: color-mix(in srgb, var(--ok) 55%, var(--border));
 }
 
@@ -3103,8 +3121,15 @@ select {
   background: color-mix(in srgb, var(--danger) 10%, var(--surface-2));
 }
 
+.ai-progress__step--cancelled {
+  color: var(--muted);
+  border-color: var(--border-strong, var(--border));
+  border-style: dashed;
+  background: color-mix(in srgb, var(--surface-2) 70%, var(--surface));
+}
+
 .ai-progress__step--ready {
-  color: var(--ok);
+  color: color-mix(in srgb, var(--ok) 45%, var(--ink));
   border-color: color-mix(in srgb, var(--ok) 60%, var(--border));
   background: color-mix(in srgb, var(--ok) 12%, var(--surface-2));
 }
@@ -3120,6 +3145,47 @@ select {
 
 @keyframes ai-progress-sweep {
   to { transform: translateX(100%); }
+}
+
+/* Phantom paints panels as cream paper while --bg stays near-black, so the shared tints above
+   turned the steps into dark chips with dark text. Give each state an opaque paper colour.
+   Order matters: a step can be active and failed / cancelled / ready at once. */
+:root[data-skin="phantom"] .ai-progress__step {
+  color: #4b443c;
+  font-weight: 800;
+  background: #f7f2e9;
+  border: 2px solid rgba(9, 9, 10, 0.34);
+}
+
+:root[data-skin="phantom"] .ai-progress__step--done {
+  color: #0b5a32;
+  border-color: #0b5a32;
+  background: #eef3e8;
+}
+
+:root[data-skin="phantom"] .ai-progress__step--active {
+  color: #09090a;
+  border-color: #09090a;
+  background: #ffffff;
+}
+
+:root[data-skin="phantom"] .ai-progress__step--failed {
+  color: #a3121a;
+  border-color: #a3121a;
+  background: #fbe6e4;
+}
+
+:root[data-skin="phantom"] .ai-progress__step--cancelled {
+  color: #4b443c;
+  border-color: #4b443c;
+  border-style: dashed;
+  background: #efe8dc;
+}
+
+:root[data-skin="phantom"] .ai-progress__step--ready {
+  color: #0b5a32;
+  border-color: #0b5a32;
+  background: #d9ebdc;
 }
 
 .repair-loop-progress {
@@ -3170,6 +3236,13 @@ select {
   background: color-mix(in srgb, var(--accent) 12%, var(--surface));
 }
 
+.repair-loop-progress__phase--cancelled {
+  color: var(--muted);
+  border-color: var(--border-strong, var(--border));
+  border-style: dashed;
+  background: color-mix(in srgb, var(--surface-2) 70%, var(--surface));
+}
+
 .repair-loop-progress__phase--failed {
   color: var(--danger);
   border-color: var(--danger);
@@ -3197,9 +3270,22 @@ select {
   font-size: 0.86rem;
 }
 
-.review-progress__head > span {
+.review-progress__head > span,
+.review-progress__text {
   color: var(--muted);
   font-family: var(--font-data);
+}
+
+/* "Simulating · 6,600 / 10,000 cycles · about 1s left": one sentence, the phase word in ink. */
+.review-progress__text {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+}
+
+.review-progress__text strong {
+  color: var(--ink);
+  font-family: var(--font-ui, inherit);
 }
 
 .review-progress__pct {
@@ -3345,6 +3431,20 @@ select {
 .choice-editor textarea:focus {
   border-color: var(--accent-2);
   background: color-mix(in srgb, var(--bg) 70%, var(--depth-mix));
+}
+
+/* Card text: a growing textarea beside its Save button (the button stays at the top edge). */
+.card-text-row {
+  align-items: flex-start;
+}
+
+.card-text-row > .card-text-field {
+  flex: 1 1 220px;
+  min-height: 0;
+  overflow: hidden;
+  resize: none;
+  font: inherit;
+  line-height: 1.45;
 }
 
 .field-row > input {
@@ -6237,7 +6337,7 @@ summary:focus-visible {
 }
 
 .ai-request-source,
-.ai-build-error {
+.ai-build-notice {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -6263,26 +6363,36 @@ summary:focus-visible {
   color: var(--muted);
 }
 
-.ai-build-error {
+.ai-build-notice--error {
   border-color: color-mix(in srgb, var(--danger) 50%, var(--border));
   background: color-mix(in srgb, var(--danger) 8%, var(--surface-2));
 }
 
-.ai-build-error > div:first-child {
+/* A cancel is the author's own choice: neutral ink and border, never the error red. */
+.ai-build-notice--neutral {
+  border-color: var(--border-strong, var(--border));
+  background: color-mix(in srgb, var(--surface-2) 80%, transparent);
+}
+
+.ai-build-notice > div:first-child {
   display: grid;
   gap: 3px;
 }
 
-.ai-build-error strong {
+.ai-build-notice strong {
+  color: var(--ink);
+}
+
+.ai-build-notice--error strong {
   color: var(--danger);
 }
 
-.ai-build-error span {
+.ai-build-notice span {
   color: var(--muted);
   font-size: 0.78rem;
 }
 
-.ai-build-error__actions {
+.ai-build-notice__actions {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
@@ -6298,6 +6408,7 @@ summary:focus-visible {
 
 .ai-proposal-list {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
 }
 
@@ -6334,8 +6445,10 @@ summary:focus-visible {
 }
 
 @media (max-width: 960px) {
+  /* minmax(0, …): a draft's long JSON line scrolls inside its <pre> instead of widening the
+     column (and with it the page and the phone navigation strip). */
   .ai-edit-layout {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .ai-preflight {
@@ -7135,37 +7248,9 @@ summary:focus-visible {
   }
 }
 
-@media (max-width: 980px) {
-  .topbar {
-    grid-template-columns: 1fr;
-  }
-
-  .topbar__readout {
-    display: grid;
-    order: 4;
-  }
-
-  .project-menu-field {
-    order: 2;
-    width: min(100%, 320px);
-  }
-
-  .topbar__tools {
-    order: 3;
-    justify-content: flex-start;
-    flex-wrap: wrap;
-    width: 100%;
-  }
-
-  .topbar__tools :is(.skin-select, select) {
-    min-width: 0;
-    max-width: 100%;
-  }
-}
-
 @media (min-width: 981px) and (max-width: 1360px) {
   .topbar {
-    grid-template-columns: minmax(220px, 250px) minmax(190px, 260px) auto;
+    grid-template-columns: minmax(220px, 250px) auto minmax(0, 1fr);
   }
 
   .topbar__readout {
@@ -7174,11 +7259,13 @@ summary:focus-visible {
 }
 
 @media (max-width: 800px) {
+  /* minmax(0, …): one unbreakable line in a panel must not widen the whole column (and the
+     navigation strip above it) past the screen. */
   .workspace,
   .workspace--rail-collapsed,
   .workspace--rail-floating,
   .preview-layout {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .content-workspace {
@@ -7277,15 +7364,6 @@ summary:focus-visible {
 }
 
 @media (max-width: 560px) {
-  .topbar {
-    padding: 12px;
-  }
-
-  .brand__mark {
-    width: 42px;
-    height: 42px;
-  }
-
   .workspace--rail-collapsed .rail {
     padding-inline: 12px;
   }
@@ -7317,19 +7395,6 @@ summary:focus-visible {
 
   .interface-settings__guidance .btn {
     justify-self: start;
-  }
-
-  .topbar__readout {
-    grid-template-columns: 1fr;
-  }
-
-  .topbar__readout span {
-    border-right: 0;
-    border-bottom: 1px solid var(--border);
-  }
-
-  .topbar__readout span:last-child {
-    border-bottom: 0;
   }
 
   .panel {
@@ -7735,19 +7800,6 @@ summary:focus-visible {
     filter:
       drop-shadow(6px 5px 0 rgba(255, 0, 34, 0.84))
       drop-shadow(-3px 3px 0 rgba(28, 254, 255, 0.7));
-  }
-}
-
-@media (max-width: 560px) {
-  :root[data-skin="phantom"] .topbar__tools {
-    flex-wrap: wrap;
-    align-items: flex-start;
-  }
-
-  :root[data-skin="phantom"] .topbar__tools .link-button {
-    min-width: 88px;
-    justify-content: center;
-    padding-inline: 14px;
   }
 }
 
@@ -9046,6 +9098,7 @@ summary:focus-visible {
 :root[data-skin="phantom"] .repair-history__time,
 :root[data-skin="phantom"] .repair-history__meta,
 :root[data-skin="phantom"] .review-progress__head > span,
+:root[data-skin="phantom"] .review-progress__text,
 :root[data-skin="phantom"] .panel .muted {
   color: #4b443c;
   font-weight: 800;
@@ -9091,25 +9144,151 @@ summary:focus-visible {
   }
 }
 
-/* Tablet top bar: two rows (brand + project, then tools) instead of four. The readout
-   duplicates the rail badges, so it is hidden here as it already is from 981 to 1360 px. */
-@media (min-width: 721px) and (max-width: 980px) {
+/* Narrow top bar (980 px and below). One flex row on a tablet: brand, project, then AI, skin and
+   Player pushed to the end; it wraps only if a skin's type cannot fit. Secondary information
+   leaves: the project subtitle repeats the project trigger and the readout repeats the rail
+   badges (both are already hidden or redundant from 981 to 1360 px). Controls are content-sized. */
+@media (max-width: 980px) {
   .topbar {
-    grid-template-columns: auto minmax(0, 1fr);
-    row-gap: 10px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+    min-height: 0;
+    padding: 8px 16px;
+  }
+
+  :root[data-skin="phantom"] .topbar {
     min-height: 0;
   }
 
+  .brand {
+    flex: 0 0 auto;
+    gap: 10px;
+  }
+
+  .brand__mark,
+  :root[data-skin="phantom"] .brand__mark {
+    width: 36px;
+    height: 36px;
+  }
+
+  .brand h1 {
+    font-size: 1.1rem;
+  }
+
+  :root[data-skin="phantom"] .brand h1 {
+    font-size: 1.2rem;
+  }
+
+  .brand p,
   .topbar__readout {
     display: none;
   }
 
   .project-menu-field {
-    justify-self: end;
+    --project-trigger-max: 200px;
+    flex: 0 1 auto;
+  }
+
+  .project-menu__trigger {
+    min-height: 34px;
+    padding-block: 4px;
   }
 
   .topbar__tools {
-    grid-column: 1 / -1;
+    flex: 0 1 auto;
+    flex-wrap: nowrap;
+    gap: 8px;
+    margin-inline-start: auto;
+  }
+
+  /* The AI capsule keeps its orb and "AI" + state, without the decorative wave. */
+  .ai-presence {
+    grid-template-columns: 28px auto;
+    gap: 7px;
+    min-width: 0;
+    min-height: 34px;
+    padding: 3px 12px 3px 3px;
+  }
+
+  .ai-presence__orb {
+    width: 28px;
+    height: 28px;
+  }
+
+  .ai-presence__wave {
+    display: none;
+  }
+
+  .player-launch,
+  :root[data-skin="phantom"] .topbar__tools .player-launch {
+    min-width: 0;
+    min-height: 34px;
+    padding: 6px 14px;
+  }
+}
+
+/* Phone top bar: two rows. Row 1 is brand, AI and Player; row 2 is the project and skin
+   controls. The "Project" / "Skin" words stay as accessible names but are not drawn, and the
+   AI capsule shrinks to its orb (its state stays in the accessible name and tooltip). */
+@media (max-width: 800px) {
+  .topbar {
+    padding: 8px 12px;
+  }
+
+  .brand {
+    flex: 1 1 auto;
+    order: 0;
+    min-width: 0;
+  }
+
+  .topbar__tools {
+    display: contents;
+  }
+
+  .ai-presence {
+    order: 1;
+  }
+
+  .player-launch {
+    order: 2;
+  }
+
+  .topbar::after {
+    flex-basis: 100%;
+    order: 3;
+    height: 0;
+    content: "";
+  }
+
+  .project-menu-field {
+    --project-trigger-min: 96px;
+    --project-trigger-max: 220px;
+    order: 4;
+  }
+
+  .skin-select {
+    order: 5;
+    min-width: 0;
+    margin-inline-start: auto;
+  }
+
+  .project-menu__label,
+  .skin-select__label,
+  .ai-presence__copy {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .ai-presence {
+    grid-template-columns: 28px;
+    width: 34px;
+    padding: 3px;
   }
 }
 
@@ -9456,6 +9635,13 @@ summary:focus-visible {
   overflow-wrap: anywhere;
 }
 
+/* Quoted Chinese author text in any UI locale: same CJK stack as the Chinese UI, so "。" and the
+   closing quote share a font and the browser trims the gap between them. */
+.quoted-text:lang(zh-Hans) {
+  font-family: "Noto Sans SC", "Microsoft YaHei UI", "PingFang SC", var(--font-ui);
+  text-spacing-trim: normal;
+}
+
 .ai-answer {
   margin: 0 0 10px;
   padding: 10px 12px;
@@ -9595,4 +9781,78 @@ summary:focus-visible {
 
 :root[data-skin="phantom"] .panel :is(input, textarea)::placeholder {
   color: #c8c1b5;
+}
+
+/* Narrow screens (<= 800 px): the rail is a horizontally scrolling tab strip. Each tab is sized to
+   its icon, full label, and state badge, so a label is never cut to "O…" or "Cont…"; the strip
+   scrolls sideways and the page never does. Declared last, with skin-proof specificity, because
+   several skins (Phantom especially) pin the tab width and clip the label for the vertical rail. */
+@media (max-width: 800px) {
+  .workspace .rail,
+  :root[data-skin] .workspace .rail {
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    max-width: 100%;
+    height: auto;
+    padding: 8px 12px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    scroll-padding-inline: 12px;
+    scroll-snap-type: x proximity;
+    scrollbar-width: thin;
+  }
+
+  .workspace .rail .rail__item,
+  :root[data-skin] .workspace .rail .rail__item {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 8px;
+    width: auto;
+    min-width: max-content;
+    max-width: none;
+    height: 44px;
+    min-height: 44px;
+    max-height: 44px;
+    padding: 6px 12px 6px 10px;
+    scroll-snap-align: start;
+  }
+
+  .workspace .rail .rail__item > .rail__icon,
+  :root[data-skin] .workspace .rail .rail__item > .rail__icon {
+    position: static;
+    inset: auto;
+    flex: 0 0 auto;
+    width: 20px;
+    height: 20px;
+    transform: none;
+  }
+
+  .workspace .rail .rail__meta {
+    display: none;
+  }
+
+  .workspace .rail .rail__label,
+  :root[data-skin] .workspace .rail .rail__label {
+    display: block;
+    width: auto;
+    max-width: none;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: nowrap;
+    visibility: visible;
+    opacity: 1;
+  }
+
+  .workspace .rail .rail__item small,
+  :root[data-skin] .workspace .rail .rail__item small {
+    display: inline-block;
+    padding: 1px 5px;
+    font-size: 0.62rem;
+    visibility: visible;
+    opacity: 1;
+  }
 }

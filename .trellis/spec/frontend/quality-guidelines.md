@@ -63,6 +63,39 @@ Required touch points:
 
 Why: skin state is shared through `localStorage` and the `skin` URL parameter. Missing one allowlist or template makes a valid workbench skin fall back to the default in player or deployable builds.
 
+### AI Outcome Notices
+
+When an AI Assist run ends without a draft, the panel copy comes from `apps/creator-web/src/ai-status-copy.js`, not from inline string concatenation:
+
+- The author's Cancel is not a failure. It uses the neutral tone (`role="status"`, no error red), the title "Cancelled", says which rounds finished and that no card changed, and offers "Build again". The interrupted progress step and repair-loop phase use the `--cancelled` classes, never `--failed`.
+- Advice follows the failure type: 5xx / 408 / 429 / network / timeout say the endpoint is temporarily unavailable and to retry later (never "edit the prompt"); 401 / 403 / 404 point at Settings; other 4xx and parse / invalid-response failures suggest editing the prompt; the session request limit points at Settings only.
+- Image operations follow the same rules through `describeImageFailure`: `runImageOperation` resolves to `{ failure: { code, message, stage } }` instead of `false`, so a refused image prompt keeps "Edit prompt" and an outage only offers Retry. Never replace the classified notice with one fixed image error.
+- Compose sentences with `joinSentences` / `toSentence` so a message that already ends in a period never becomes "..".
+- Repair-loop stop text comes from `repairStopLabel` and names rounds explicitly ("Passed in round 2 of 3: ..."); do not reintroduce phrases like "the first round with ..." that read as round 1.
+
+### Narrow Navigation
+
+At 800 px and below the rail is a horizontally scrolling tab strip declared at the end of `styles.css` with skin-proof selectors. Tabs size to icon + full label + state badge (`min-width: max-content`); labels are never ellipsized, only the strip scrolls, and the active tab is scrolled into the strip on panel change. Skin rules must not pin a fixed tab width at this breakpoint.
+
+### Narrow Layout and Labels
+
+- Single-column grids that hold author or model content use `minmax(0, 1fr)`, never bare `1fr`: a long unbreakable line (a draft's JSON in a `<pre>`) must scroll inside its own box instead of widening the column, the page, and the navigation strip. This applies to `.workspace` at 800 px and below, `.ai-edit-layout` at 960 px and below, and `.ai-proposal-list`.
+- Rows of short status labels (the six `.ai-progress` steps) must not clip a label on any skin. Use `flex: 1 1 0` with `min-width: max-content` and `flex-wrap`, so the row stays even when it fits and wraps when a skin's font is wider; do not use a fixed `repeat(n, minmax(0, 1fr))` grid for labels.
+- Status text keeps one phase word followed by details joined with " · " in a single text node (`Simulating · 6,600 / 10,000 cycles · about 1s left`), so the sentence reads the same in `textContent` and screen readers.
+
+### Author-Facing Names and Author Text
+
+- Internal routing names never reach the author. AI request sources go through `aiSourceLabel` / `aiRequestLabel` (the floating selection layer's stored source `Ambient` shows as "Selection"); keep the stored value so older history records still match.
+- Quote author text with `QuotedText`. It tags Chinese / Japanese / Korean content with its own `lang` so the quote and full-width punctuation share one CJK font, which avoids `记录。 ”` in the English UI.
+- Long author text fields (card text) use the growing `AutoGrowTextarea`; Enter saves a one-paragraph field, Shift+Enter breaks a line, and IME composition Enter never saves.
+- Phantom paints panels as cream paper while `--bg` stays near-black. Any chip or step tinted from `--bg` needs an explicit Phantom paper colour per state; check it with `scanContrast({ root, composite: true })` from `test/browser/contrast-scan.js`, which blends translucent tints onto the paper below.
+
+### Top Bar Controls
+
+- Header controls are content-sized. The Project trigger's bounds (`--project-trigger-min` / `--project-trigger-max`) sit on the `.project-menu` `<details>` flex item, not on the trigger, so the intrinsic width the bar lays out from already respects the cap; a percentage inside `min()` on the trigger is ignored during intrinsic sizing and lets a long name widen the row. Long names end in an ellipsis with the full name in `title`. The skin `<select>` uses `field-sizing: content`.
+- 981 px and wider: grid bar with brand, project, readout (hidden to 1360 px) and tools. 980 px and below: one flex row (brand, project, then AI / skin / Player pushed to the end) with the project subtitle and readout hidden. 800 px and below: two rows — brand, AI orb, Player; then project and skin — using `display: contents` on `.topbar__tools`, `order`, and a `.topbar::after` line break. The "Project" / "Skin" words and the AI state copy are visually hidden, not removed, so they still name their controls.
+- `test/browser/ui-header.spec.js` holds the height caps (834 px ≤ 64, 390 px ≤ 116), the content-width checks and the per-skin top bar contrast; change the caps there only with new measurements.
+
 ---
 
 ## Testing Requirements

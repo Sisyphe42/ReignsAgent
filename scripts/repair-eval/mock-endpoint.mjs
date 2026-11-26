@@ -61,11 +61,12 @@ function send(res, status, payload) {
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
-  const { REPAIR_EVAL_CASES } = await import("./cases.mjs");
+  const { REPAIR_EVAL_CASES, SLOW_ROUND_2_SCRIPT } = await import("./cases.mjs");
   const port = Number(process.env.PORT ?? process.argv[2] ?? 4393);
   const delayMs = Number(process.env.MOCK_DELAY_MS ?? process.argv[3] ?? 0);
   const scripts = Object.fromEntries(REPAIR_EVAL_CASES.map((entry) => [entry.id, entry.script]));
   scripts["endpoint-503"] = [{ status: 503, body: { error: { message: "Service Unavailable (scripted)" } } }];
+  scripts["slow-round-2"] = SLOW_ROUND_2_SCRIPT;
   const mock = await startRepairMockEndpoint({ scripts, port, delayMs });
   console.log(`Scripted repair mock on http://127.0.0.1:${mock.port}/<case-id>/v1 (no real model, no key needed)`);
   for (const entry of REPAIR_EVAL_CASES) console.log(`  ${entry.id}: http://127.0.0.1:${mock.port}/${entry.id}/v1`);

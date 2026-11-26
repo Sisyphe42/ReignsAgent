@@ -307,3 +307,7 @@ export const ANTI_SHORTCUT_CHECKS = new Set([
   "player_valid",
   "allowed_ops"
 ]);
+
+// Demo-only script (not an eval case) for the Creator cancel state: round 1 answers at once with the
+// gate-wipe proposal (blocked), round 2 holds its answer for 60 s so the author can cancel while it waits.
+export const SLOW_ROUND_2_SCRIPT = [[fog.wipeGate], { delayMs: 60_000, proposals: [fog.addProducer] }];

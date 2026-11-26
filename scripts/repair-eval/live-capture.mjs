@@ -80,7 +80,7 @@ try {
   await page.waitForTimeout(4000);
   await page.locator(".ai-edit-controls").screenshot({ path: `${OUT}/L1-live-request-in-flight.png` });
   await page.getByTestId("repair-verification").waitFor({ timeout: 320_000 }).catch(() => {});
-  await page.locator(".ai-build-error").waitFor({ timeout: 1000 }).catch(() => {});
+  await page.getByTestId("ai-build-notice").waitFor({ timeout: 1000 }).catch(() => {});
   await page.locator(".ai-edit-layout").screenshot({ path: `${OUT}/L2-live-result.png` });
   const history = page.getByTestId("repair-history");
   await history.getByTestId("repair-history-item").first().locator(".repair-history__toggle").click();

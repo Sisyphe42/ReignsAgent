@@ -267,7 +267,7 @@ npm run content:feedback -- review-report.json
 
 Workbench URL 会保留面板状态，例如 `/workbench/content`。Skin 状态通过 `?skin=github-light`、`?skin=catppuccin-latte`、`?skin=classic` 等查询参数共享；预览玩家页面也接受同样的 `skin` 参数。
 
-显式 `/workbench/<panel>` URL 的优先级高于项目 Workspace 中保存的上次面板，因此深层链接具有确定性。宽屏下导航栏支持固定展开、固定图标和取消固定后通过悬停/键盘焦点临时展开三种模式；窄屏继续显示完整的横向标签栏。Electron 还提供 `Ctrl+Tab`、`Ctrl+Shift+Tab` 与 `Ctrl+1` 到 `Ctrl+8` 快捷键。导航栏密度和固定状态保留在各客户端本地，界面语言则通过 Workspace 配置共享。打开 Player 时会带上当前 skin、locale 和 desktop 标记；返回链接保留这些上下文，项目 Workspace 会恢复上次活动面板。
+显式 `/workbench/<panel>` URL 的优先级高于项目 Workspace 中保存的上次面板，因此深层链接具有确定性。宽屏下导航栏支持固定展开、固定图标和取消固定后通过悬停/键盘焦点临时展开三种模式；窄屏（800 px 及以下）改为可横向滚动的标签条，每个标签都保留图标、完整名称和状态徽标（不会出现省略号截断，只有标签条横向滚动，页面本身不会横向溢出）。Electron 还提供 `Ctrl+Tab`、`Ctrl+Shift+Tab` 与 `Ctrl+1` 到 `Ctrl+8` 快捷键。导航栏密度和固定状态保留在各客户端本地，界面语言则通过 Workspace 配置共享。打开 Player 时会带上当前 skin、locale 和 desktop 标记；返回链接保留这些上下文，项目 Workspace 会恢复上次活动面板。
 
 每个客户端首次普通访问 `/workbench` 时，会启动英文或简体中文的完整 Creator onboarding。引导首先用 split-screen 介绍不熟悉 Reigns-style 玩法的用户：一张 dilemma card、一次左右选择、随之变化的 gauge 与 story state，以及关键 gauge 结束本轮统治后的重新开始。交互演示之后，spotlight 依次覆盖创作、模拟 Review、受控 AI 文本草稿与视觉候选、Preview、Release 和纯 Player 页面；倒数第二步指向 About 和 GitHub，最后在 Settings 标出重播入口。导览只为展示切换面板，关闭时恢复起始面板，绝不会执行编辑、AI、Review 或 Build。完成、跳过或按 `Esc` 后，会通过异常安全的客户端本地存储抑制下次自动启动；显式 panel 深链和无法使用 `localStorage` 的客户端不会自动弹出。Settings 可以立即重播，不会改变项目或共享配置。
 

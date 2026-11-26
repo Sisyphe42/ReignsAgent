@@ -1,7 +1,8 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { SKINS as SKIN_CATALOG, DEFAULT_SKIN, applySkinTheme, resolveSkinId as resolveSharedSkinId } from "../../../packages/interface/web/skin-catalog.js";
 import { cardArtworkStyle, normalizeCardArtworkDisplay } from "../../../packages/interface/web/assets/card-artwork.js";
+import { describeAiFailure, describeImageFailure, joinSentences, repairStopLabel, toSentence } from "./ai-status-copy.js";
 import { createCreatorBackend } from "./backend.js";
 import { getOnboardingSteps, markOnboardingComplete, OnboardingTour, readOnboardingCompletion } from "./onboarding.jsx";
 import "./styles.css";
@@ -714,7 +715,7 @@ function ProjectMenu({ locale, projects, samples = [], activeProjectId, onOpen, 
     <div className="project-menu-field" data-onboarding-target="project-menu">
       <span className="project-menu__label">{tr(locale, "Project")}</span>
       <details className="project-menu" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.removeAttribute("open"); }}>
-        <summary className="project-menu__trigger" aria-label={tr(locale, "Manage project")}>
+        <summary className="project-menu__trigger" aria-label={tr(locale, "Manage project")} title={activeProject?.title}>
           <strong>{activeProject?.title ?? tr(locale, "Choose project")}</strong>
           <SelectChevronIcon className="select-chevron project-menu__chevron" />
         </summary>
@@ -890,7 +891,7 @@ async function registerHostedServiceWorker() {
 function formatAiEndpointError(error) {
   const message = error?.message ?? String(error);
   if (message.includes("Unknown API route")) {
-    return `${message}. Restart the local dashboard API server so it loads the latest backend routes.`;
+    return joinSentences(message, "Restart the local dashboard API server so it loads the latest backend routes");
   }
   return message;
 }
@@ -1164,6 +1165,18 @@ function App() {
   const [deviceLocale, setDeviceLocale] = useState(readDeviceUiLocale);
   const [railCollapsed, setRailCollapsed] = useState(readRailCollapsed);
   const [railPinned, setRailPinned] = useState(readRailPinned);
+  const railRef = useRef(null);
+  // On narrow screens the rail is a horizontal tab strip: keep the active tab in view. Only the
+  // strip scrolls (never the page), and only when the tab is outside it.
+  useEffect(() => {
+    const rail = railRef.current;
+    if (!rail || rail.scrollWidth <= rail.clientWidth + 1) return;
+    const active = rail.querySelector(".rail__item--active");
+    if (!active) return;
+    const railBox = rail.getBoundingClientRect();
+    const box = active.getBoundingClientRect();
+    if (box.left < railBox.left || box.right > railBox.right) rail.scrollLeft += box.left - railBox.left - 12;
+  }, [activePanel]);
   const [aiAssistEnabled, setAiAssistEnabled] = useState(() => initialUrlState.aiAssist ?? false);
   const [aiSettings, setAiSettings] = useState(() => defaultAiSettings());
   const [aiApiKey, setAiApiKey] = useState("");
@@ -1584,7 +1597,7 @@ function App() {
           ? Object.assign(new Error("AI request cancelled by the author"), { code: "ai_cancelled", stage: error?.stage ?? null })
           : error;
         // Tell the panel which real stage failed before the status bar shows the message.
-        if (typeof onProgress === "function") onProgress({ type: "failed", stage: failure?.stage ?? null, message: failure?.message ?? String(failure) });
+        if (typeof onProgress === "function") onProgress({ type: "failed", stage: failure?.stage ?? null, code: failure?.code ?? null, message: failure?.message ?? String(failure) });
         throw failure;
       }
     });
@@ -1607,13 +1620,22 @@ function App() {
     });
   }
 
+  // Resolves to the image draft, or to { failure: { code, message, stage } } so the panel can
+  // say what to do next (retry, Settings, or edit the prompt).
   async function runImageOperation(request, signal) {
-    return runAction("Generating image draft", async () => {
+    let failure = null;
+    const result = await runAction("Generating image draft", async () => {
       const apiKey = imageSettings.credentialMode === "inherit_text" ? aiApiKey : imageApiKey;
-      const result = await api("/api/ai/images/run", { method: "POST", signal, body: { config: buildImageEndpointConfig(imageSettings), credentials: { apiKey }, request } });
-      setStatus(`Image draft ready: ${result.outputs?.length ?? 0} result${result.outputs?.length === 1 ? "" : "s"}`);
-      return result;
+      try {
+        const draft = await api("/api/ai/images/run", { method: "POST", signal, body: { config: buildImageEndpointConfig(imageSettings), credentials: { apiKey }, request } });
+        setStatus(`Image draft ready: ${draft.outputs?.length ?? 0} result${draft.outputs?.length === 1 ? "" : "s"}`);
+        return draft;
+      } catch (error) {
+        failure = { code: error?.code ?? null, message: error?.message ?? "", stage: error?.stage ?? null };
+        throw error;
+      }
     });
+    return failure ? { failure } : result;
   }
 
   async function applyImageOutput(draftId, outputId, cardId) {
@@ -1883,7 +1905,7 @@ function App() {
             type="button"
             onClick={() => setAiAssistEnabled((enabled) => !enabled)}
             aria-pressed={aiAssistEnabled}
-            title={aiConfigured ? "Toggle ambient AI mode" : "AI mode can run local draft previews; configure an endpoint in Settings"}
+            title={aiConfigured ? "Toggle AI mode: select text or a card to ask AI about it" : "AI mode can run local draft previews; configure an endpoint in Settings"}
           >
             <span className="ai-presence__orb" aria-hidden="true">
               <span className="ai-presence__core" />
@@ -1899,7 +1921,7 @@ function App() {
             </span>
           </button>
           <label className="skin-select">
-            {tr(locale, "Skin")}
+            <span className="skin-select__label">{tr(locale, "Skin")}</span>
             <span className="skin-select__control">
               <select value={skin} onChange={(event) => changeSkin(event.target.value)}>
                 {SKINS.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
@@ -1914,7 +1936,7 @@ function App() {
       </header>
 
       <div className={`workspace ${railPinned ? "workspace--rail-pinned" : "workspace--rail-floating"} ${railCollapsed ? "workspace--rail-collapsed" : "workspace--rail-expanded"}`}>
-        <nav className="rail" aria-label="Creator panels">
+        <nav className="rail" aria-label="Creator panels" ref={railRef}>
           {PANELS.map(({ id, label }, index) => (
             <button
               key={id}
@@ -2504,6 +2526,35 @@ function EmptyDeck({ onDraft, onLoadSample, onMutate, onCreated, aiAssistEnabled
   );
 }
 
+// A textarea whose height follows its content, so long text is never hidden behind an inner
+// scrollbar. It re-measures when the value changes and when its width changes (panel resize,
+// skin change, phone rotation).
+function AutoGrowTextarea({ value, rows = 2, ...props }) {
+  const ref = useRef(null);
+  const fit = useCallback(() => {
+    const element = ref.current;
+    if (!element) return;
+    const style = window.getComputedStyle(element);
+    const borders = (parseFloat(style.borderTopWidth) || 0) + (parseFloat(style.borderBottomWidth) || 0);
+    element.style.height = "auto";
+    element.style.height = `${element.scrollHeight + (style.boxSizing === "border-box" ? borders : 0)}px`;
+  }, []);
+  useLayoutEffect(() => { fit(); }, [value, fit]);
+  useEffect(() => {
+    const element = ref.current;
+    if (!element || typeof ResizeObserver === "undefined") return undefined;
+    let width = element.clientWidth;
+    const observer = new ResizeObserver(() => {
+      if (element.clientWidth === width) return;
+      width = element.clientWidth;
+      fit();
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [fit]);
+  return <textarea ref={ref} value={value} rows={rows} {...props} />;
+}
+
 function CardEditor({ card, asset, validation, onMutate, onStatus, tagCatalog, gaugeLabels, onGenerateArt }) {
   const locale = useUiLocale();
   const displaySaveLock = useRef(false);
@@ -2658,8 +2709,22 @@ function CardEditor({ card, asset, validation, onMutate, onStatus, tagCatalog, g
         </div>
       )}
       <AuthorSummary card={card} validation={validation} tagCatalog={tagCatalog} gaugeLabels={gaugeLabels} />
-      <div className="field-row">
-        <input value={text} onChange={(event) => setText(event.target.value)} aria-label={`${card.id} text`} />
+      <div className="field-row card-text-row">
+        <AutoGrowTextarea
+          className="card-text-field"
+          value={text}
+          onChange={(event) => setText(event.target.value)}
+          onKeyDown={(event) => {
+            // Card text is one paragraph (players do not render line breaks), so Enter saves like
+            // the other inline fields; Shift+Enter still breaks a line, and an IME's confirming
+            // Enter (composing Chinese or Japanese) never saves.
+            if (event.key !== "Enter" || event.shiftKey || event.altKey || event.nativeEvent.isComposing || event.keyCode === 229) return;
+            event.preventDefault();
+            void saveText();
+          }}
+          aria-label={`${card.id} text`}
+          data-testid="card-text-field"
+        />
         <button className="btn" disabled={text === (card.text ?? "")} onClick={() => void saveText()}>Save text</button>
       </div>
       <RequirementEditor card={card} tagCatalog={tagCatalog} onMutate={onMutate} onStatus={onStatus} />
@@ -4956,7 +5021,7 @@ function ReviewPanel({ editor, diagnostics, aiAssistEnabled, onRun, onOpen, onFo
       cardCount: 1,
       contextSummary: `${issue.severity} · ${issue.code}`,
       repairTarget: { code: issue.code, cardIds: issue.cardIds, entities: issue.otherTargets },
-      instruction: `Use the latest Review diagnostics to repair '${issue.code}'. Focus on: ${issue.message}. Targets: ${issue.cardIds.length > 0 ? issue.cardIds.join(", ") : "project-level issue"}. Keep changes as explicit patch proposals.`
+      instruction: `Use the latest Review diagnostics to repair '${issue.code}'. Focus on: ${toSentence(issue.message) || "the reported issue."} Targets: ${issue.cardIds.length > 0 ? issue.cardIds.join(", ") : "project-level issue"}. Keep changes as explicit patch proposals.`
     });
   }
 
@@ -5030,17 +5095,24 @@ function ReviewProgress({ progress }) {
   const etaSeconds = !summarizing && completed > 0 && completed < total && elapsedMs > 300
     ? Math.max(1, Math.round((elapsedMs * (total - completed)) / completed / 1000))
     : null;
+  const starting = progress?.phase === "starting";
+  // One phase word, then the details, separated by middle dots:
+  // "Simulating · 6,600 / 10,000 cycles · about 1s left".
+  const phase = summarizing ? "Summarizing" : starting ? "Starting" : "Simulating";
   const label = summarizing
-    ? `Summarizing ${total.toLocaleString("en-US")} simulated cycles`
-    : progress?.phase === "starting"
-      ? "Starting simulation"
-      : `Simulated ${completed.toLocaleString("en-US")} / ${total.toLocaleString("en-US")} cycles`;
+    ? `${total.toLocaleString("en-US")} simulated cycles`
+    : starting
+      ? `${total.toLocaleString("en-US")} cycles`
+      : `${completed.toLocaleString("en-US")} / ${total.toLocaleString("en-US")} cycles`;
   return (
     <div className="review-progress" data-testid="review-progress" role="status" aria-live="polite">
       <div className="review-progress__head">
-        <strong>{summarizing ? "Summarizing" : "Simulating"}</strong>
-        <span>{label}</span>
-        {etaSeconds !== null && <span className="review-progress__eta" data-testid="review-eta">about {etaSeconds}s left</span>}
+        <p className="review-progress__text" data-testid="review-progress-text">
+          <strong>{phase}</strong>
+          {" · "}
+          <span>{label}</span>
+          {etaSeconds !== null && <>{" · "}<span className="review-progress__eta" data-testid="review-eta">about {etaSeconds}s left</span></>}
+        </p>
         <span className="review-progress__pct">{Math.round(ratio * 100)}%</span>
       </div>
       <div className="review-progress__track" role="progressbar" aria-label="Review progress" aria-valuemin={0} aria-valuemax={total || 1} aria-valuenow={completed}>
@@ -5566,7 +5638,7 @@ function AiAssistPreflight({ request, aiConfigured, diagnostics, onChange, onClo
       <div className="ai-preflight__panel">
         <div className="ai-preflight__head">
           <div>
-            <span>{request.source}</span>
+            <span data-testid="ai-preflight-source">{aiSourceLabel(request.source)}</span>
             <h3>{request.actionLabel}</h3>
           </div>
           <button className="btn btn--ghost btn--compact" type="button" onClick={onClose}>Close</button>
@@ -5606,7 +5678,7 @@ function AiAssistPreflight({ request, aiConfigured, diagnostics, onChange, onClo
           <div className="ai-selection-chip" data-testid="ai-selection-chip">
             <span>Selection</span>
             <strong>{request.selection.cardId ? `${request.selection.kind} · ${request.selection.cardId}` : request.selection.kind}</strong>
-            {request.selection.text && <q>{request.selection.text.slice(0, 140)}{request.selection.text.length > 140 ? "…" : ""}</q>}
+            <QuotedText text={request.selection.text} />
           </div>
         )}
         <AiCapabilityCard mode={request.mode} compact />
@@ -5809,7 +5881,7 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
   const [progressStatus, setProgressStatus] = useState("idle");
   const [progressDetail, setProgressDetail] = useState(null);
   const [waitEstimate, setWaitEstimate] = useState(null);
-  const [buildError, setBuildError] = useState("");
+  const [buildNotice, setBuildNotice] = useState(null);
   const [imageDraft, setImageDraft] = useState(null);
   const [selectedOutputId, setSelectedOutputId] = useState("");
   const [referenceUris, setReferenceUris] = useState([]);
@@ -5862,7 +5934,7 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
     setPlan(null);
     setSelected([]);
     setApplyResult("");
-    setBuildError("");
+    setBuildNotice(null);
     setProgressStep(-1);
     setProgressStatus("idle");
     setProgressDetail(null);
@@ -5886,17 +5958,17 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
     if (nextRequiresDiagnostics && !diagnostics) {
       setProgressStep(0);
       setProgressStatus("failed");
-      setBuildError("Review repair needs a completed Review result before AI Assist can build repair proposals.");
+      setBuildNotice({ kind: "needs_review", tone: "error", title: "Run Review first", text: "Review repair needs a completed Review result before AI Assist can build repair proposals.", actions: ["review"] });
       return;
     }
     if (!nextInstruction?.trim()) {
       setProgressStep(0);
       setProgressStatus("failed");
-      setBuildError("Add a prompt before building the draft.");
+      setBuildNotice({ kind: "empty_prompt", tone: "error", title: "Add a prompt", text: "Add a prompt before building the draft.", actions: ["edit"] });
       return;
     }
     setIsBuilding(true);
-    setBuildError("");
+    setBuildNotice(null);
     setProgressStatus("building");
     setProgressStep(0);
     setProgressDetail(initialAiProgressDetail(aiConfigured));
@@ -5906,7 +5978,7 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
       if (!imageConfigured) {
         setProgressStep(0);
         setProgressStatus("failed");
-        setBuildError("Configure an Image Endpoint in Settings before generating art.");
+        setBuildNotice({ kind: "config", tone: "error", title: "No image endpoint", text: "Configure an Image Endpoint in Settings before generating art.", actions: ["settings"] });
         setIsBuilding(false);
         return;
       }
@@ -5925,6 +5997,7 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
         effectiveMask = maskStage;
       }
       imageAbortRef.current = new AbortController();
+      const imageSignal = imageAbortRef.current.signal;
       setProgressStep(1);
       setProgressDetail((current) => reduceAiProgressDetail(current, { stage: "request" }));
       const imageResult = await onRunImage({
@@ -5937,13 +6010,19 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
         mask: effectiveMask,
         output: { count: Math.min(nextCardCount, imageCapabilities?.maxOutputs ?? 1), format: imageFormat, aspectRatio },
         outpaint
-      }, imageAbortRef.current.signal);
+      }, imageSignal);
       imageAbortRef.current = null;
       // Image runs are logged and counted too: refresh the activity list and usage line.
       setHistoryVersion((version) => version + 1);
-      if (!imageResult || imageResult === true) {
-        setProgressStatus("failed");
-        setBuildError("Image generation failed. Check endpoint settings and retry.");
+      if (!imageResult || imageResult === true || imageResult.failure) {
+        if (imageSignal.aborted) {
+          // The author's own cancel is not a failure: neutral notice, nothing applied.
+          setProgressStatus("cancelled");
+          setBuildNotice(describeAiFailure({ code: "ai_cancelled" }));
+        } else {
+          setProgressStatus("failed");
+          setBuildNotice(describeImageFailure(imageResult?.failure ?? {}));
+        }
         setIsBuilding(false);
         return;
       }
@@ -5957,18 +6036,25 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
     }
     let failedStage = null;
     let failedMessage = "";
+    let failedCode = null;
+    // The repair loop's round position, so a cancel can say which rounds had finished.
+    const loopProgress = { round: null, maxRounds: null };
     const handleProgress = (event) => {
       if (!event) return;
       if (event.type === "failed") {
         failedStage = event.stage ?? null;
         failedMessage = event.message ?? "";
+        failedCode = event.code ?? null;
         return;
       }
+      if (Number.isInteger(event.round)) loopProgress.round = event.round;
+      if (Number.isInteger(event.maxRounds)) loopProgress.maxRounds = event.maxRounds;
       const index = AI_STAGE_TO_STEP[event.stage];
       if (index !== undefined && event.stage !== "done") setProgressStep(index);
       setProgressDetail((current) => reduceAiProgressDetail(current, event));
     };
     textAbortRef.current = new AbortController();
+    const textSignal = textAbortRef.current.signal;
     const result = await onBuildPlan({
       // An auto-built request (from preflight) carries its own selection and source; state may lag.
       source: overrides ? overrides.source ?? "AI Assist" : requestSource,
@@ -5984,19 +6070,23 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
       assetId: nextAssetId || null,
       diagnostics: nextRequiresDiagnostics ? diagnostics : null,
       ...(nextRequiresDiagnostics && nextRepairTarget ? { repairTarget: nextRepairTarget } : {})
-    }, handleProgress, textAbortRef.current.signal);
+    }, handleProgress, textSignal);
     textAbortRef.current = null;
     setHistoryVersion((version) => version + 1);
     if (!result || result === true) {
       // Stop on the step that really failed (the server/loop reports error.stage).
       const failedStep = failedStage && AI_STAGE_TO_STEP[failedStage] !== undefined ? AI_STAGE_TO_STEP[failedStage] : null;
       if (failedStep !== null) setProgressStep(failedStep);
-      setProgressStatus("failed");
-      setBuildError(/cancelled by the author/i.test(failedMessage)
-        ? "Cancelled. Nothing was sent after the cancel, and nothing changed."
-        : failedMessage
-        ? `${failedStep !== null ? `Failed at the ${failedStep === 2 ? "Response" : AI_PROGRESS_STEPS[failedStep]} step: ` : ""}${failedMessage}. Edit the prompt or retry.`
-        : "AI Assist draft failed. Check the status bar, edit the prompt, or retry.");
+      const notice = describeAiFailure({
+        code: textSignal.aborted ? "ai_cancelled" : failedCode,
+        message: failedMessage,
+        stage: failedStage,
+        stepLabel: failedStep === null ? null : failedStep === 2 ? "Response" : AI_PROGRESS_STEPS[failedStep],
+        loop: loopProgress
+      });
+      // A cancel is the author's choice, not an error: the step and loop phase show it as cancelled.
+      setProgressStatus(notice.kind === "cancelled" ? "cancelled" : "failed");
+      setBuildNotice(notice);
       setIsBuilding(false);
       return;
     }
@@ -6085,14 +6175,14 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
       </div>
       {draftRequest?.actionLabel && (
         <div className="ai-request-source">
-          <span>{draftRequest.source ?? "Contextual action"}</span>
+          <span>{aiSourceLabel(draftRequest.source) || "Contextual action"}</span>
           <strong>{draftRequest.actionLabel}</strong>
           <small>{draftRequest.contextSummary ?? "Current project context"}</small>
           {selection && (
             <div className="ai-selection-chip" data-testid="ai-selection-chip">
               <span>Selection</span>
               <strong>{selection.cardId ? `${selection.kind} · ${selection.cardId}` : selection.kind}</strong>
-              {selection.text && <q>{selection.text.slice(0, 140)}{selection.text.length > 140 ? "…" : ""}</q>}
+              <QuotedText text={selection.text} />
               <button className="btn btn--ghost btn--compact" type="button" onClick={() => { setSelection(null); if (mode.endsWith("_selection")) setMode("generate_cards"); }}>Drop selection</button>
             </div>
           )}
@@ -6150,18 +6240,7 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
           <AiProgress step={progressStep} active={isBuilding} status={progressStatus} detail={progressDetail} />
           <RepairLoopProgress detail={progressDetail} active={isBuilding} status={progressStatus} estimate={waitEstimate} />
           <AiWaitEstimate detail={progressDetail} active={isBuilding} estimate={waitEstimate} />
-          {buildError && (
-            <div className="ai-build-error" role="alert">
-              <div>
-                <strong>Draft failed</strong>
-                <span>{buildError}</span>
-              </div>
-              <div className="ai-build-error__actions">
-                <button className="btn btn--ghost btn--compact" type="button" disabled={isBuilding} onClick={() => void retryBuild()}>Retry</button>
-                <button className="btn btn--ghost btn--compact" type="button" onClick={focusPrompt}>Edit prompt</button>
-              </div>
-            </div>
-          )}
+          {buildNotice && <AiBuildNotice notice={buildNotice} busy={isBuilding} onRetry={() => void retryBuild()} onEdit={focusPrompt} onOpen={onOpen} />}
           <div className="action-row">
             <button className="btn btn--primary" disabled={!canBuild || isBuilding} onClick={() => void buildPlan()}>
               {isBuilding ? "Building draft..." : "Build draft"}
@@ -6284,6 +6363,20 @@ const AI_ACTIVITY_KINDS = [
   ["image", "Images"]
 ];
 const AI_ACTIVITY_KIND_LABELS = { repair_loop: "Repair loop", draft: "Draft", selection: "Selection", image: "Image" };
+// Request sources are internal routing names ("Ambient" is the floating selection layer). Authors
+// see what they acted on; the stored value stays unchanged so older history records still match.
+const AI_SOURCE_LABELS = { Ambient: "Selection" };
+
+function aiSourceLabel(source) {
+  return AI_SOURCE_LABELS[source] ?? source ?? "";
+}
+
+// "Selection · Selection" says the same thing twice: drop a source that only repeats the kind.
+function aiRequestLabel(kind, source) {
+  const kindLabel = AI_ACTIVITY_KIND_LABELS[kind ?? "repair_loop"] ?? kind;
+  const sourceLabel = aiSourceLabel(source);
+  return sourceLabel && sourceLabel !== kindLabel ? `${kindLabel} · ${sourceLabel}` : kindLabel;
+}
 
 function formatHistoryTime(value) {
   const date = new Date(value);
@@ -6437,7 +6530,7 @@ function RepairHistory({ refreshKey }) {
                 </label>
                 <button className="repair-history__toggle" type="button" aria-expanded={expanded} onClick={() => void toggle(entry.id)}>
                   <span className="repair-history__time">{formatHistoryTime(entry.createdAt)}</span>
-                  <span className="repair-history__kind">{AI_ACTIVITY_KIND_LABELS[entry.kind ?? "repair_loop"] ?? entry.kind}{entry.source ? ` · ${entry.source}` : ""}</span>
+                  <span className="repair-history__kind">{aiRequestLabel(entry.kind, entry.source)}</span>
                   <span className="repair-history__target">{(entry.kind ?? "repair_loop") === "repair_loop" ? formatHistoryTargets(entry.targets) : (AI_MODE_LABELS[entry.mode] ?? entry.mode ?? "Request")}{(entry.kind ?? "repair_loop") !== "repair_loop" && entry.instruction ? ` — ${entry.instruction.slice(0, 60)}${entry.instruction.length > 60 ? "…" : ""}` : ""}</span>
                   <span className={`repair-status repair-status--${entry.status === "failed" ? "unverified" : entry.status}`}>{REPAIR_HISTORY_STATUS_LABELS[entry.status] ?? entry.status}</span>
                   {(entry.kind ?? "repair_loop") === "repair_loop" && <span className="repair-history__meta">{entry.roundsUsed}{entry.maxRounds ? `/${entry.maxRounds}` : ""} round{entry.roundsUsed === 1 ? "" : "s"}</span>}
@@ -6489,7 +6582,7 @@ function RepairHistoryCompare({ left, right, onClose }) {
   const anyOther = [older, newer].some((record) => (record.kind ?? "repair_loop") !== "repair_loop");
   const rows = [
     ["Started", (record) => formatHistoryTime(record.createdAt)],
-    ["Request", (record) => `${AI_ACTIVITY_KIND_LABELS[record.kind ?? "repair_loop"] ?? record.kind}${record.source ? ` · ${record.source}` : ""}${record.mode ? ` · ${AI_MODE_LABELS[record.mode] ?? record.mode}` : ""}`],
+    ["Request", (record) => `${aiRequestLabel(record.kind, record.source)}${record.mode ? ` · ${AI_MODE_LABELS[record.mode] ?? record.mode}` : ""}`],
     ["Status", (record) => `${REPAIR_HISTORY_STATUS_LABELS[record.status] ?? record.status}${record.error?.code ? ` (${record.error.code})` : ""}`],
     ["Model", (record) => (record.endpoint === "local_rules" ? "Local rules" : record.model || "Configured endpoint")],
     ["Instruction", (record) => (record.instruction ? `${record.instruction.slice(0, 90)}${record.instruction.length > 90 ? "…" : ""}` : "–")],
@@ -6539,13 +6632,13 @@ function AiActivityDetail({ record, onDelete }) {
     <div className="repair-history__detail" data-testid="ai-activity-detail">
       <dl className="repair-history__facts">
         <div><dt>Started</dt><dd>{formatHistoryTime(record.createdAt)}</dd></div>
-        <div><dt>Request</dt><dd>{AI_ACTIVITY_KIND_LABELS[record.kind] ?? record.kind}{record.source ? ` · ${record.source}` : ""}</dd></div>
+        <div><dt>Request</dt><dd>{aiRequestLabel(record.kind, record.source)}</dd></div>
         <div><dt>Mode</dt><dd>{AI_MODE_LABELS[record.mode] ?? record.mode ?? "–"}</dd></div>
         <div><dt>Model</dt><dd>{record.endpoint === "local_rules" ? "Local rules" : record.model || "Configured endpoint"}</dd></div>
         <div><dt>Duration</dt><dd>{Number.isFinite(record.durationMs) ? `${(record.durationMs / 1000).toFixed(1)}s` : "–"}</dd></div>
       </dl>
       {record.instruction && <p className="repair-history__instruction">“{record.instruction}”</p>}
-      {record.selection && <p className="repair-history__agent">Selection: {record.selection.kind}{record.selection.cardId ? ` on ${record.selection.cardId}` : ""}{record.selection.text ? ` — “${record.selection.text.slice(0, 160)}”` : ""}</p>}
+      {record.selection && <p className="repair-history__agent">Selection: {record.selection.kind}{record.selection.cardId ? ` on ${record.selection.cardId}` : ""}{record.selection.text ? <>{" — "}<QuotedText text={record.selection.text} max={160} /></> : ""}</p>}
       {record.status === "failed" && <p className="repair-history__error">Failed{record.error?.stage ? ` at ${record.error.stage}` : ""}: {record.error?.message}</p>}
       {record.status === "cancelled" && <p className="repair-history__stop">Cancelled by the author.</p>}
       {record.contextSelection && <ContextCardSelection selection={record.contextSelection} totalCards={(record.contextSelection.included ?? 0) + (record.contextSelection.omitted ?? 0)} />}
@@ -6608,7 +6701,7 @@ function RepairHistoryDetail({ record, onDelete }) {
       <p className="repair-history__stop">
         {record.status === "failed"
           ? `Failed${record.error?.stage ? ` at ${record.error.stage}` : ""}: ${record.error?.message ?? record.stopReason}`
-          : REPAIR_STOP_LABELS[record.stopReason] ?? record.stopReason ?? ""}
+          : repairStopLabel(record)}
       </p>
       {record.contextSelection && <ContextCardSelection selection={record.contextSelection} totalCards={(record.contextSelection.included ?? 0) + (record.contextSelection.omitted ?? 0)} />}
       <ol className="repair-history__rounds">
@@ -6651,6 +6744,8 @@ function RepairHistoryDetail({ record, onDelete }) {
             ? `Applied ${applied.map((id) => titles.get(id) ?? id).join(", ") || "nothing"}${record.appliedAt ? ` on ${formatHistoryTime(record.appliedAt)}` : ""}.`
             : record.status === "failed"
               ? "No draft was produced."
+              : record.status === "cancelled"
+                ? "Cancelled before a draft was shown; nothing was applied."
               : `Not applied. ${(record.preselectedProposalIds ?? []).length} proposal${(record.preselectedProposalIds ?? []).length === 1 ? " was" : "s were"} pre-selected.`}
         </span>
         <button className="btn btn--ghost btn--compact" type="button" onClick={onDelete}>Delete record</button>
@@ -6663,22 +6758,6 @@ const REPAIR_STATUS_LABELS = {
   verified: "Verified",
   unverified: "Not verified",
   not_verifiable: "Not scored"
-};
-
-const REPAIR_STOP_LABELS = {
-  verified: "Stopped at the first round with a proposal that passed every blocking check.",
-  max_rounds: "Stopped at the round limit; no proposal passed every blocking check.",
-  offline_single_round: "Local rule-based repair runs once; asking again would return the same proposals.",
-  endpoint_error: "Stopped because the endpoint failed in a later round; showing the best earlier round.",
-  deadline: "Stopped at the loop deadline; showing the best round so far.",
-  total_byte_budget: "Stopped at the total byte budget; showing the best round so far.",
-  ai_repair_request_budget: "Stopped: a round request exceeded the byte budget.",
-  ai_repair_response_budget: "Stopped: a round response exceeded the byte budget.",
-  ai_repair_total_budget: "Stopped at the total byte budget; showing the best round so far.",
-  target_not_scored: "This issue type is not scored by the Reviewer, so proposals are shown without verification.",
-  no_scored_issues: "The fixed-seed scoring review found no issue to verify against.",
-  target_entity_not_scored: "The selected issue target does not appear in the fixed-seed scoring review, so proposals are shown without verification.",
-  model_stopped: "Stopped by the model: it reported that the targets cannot be fixed without the author; showing the best round so far."
 };
 
 function defaultSelectedProposalIds(plan) {
@@ -6812,7 +6891,7 @@ function RepairVerificationSummary({ verification }) {
         <span className={`repair-status repair-status--${status}`}>{REPAIR_STATUS_LABELS[status] ?? status}</span>
         <div>
           <strong>Repair loop · {rounds.length}/{verification.limits?.maxRounds ?? 3} rounds · baseline {baselineScore}/100</strong>
-          <small>{verification.message ?? REPAIR_STOP_LABELS[verification.stopReason] ?? verification.stopReason}</small>
+          <small data-testid="repair-stop-reason">{verification.message ?? repairStopLabel(verification)}</small>
         </div>
       </div>
       <p className="muted repair-verification__note">
@@ -8010,6 +8089,29 @@ function AiAmbientLayer({ activePanelLabel, graphSelection, onAction, contextSta
   );
 }
 
+// Language of author content, independent of the UI locale. Only scripts that change quote and
+// punctuation typesetting matter here.
+function contentLang(text) {
+  if (/[\u3040-\u30ff]/.test(text)) return "ja";
+  if (/[\uac00-\ud7af]/.test(text)) return "ko";
+  if (/[\u3000-\u303f\u3400-\u9fff\uff00-\uffef]/.test(text)) return "zh-Hans";
+  return undefined;
+}
+
+// Quoted author text. Chinese content gets its own lang and CJK font stack so the closing quote
+// comes from the same font as the full-width punctuation before it; the browser then trims the
+// blank half of "。" the way it does in the Chinese UI, instead of leaving "记录。 ”" in English UI.
+function QuotedText({ text, max = 140, className = "" }) {
+  const value = String(text ?? "").trim();
+  if (!value) return null;
+  const lang = contentLang(value);
+  return (
+    <q className={["quoted-text", className].filter(Boolean).join(" ")} lang={lang} data-testid="quoted-text">
+      {value.length > max ? `${value.slice(0, max)}…` : value}
+    </q>
+  );
+}
+
 function formatAiSelectionText(text) {
   const normalized = text?.replace(/\s+/g, " ").trim() ?? "";
   if (!normalized) return "";
@@ -8115,6 +8217,53 @@ function AiControlIcon({ id }) {
   );
 }
 
+const AI_NOTICE_ACTIONS = {
+  rebuild: "Build again",
+  retry: "Retry",
+  edit: "Edit prompt",
+  settings: "Open Settings",
+  review: "Open Review"
+};
+
+/**
+ * AiBuildNotice reports how a draft ended when it did not produce one. A cancel is neutral
+ * (role="status"); real failures keep the error tone and role="alert". The actions follow the
+ * failure type: endpoint outages offer Retry, prompt problems offer Edit prompt.
+ */
+function AiBuildNotice({ notice, busy, onRetry, onEdit, onOpen }) {
+  const error = notice.tone !== "neutral";
+  return (
+    <div
+      className={`ai-build-notice ai-build-notice--${error ? "error" : "neutral"}${error ? " ai-build-error" : ""}`}
+      role={error ? "alert" : "status"}
+      data-testid="ai-build-notice"
+      data-kind={notice.kind}
+    >
+      <div>
+        <strong>{notice.title}</strong>
+        <span>{notice.text}</span>
+      </div>
+      <div className="ai-build-notice__actions">
+        {(notice.actions ?? []).map((action) => (
+          <button
+            key={action}
+            className={`btn btn--compact ${action === "rebuild" ? "" : "btn--ghost"}`.trim()}
+            type="button"
+            disabled={(action === "retry" || action === "rebuild") && busy}
+            onClick={() => {
+              if (action === "retry" || action === "rebuild") onRetry();
+              else if (action === "edit") onEdit();
+              else onOpen(action);
+            }}
+          >
+            {AI_NOTICE_ACTIONS[action] ?? action}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function AiProgress({ step, active, status = "idle", detail = null }) {
   if (step < 0) return null;
   const labels = AI_PROGRESS_STEPS.map((label, index) => (index === 2 && detail?.responseLabel ? detail.responseLabel : label));
@@ -8129,6 +8278,7 @@ function AiProgress({ step, active, status = "idle", detail = null }) {
             index < step ? "ai-progress__step--done" : "",
             index === step ? "ai-progress__step--active" : "",
             status === "failed" && index === step ? "ai-progress__step--failed" : "",
+            status === "cancelled" && index === step ? "ai-progress__step--cancelled" : "",
             status === "ready" && index === AI_PROGRESS_STEPS.length - 1 ? "ai-progress__step--ready" : "",
             active && index === step ? "ai-progress__step--pulse" : ""
           ].filter(Boolean).join(" ")}
@@ -8194,12 +8344,15 @@ function RepairLoopProgress({ detail, active, status, estimate = null }) {
   if (!detail || !(detail.maxRounds > 1) || status === "ready") return null;
   const phaseIndex = REPAIR_LOOP_PHASES.findIndex(([, , stages]) => stages.includes(detail.stage));
   const failed = status === "failed";
+  const cancelled = status === "cancelled";
   const proposalNote = detail.proposalCount > 0 && ["trial", "scoring", "checks"].includes(detail.stage)
     ? ` · proposal ${detail.proposalIndex}/${detail.proposalCount}`
     : "";
   const elapsed = Math.max(0, Math.round((now - (detail.stageStartedAt ?? now)) / 1000));
+  const phaseLabel = (REPAIR_LOOP_PHASES[phaseIndex]?.[1] ?? detail.stage ?? "").toLowerCase();
+  const stateClass = failed ? " repair-loop-progress--failed" : cancelled ? " repair-loop-progress--cancelled" : "";
   return (
-    <div className={`repair-loop-progress${failed ? " repair-loop-progress--failed" : ""}`} data-testid="repair-loop-progress" role="status" aria-live="polite">
+    <div className={`repair-loop-progress${stateClass}`} data-testid="repair-loop-progress" data-status={status} role="status" aria-live="polite">
       <strong>{detail.round > 0 ? `Round ${detail.round}/${detail.maxRounds}` : "Preparing"}</strong>
       <ol className="repair-loop-progress__phases">
         {REPAIR_LOOP_PHASES.map(([id, label], index) => (
@@ -8208,7 +8361,9 @@ function RepairLoopProgress({ detail, active, status, estimate = null }) {
             className={[
               "repair-loop-progress__phase",
               phaseIndex > index ? "repair-loop-progress__phase--done" : "",
-              phaseIndex === index ? (failed ? "repair-loop-progress__phase--failed" : "repair-loop-progress__phase--active") : ""
+              phaseIndex === index
+                ? (failed ? "repair-loop-progress__phase--failed" : cancelled ? "repair-loop-progress__phase--cancelled" : "repair-loop-progress__phase--active")
+                : ""
             ].filter(Boolean).join(" ")}
           >
             {label}
@@ -8216,7 +8371,11 @@ function RepairLoopProgress({ detail, active, status, estimate = null }) {
         ))}
       </ol>
       <span className="repair-loop-progress__text">
-        {failed ? `Stopped during ${(REPAIR_LOOP_PHASES[phaseIndex]?.[1] ?? detail.stage).toLowerCase()}${proposalNote}` : `${AI_STAGE_TEXT[detail.stage] ?? detail.stage}${proposalNote}`}
+        {failed
+          ? `Stopped during ${phaseLabel}${proposalNote}`
+          : cancelled
+            ? `Cancelled during ${phaseLabel}${proposalNote}`
+            : `${AI_STAGE_TEXT[detail.stage] ?? detail.stage}${proposalNote}`}
         {active && <span className="muted"> · {elapsed}s{["request", "response"].includes(detail.stage) ? formatWaitEstimate(estimate, elapsed) : ""}</span>}
       </span>
     </div>

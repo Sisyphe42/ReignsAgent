@@ -23,9 +23,16 @@ test("shows real review progress and blocks a second run while the worker simula
   const progress = page.getByTestId("review-progress");
   await expect(progress).toBeVisible();
   await expect(page.getByRole("button", { name: "Running review..." })).toBeDisabled();
-  await expect(progress).toContainText(/Simulated [\d,]+ \/ 10,000 cycles|Summarizing 10,000/);
+  // One phase word, then the details separated by middle dots (never "Simulating Simulated ...").
+  const text = page.getByTestId("review-progress-text");
+  await expect(text).toHaveText(/^(Starting · 10,000 cycles|Simulating · [\d,]+ \/ 10,000 cycles( · about \d+s left)?|Summarizing · 10,000 simulated cycles)$/);
   // A remaining-time estimate appears once throughput has been measured.
-  await expect(page.getByTestId("review-eta")).toContainText(/about \d+s left/, { timeout: 10_000 });
+  // Read the whole sentence in the same frame the estimate shows up, before the phase moves on.
+  const withEta = await page.waitForFunction(() => (document.querySelector("[data-testid=review-eta]")
+    ? document.querySelector("[data-testid=review-progress-text]")?.textContent
+    : null), null, { timeout: 10_000 });
+  expect(await withEta.jsonValue()).toMatch(/^Simulating · [\d,]+ \/ 10,000 cycles · about \d+s left$/);
+  await expect(progress).not.toContainText(/Simulating\s*Simulated|Summarizing\s*Summarizing/);
   await expect(progress).toBeHidden({ timeout: 30_000 });
   await expect(page.getByRole("button", { name: "Run review" })).toBeEnabled();
   await expect(page.locator(".review-score")).toBeVisible();
