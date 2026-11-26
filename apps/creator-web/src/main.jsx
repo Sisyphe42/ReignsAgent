@@ -6930,15 +6930,17 @@ function RepairHistoryDetail({ record, onDelete }) {
 function DeclinedProposals({ record }) {
   const declined = record.declinedProposals ?? [];
   if (declined.length === 0) return null;
+  // Only repair runs feed this back to the model; other requests just record the author's choice.
+  const isRepair = (record.kind ?? "repair_loop") === "repair_loop";
   return (
     <div className="repair-history__declined" data-testid="repair-history-declined">
-      <strong>Remembered as declined</strong>
+      <strong>{isRepair ? "Remembered as declined" : "Not taken by the author"}</strong>
       <ul>
         {declined.map((entry) => (
           <li key={`${entry.id}:${entry.reason}`}>{entry.title || entry.id} <span className="muted">· {DECLINED_REASON_LABELS[entry.reason] ?? entry.reason}</span></li>
         ))}
       </ul>
-      {(record.kind ?? "repair_loop") === "repair_loop" && <small className="muted">The next repair on the same issue sends these to the model as changes to avoid. Delete this record to forget them.</small>}
+      {isRepair && <small className="muted">The next repair on the same issue sends these to the model as changes to avoid. Delete this record to forget them.</small>}
     </div>
   );
 }
