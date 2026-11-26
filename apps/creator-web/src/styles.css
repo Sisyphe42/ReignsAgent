@@ -9745,6 +9745,146 @@ summary:focus-visible {
   white-space: nowrap;
 }
 
+/* Which check blocks most often: a compact ranked strip above the activity list. */
+.repair-block-stats {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.repair-block-stats__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  margin: 0;
+  font-size: 0.8rem;
+}
+
+.repair-block-stats__head .muted,
+.repair-block-stats__empty {
+  font-size: 0.74rem;
+}
+
+.repair-block-stats__empty {
+  margin: 6px 0 0;
+}
+
+.repair-block-stats__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.repair-block-stats__check {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  min-height: 30px;
+  padding: 4px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--ink);
+  background: var(--surface);
+  font: inherit;
+  font-size: 0.76rem;
+  cursor: pointer;
+}
+
+.repair-block-stats__check code {
+  font-family: var(--font-data);
+  color: var(--danger);
+}
+
+.repair-block-stats__check span {
+  color: var(--muted);
+  font-family: var(--font-data);
+  white-space: nowrap;
+}
+
+.repair-block-stats__check:hover,
+.repair-block-stats__check--active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+}
+
+.repair-history__check-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0 0;
+  font-size: 0.78rem;
+}
+
+/* Memory a repair run brought back: blocked attempts (checks) and declined changes (author). */
+.context-memory {
+  display: grid;
+  gap: 4px;
+  margin: 0 0 10px;
+  font-size: 0.78rem;
+}
+
+.context-memory__line {
+  margin: 0;
+  padding-left: 8px;
+  border-left: 3px solid var(--border);
+  color: var(--muted);
+}
+
+.context-memory__line--blocked {
+  border-left-color: color-mix(in srgb, var(--danger) 60%, var(--border));
+}
+
+.context-memory__line--declined {
+  border-left-color: color-mix(in srgb, var(--accent) 70%, var(--border));
+}
+
+.context-memory__line > summary {
+  cursor: pointer;
+}
+
+.context-memory__line ul,
+.repair-history__declined ul {
+  margin: 4px 0;
+  padding-left: 18px;
+}
+
+.context-memory__line small {
+  display: block;
+}
+
+.context-memory__tag {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--ink);
+  font-family: var(--font-data);
+  font-size: 0.66rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.repair-history__declined {
+  font-size: 0.78rem;
+}
+
+/* Tokens and bytes of a logged request: a data line, not a headline. */
+.repair-history__usage-line {
+  margin: 0;
+  color: var(--muted);
+  font-family: var(--font-data);
+  font-size: 0.74rem;
+  overflow-wrap: anywhere;
+}
+
 .context-extras {
   margin: 0 0 10px;
   font-size: 0.78rem;

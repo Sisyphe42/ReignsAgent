@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { createCreatorServer } from "../../apps/creator-server/src/server.mjs";
-import { REPAIR_EVAL_CASES, SLOW_ROUND_2_SCRIPT } from "./cases.mjs";
+import { REPAIR_EVAL_CASES, SLOW_ROUND_2_SCRIPT, TWO_FIXES_SCRIPT } from "./cases.mjs";
 import { startRepairMockEndpoint } from "./mock-endpoint.mjs";
 
 /**
@@ -21,6 +21,11 @@ import { startRepairMockEndpoint } from "./mock-endpoint.mjs";
  * DEMO_AI_CASE=endpoint-503 makes every request fail with HTTP 503;
  * DEMO_AI_CASE=slow-round-2 answers round 1 at once (a blocked proposal) and holds round 2
  * for 60 s, so Cancel during round 2 shows the neutral "Cancelled" state with round 1 kept.
+ * DEMO_AI_CASE=two-fixes answers every round with two passing fixes for sealed-warehouse: tick one,
+ * Apply, Undo (Story graph), Run review, AI Repair the same issue again, and the Context section shows
+ * "Includes 2 changes the author declined" (one left unticked, one undone).
+ * MOCK_USAGE=1 adds a usage block (synthetic token counts) to every mock answer, so the activity log
+ * shows reported tokens; without it the log shows byte estimates marked "est.".
  * Add ?skin=<id> to the Creator URL for another skin (for example ?skin=phantom).
  */
 const caseId = process.argv[2] ?? "fog-gate-wipe-then-fix";
@@ -45,8 +50,9 @@ const delayMs = Number(process.env.MOCK_DELAY_MS ?? 0) || 0;
 const mockScripts = Object.fromEntries(cases.map((candidate) => [candidate.id, candidate.script]));
 mockScripts["endpoint-503"] = [{ status: 503, body: { error: { message: "Service Unavailable (scripted)" } } }];
 mockScripts["slow-round-2"] = SLOW_ROUND_2_SCRIPT;
+mockScripts["two-fixes"] = TWO_FIXES_SCRIPT;
 const aiCase = process.env.DEMO_AI_CASE || entry.id;
-const mock = await startRepairMockEndpoint({ scripts: mockScripts, port: mockPort, delayMs });
+const mock = await startRepairMockEndpoint({ scripts: mockScripts, port: mockPort, delayMs, usage: process.env.MOCK_USAGE === "1" });
 const creator = await createCreatorServer({ rootDir, dataRoot, staticRoot: join(rootDir, "apps/creator-web/dist") });
 await creator.start({ host: "127.0.0.1", port: creatorPort });
 

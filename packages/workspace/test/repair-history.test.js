@@ -64,6 +64,17 @@ describe("repair history contract", () => {
     assert.equal(summarizeRepairHistory({ records: [record(8, { rounds: [{ round: 1, requestMs: 1200 }, { round: 2, requestMs: 900 }] })] })[0].requestMs.join(), "1200,900");
   });
 
+  it("summarizes usage and blocking checks for the list", () => {
+    const usage = { calls: 2, requestBytes: 9000, responseBytes: 800, inputTokens: 2250, outputTokens: 200, totalTokens: 2450, source: "estimated" };
+    const rounds = [{ round: 1, blockedBy: { scope: 2, gates_preserved: 1 } }, { round: 2, blockedBy: { scope: 1, bogus: "x" } }, { round: 3 }];
+    const [summary] = summarizeRepairHistory({ records: [record(9, { usage, rounds })] });
+    assert.deepEqual(summary.usage, usage);
+    assert.deepEqual(summary.blockedBy, { scope: 3, gates_preserved: 1 });
+    const [old] = summarizeRepairHistory({ records: [record(10)] });
+    assert.equal(old.usage, null, "records written before usage tracking list as unknown");
+    assert.deepEqual(old.blockedBy, {});
+  });
+
   it("updates, removes, rejects bad ids, and recovers from a corrupt file", () => {
     let { history } = appendRepairHistory(emptyRepairHistory(), record(1));
     ({ history } = updateRepairHistory(history, "rh-test-0001", (entry) => ({ ...entry, outcome: "applied", appliedProposalIds: ["p"] })));

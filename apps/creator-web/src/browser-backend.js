@@ -3,7 +3,7 @@ import fogHarborBundle from "../../../fixtures/content/fog-harbor.cards.json";
 
 const BUNDLED_SAMPLES = { "oss-court": sampleBundle, "fog-harbor": fogHarborBundle };
 import {
-  applyAiEditPlan, applyImageDraftAsset, buildAiEditPlanAsync, buildVerifiedRepairPlan, createAiActivityRecord, createRepairHistoryRecord, markRepairHistoryApplied, buildImageOperationDraft, buildGenerationPlan, createConnectorConfig, createPlaySession,
+  applyAiEditPlan, applyImageDraftAsset, buildAiEditPlanAsync, buildVerifiedRepairPlan, collectRepairMemory, createAiActivityRecord, createRepairHistoryRecord, markRepairHistoryApplied, markRepairHistoryUndone, buildImageOperationDraft, buildGenerationPlan, createConnectorConfig, createPlaySession,
   deriveStoryGroups, deriveTagCatalog, getCardGraph, listAiEditEndpointModels, loadEditorFromContent,
   prepareGameBuild, projectFactionGauges, summarizeDiagnostics, summarizeFeedback,
   inspectImageEndpointConfig, validateAiEditEndpointConfig, validatePlayerCards
@@ -66,6 +66,9 @@ export class BrowserCreatorBackend {
     if (path === "/api/ai/repair-history?full=1" && method === "GET") { const records = []; for (const entry of await this.workspace.listRepairHistory()) records.push(await this.workspace.readRepairHistoryRecord(entry.id)); return { exportedAt: new Date().toISOString(), records }; }
     if (path === "/api/ai/session-usage" && method === "GET") { const limit = (await this.workspace.getConfig()).ai.sessionRequestLimit ?? 0; return { used: this.aiRequestsUsed, limit, remaining: limit > 0 ? Math.max(0, limit - this.aiRequestsUsed) : null }; }
     if (path === "/api/ai/repair-history" && method === "DELETE") return this.workspace.clearRepairHistory();
+    // The author undid an applied AI draft: its proposals become "declined" memory for that issue.
+    const undoRoute = path.match(/^\/api\/ai\/repair-history\/([^/]+)\/undo$/);
+    if (undoRoute && method === "POST") { const historyId = decodeURIComponent(undoRoute[1]); const proposalIds = Array.isArray(body?.proposalIds) ? body.proposalIds.map(String) : null; const record = await this.workspace.updateRepairHistoryRecord(historyId, (entry) => markRepairHistoryUndone(entry, { proposalIds }), { projectId: typeof body?.projectId === "string" ? body.projectId : null }); return { historyId, undoneAt: record.undoneAt ?? null, undoneProposalIds: record.undoneProposalIds ?? [] }; }
     const historyRoute = path.match(/^\/api\/ai\/repair-history\/([^/]+)$/);
     if (historyRoute && method === "GET") return { record: await this.workspace.readRepairHistoryRecord(decodeURIComponent(historyRoute[1])) };
     if (historyRoute && method === "DELETE") return this.workspace.deleteRepairHistoryRecord(decodeURIComponent(historyRoute[1]));
@@ -84,7 +87,7 @@ export class BrowserCreatorBackend {
       let generated;
       try { generated = await buildImageOperationDraft({ editor: this.editor, config: body?.config ?? {}, credentials: imageCredentials, request, inputs, fetchImpl: await this.#countedFetch(), signal: options.signal }); }
       catch (error) { await this.#recordActivity({ kind: "image", error: options.signal?.aborted ? Object.assign(error, { code: "ai_cancelled" }) : error, image: { operation: request.operation, prompt: request.prompt, model: body?.config?.modelId }, body: { source: "AI Assist" }, credentials: imageCredentials, projectId, durationMs: Date.now() - imageStartedAt }); throw error; }
-      await this.#recordActivity({ kind: "image", image: { operation: generated.operation ?? request.operation, prompt: request.prompt, model: generated.provider?.model ?? body?.config?.modelId, outputs: generated.outputs?.length ?? 0 }, body: { source: "AI Assist" }, credentials: imageCredentials, projectId, durationMs: Date.now() - imageStartedAt });
+      await this.#recordActivity({ kind: "image", image: { operation: generated.operation ?? request.operation, prompt: request.prompt, model: generated.provider?.model ?? body?.config?.modelId, outputs: generated.outputs?.length ?? 0, usage: generated.usage ?? null }, body: { source: "AI Assist" }, credentials: imageCredentials, projectId, durationMs: Date.now() - imageStartedAt });
       const outputs = [];
       for (const [index, output] of generated.outputs.entries()) { const extension = output.mimeType === "image/jpeg" ? "jpg" : output.mimeType.split("/")[1]; const staged = await this.workspace.stageActiveProjectAsset({ draftId, fileName: `output-${index + 1}.${extension}`, bytes: output.bytes, mimeType: output.mimeType }); outputs.push({ id: `output-${index + 1}`, ...staged, previewUrl: await this.assetUrl(staged.uri) }); }
       const draft = { ...generated, draftId, outputs, inputDraftIds }; this.imageDrafts.set(draftId, draft); return draft;
@@ -112,7 +115,7 @@ export class BrowserCreatorBackend {
     let plan;
     try {
       plan = isRepairLoop
-        ? await this.#runRepairLoop({ config: body?.config ?? {}, credentials, instruction: body?.instruction ?? "", targetCardId: body?.targetCardId ?? null, repairTarget: body?.repairTarget ?? null, diagnostics, priorAttempts: await this.#priorRepairAttempts(body?.repairTarget) }, options.onProgress, options.signal)
+        ? await this.#runRepairLoop({ config: body?.config ?? {}, credentials, instruction: body?.instruction ?? "", targetCardId: body?.targetCardId ?? null, repairTarget: body?.repairTarget ?? null, diagnostics, ...(await this.#repairMemory(body?.repairTarget)) }, options.onProgress, options.signal)
         : await buildAiEditPlanAsync({ editor: this.editor, config: body?.config ?? {}, credentials, mode, instruction: body?.instruction ?? "", targetCardId: body?.targetCardId ?? null, assetId: body?.assetId ?? null, diagnostics, fetchImpl: await this.#countedFetch(), onProgress: progressObserver(options.onProgress), selection: body?.selection ?? null, signal: options.signal ?? null });
     } catch (error) {
       await record({ error });
@@ -134,20 +137,10 @@ export class BrowserCreatorBackend {
       return corsFetch(input, init);
     };
   }
-  async #priorRepairAttempts(repairTarget) {
-    if (!repairTarget?.code) return [];
-    try {
-      const wanted = new Set((Array.isArray(repairTarget.cardIds) ? repairTarget.cardIds : []).map((cardId) => `card:${cardId}`));
-      const matches = (await this.workspace.listRepairHistory()).filter((entry) => entry.kind === "repair_loop" && entry.targets.some((target) => target.code === repairTarget.code && (wanted.size === 0 || wanted.has(target.entity)))).slice(0, 2);
-      const attempts = [];
-      for (const entry of matches) {
-        const stored = await this.workspace.readRepairHistoryRecord(entry.id);
-        for (const round of stored.rounds ?? []) for (const proposal of round.proposals ?? []) if (!proposal.passed && attempts.length < 4) attempts.push({ proposalId: proposal.id, title: proposal.title, failedChecks: (proposal.failedDetails ?? []).length ? proposal.failedDetails : (proposal.failedChecks ?? []).map((id) => ({ id })) });
-      }
-      return attempts;
-    } catch {
-      return [];
-    }
+  // Same-issue memory from the activity log (blocked attempts, changes the author declined), read
+  // with the same rules as the Creator Server.
+  async #repairMemory(repairTarget) {
+    return collectRepairMemory({ list: () => this.workspace.listRepairHistory(), read: (id) => this.workspace.readRepairHistoryRecord(id), repairTarget });
   }
   async #recordActivity({ kind, plan = null, error = null, image = null, body = {}, credentials = {}, projectId = null, durationMs = null }) {
     try {
