@@ -715,7 +715,7 @@ function ProjectMenu({ locale, projects, samples = [], activeProjectId, onOpen, 
     <div className="project-menu-field" data-onboarding-target="project-menu">
       <span className="project-menu__label">{tr(locale, "Project")}</span>
       <details className="project-menu" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.removeAttribute("open"); }}>
-        <summary className="project-menu__trigger" aria-label={tr(locale, "Manage project")}>
+        <summary className="project-menu__trigger" aria-label={tr(locale, "Manage project")} title={activeProject?.title}>
           <strong>{activeProject?.title ?? tr(locale, "Choose project")}</strong>
           <SelectChevronIcon className="select-chevron project-menu__chevron" />
         </summary>
@@ -1912,7 +1912,7 @@ function App() {
             </span>
           </button>
           <label className="skin-select">
-            {tr(locale, "Skin")}
+            <span className="skin-select__label">{tr(locale, "Skin")}</span>
             <span className="skin-select__control">
               <select value={skin} onChange={(event) => changeSkin(event.target.value)}>
                 {SKINS.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
