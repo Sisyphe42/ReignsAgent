@@ -69,6 +69,7 @@ When an AI Assist run ends without a draft, the panel copy comes from `apps/crea
 
 - The author's Cancel is not a failure. It uses the neutral tone (`role="status"`, no error red), the title "Cancelled", says which rounds finished and that no card changed, and offers "Build again". The interrupted progress step and repair-loop phase use the `--cancelled` classes, never `--failed`.
 - Advice follows the failure type: 5xx / 408 / 429 / network / timeout say the endpoint is temporarily unavailable and to retry later (never "edit the prompt"); 401 / 403 / 404 point at Settings; other 4xx and parse / invalid-response failures suggest editing the prompt; the session request limit points at Settings only.
+- Image operations follow the same rules through `describeImageFailure`: `runImageOperation` resolves to `{ failure: { code, message, stage } }` instead of `false`, so a refused image prompt keeps "Edit prompt" and an outage only offers Retry. Never replace the classified notice with one fixed image error.
 - Compose sentences with `joinSentences` / `toSentence` so a message that already ends in a period never becomes "..".
 - Repair-loop stop text comes from `repairStopLabel` and names rounds explicitly ("Passed in round 2 of 3: ..."); do not reintroduce phrases like "the first round with ..." that read as round 1.
 
