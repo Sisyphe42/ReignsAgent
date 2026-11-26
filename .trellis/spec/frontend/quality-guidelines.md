@@ -76,6 +76,19 @@ When an AI Assist run ends without a draft, the panel copy comes from `apps/crea
 
 At 800 px and below the rail is a horizontally scrolling tab strip declared at the end of `styles.css` with skin-proof selectors. Tabs size to icon + full label + state badge (`min-width: max-content`); labels are never ellipsized, only the strip scrolls, and the active tab is scrolled into the strip on panel change. Skin rules must not pin a fixed tab width at this breakpoint.
 
+### Narrow Layout and Labels
+
+- Single-column grids that hold author or model content use `minmax(0, 1fr)`, never bare `1fr`: a long unbreakable line (a draft's JSON in a `<pre>`) must scroll inside its own box instead of widening the column, the page, and the navigation strip. This applies to `.workspace` at 800 px and below, `.ai-edit-layout` at 960 px and below, and `.ai-proposal-list`.
+- Rows of short status labels (the six `.ai-progress` steps) must not clip a label on any skin. Use `flex: 1 1 0` with `min-width: max-content` and `flex-wrap`, so the row stays even when it fits and wraps when a skin's font is wider; do not use a fixed `repeat(n, minmax(0, 1fr))` grid for labels.
+- Status text keeps one phase word followed by details joined with " · " in a single text node (`Simulating · 6,600 / 10,000 cycles · about 1s left`), so the sentence reads the same in `textContent` and screen readers.
+
+### Author-Facing Names and Author Text
+
+- Internal routing names never reach the author. AI request sources go through `aiSourceLabel` / `aiRequestLabel` (the floating selection layer's stored source `Ambient` shows as "Selection"); keep the stored value so older history records still match.
+- Quote author text with `QuotedText`. It tags Chinese / Japanese / Korean content with its own `lang` so the quote and full-width punctuation share one CJK font, which avoids `记录。 ”` in the English UI.
+- Long author text fields (card text) use the growing `AutoGrowTextarea`; Enter saves a one-paragraph field, Shift+Enter breaks a line, and IME composition Enter never saves.
+- Phantom paints panels as cream paper while `--bg` stays near-black. Any chip or step tinted from `--bg` needs an explicit Phantom paper colour per state; check it with `scanContrast({ root, composite: true })` from `test/browser/contrast-scan.js`, which blends translucent tints onto the paper below.
+
 ---
 
 ## Testing Requirements
