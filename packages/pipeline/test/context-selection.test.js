@@ -108,18 +108,36 @@ describe("AI context card selection", () => {
     assert.match(request.context.bundle.cardSelection.reasons.focus, /^target: repair target/);
   });
 
-  it("keeps the original first-12 context for drafting and other non-repair modes", () => {
+  it("keeps the original first-12 context for media modes", () => {
     const cards = [...fillerDeck(20), card("late")];
     const diagnostics = { warnings: [{ code: "unreachable_cards", severity: "error", details: { cardIds: ["late"] } }] };
-    for (const mode of ["generate_cards", "generate_asset", "analyze_asset"]) {
+    for (const mode of ["generate_asset", "analyze_asset"]) {
       const context = buildAiContext({ bundle: { cards }, diagnostics, mode });
       assert.equal(context.bundle.cards.length, 12, mode);
       assert.deepEqual(context.bundle.cards.map((entry) => entry.id), cards.slice(0, 12).map((entry) => entry.id));
       assert.equal(context.bundle.cardSelection.strategy, "first_n");
     }
-    const drafting = createAiEditSuggestions({ bundle: { cards }, mode: "generate_cards", instruction: "Draft" });
-    assert.equal(drafting.request.context.bundle.cards.length, 12);
-    const repair = createAiEditSuggestions({ bundle: { cards }, mode: "repair_diagnostics", diagnostics });
+  });
+
+  it("drafts with relevance selection inside the old 12-card budget", () => {
+    // Without a target or diagnostics, drafting sees exactly the old first 12 cards.
+    const cards = [...fillerDeck(20), card("late")];
+    const plain = createAiEditSuggestions({ bundle: { cards }, mode: "generate_cards", instruction: "Draft" });
+    assert.equal(plain.request.context.bundle.cardSelection.strategy, "relevance_v1");
+    assert.equal(plain.request.context.bundle.cardSelection.maxCards, 12);
+    assert.deepEqual(plain.request.context.bundle.cards.map((entry) => entry.id), cards.slice(0, 12).map((entry) => entry.id));
+
+    // With a late target card, the target and the cards linked to it come first, still 12 at most.
+    const linked = [...fillerDeck(20), card("late", { requirements: { allTags: ["omen"] } }), card("omen-giver", { left: { tags: { omen: true } } })];
+    const targeted = createAiEditSuggestions({ bundle: { cards: linked }, mode: "generate_cards", instruction: "Draft a follow-up", targetCardId: "late" });
+    const selection = targeted.request.context.bundle.cardSelection;
+    assert.equal(targeted.request.context.bundle.cards.length, 12);
+    assert.match(selection.reasons.late, /^target: selected card/);
+    assert.match(selection.reasons["omen-giver"], /^neighbour: shares tag:omen/);
+    assert.equal(selection.omittedReasons.count_limit, linked.length - 12);
+    assert.ok(selection.usedBytes <= selection.budgetBytes);
+
+    const repair = createAiEditSuggestions({ bundle: { cards }, mode: "repair_diagnostics", diagnostics: { warnings: [{ code: "unreachable_cards", severity: "error", details: { cardIds: ["late"] } }] } });
     assert.equal(repair.request.context.bundle.cardSelection.strategy, "relevance_v1");
     assert.ok(repair.request.context.bundle.cards.some((entry) => entry.id === "late"));
   });
