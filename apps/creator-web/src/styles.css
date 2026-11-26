@@ -3065,18 +3065,23 @@ select {
   background: color-mix(in srgb, var(--accent) 15%, var(--surface));
 }
 
+/* Six even steps in one row when they fit; on narrow screens (or wide skin fonts such as
+   Phantom's) a step never shrinks below its label and the row wraps instead of clipping it. */
 .ai-progress {
-  display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  display: flex;
+  flex-wrap: wrap;
   gap: 6px;
   margin: 10px 0;
 }
 
 .ai-progress__step {
   position: relative;
+  flex: 1 1 0;
+  min-width: max-content;
   overflow: hidden;
   min-height: 28px;
   padding: 6px 5px;
+  white-space: nowrap;
   color: var(--muted);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -3086,8 +3091,10 @@ select {
   text-align: center;
 }
 
+/* Finished steps keep the green border and tint; their text leans toward ink so it stays at AA
+   contrast on light papers (pure --ok text was 2.5–4.4:1 on Phantom, GitHub Light, and Latte). */
 .ai-progress__step--done {
-  color: var(--ok);
+  color: color-mix(in srgb, var(--ok) 45%, var(--ink));
   border-color: color-mix(in srgb, var(--ok) 55%, var(--border));
 }
 
@@ -3111,7 +3118,7 @@ select {
 }
 
 .ai-progress__step--ready {
-  color: var(--ok);
+  color: color-mix(in srgb, var(--ok) 45%, var(--ink));
   border-color: color-mix(in srgb, var(--ok) 60%, var(--border));
   background: color-mix(in srgb, var(--ok) 12%, var(--surface-2));
 }
@@ -3127,6 +3134,47 @@ select {
 
 @keyframes ai-progress-sweep {
   to { transform: translateX(100%); }
+}
+
+/* Phantom paints panels as cream paper while --bg stays near-black, so the shared tints above
+   turned the steps into dark chips with dark text. Give each state an opaque paper colour.
+   Order matters: a step can be active and failed / cancelled / ready at once. */
+:root[data-skin="phantom"] .ai-progress__step {
+  color: #4b443c;
+  font-weight: 800;
+  background: #f7f2e9;
+  border: 2px solid rgba(9, 9, 10, 0.34);
+}
+
+:root[data-skin="phantom"] .ai-progress__step--done {
+  color: #0b5a32;
+  border-color: #0b5a32;
+  background: #eef3e8;
+}
+
+:root[data-skin="phantom"] .ai-progress__step--active {
+  color: #09090a;
+  border-color: #09090a;
+  background: #ffffff;
+}
+
+:root[data-skin="phantom"] .ai-progress__step--failed {
+  color: #a3121a;
+  border-color: #a3121a;
+  background: #fbe6e4;
+}
+
+:root[data-skin="phantom"] .ai-progress__step--cancelled {
+  color: #4b443c;
+  border-color: #4b443c;
+  border-style: dashed;
+  background: #efe8dc;
+}
+
+:root[data-skin="phantom"] .ai-progress__step--ready {
+  color: #0b5a32;
+  border-color: #0b5a32;
+  background: #d9ebdc;
 }
 
 .repair-loop-progress {
@@ -3211,9 +3259,22 @@ select {
   font-size: 0.86rem;
 }
 
-.review-progress__head > span {
+.review-progress__head > span,
+.review-progress__text {
   color: var(--muted);
   font-family: var(--font-data);
+}
+
+/* "Simulating · 6,600 / 10,000 cycles · about 1s left": one sentence, the phase word in ink. */
+.review-progress__text {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+}
+
+.review-progress__text strong {
+  color: var(--ink);
+  font-family: var(--font-ui, inherit);
 }
 
 .review-progress__pct {
@@ -3359,6 +3420,20 @@ select {
 .choice-editor textarea:focus {
   border-color: var(--accent-2);
   background: color-mix(in srgb, var(--bg) 70%, var(--depth-mix));
+}
+
+/* Card text: a growing textarea beside its Save button (the button stays at the top edge). */
+.card-text-row {
+  align-items: flex-start;
+}
+
+.card-text-row > .card-text-field {
+  flex: 1 1 220px;
+  min-height: 0;
+  overflow: hidden;
+  resize: none;
+  font: inherit;
+  line-height: 1.45;
 }
 
 .field-row > input {
@@ -6322,6 +6397,7 @@ summary:focus-visible {
 
 .ai-proposal-list {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
 }
 
@@ -6358,8 +6434,10 @@ summary:focus-visible {
 }
 
 @media (max-width: 960px) {
+  /* minmax(0, …): a draft's long JSON line scrolls inside its <pre> instead of widening the
+     column (and with it the page and the phone navigation strip). */
   .ai-edit-layout {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .ai-preflight {
@@ -7198,11 +7276,13 @@ summary:focus-visible {
 }
 
 @media (max-width: 800px) {
+  /* minmax(0, …): one unbreakable line in a panel must not widen the whole column (and the
+     navigation strip above it) past the screen. */
   .workspace,
   .workspace--rail-collapsed,
   .workspace--rail-floating,
   .preview-layout {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .content-workspace {
@@ -9070,6 +9150,7 @@ summary:focus-visible {
 :root[data-skin="phantom"] .repair-history__time,
 :root[data-skin="phantom"] .repair-history__meta,
 :root[data-skin="phantom"] .review-progress__head > span,
+:root[data-skin="phantom"] .review-progress__text,
 :root[data-skin="phantom"] .panel .muted {
   color: #4b443c;
   font-weight: 800;
@@ -9478,6 +9559,13 @@ summary:focus-visible {
 .ai-selection-chip q {
   color: var(--ink);
   overflow-wrap: anywhere;
+}
+
+/* Quoted Chinese author text in any UI locale: same CJK stack as the Chinese UI, so "。" and the
+   closing quote share a font and the browser trims the gap between them. */
+.quoted-text:lang(zh-Hans) {
+  font-family: "Noto Sans SC", "Microsoft YaHei UI", "PingFang SC", var(--font-ui);
+  text-spacing-trim: normal;
 }
 
 .ai-answer {

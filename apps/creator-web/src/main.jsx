@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { SKINS as SKIN_CATALOG, DEFAULT_SKIN, applySkinTheme, resolveSkinId as resolveSharedSkinId } from "../../../packages/interface/web/skin-catalog.js";
 import { cardArtworkStyle, normalizeCardArtworkDisplay } from "../../../packages/interface/web/assets/card-artwork.js";
@@ -1896,7 +1896,7 @@ function App() {
             type="button"
             onClick={() => setAiAssistEnabled((enabled) => !enabled)}
             aria-pressed={aiAssistEnabled}
-            title={aiConfigured ? "Toggle ambient AI mode" : "AI mode can run local draft previews; configure an endpoint in Settings"}
+            title={aiConfigured ? "Toggle AI mode: select text or a card to ask AI about it" : "AI mode can run local draft previews; configure an endpoint in Settings"}
           >
             <span className="ai-presence__orb" aria-hidden="true">
               <span className="ai-presence__core" />
@@ -2517,6 +2517,35 @@ function EmptyDeck({ onDraft, onLoadSample, onMutate, onCreated, aiAssistEnabled
   );
 }
 
+// A textarea whose height follows its content, so long text is never hidden behind an inner
+// scrollbar. It re-measures when the value changes and when its width changes (panel resize,
+// skin change, phone rotation).
+function AutoGrowTextarea({ value, rows = 2, ...props }) {
+  const ref = useRef(null);
+  const fit = useCallback(() => {
+    const element = ref.current;
+    if (!element) return;
+    const style = window.getComputedStyle(element);
+    const borders = (parseFloat(style.borderTopWidth) || 0) + (parseFloat(style.borderBottomWidth) || 0);
+    element.style.height = "auto";
+    element.style.height = `${element.scrollHeight + (style.boxSizing === "border-box" ? borders : 0)}px`;
+  }, []);
+  useLayoutEffect(() => { fit(); }, [value, fit]);
+  useEffect(() => {
+    const element = ref.current;
+    if (!element || typeof ResizeObserver === "undefined") return undefined;
+    let width = element.clientWidth;
+    const observer = new ResizeObserver(() => {
+      if (element.clientWidth === width) return;
+      width = element.clientWidth;
+      fit();
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [fit]);
+  return <textarea ref={ref} value={value} rows={rows} {...props} />;
+}
+
 function CardEditor({ card, asset, validation, onMutate, onStatus, tagCatalog, gaugeLabels, onGenerateArt }) {
   const locale = useUiLocale();
   const displaySaveLock = useRef(false);
@@ -2671,8 +2700,22 @@ function CardEditor({ card, asset, validation, onMutate, onStatus, tagCatalog, g
         </div>
       )}
       <AuthorSummary card={card} validation={validation} tagCatalog={tagCatalog} gaugeLabels={gaugeLabels} />
-      <div className="field-row">
-        <input value={text} onChange={(event) => setText(event.target.value)} aria-label={`${card.id} text`} />
+      <div className="field-row card-text-row">
+        <AutoGrowTextarea
+          className="card-text-field"
+          value={text}
+          onChange={(event) => setText(event.target.value)}
+          onKeyDown={(event) => {
+            // Card text is one paragraph (players do not render line breaks), so Enter saves like
+            // the other inline fields; Shift+Enter still breaks a line, and an IME's confirming
+            // Enter (composing Chinese or Japanese) never saves.
+            if (event.key !== "Enter" || event.shiftKey || event.altKey || event.nativeEvent.isComposing || event.keyCode === 229) return;
+            event.preventDefault();
+            void saveText();
+          }}
+          aria-label={`${card.id} text`}
+          data-testid="card-text-field"
+        />
         <button className="btn" disabled={text === (card.text ?? "")} onClick={() => void saveText()}>Save text</button>
       </div>
       <RequirementEditor card={card} tagCatalog={tagCatalog} onMutate={onMutate} onStatus={onStatus} />
@@ -5043,17 +5086,24 @@ function ReviewProgress({ progress }) {
   const etaSeconds = !summarizing && completed > 0 && completed < total && elapsedMs > 300
     ? Math.max(1, Math.round((elapsedMs * (total - completed)) / completed / 1000))
     : null;
+  const starting = progress?.phase === "starting";
+  // One phase word, then the details, separated by middle dots:
+  // "Simulating · 6,600 / 10,000 cycles · about 1s left".
+  const phase = summarizing ? "Summarizing" : starting ? "Starting" : "Simulating";
   const label = summarizing
-    ? `Summarizing ${total.toLocaleString("en-US")} simulated cycles`
-    : progress?.phase === "starting"
-      ? "Starting simulation"
-      : `Simulated ${completed.toLocaleString("en-US")} / ${total.toLocaleString("en-US")} cycles`;
+    ? `${total.toLocaleString("en-US")} simulated cycles`
+    : starting
+      ? `${total.toLocaleString("en-US")} cycles`
+      : `${completed.toLocaleString("en-US")} / ${total.toLocaleString("en-US")} cycles`;
   return (
     <div className="review-progress" data-testid="review-progress" role="status" aria-live="polite">
       <div className="review-progress__head">
-        <strong>{summarizing ? "Summarizing" : "Simulating"}</strong>
-        <span>{label}</span>
-        {etaSeconds !== null && <span className="review-progress__eta" data-testid="review-eta">about {etaSeconds}s left</span>}
+        <p className="review-progress__text" data-testid="review-progress-text">
+          <strong>{phase}</strong>
+          {" · "}
+          <span>{label}</span>
+          {etaSeconds !== null && <>{" · "}<span className="review-progress__eta" data-testid="review-eta">about {etaSeconds}s left</span></>}
+        </p>
         <span className="review-progress__pct">{Math.round(ratio * 100)}%</span>
       </div>
       <div className="review-progress__track" role="progressbar" aria-label="Review progress" aria-valuemin={0} aria-valuemax={total || 1} aria-valuenow={completed}>
@@ -5579,7 +5629,7 @@ function AiAssistPreflight({ request, aiConfigured, diagnostics, onChange, onClo
       <div className="ai-preflight__panel">
         <div className="ai-preflight__head">
           <div>
-            <span>{request.source}</span>
+            <span data-testid="ai-preflight-source">{aiSourceLabel(request.source)}</span>
             <h3>{request.actionLabel}</h3>
           </div>
           <button className="btn btn--ghost btn--compact" type="button" onClick={onClose}>Close</button>
@@ -5619,7 +5669,7 @@ function AiAssistPreflight({ request, aiConfigured, diagnostics, onChange, onClo
           <div className="ai-selection-chip" data-testid="ai-selection-chip">
             <span>Selection</span>
             <strong>{request.selection.cardId ? `${request.selection.kind} · ${request.selection.cardId}` : request.selection.kind}</strong>
-            {request.selection.text && <q>{request.selection.text.slice(0, 140)}{request.selection.text.length > 140 ? "…" : ""}</q>}
+            <QuotedText text={request.selection.text} />
           </div>
         )}
         <AiCapabilityCard mode={request.mode} compact />
@@ -6116,14 +6166,14 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
       </div>
       {draftRequest?.actionLabel && (
         <div className="ai-request-source">
-          <span>{draftRequest.source ?? "Contextual action"}</span>
+          <span>{aiSourceLabel(draftRequest.source) || "Contextual action"}</span>
           <strong>{draftRequest.actionLabel}</strong>
           <small>{draftRequest.contextSummary ?? "Current project context"}</small>
           {selection && (
             <div className="ai-selection-chip" data-testid="ai-selection-chip">
               <span>Selection</span>
               <strong>{selection.cardId ? `${selection.kind} · ${selection.cardId}` : selection.kind}</strong>
-              {selection.text && <q>{selection.text.slice(0, 140)}{selection.text.length > 140 ? "…" : ""}</q>}
+              <QuotedText text={selection.text} />
               <button className="btn btn--ghost btn--compact" type="button" onClick={() => { setSelection(null); if (mode.endsWith("_selection")) setMode("generate_cards"); }}>Drop selection</button>
             </div>
           )}
@@ -6304,6 +6354,20 @@ const AI_ACTIVITY_KINDS = [
   ["image", "Images"]
 ];
 const AI_ACTIVITY_KIND_LABELS = { repair_loop: "Repair loop", draft: "Draft", selection: "Selection", image: "Image" };
+// Request sources are internal routing names ("Ambient" is the floating selection layer). Authors
+// see what they acted on; the stored value stays unchanged so older history records still match.
+const AI_SOURCE_LABELS = { Ambient: "Selection" };
+
+function aiSourceLabel(source) {
+  return AI_SOURCE_LABELS[source] ?? source ?? "";
+}
+
+// "Selection · Selection" says the same thing twice: drop a source that only repeats the kind.
+function aiRequestLabel(kind, source) {
+  const kindLabel = AI_ACTIVITY_KIND_LABELS[kind ?? "repair_loop"] ?? kind;
+  const sourceLabel = aiSourceLabel(source);
+  return sourceLabel && sourceLabel !== kindLabel ? `${kindLabel} · ${sourceLabel}` : kindLabel;
+}
 
 function formatHistoryTime(value) {
   const date = new Date(value);
@@ -6457,7 +6521,7 @@ function RepairHistory({ refreshKey }) {
                 </label>
                 <button className="repair-history__toggle" type="button" aria-expanded={expanded} onClick={() => void toggle(entry.id)}>
                   <span className="repair-history__time">{formatHistoryTime(entry.createdAt)}</span>
-                  <span className="repair-history__kind">{AI_ACTIVITY_KIND_LABELS[entry.kind ?? "repair_loop"] ?? entry.kind}{entry.source ? ` · ${entry.source}` : ""}</span>
+                  <span className="repair-history__kind">{aiRequestLabel(entry.kind, entry.source)}</span>
                   <span className="repair-history__target">{(entry.kind ?? "repair_loop") === "repair_loop" ? formatHistoryTargets(entry.targets) : (AI_MODE_LABELS[entry.mode] ?? entry.mode ?? "Request")}{(entry.kind ?? "repair_loop") !== "repair_loop" && entry.instruction ? ` — ${entry.instruction.slice(0, 60)}${entry.instruction.length > 60 ? "…" : ""}` : ""}</span>
                   <span className={`repair-status repair-status--${entry.status === "failed" ? "unverified" : entry.status}`}>{REPAIR_HISTORY_STATUS_LABELS[entry.status] ?? entry.status}</span>
                   {(entry.kind ?? "repair_loop") === "repair_loop" && <span className="repair-history__meta">{entry.roundsUsed}{entry.maxRounds ? `/${entry.maxRounds}` : ""} round{entry.roundsUsed === 1 ? "" : "s"}</span>}
@@ -6509,7 +6573,7 @@ function RepairHistoryCompare({ left, right, onClose }) {
   const anyOther = [older, newer].some((record) => (record.kind ?? "repair_loop") !== "repair_loop");
   const rows = [
     ["Started", (record) => formatHistoryTime(record.createdAt)],
-    ["Request", (record) => `${AI_ACTIVITY_KIND_LABELS[record.kind ?? "repair_loop"] ?? record.kind}${record.source ? ` · ${record.source}` : ""}${record.mode ? ` · ${AI_MODE_LABELS[record.mode] ?? record.mode}` : ""}`],
+    ["Request", (record) => `${aiRequestLabel(record.kind, record.source)}${record.mode ? ` · ${AI_MODE_LABELS[record.mode] ?? record.mode}` : ""}`],
     ["Status", (record) => `${REPAIR_HISTORY_STATUS_LABELS[record.status] ?? record.status}${record.error?.code ? ` (${record.error.code})` : ""}`],
     ["Model", (record) => (record.endpoint === "local_rules" ? "Local rules" : record.model || "Configured endpoint")],
     ["Instruction", (record) => (record.instruction ? `${record.instruction.slice(0, 90)}${record.instruction.length > 90 ? "…" : ""}` : "–")],
@@ -6559,13 +6623,13 @@ function AiActivityDetail({ record, onDelete }) {
     <div className="repair-history__detail" data-testid="ai-activity-detail">
       <dl className="repair-history__facts">
         <div><dt>Started</dt><dd>{formatHistoryTime(record.createdAt)}</dd></div>
-        <div><dt>Request</dt><dd>{AI_ACTIVITY_KIND_LABELS[record.kind] ?? record.kind}{record.source ? ` · ${record.source}` : ""}</dd></div>
+        <div><dt>Request</dt><dd>{aiRequestLabel(record.kind, record.source)}</dd></div>
         <div><dt>Mode</dt><dd>{AI_MODE_LABELS[record.mode] ?? record.mode ?? "–"}</dd></div>
         <div><dt>Model</dt><dd>{record.endpoint === "local_rules" ? "Local rules" : record.model || "Configured endpoint"}</dd></div>
         <div><dt>Duration</dt><dd>{Number.isFinite(record.durationMs) ? `${(record.durationMs / 1000).toFixed(1)}s` : "–"}</dd></div>
       </dl>
       {record.instruction && <p className="repair-history__instruction">“{record.instruction}”</p>}
-      {record.selection && <p className="repair-history__agent">Selection: {record.selection.kind}{record.selection.cardId ? ` on ${record.selection.cardId}` : ""}{record.selection.text ? ` — “${record.selection.text.slice(0, 160)}”` : ""}</p>}
+      {record.selection && <p className="repair-history__agent">Selection: {record.selection.kind}{record.selection.cardId ? ` on ${record.selection.cardId}` : ""}{record.selection.text ? <>{" — "}<QuotedText text={record.selection.text} max={160} /></> : ""}</p>}
       {record.status === "failed" && <p className="repair-history__error">Failed{record.error?.stage ? ` at ${record.error.stage}` : ""}: {record.error?.message}</p>}
       {record.status === "cancelled" && <p className="repair-history__stop">Cancelled by the author.</p>}
       {record.contextSelection && <ContextCardSelection selection={record.contextSelection} totalCards={(record.contextSelection.included ?? 0) + (record.contextSelection.omitted ?? 0)} />}
@@ -8013,6 +8077,29 @@ function AiAmbientLayer({ activePanelLabel, graphSelection, onAction, contextSta
         </>
       )}
     </div>
+  );
+}
+
+// Language of author content, independent of the UI locale. Only scripts that change quote and
+// punctuation typesetting matter here.
+function contentLang(text) {
+  if (/[\u3040-\u30ff]/.test(text)) return "ja";
+  if (/[\uac00-\ud7af]/.test(text)) return "ko";
+  if (/[\u3000-\u303f\u3400-\u9fff\uff00-\uffef]/.test(text)) return "zh-Hans";
+  return undefined;
+}
+
+// Quoted author text. Chinese content gets its own lang and CJK font stack so the closing quote
+// comes from the same font as the full-width punctuation before it; the browser then trims the
+// blank half of "。" the way it does in the Chinese UI, instead of leaving "记录。 ”" in English UI.
+function QuotedText({ text, max = 140, className = "" }) {
+  const value = String(text ?? "").trim();
+  if (!value) return null;
+  const lang = contentLang(value);
+  return (
+    <q className={["quoted-text", className].filter(Boolean).join(" ")} lang={lang} data-testid="quoted-text">
+      {value.length > max ? `${value.slice(0, max)}…` : value}
+    </q>
   );
 }
 
