@@ -89,6 +89,12 @@ At 800 px and below the rail is a horizontally scrolling tab strip declared at t
 - Long author text fields (card text) use the growing `AutoGrowTextarea`; Enter saves a one-paragraph field, Shift+Enter breaks a line, and IME composition Enter never saves.
 - Phantom paints panels as cream paper while `--bg` stays near-black. Any chip or step tinted from `--bg` needs an explicit Phantom paper colour per state; check it with `scanContrast({ root, composite: true })` from `test/browser/contrast-scan.js`, which blends translucent tints onto the paper below.
 
+### Top Bar Controls
+
+- Header controls are content-sized. The Project trigger's bounds (`--project-trigger-min` / `--project-trigger-max`) sit on the `.project-menu` `<details>` flex item, not on the trigger, so the intrinsic width the bar lays out from already respects the cap; a percentage inside `min()` on the trigger is ignored during intrinsic sizing and lets a long name widen the row. Long names end in an ellipsis with the full name in `title`. The skin `<select>` uses `field-sizing: content`.
+- 981 px and wider: grid bar with brand, project, readout (hidden to 1360 px) and tools. 980 px and below: one flex row (brand, project, then AI / skin / Player pushed to the end) with the project subtitle and readout hidden. 800 px and below: two rows — brand, AI orb, Player; then project and skin — using `display: contents` on `.topbar__tools`, `order`, and a `.topbar::after` line break. The "Project" / "Skin" words and the AI state copy are visually hidden, not removed, so they still name their controls.
+- `test/browser/ui-header.spec.js` holds the height caps (834 px ≤ 64, 390 px ≤ 116), the content-width checks and the per-skin top bar contrast; change the caps there only with new measurements.
+
 ---
 
 ## Testing Requirements
