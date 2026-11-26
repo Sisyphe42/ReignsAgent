@@ -9906,6 +9906,41 @@ summary:focus-visible {
   border-color: #09090a;
 }
 
+/* Phantom AI activity: the block summary and each logged run are cream paper with black ink (the
+   skin's dark --surface under black panel ink made row titles unreadable). */
+:root[data-skin="phantom"] :is(.repair-block-stats, .repair-history__item) {
+  color: #09090a;
+  background: #f7f2e9;
+  border-color: #09090a;
+}
+
+:root[data-skin="phantom"] :is(.repair-block-stats, .repair-history__item) :is(strong, .repair-history__target, .repair-history__toggle, .repair-history__compare-pick) {
+  color: #09090a;
+}
+
+:root[data-skin="phantom"] .repair-history__item :is(.context-selection, .repair-history__round, .repair-history__proposal) {
+  color: #09090a;
+  background: #ffffff;
+}
+
+:root[data-skin="phantom"] .repair-history__item :is(.context-selection, .repair-history__round) {
+  border-color: rgba(9, 9, 10, 0.35);
+}
+
+:root[data-skin="phantom"] .repair-history__item :is(.context-selection, .repair-history__round, .repair-history__proposal) :is(strong, p, span:not(.context-tier):not(.repair-status):not(.repair-history__pass):not(.repair-history__block)) {
+  color: #09090a;
+}
+
+:root[data-skin="phantom"] .repair-block-stats__check {
+  color: #09090a;
+  background: #ffffff;
+  border-color: #09090a;
+}
+
+:root[data-skin="phantom"] .repair-block-stats__check--active {
+  background: #ffd9db;
+}
+
 /* Phantom form controls are black fields: keep their text light even though panels redefine
    --ink for the cream paper around them. */
 /* Every Phantom field is a black field with cream text (Request form, Review inputs, Content
