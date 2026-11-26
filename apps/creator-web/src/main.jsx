@@ -2063,6 +2063,7 @@ function App() {
               aiAssistEnabled={aiAssistEnabled}
               aiConfigured={aiConfigured}
               draftRequest={aiDraftRequest}
+              onAutoBuildStarted={(id) => setAiDraftRequest((current) => (current?.id === id ? { ...current, autoBuild: false } : current))}
               onBuildPlan={buildAiEditPlan}
               onApplyPlan={applyAiEditPlan}
               onOpen={openPanel}
@@ -5858,7 +5859,7 @@ function MaskCanvas({ sourceUri, protocol, onExport }) {
   );
 }
 
-function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAssistEnabled, aiConfigured, draftRequest, onBuildPlan, onApplyPlan, onOpen, imageSettings, imageCapabilities, imageConfigured, onStageImage, onRunImage, onApplyImage, onDiscardImage, projectKey = null }) {
+function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAssistEnabled, aiConfigured, draftRequest, onAutoBuildStarted = null, onBuildPlan, onApplyPlan, onOpen, imageSettings, imageCapabilities, imageConfigured, onStageImage, onRunImage, onApplyImage, onDiscardImage, projectKey = null, activityVersion = 0 }) {
   const [historyVersion, setHistoryVersion] = useState(0);
   const [selection, setSelection] = useState(null);
   const [requestSource, setRequestSource] = useState("AI Assist");
@@ -5940,6 +5941,9 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
     setProgressDetail(null);
     if (draftRequest.autoBuild && autoBuildRef.current !== draftRequest.id) {
       autoBuildRef.current = draftRequest.id;
+      // The panel remounts on every visit; the request itself must remember it was built, or
+      // returning to AI Assist would send the same (possibly paid) request again.
+      onAutoBuildStarted?.(draftRequest.id);
       void buildPlan(draftRequest);
     }
   }, [draftRequest?.id]);
