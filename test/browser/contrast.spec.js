@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
 
+import { scanContrast } from "./contrast-scan.js";
+
 // WCAG 2.x AA text contrast (4.5:1) for every Creator skin and every workbench panel.
 // The scan reads each visible text element's color and the nearest opaque background
 // (including Phantom's painted ::after paper). Elements that sit on a gradient-only
@@ -37,67 +39,4 @@ for (const skin of SKINS) {
     }
     expect(failures, failures.join("\n")).toEqual([]);
   });
-}
-
-function scanContrast() {
-  const parse = (value) => {
-    const rgb = value.match(/rgba?\(([^)]+)\)/);
-    if (rgb) {
-      const [r, g, b, a = 1] = rgb[1].split(/[ ,/]+/).filter(Boolean).map(Number);
-      return { r, g, b, a };
-    }
-    const srgb = value.match(/color\(srgb ([^)]+)\)/);
-    if (srgb) {
-      const [r, g, b, a = 1] = srgb[1].split(/[ /]+/).filter(Boolean).map(Number);
-      return { r: r * 255, g: g * 255, b: b * 255, a };
-    }
-    return null;
-  };
-  const luminance = ({ r, g, b }) => {
-    const channel = (v) => {
-      const c = v / 255;
-      return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
-    };
-    return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
-  };
-  const backgroundOf = (element) => {
-    for (let node = element; node; node = node.parentElement) {
-      const style = getComputedStyle(node);
-      const color = parse(style.backgroundColor);
-      if (color && color.a > 0.9) return color;
-      if (style.backgroundImage && style.backgroundImage !== "none") return null;
-      const after = getComputedStyle(node, "::after");
-      const paper = parse(after.backgroundColor);
-      if (paper && paper.a > 0.9 && after.content !== "none") return paper;
-    }
-    return parse(getComputedStyle(document.body).backgroundColor);
-  };
-  const failures = [];
-  // Form controls show their value (or placeholder) instead of a text node: measure them too.
-  for (const control of document.querySelectorAll(".app-shell :is(input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=range]), select, textarea)")) {
-    const rect = control.getBoundingClientRect();
-    if (!rect.width || !rect.height) continue;
-    const style = getComputedStyle(control);
-    if (style.visibility === "hidden" || Number(style.opacity) === 0) continue;
-    const foreground = parse(style.color);
-    const background = backgroundOf(control);
-    if (!foreground || !background) continue;
-    const [light, dark] = [luminance(foreground), luminance(background)].sort((a, b) => b - a);
-    const ratio = (light + 0.05) / (dark + 0.05);
-    if (ratio < 4.5) failures.push(`${ratio.toFixed(2)} ${control.tagName.toLowerCase()}.${[...control.classList].join(".")} value "${String(control.value ?? "").slice(0, 24)}"`);
-  }
-  for (const element of document.querySelectorAll(".app-shell *:not(.ai-ambient *)")) {
-    if (![...element.childNodes].some((node) => node.nodeType === 3 && node.textContent.trim())) continue;
-    const rect = element.getBoundingClientRect();
-    if (!rect.width || !rect.height) continue;
-    const style = getComputedStyle(element);
-    if (style.visibility === "hidden" || Number(style.opacity) === 0 || element.closest("[aria-hidden='true']")) continue;
-    const foreground = parse(style.color);
-    const background = backgroundOf(element);
-    if (!foreground || !background) continue;
-    const [light, dark] = [luminance(foreground), luminance(background)].sort((a, b) => b - a);
-    const ratio = (light + 0.05) / (dark + 0.05);
-    if (ratio < 4.5) failures.push(`${ratio.toFixed(2)} ${element.tagName.toLowerCase()}.${[...element.classList].join(".")} "${element.textContent.trim().slice(0, 32)}"`);
-  }
-  return [...new Set(failures)];
 }
