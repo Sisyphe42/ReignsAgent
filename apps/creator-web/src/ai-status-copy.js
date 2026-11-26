@@ -26,7 +26,13 @@ export function httpStatusOf(failure) {
   return match ? Number(match[1]) : null;
 }
 
-const UNAVAILABLE_CODES = new Set(["endpoint_network_error", "endpoint_timeout", "image_endpoint_network_error"]);
+const UNAVAILABLE_CODES = new Set([
+  "endpoint_network_error",
+  "endpoint_timeout",
+  "image_endpoint_network_error",
+  "image_request_timeout",
+  "image_task_timeout"
+]);
 const PROMPT_CODES = new Set([
   "endpoint_parse_error",
   "endpoint_invalid_response",
@@ -34,10 +40,20 @@ const PROMPT_CODES = new Set([
   "ai_repair_no_valid_response",
   "image_endpoint_parse_error"
 ]);
-const CONFIG_CODES = new Set(["ai_endpoint_required", "ai_model_required", "ai_api_key_required"]);
+const CONFIG_CODES = new Set([
+  "ai_endpoint_required",
+  "ai_model_required",
+  "ai_api_key_required",
+  "image_config_required",
+  "image_config_invalid",
+  "image_endpoint_url_invalid",
+  "image_protocol_unsupported"
+]);
 
 export function isCancelledFailure(failure) {
-  return failure?.code === "ai_cancelled" || /cancelled by the author/i.test(String(failure?.message ?? ""));
+  return failure?.code === "ai_cancelled"
+    || failure?.code === "image_request_cancelled"
+    || /cancelled by the author/i.test(String(failure?.message ?? ""));
 }
 
 /** classifyAiFailure buckets a failure by what the author should do next. */
@@ -108,6 +124,27 @@ export function describeAiFailure({ code = null, message = "", stage = null, sta
     return { kind, tone: "error", title: "Draft failed", text: joinSentences(detail, "Edit the prompt or retry"), actions: ["retry", "edit"] };
   }
   return { kind, tone: "error", title: "Draft failed", text: joinSentences("AI Assist draft failed", "Check the status bar, edit the prompt, or retry"), actions: ["retry", "edit"] };
+}
+
+/**
+ * describeImageFailure is describeAiFailure for image operations, classified the same way: an
+ * unavailable endpoint asks to retry, a rejected configuration points at Settings, and a request
+ * the endpoint refused (invalid prompt, unsupported option, other 4xx) keeps "Edit prompt".
+ */
+export function describeImageFailure(failure = {}) {
+  const kind = classifyAiFailure(failure);
+  if (kind === "cancelled" || kind === "limit") return describeAiFailure(failure);
+  const detail = String(failure?.message ?? "").trim();
+  if (kind === "unavailable") {
+    return { kind, tone: "error", title: "Image endpoint unavailable", text: joinSentences(detail, "This is not caused by your prompt; wait a moment and retry"), actions: ["retry"] };
+  }
+  if (kind === "config") {
+    return { kind, tone: "error", title: "Image endpoint rejected the request", text: joinSentences(detail, "Check the image endpoint URL, model ID, and API key in Settings, then retry"), actions: ["settings", "retry"] };
+  }
+  if (kind === "prompt") {
+    return { kind, tone: "error", title: "Image generation failed", text: joinSentences(detail, "Edit the prompt or retry"), actions: ["retry", "edit"] };
+  }
+  return { kind, tone: "error", title: "Image generation failed", text: joinSentences("The image request failed", "Check the image endpoint settings, edit the prompt, or retry"), actions: ["retry", "edit", "settings"] };
 }
 
 const UNSCORED_STOP_LABELS = {

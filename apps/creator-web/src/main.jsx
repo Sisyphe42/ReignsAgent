@@ -2,7 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useLayoutEffe
 import { createRoot } from "react-dom/client";
 import { SKINS as SKIN_CATALOG, DEFAULT_SKIN, applySkinTheme, resolveSkinId as resolveSharedSkinId } from "../../../packages/interface/web/skin-catalog.js";
 import { cardArtworkStyle, normalizeCardArtworkDisplay } from "../../../packages/interface/web/assets/card-artwork.js";
-import { describeAiFailure, joinSentences, repairStopLabel, toSentence } from "./ai-status-copy.js";
+import { describeAiFailure, describeImageFailure, joinSentences, repairStopLabel, toSentence } from "./ai-status-copy.js";
 import { createCreatorBackend } from "./backend.js";
 import { getOnboardingSteps, markOnboardingComplete, OnboardingTour, readOnboardingCompletion } from "./onboarding.jsx";
 import "./styles.css";
@@ -1620,13 +1620,22 @@ function App() {
     });
   }
 
+  // Resolves to the image draft, or to { failure: { code, message, stage } } so the panel can
+  // say what to do next (retry, Settings, or edit the prompt).
   async function runImageOperation(request, signal) {
-    return runAction("Generating image draft", async () => {
+    let failure = null;
+    const result = await runAction("Generating image draft", async () => {
       const apiKey = imageSettings.credentialMode === "inherit_text" ? aiApiKey : imageApiKey;
-      const result = await api("/api/ai/images/run", { method: "POST", signal, body: { config: buildImageEndpointConfig(imageSettings), credentials: { apiKey }, request } });
-      setStatus(`Image draft ready: ${result.outputs?.length ?? 0} result${result.outputs?.length === 1 ? "" : "s"}`);
-      return result;
+      try {
+        const draft = await api("/api/ai/images/run", { method: "POST", signal, body: { config: buildImageEndpointConfig(imageSettings), credentials: { apiKey }, request } });
+        setStatus(`Image draft ready: ${draft.outputs?.length ?? 0} result${draft.outputs?.length === 1 ? "" : "s"}`);
+        return draft;
+      } catch (error) {
+        failure = { code: error?.code ?? null, message: error?.message ?? "", stage: error?.stage ?? null };
+        throw error;
+      }
     });
+    return failure ? { failure } : result;
   }
 
   async function applyImageOutput(draftId, outputId, cardId) {
@@ -6005,14 +6014,14 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
       imageAbortRef.current = null;
       // Image runs are logged and counted too: refresh the activity list and usage line.
       setHistoryVersion((version) => version + 1);
-      if (!imageResult || imageResult === true) {
+      if (!imageResult || imageResult === true || imageResult.failure) {
         if (imageSignal.aborted) {
           // The author's own cancel is not a failure: neutral notice, nothing applied.
           setProgressStatus("cancelled");
           setBuildNotice(describeAiFailure({ code: "ai_cancelled" }));
         } else {
           setProgressStatus("failed");
-          setBuildNotice({ kind: "image", tone: "error", title: "Image generation failed", text: "Check the image endpoint settings and retry.", actions: ["settings", "retry"] });
+          setBuildNotice(describeImageFailure(imageResult?.failure ?? {}));
         }
         setIsBuilding(false);
         return;
