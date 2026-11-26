@@ -18,7 +18,17 @@ test.beforeAll(async () => {
     if (request.method === "OPTIONS") { response.writeHead(204); response.end(); return; }
     response.setHeader("content-type", "application/json");
     if (request.url.includes("/images/generations") || request.url.includes("/images/edits")) {
-      response.end(JSON.stringify({ data: [{ b64_json: tinyPngBase64 }] }));
+      let body = "";
+      request.on("data", (chunk) => { body += chunk; });
+      request.on("end", () => {
+        // A prompt the image endpoint refuses, as a content filter would: 400, not an outage.
+        if (body.includes("refused-by-the-image-endpoint")) {
+          response.writeHead(400);
+          response.end(JSON.stringify({ error: { message: "The prompt was rejected" } }));
+          return;
+        }
+        response.end(JSON.stringify({ data: [{ b64_json: tinyPngBase64 }] }));
+      });
       return;
     }
     response.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ proposals: [] }) } }] }));
@@ -794,6 +804,30 @@ test("generates and applies an OPFS-backed image through the browser backend", a
   const archive = unzipSync(new Uint8Array(await readFile(await (await downloadPromise).path())));
   expect(archive[generatedUri]).toBeDefined();
   expect([...archive[generatedUri]]).toEqual([...Buffer.from(tinyPngBase64, "base64")]);
+});
+
+test("offers Edit prompt when the image endpoint refuses the prompt", async ({ page }) => {
+  await openHosted(page);
+  await page.getByRole("button", { name: /Settings/ }).click();
+  await page.locator("#image-base-url").fill(aiEndpoint);
+  await page.locator("#image-model-id").fill("cors-image-model");
+  await page.getByRole("button", { name: "Validate image config" }).click();
+  await expect(page.locator(".image-endpoint-settings .endpoint-check--success")).toContainText("Generate");
+
+  await page.getByRole("button", { name: /AI Assist/ }).click();
+  await page.locator(".ai-edit-controls select").first().selectOption("generate");
+  const prompt = page.locator(".ai-edit-controls textarea");
+  await prompt.fill("refused-by-the-image-endpoint: a court portrait");
+  await page.getByRole("button", { name: "Build draft" }).click();
+  const notice = page.getByTestId("ai-build-notice");
+  await expect(notice).toHaveAttribute("data-kind", "prompt", { timeout: 10_000 });
+  await expect(notice).toContainText("Image generation failed");
+  await expect(notice).toContainText("status 400");
+  await expect(notice).toContainText("Edit the prompt or retry.");
+  await expect(notice.getByRole("button")).toHaveText(["Retry", "Edit prompt"]);
+  await notice.getByRole("button", { name: "Edit prompt" }).click();
+  await expect(prompt).toBeFocused();
+  await expect(page.getByRole("heading", { name: "Generated images" })).toHaveCount(0);
 });
 
 async function activeGeneratedAssetUri(page) {

@@ -5,6 +5,7 @@ import {
   cancelledText,
   classifyAiFailure,
   describeAiFailure,
+  describeImageFailure,
   httpStatusOf,
   joinSentences,
   repairStopLabel,
@@ -116,6 +117,63 @@ describe("AI status copy: failure notices", () => {
     const notice = describeAiFailure({});
     assert.equal(notice.kind, "unknown");
     assert.equal(notice.text, "AI Assist draft failed. Check the status bar, edit the prompt, or retry.");
+  });
+});
+
+describe("AI status copy: image failure notices", () => {
+  it("keeps Edit prompt when the image endpoint refuses the request", () => {
+    for (const failure of [
+      { code: "image_endpoint_http_error", message: "Image endpoint request failed with status 400" },
+      { code: "image_endpoint_http_error", message: "Image endpoint request failed with status 422" },
+      { code: "image_prompt_required", message: "Image prompt is required" },
+      { code: "image_capability_unsupported", message: "This endpoint does not support masks" },
+      { code: "image_endpoint_parse_error", message: "Image endpoint returned invalid JSON" }
+    ]) {
+      const notice = describeImageFailure(failure);
+      assert.equal(notice.kind, "prompt", failure.message);
+      assert.equal(notice.title, "Image generation failed");
+      assert.match(notice.text, /Edit the prompt or retry\.$/);
+      assert.deepEqual(notice.actions, ["retry", "edit"]);
+      assert.doesNotMatch(notice.text, /\.\./);
+    }
+  });
+
+  it("asks to retry later when the image endpoint is unavailable", () => {
+    for (const failure of [
+      { code: "image_endpoint_http_error", message: "Image endpoint request failed with status 503" },
+      { code: "image_endpoint_http_error", message: "Image endpoint request failed with status 429" },
+      { code: "image_endpoint_network_error", message: "Image endpoint request failed: fetch failed" },
+      { code: "image_request_timeout", message: "Image endpoint request timed out" }
+    ]) {
+      const notice = describeImageFailure(failure);
+      assert.equal(notice.kind, "unavailable", failure.message);
+      assert.equal(notice.title, "Image endpoint unavailable");
+      assert.match(notice.text, /not caused by your prompt/);
+      assert.deepEqual(notice.actions, ["retry"]);
+    }
+  });
+
+  it("points image authentication and configuration failures at Settings", () => {
+    for (const failure of [
+      { code: "image_endpoint_http_error", message: "Image endpoint request failed with status 401" },
+      { code: "image_endpoint_http_error", message: "Image endpoint request failed with status 404" },
+      { code: "image_config_required", message: "Image endpoint configuration is required" },
+      { code: "image_endpoint_url_invalid", message: "Image endpoint URL is invalid" }
+    ]) {
+      const notice = describeImageFailure(failure);
+      assert.equal(notice.kind, "config", failure.message);
+      assert.match(notice.text, /image endpoint URL, model ID, and API key in Settings/);
+      assert.deepEqual(notice.actions, ["settings", "retry"]);
+    }
+  });
+
+  it("treats a cancel and the session limit like text requests, and offers every action when nothing is known", () => {
+    assert.equal(describeImageFailure({ code: "image_request_cancelled", message: "Image request was cancelled" }).kind, "cancelled");
+    assert.deepEqual(describeImageFailure({ code: "ai_session_budget", message: "This Creator session reached its AI request limit (60)." }).actions, ["settings"]);
+    const unknown = describeImageFailure({});
+    assert.equal(unknown.kind, "unknown");
+    assert.deepEqual(unknown.actions, ["retry", "edit", "settings"]);
+    assert.equal(unknown.text, "The image request failed. Check the image endpoint settings, edit the prompt, or retry.");
   });
 });
 
