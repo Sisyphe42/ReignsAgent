@@ -1166,6 +1166,23 @@ function App() {
   const [railCollapsed, setRailCollapsed] = useState(readRailCollapsed);
   const [railPinned, setRailPinned] = useState(readRailPinned);
   const railRef = useRef(null);
+  // The top bar's height depends on its content, font, and skin. Publish the measured height so the
+  // workspace and the sticky rail fill exactly the rest of the viewport (no phantom page scroll, and
+  // the rail never slides under the bar).
+  const topbarObserverRef = useRef(null);
+  const topbarRef = useCallback((node) => {
+    topbarObserverRef.current?.disconnect();
+    topbarObserverRef.current = null;
+    const root = document.documentElement;
+    if (!node) return;
+    const publish = () => root.style.setProperty("--topbar-block-size", `${Math.ceil(node.getBoundingClientRect().height)}px`);
+    publish();
+    if (typeof ResizeObserver === "function") {
+      const observer = new ResizeObserver(publish);
+      observer.observe(node);
+      topbarObserverRef.current = observer;
+    }
+  }, []);
   // On narrow screens the rail is a horizontal tab strip: keep the active tab in view. Only the
   // strip scrolls (never the page), and only when the tab is outside it.
   useEffect(() => {
@@ -1889,7 +1906,7 @@ function App() {
           contextStatus={{ configured: aiConfigured, modelId: aiSettings.modelId, cardCount: editor?.cards?.length ?? 0, reviewScore: diagnostics?.healthScore ?? null }}
         />
       )}
-      <header className="topbar">
+      <header className="topbar" ref={topbarRef}>
         <div className="brand">
           <span className="brand__mark" aria-hidden="true">
             <img src={`${import.meta.env.BASE_URL}logo-alpha.png`} alt="" />

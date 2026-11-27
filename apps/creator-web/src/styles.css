@@ -1014,7 +1014,7 @@ select {
   --rail-compact-item-width: calc(var(--rail-compact-width) - (2 * var(--rail-padding-inline)) - var(--rail-compact-divider-width));
   display: grid;
   grid-template-columns: var(--rail-expanded-width) minmax(0, 1fr);
-  min-height: calc(100vh - 76px);
+  min-height: calc(100vh - var(--topbar-block-size, 76px));
   transition: grid-template-columns 220ms cubic-bezier(.2, .9, .22, 1);
 }
 
@@ -1026,14 +1026,14 @@ select {
 .rail {
   --rail-item-block: 62px;
   position: sticky;
-  top: 76px;
+  top: var(--topbar-block-size, 76px);
   align-self: start;
   display: flex;
   flex-direction: column;
   gap: 8px;
   box-sizing: border-box;
   width: 100%;
-  height: calc(100vh - 76px);
+  height: calc(100vh - var(--topbar-block-size, 76px));
   padding: 18px var(--rail-padding-inline);
   overflow-x: hidden;
   overflow-y: auto;
