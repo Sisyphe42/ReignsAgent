@@ -9159,13 +9159,15 @@ summary:focus-visible {
 }
 
 /* Narrow top bar (980 px and below). One flex row on a tablet: brand, project, then AI, skin and
-   Player pushed to the end; it wraps only if a skin's type cannot fit. Secondary information
-   leaves: the project subtitle repeats the project trigger and the readout repeats the rail
-   badges (both are already hidden or redundant from 981 to 1360 px). Controls are content-sized. */
+   Player pushed to the end. It never wraps: when a skin's type is wide (Linux fonts run wider than
+   Windows ones) the project trigger, which already ends in an ellipsis, absorbs the squeeze down to
+   its 96 px floor. (flex-wrap would break the row on the items' full widths before any of them
+   shrank.) Secondary information leaves: the project subtitle repeats the project trigger and the
+   readout repeats the rail badges (both are already hidden or redundant from 981 to 1360 px). */
 @media (max-width: 980px) {
   .topbar {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     align-items: center;
     gap: 8px 12px;
     min-height: 0;
@@ -9201,6 +9203,7 @@ summary:focus-visible {
   }
 
   .project-menu-field {
+    --project-trigger-min: 96px;
     --project-trigger-max: 200px;
     flex: 0 1 auto;
   }
@@ -9254,7 +9257,6 @@ summary:focus-visible {
    with the rail's own 800 px switch, and a container query cannot restyle the bar's own padding/row. */
 @media (max-width: 800px) {
   .topbar {
-    flex-wrap: nowrap;
     padding: 8px 12px;
   }
 
