@@ -3525,7 +3525,13 @@ select {
   margin: 6px 0 0;
 }
 
-.interface-settings__language {
+.interface-settings__controls {
+  display: grid;
+  gap: 14px;
+}
+
+.interface-settings__language,
+.interface-settings__skin {
   display: grid;
   gap: 7px;
   color: var(--muted);
@@ -3533,8 +3539,16 @@ select {
   font-size: 0.72rem;
 }
 
-.interface-settings__language select {
+.interface-settings__language select,
+.interface-settings__skin select {
   width: 100%;
+}
+
+.interface-settings__skin small {
+  color: var(--muted);
+  font-family: var(--font-ui);
+  font-size: 0.72rem;
+  line-height: 1.4;
 }
 
 .interface-settings__guidance {
@@ -9229,49 +9243,33 @@ summary:focus-visible {
   }
 }
 
-/* Phone top bar: two rows. Row 1 is brand, AI and Player; row 2 is the project and skin
-   controls. The "Project" / "Skin" words stay as accessible names but are not drawn, and the
-   AI capsule shrinks to its orb (its state stays in the accessible name and tooltip). */
+/* Top bar degradation, widest to narrowest. Each step removes the least useful thing first, so the
+   bar stays one row at every width (test/browser/ui-header.spec.js sweeps 320-1440 px):
+     1360  the readout leaves (it repeats the rail badges)
+      980  one flex row; the project subtitle (repeats the trigger) and the AI wave (decoration) leave
+      800  the drawn "Project" / "Skin" words and the AI state copy become accessible names only
+      600  phone: Skin moves to Settings > Interface; brand logo, Project, AI and Player get 44 px targets
+      480  the "ReignsAgent" wordmark becomes an accessible heading only; the logo carries the brand
+   Viewport media queries, not container queries: the bar always spans the viewport, its steps line up
+   with the rail's own 800 px switch, and a container query cannot restyle the bar's own padding/row. */
 @media (max-width: 800px) {
   .topbar {
+    flex-wrap: nowrap;
     padding: 8px 12px;
   }
 
   .brand {
-    flex: 1 1 auto;
-    order: 0;
     min-width: 0;
-  }
-
-  .topbar__tools {
-    display: contents;
-  }
-
-  .ai-presence {
-    order: 1;
-  }
-
-  .player-launch {
-    order: 2;
-  }
-
-  .topbar::after {
-    flex-basis: 100%;
-    order: 3;
-    height: 0;
-    content: "";
   }
 
   .project-menu-field {
     --project-trigger-min: 96px;
     --project-trigger-max: 220px;
-    order: 4;
+    min-width: 0;
   }
 
-  .skin-select {
-    order: 5;
-    min-width: 0;
-    margin-inline-start: auto;
+  .topbar__tools {
+    flex: 0 0 auto;
   }
 
   .project-menu__label,
@@ -9289,6 +9287,76 @@ summary:focus-visible {
     grid-template-columns: 28px;
     width: 34px;
     padding: 3px;
+  }
+}
+
+/* Phone (600 px and below): exactly four things — logo, Project, AI, Player. 600 px is where the
+   skin select (up to ~160 px for "Catppuccin Latte") would leave the project name less than its
+   96 px floor once the controls grow to touch size, and it is the usual phone/small-tablet line.
+   Skin is a rarely changed preference, so it moves to Settings > Interface beside Language (the rail
+   tab is always on screen) instead of behind a new overflow menu. */
+@media (max-width: 600px) {
+  .topbar {
+    gap: 8px;
+    padding: 6px 12px;
+  }
+
+  .topbar__tools .skin-select {
+    display: none;
+  }
+
+  .project-menu__trigger {
+    min-height: 44px;
+  }
+
+  /* The project list opens as a sheet under the whole bar (the sticky bar is its containing
+     block), so it never runs past the screen edge whatever the trigger's position. */
+  .project-menu-field {
+    position: static;
+  }
+
+  .project-menu__popover {
+    top: calc(100% + 6px);
+    right: 12px;
+    left: 12px;
+    width: auto;
+  }
+
+  .ai-presence {
+    grid-template-columns: 36px;
+    width: 44px;
+    min-height: 44px;
+    padding: 4px;
+  }
+
+  .ai-presence__orb {
+    width: 36px;
+    height: 36px;
+  }
+
+  .player-launch,
+  :root[data-skin="phantom"] .topbar__tools .player-launch {
+    min-height: 44px;
+    padding: 6px 14px;
+  }
+}
+
+@media (max-width: 480px) {
+  .brand {
+    gap: 0;
+  }
+
+  .brand h1 {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .project-menu-field {
+    --project-trigger-min: 72px;
   }
 }
 

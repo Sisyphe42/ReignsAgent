@@ -56,7 +56,7 @@ const ZH_HANS_COPY = {
   "Saving artwork display…": "正在保存图片显示…", "Could not save artwork display. Please try again.": "无法保存图片显示，请重试。",
   Overview: "概览", Project: "项目", Content: "内容", Authoring: "创作", Story: "叙事",
   Review: "审查", Quality: "质量", "AI Assist": "AI 辅助", Preview: "预览", Build: "构建",
-  Release: "发布", Settings: "设置", Player: "玩家端", Skin: "皮肤", New: "新建", Sample: "示例",
+  Release: "发布", Settings: "设置", Player: "玩家端", Skin: "皮肤", "Also in the top bar on wider screens.": "较宽屏幕也可在顶栏切换。",New: "新建", Sample: "示例",
   Delete: "删除", cards: "张卡牌", "player ready": "玩家端就绪", "player blocked": "玩家端受阻",
   "Browser workspace": "浏览器工作区", "Local session": "本地会话", "Desktop session": "桌面会话",
   "Projects live in this site's private storage. Clearing site data deletes them, so keep regular backups.": "项目保存在此站点的私有存储中。清除站点数据会删除这些项目，请定期备份。",
@@ -2124,6 +2124,8 @@ function App() {
               localePreference={localePreference}
               followLocaleLabel={followLocaleLabel}
               onLocaleChange={changeLocale}
+              skin={skin}
+              onSkinChange={changeSkin}
               onAiSettingsChange={setAiSettings}
               onApiKeyChange={setAiApiKey}
               onApiKeySave={saveApiKey}
@@ -7279,7 +7281,7 @@ function ImageEndpointSettings({ aiSettings, imageSettings, apiKey, apiKeySaved,
   );
 }
 
-function SettingsPanel({ editor, aiSettings, apiKey, apiKeySaved, locale, localePreference, followLocaleLabel, onLocaleChange, onAiSettingsChange, onApiKeyChange, onApiKeySave, onApiKeyClear, onRefresh, onStatus, imageSettings, imageApiKey, imageApiKeySaved, onImageSettingsChange, onImageApiKeyChange, onImageApiKeyClear, onStartOnboarding }) {
+function SettingsPanel({ editor, aiSettings, apiKey, apiKeySaved, locale, localePreference, followLocaleLabel, onLocaleChange, skin, onSkinChange,onAiSettingsChange, onApiKeyChange, onApiKeySave, onApiKeyClear, onRefresh, onStatus, imageSettings, imageApiKey, imageApiKeySaved, onImageSettingsChange, onImageApiKeyChange, onImageApiKeyClear, onStartOnboarding }) {
   const [title, setTitle] = useState(editor?.metadata?.title ?? "");
   const [titleUrl, setTitleUrl] = useState(editor?.metadata?.titleUrl ?? "");
   const [author, setAuthor] = useState(editor?.metadata?.author ?? "");
@@ -7514,12 +7516,22 @@ function SettingsPanel({ editor, aiSettings, apiKey, apiKeySaved, locale, locale
           <h3>{tr(locale, "Interface")}</h3>
           <p className="muted">{tr(locale, "Interface language is shared by browser, local, and desktop clients.")}</p>
         </div>
-        <label className="interface-settings__language">
-          <span>{tr(locale, "Language")}</span>
-          <select value={localePreference} onChange={(event) => onLocaleChange(event.target.value)}>
-            {UI_LOCALES.map(([id, label]) => <option key={id} value={id}>{tr(locale, label ?? followLocaleLabel)}</option>)}
-          </select>
-        </label>
+        <div className="interface-settings__controls">
+          <label className="interface-settings__language">
+            <span>{tr(locale, "Language")}</span>
+            <select value={localePreference} onChange={(event) => onLocaleChange(event.target.value)}>
+              {UI_LOCALES.map(([id, label]) => <option key={id} value={id}>{tr(locale, label ?? followLocaleLabel)}</option>)}
+            </select>
+          </label>
+          {/* The one Skin control on phones, where it leaves the top bar; on wider screens it mirrors the bar's. */}
+          <label className="interface-settings__skin">
+            <span>{tr(locale, "Skin")}</span>
+            <select value={skin} onChange={(event) => onSkinChange(event.target.value)} aria-describedby="interface-skin-note">
+              {SKINS.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+            </select>
+            <small id="interface-skin-note">{tr(locale, "Also in the top bar on wider screens.")}</small>
+          </label>
+        </div>
         <div className="interface-settings__guidance" data-onboarding-target="onboarding-replay">
           <span>{tr(locale, "Guidance")}</span>
           <small>{tr(locale, "Take another guided tour of the complete Creator workflow.")}</small>
