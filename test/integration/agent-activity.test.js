@@ -56,6 +56,12 @@ describe("AI activity log, session limit, and cancel through the Creator Server"
       const selectionRecord = exported.records.find((entry) => entry.kind === "selection");
       assert.equal(selectionRecord.answer, "Explained.");
       assert.equal(selectionRecord.conversation.length, 1);
+      // Usage travels in the list, the record, and the export: reported when the endpoint sent it.
+      assert.deepEqual(selectionRecord.usage, { calls: 1, requestBytes: selectionRecord.conversation[0].requestBytes, responseBytes: selectionRecord.conversation[0].responseBytes, inputTokens: 640, outputTokens: 12, totalTokens: 652, source: "reported" });
+      assert.equal(byKind.selection[0].usage.totalTokens, 652);
+      const draftRecord = exported.records.find((entry) => entry.id === draft.json.historyId);
+      assert.equal(draftRecord.usage.source, "estimated");
+      assert.equal(draftRecord.conversation[0].usage.inputTokens, Math.ceil(draftRecord.conversation[0].requestBytes / 4));
       assert.equal(JSON.stringify(exported).includes(`127.0.0.1:${endpoint.port}`), false, "no endpoint address in the export");
     } finally {
       await creator.close();
@@ -85,7 +91,8 @@ async function startEndpoint() {
     const explaining = JSON.stringify(body).includes("explain_selection");
     if (res.destroyed) return;
     res.writeHead(200, { "content-type": "application/json" });
-    res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify(explaining ? { answer: "Explained.", proposals: [] } : { proposals: [] }) } }] }));
+    // Explain answers report usage; draft answers do not, so their tokens are estimated.
+    res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify(explaining ? { answer: "Explained.", proposals: [] } : { proposals: [] }) } }], ...(explaining ? { usage: { prompt_tokens: 640, completion_tokens: 12, total_tokens: 652 } } : {}) }));
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   return Object.assign(state, { port: server.address().port, close: () => new Promise((resolve) => { server.closeAllConnections?.(); server.close(resolve); }) });

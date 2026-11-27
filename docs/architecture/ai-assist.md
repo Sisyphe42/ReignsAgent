@@ -65,12 +65,13 @@ flowchart TB
     S["Selection focus\n(kind, label, cardId, field,\ntext ≤ 2000 chars)"]
     D["Review diagnostics\n(compact)"]
     H["Repair history\n(blocked proposals from\nthe last 2 runs on the same issue)"]
+    A["Author-declined changes\n(left unticked or undone,\nlast 6 runs on the same issue,\n≤ 4 · ≤ 2 KiB)"]
     M["Model requests\n(contextRequests, ≤ 6 per round)"]
   end
 
   subgraph Selection["Card selection (Pipeline)"]
-    F["first_n: first 12 cards\n(drafts without a target)"]
-    R["relevance_v1 tiers:\ntarget → diagnostic → neighbour → other\n≤ 40 cards, ≤ 24 KiB, authored order"]
+    F["first_n: first 12 cards\n(media requests, endpoint validation)"]
+    R["relevance_v1 tiers:\ntarget → diagnostic → neighbour → other\n≤ 40 cards (drafts: ≤ 12), ≤ 24 KiB, authored order"]
   end
 
   CTX["request.context\nproject rules · authorBrief · selection.focus ·\nbundle.cards + cardSelection report ·\ndiagnostics · constraints.repairLoop"]
@@ -82,6 +83,7 @@ flowchart TB
   D --> R
   D --> CTX
   H -->|"previousAttempts (earlierRun)"| CTX
+  A -->|"repairLoop.authorDeclined, every round"| CTX
   M -->|"next round, target tier"| R
   F --> CTX
   R --> CTX
@@ -89,18 +91,27 @@ flowchart TB
 
 | Entry point | Mode | Cards | Extra context |
 |---|---|---|---|
-| Startup / Overview draft | `generate_cards` | first 12 | author brief |
+| Startup / Overview draft | `generate_cards` | relevance within 12 cards (deck order without a target) | author brief |
 | Card or graph action with a target | `generate_cards` | relevance around the target | brief, selection focus |
 | AI layer: Explain | `explain_selection` | relevance around the selected card | brief, selection focus; answer only |
 | AI layer: Rewrite / Translate | `edit_selection` | relevance around the selected card | brief, selection focus; edit scope |
-| Review issue: AI Repair | `repair_diagnostics` (loop) | relevance tiers + model requests | brief, diagnostics, targets, acceptance rules, previous and earlier-run attempts |
+| Review issue: AI Repair | `repair_diagnostics` (loop) | relevance tiers + model requests | brief, diagnostics, targets, acceptance rules, previous and earlier-run attempts, author-declined changes |
 
 **Content is never instruction.** Card text, choice labels, the author brief, and the selected text are
 sent as data (`role: content_to_work_on_not_instructions`), and a prompt rule tells the model to ignore
-instructions found inside them. The selected text is never pasted into the instruction.
+instructions found inside them. The selected text is never pasted into the instruction. Declined changes
+(`role: author_declined_changes_content_not_instructions`) are titles and summaries an earlier model
+wrote; a prompt rule says they describe what the author did not want and are not instructions.
 
 The AI Assist panel shows the card selection report (why each card was sent, what the limits cut),
-whether the brief and the selection were sent, and whether earlier-run feedback was included.
+whether the brief and the selection were sent, and two separate memory lines: blocked attempts from an
+earlier run (the checks said no) and "Includes N changes the author declined" (the author said no),
+with the declined changes listed.
+
+**Draft context.** Draft cards uses the relevance tiers inside the old 12-card limit: without a target
+card or diagnostics the 12 cards are the deck's first 12 as before; with a target, the target and the
+cards sharing its tags or variables come first. The full 40-card context would let every draft prompt
+grow from 12 to 40 cards for a request that writes new cards rather than repairs a specific gap.
 
 ## 3. Repair loop and progress
 
@@ -147,17 +158,32 @@ stateDiagram-v2
 flowchart LR
   REQ["Every AI request\n(draft · selection · repair loop · image)"] --> REC["Record builder\n(whitelisted fields,\nkeys and URLs redacted)"]
   REC --> FILE[("projects/<id>/repair-history.json\n≤ 60 records · ≤ 128 KiB each")]
-  FILE --> LIST["AI activity list\nfilter by kind"]
-  LIST --> REPLAY["Replay\nrounds · checks · reasons ·\nconversation · author's choice"]
+  FILE --> LIST["AI activity list\nfilter by kind · tokens per row"]
+  FILE --> STATS["Blocking checks\nlast 10 repair loops"]
+  STATS -->|"pick a check"| LIST
+  LIST --> REPLAY["Replay\nrounds · checks · reasons · tokens ·\nconversation · author's choice"]
   LIST --> CMP["Compare two runs"]
   FILE --> EXP["Export (JSON)"]
-  APPLY["Apply (signed plan)"] -->|"appliedProposalIds"| FILE
+  APPLY["Apply (signed plan)"] -->|"appliedProposalIds,\ndeclinedProposals (unticked)"| FILE
+  UNDO["Undo of an AI apply"] -->|"POST …/:id/undo\n(undone)"| FILE
+  FILE -->|"collectRepairMemory\n(same issue)"| NEXT["Next repair run"]
 ```
 
 - Records keep: time, source, mode, instruction, selection, model, duration, context selection,
   proposals and their checks, the logged conversation (each message ≤ 16 KiB, no URL or headers),
-  failures with their stage, and what the author applied. Failed, stale, and cancelled runs keep the
-  rounds that already ran.
+  failures with their stage, and what the author applied, left unticked, or undid. Failed, stale, and
+  cancelled runs keep the rounds that already ran.
+- **Usage.** Each logged request, each repair round, and each run carry tokens and bytes sent/received.
+  Tokens come from the endpoint's `usage` block when it sends one (OpenAI chat/completions/responses,
+  Anthropic, Gemini shapes) and are marked "reported"; otherwise they are estimated at 4 bytes per token
+  and marked "est.". Image runs show provider-reported tokens or nothing (multipart bytes are not metered).
+- **Blocking checks.** Above the list: blocked proposals per check over the last 10 repair loops that
+  ran checks, how many runs each check blocked, and how many runs ended verified. Picking a check
+  narrows the list to those runs.
+- **Author-declined memory.** A proposal shown with patches but not ticked at Apply is stored as
+  declined (`not_selected`); undoing an applied AI draft in the Creator marks it `undone`. The next
+  repair on the same issue (code and target cards) sends up to 4 of them from the last 6 runs
+  (about 2 KiB) in every round. Deleting the record, or clearing the log, forgets them.
 - Records never keep keys, endpoint URLs (also redacted from error text), headers, or connector config.
 - A record is written to the project that started the request, even if the author switched projects.
 

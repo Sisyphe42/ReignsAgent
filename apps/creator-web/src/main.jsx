@@ -1203,16 +1203,18 @@ function App() {
   const [aiGraphSelection, setAiGraphSelection] = useState(null);
   const historyRef = useRef([]);
   const [historyDepth, setHistoryDepth] = useState(0);
+  const [aiActivityVersion, setAiActivityVersion] = useState(0);
   const [onboarding, setOnboarding] = useState({ open: false, stepIndex: 0, originPanel: DEFAULT_PANEL });
   const onboardingAutoCheckedRef = useRef(false);
 
-  // Snapshot the editor bundle before a mutation so it can be undone.
-  async function pushHistory() {
+  // Snapshot the editor bundle before a mutation so it can be undone. `aiApply` marks the snapshot
+  // taken before an AI draft was applied, so undoing it can be recorded in the activity log.
+  async function pushHistory(aiApply = null) {
     try {
       const snapshot = await api("/api/editor/snapshot");
       const bundle = snapshot.bundle;
       if (bundle) {
-        historyRef.current.push(bundle);
+        historyRef.current.push({ bundle, aiApply });
         if (historyRef.current.length > 50) historyRef.current.shift();
         setHistoryDepth(historyRef.current.length);
       }
@@ -1222,15 +1224,26 @@ function App() {
   }
 
   async function undo() {
-    const bundle = historyRef.current.pop();
+    const entry = historyRef.current.pop();
     setHistoryDepth(historyRef.current.length);
-    if (!bundle) {
+    if (!entry?.bundle) {
       setStatus("Nothing to undo");
       return;
     }
     await runAction("Undoing", async () => {
-      await api("/api/editor/restore", { method: "POST", body: { bundle } });
-      await refreshEditor({ statusMessage: "Undid last edit" });
+      await api("/api/editor/restore", { method: "POST", body: { bundle: entry.bundle } });
+      let remembered = false;
+      if (entry.aiApply?.historyId) {
+        // Undoing an AI draft tells the next repair on the same issue that the author did not want it.
+        try {
+          await api(`/api/ai/repair-history/${encodeURIComponent(entry.aiApply.historyId)}/undo`, { method: "POST", body: { proposalIds: entry.aiApply.proposalIds, projectId: entry.aiApply.projectId ?? null } });
+          remembered = true;
+          setAiActivityVersion((version) => version + 1);
+        } catch {
+          // The record may have been deleted; the undo itself still stands.
+        }
+      }
+      await refreshEditor({ statusMessage: remembered ? "Undid the AI draft; the activity log keeps it as declined" : "Undid last edit" });
     });
   }
 
@@ -1437,9 +1450,9 @@ function App() {
     }
   }
 
-  async function mutateEditor(label, action, successMessage) {
+  async function mutateEditor(label, action, successMessage, aiApply = null) {
     return runAction(label, async () => {
-      await pushHistory();
+      await pushHistory(aiApply);
       await action();
       await refreshEditor({ persistDraft: true, statusMessage: successMessage ?? label });
     });
@@ -1659,7 +1672,8 @@ function App() {
     return mutateEditor(
       "Applying AI Assist draft",
       async () => api("/api/ai/edit/apply", { method: "POST", body: { plan, proposalIds } }),
-      "AI Assist draft applied"
+      "AI Assist draft applied",
+      plan?.historyId ? { historyId: plan.historyId, proposalIds: [...proposalIds], projectId: plan.projectId ?? null } : null
     );
   }
 
@@ -2063,6 +2077,7 @@ function App() {
               aiAssistEnabled={aiAssistEnabled}
               aiConfigured={aiConfigured}
               draftRequest={aiDraftRequest}
+              onAutoBuildStarted={(id) => setAiDraftRequest((current) => (current?.id === id ? { ...current, autoBuild: false } : current))}
               onBuildPlan={buildAiEditPlan}
               onApplyPlan={applyAiEditPlan}
               onOpen={openPanel}
@@ -2074,6 +2089,7 @@ function App() {
               onApplyImage={applyImageOutput}
               onDiscardImage={discardImageDraft}
               projectKey={activeProjectId}
+              activityVersion={aiActivityVersion}
             />
           )}
           {activePanel === "preview" && (
@@ -5858,7 +5874,7 @@ function MaskCanvas({ sourceUri, protocol, onExport }) {
   );
 }
 
-function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAssistEnabled, aiConfigured, draftRequest, onBuildPlan, onApplyPlan, onOpen, imageSettings, imageCapabilities, imageConfigured, onStageImage, onRunImage, onApplyImage, onDiscardImage, projectKey = null }) {
+function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAssistEnabled, aiConfigured, draftRequest, onAutoBuildStarted = null, onBuildPlan, onApplyPlan, onOpen, imageSettings, imageCapabilities, imageConfigured, onStageImage, onRunImage, onApplyImage, onDiscardImage, projectKey = null, activityVersion = 0 }) {
   const [historyVersion, setHistoryVersion] = useState(0);
   const [selection, setSelection] = useState(null);
   const [requestSource, setRequestSource] = useState("AI Assist");
@@ -5940,6 +5956,9 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
     setProgressDetail(null);
     if (draftRequest.autoBuild && autoBuildRef.current !== draftRequest.id) {
       autoBuildRef.current = draftRequest.id;
+      // The panel remounts on every visit; the request itself must remember it was built, or
+      // returning to AI Assist would send the same (possibly paid) request again.
+      onAutoBuildStarted?.(draftRequest.id);
       void buildPlan(draftRequest);
     }
   }, [draftRequest?.id]);
@@ -6270,9 +6289,9 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
             <p className="muted context-extras" data-testid="context-extras">
               {plan.request.context.authorBrief ? `Author brief included (${plan.request.context.authorBrief.text.length} characters).` : "No author brief."}
               {plan.request.context.selection?.focus ? ` Selection sent as content: ${plan.request.context.selection.focus.kind}${plan.request.context.selection.focus.cardId ? ` on ${plan.request.context.selection.focus.cardId}` : ""}.` : ""}
-              {(plan.request.context.constraints?.repairLoop?.previousAttempts ?? []).some((attempt) => attempt.earlierRun) ? " Includes blocked attempts from an earlier run on this issue." : ""}
             </p>
           )}
+          {plan?.request?.context && <RepairMemoryContext repairLoop={plan.request.context.constraints?.repairLoop} memory={plan.verification?.memory} />}
           <pre className="output output--compact">
             {plan ? JSON.stringify(plan.request.context, null, 2) : "Build a plan to preview the AI context."}
           </pre>
@@ -6342,8 +6361,51 @@ function AiAssistPanel({ editor, diagnostics, aiSettings, apiKeyAvailable, aiAss
         )}
         {applyResult && <p className="muted">{applyResult}</p>}
       </div>
-      <RepairHistory refreshKey={`${projectKey ?? ""}:${historyVersion}`} />
+      <RepairHistory refreshKey={`${projectKey ?? ""}:${historyVersion}:${activityVersion}`} />
     </section>
+  );
+}
+
+const DECLINED_REASON_LABELS = { not_selected: "left unticked", undone: "applied, then undone" };
+
+/**
+ * RepairMemoryContext says what a repair run brought back from the activity log, as two distinct
+ * lines: proposals the checks blocked in earlier runs, and changes the author declined (left
+ * unticked or undid). Both were sent as content; deleting the records in AI activity forgets them.
+ */
+function RepairMemoryContext({ repairLoop, memory }) {
+  const blocked = (repairLoop?.previousAttempts ?? []).filter((attempt) => attempt.earlierRun).length;
+  const declined = repairLoop?.authorDeclined?.changes ?? [];
+  // The last round's request may have dropped old attempts to fit the feedback budget; the loop's
+  // own count says how many it started with.
+  const blockedCount = Math.max(blocked, Number(memory?.priorAttempts) || 0);
+  if (blockedCount === 0 && declined.length === 0) return null;
+  return (
+    <div className="context-memory" data-testid="context-memory">
+      {blockedCount > 0 && (
+        <p className="context-memory__line context-memory__line--blocked" data-testid="context-memory-blocked">
+          <span className="context-memory__tag">Checks</span>
+          Includes blocked attempts from an earlier run on this issue ({blockedCount}).
+        </p>
+      )}
+      {declined.length > 0 && (
+        <details className="context-memory__line context-memory__line--declined" data-testid="context-memory-declined">
+          <summary>
+            <span className="context-memory__tag">Author</span>
+            Includes {declined.length} change{declined.length === 1 ? "" : "s"} the author declined
+          </summary>
+          <ul>
+            {declined.map((change, index) => (
+              <li key={`${change.title}:${index}`}>
+                <strong><QuotedText text={change.title} max={120} /></strong>
+                <span className="muted"> · {DECLINED_REASON_LABELS[change.reason] ?? change.reason}{change.cardIds?.length ? ` · ${change.cardIds.join(", ")}` : ""}</span>
+              </li>
+            ))}
+          </ul>
+          <small className="muted">Sent to the model as content, not instructions, so it tries something else. Delete the run in AI activity to forget it.</small>
+        </details>
+      )}
+    </div>
   );
 }
 
@@ -6392,9 +6454,39 @@ function formatHistoryTargets(targets, fallback = null) {
 }
 
 function formatHistoryOutcome(entry) {
-  if (entry.outcome === "applied") return `Applied ${entry.appliedProposalIds?.length ?? 0}`;
+  if (entry.outcome === "applied") return `Applied ${entry.appliedProposalIds?.length ?? 0}${entry.undoneAt ? ", undone" : ""}`;
   if (entry.outcome === "failed" || entry.status === "failed") return "Nothing to apply";
   return "Not applied";
+}
+
+function formatTokenCount(value) {
+  if (!Number.isFinite(value)) return "–";
+  return value >= 10_000 ? `${(value / 1000).toFixed(1)}k` : value.toLocaleString("en-US");
+}
+
+// Tokens with their provenance: what the endpoint reported, or a byte estimate marked "est.".
+function formatUsageTokens(usage) {
+  if (!usage || !Number.isFinite(usage.totalTokens)) return null;
+  const suffix = usage.source === "estimated" ? " est." : usage.source === "mixed" ? " (partly est.)" : "";
+  return `${formatTokenCount(usage.totalTokens)} tokens${suffix}`;
+}
+
+function formatUsageLine(usage) {
+  if (!usage) return "No usage recorded: nothing was sent to a model, or the endpoint did not report it.";
+  const tokens = formatUsageTokens(usage);
+  const split = Number.isFinite(usage.inputTokens) || Number.isFinite(usage.outputTokens)
+    ? ` (${formatTokenCount(usage.inputTokens ?? 0)} in / ${formatTokenCount(usage.outputTokens ?? 0)} out)`
+    : "";
+  const bytes = Number.isFinite(usage.requestBytes) && Number.isFinite(usage.responseBytes)
+    ? ` · ${formatFileSize(usage.requestBytes)} sent · ${formatFileSize(usage.responseBytes)} received`
+    : "";
+  const calls = Number.isFinite(usage.calls) && usage.calls > 1 ? ` · ${usage.calls} requests` : "";
+  const source = usage.source === "reported"
+    ? "reported by the endpoint"
+    : usage.source === "mixed"
+      ? "partly reported, the rest estimated from bytes"
+      : "estimated from bytes (about 4 bytes per token); the endpoint did not report usage";
+  return `${tokens}${split}${bytes}${calls} · ${source}`;
 }
 
 /**
@@ -6408,6 +6500,7 @@ function RepairHistory({ refreshKey }) {
   const [error, setError] = useState("");
   const [compareIds, setCompareIds] = useState([]);
   const [kindFilter, setKindFilter] = useState("all");
+  const [checkFilter, setCheckFilter] = useState("");
   // Each refresh/detail request is tagged; answers that arrive after a newer refresh (for
   // example from the previously open project) are ignored instead of overwriting the list.
   const requestSeqRef = useRef(0);
@@ -6429,6 +6522,7 @@ function RepairHistory({ refreshKey }) {
   useEffect(() => {
     setDetails({});
     setCompareIds([]);
+    setCheckFilter("");
     void refresh();
   }, [refreshKey]);
 
@@ -6495,7 +6589,10 @@ function RepairHistory({ refreshKey }) {
   }
 
   const allRecords = records ?? [];
-  const list = kindFilter === "all" ? allRecords : allRecords.filter((entry) => (entry.kind ?? "repair_loop") === kindFilter);
+  const kindList = kindFilter === "all" ? allRecords : allRecords.filter((entry) => (entry.kind ?? "repair_loop") === kindFilter);
+  // A check picked in the block summary narrows the list to the counted runs it blocked.
+  const statRunIds = checkFilter ? new Set(repairStatRuns(allRecords).filter((entry) => Number(entry.blockedBy?.[checkFilter]) > 0).map((entry) => entry.id)) : null;
+  const list = statRunIds ? allRecords.filter((entry) => statRunIds.has(entry.id)) : kindList;
   return (
     <div className="subsection repair-history" data-testid="repair-history">
       <div className="repair-history__head">
@@ -6507,11 +6604,18 @@ function RepairHistory({ refreshKey }) {
       {allRecords.length > 0 && (
         <div className="repair-history__filters" role="group" aria-label="Filter AI activity">
           {AI_ACTIVITY_KINDS.map(([id, label]) => (
-            <button key={id} type="button" className={kindFilter === id ? "story-group-chip story-group-chip--active" : "story-group-chip"} aria-pressed={kindFilter === id} onClick={() => setKindFilter(id)}>
+            <button key={id} type="button" className={!checkFilter && kindFilter === id ? "story-group-chip story-group-chip--active" : "story-group-chip"} aria-pressed={!checkFilter && kindFilter === id} onClick={() => { setCheckFilter(""); setKindFilter(id); }}>
               {label} {id === "all" ? allRecords.length : allRecords.filter((entry) => (entry.kind ?? "repair_loop") === id).length}
             </button>
           ))}
         </div>
+      )}
+      <RepairBlockStats records={allRecords} activeCheck={checkFilter} onSelect={(checkId) => setCheckFilter((current) => (current === checkId ? "" : checkId))} />
+      {checkFilter && (
+        <p className="repair-history__check-filter" data-testid="repair-check-filter">
+          Showing {list.length} repair loop{list.length === 1 ? "" : "s"} blocked by <code>{checkFilter}</code>.
+          <button className="btn btn--ghost btn--compact" type="button" onClick={() => setCheckFilter("")}>Show all</button>
+        </p>
       )}
       {error && <p className="muted">{error}</p>}
       {records !== null && list.length === 0 && !error && (
@@ -6536,6 +6640,7 @@ function RepairHistory({ refreshKey }) {
                   {(entry.kind ?? "repair_loop") === "repair_loop" && <span className="repair-history__meta">{entry.roundsUsed}{entry.maxRounds ? `/${entry.maxRounds}` : ""} round{entry.roundsUsed === 1 ? "" : "s"}</span>}
                   {(entry.kind ?? "repair_loop") === "repair_loop" && <span className="repair-history__meta">{Number.isFinite(before) ? `${before} → ${Number.isFinite(entry.bestScore) ? entry.bestScore : "–"}` : "–"}</span>}
                   <span className="repair-history__meta">{formatHistoryOutcome(entry)}</span>
+                  {formatUsageTokens(entry.usage) && <span className="repair-history__meta repair-history__usage" data-testid="repair-history-usage" title={formatUsageLine(entry.usage)}>{formatUsageTokens(entry.usage)}</span>}
                   <span className="repair-history__chevron" aria-hidden="true">{expanded ? "Hide ⌃" : "Replay ⌄"}</span>
                 </button>
                 {expanded && (
@@ -6554,6 +6659,59 @@ function RepairHistory({ refreshKey }) {
       {compareIds.length === 2 && details[compareIds[0]] && details[compareIds[1]] && (
         <RepairHistoryCompare left={details[compareIds[0]]} right={details[compareIds[1]]} onClose={() => setCompareIds([])} />
       )}
+    </div>
+  );
+}
+
+const REPAIR_STAT_RUNS = 10;
+
+// The repair loops the block summary counts: the newest REPAIR_STAT_RUNS that ran the checks
+// (a not-scored repair has nothing to count).
+function repairStatRuns(records) {
+  return (records ?? []).filter((entry) => (entry.kind ?? "repair_loop") === "repair_loop" && entry.status !== "not_verifiable").slice(0, REPAIR_STAT_RUNS);
+}
+
+/**
+ * RepairBlockStats answers "which check blocks most often" over the newest repair loops: blocked
+ * proposals per check, in how many runs, and how many runs ended verified. Picking a check narrows
+ * the activity list to those runs, where each one can be replayed.
+ */
+function RepairBlockStats({ records, activeCheck, onSelect }) {
+  const runs = repairStatRuns(records);
+  if (runs.length === 0) return null;
+  const byCheck = new Map();
+  for (const run of runs) {
+    for (const [checkId, count] of Object.entries(run.blockedBy ?? {})) {
+      const value = Number(count) || 0;
+      if (value <= 0) continue;
+      const entry = byCheck.get(checkId) ?? { checkId, proposals: 0, runs: 0 };
+      entry.proposals += value;
+      entry.runs += 1;
+      byCheck.set(checkId, entry);
+    }
+  }
+  const ranked = [...byCheck.values()].sort((a, b) => b.proposals - a.proposals || b.runs - a.runs || a.checkId.localeCompare(b.checkId));
+  const verified = runs.filter((run) => run.status === "verified").length;
+  return (
+    <div className="repair-block-stats" data-testid="repair-block-stats">
+      <p className="repair-block-stats__head">
+        <strong>Blocking checks</strong>
+        <span className="muted">last {runs.length} repair loop{runs.length === 1 ? "" : "s"} · {verified} verified</span>
+      </p>
+      {ranked.length === 0
+        ? <p className="muted repair-block-stats__empty">No proposal was blocked in these runs.</p>
+        : (
+          <ol className="repair-block-stats__list">
+            {ranked.map((entry) => (
+              <li key={entry.checkId}>
+                <button type="button" className={activeCheck === entry.checkId ? "repair-block-stats__check repair-block-stats__check--active" : "repair-block-stats__check"} aria-pressed={activeCheck === entry.checkId} data-check={entry.checkId} onClick={() => onSelect(entry.checkId)}>
+                  <code>{entry.checkId}</code>
+                  <span>{entry.proposals} proposal{entry.proposals === 1 ? "" : "s"} · {entry.runs} run{entry.runs === 1 ? "" : "s"}</span>
+                </button>
+              </li>
+            ))}
+          </ol>
+        )}
     </div>
   );
 }
@@ -6596,6 +6754,7 @@ function RepairHistoryCompare({ left, right, onClose }) {
       ["Answer", (record) => (record.answer ? `${record.answer.slice(0, 90)}${record.answer.length > 90 ? "…" : ""}` : "–")]
     ] : []),
     ["Duration", (record) => (Number.isFinite(record.durationMs) ? `${(record.durationMs / 1000).toFixed(1)}s` : "–")],
+    ["Tokens", (record) => formatUsageTokens(record.usage) ?? "–"],
     ["Author applied", (record) => (record.outcome === "applied" ? (record.appliedProposalIds ?? []).join(", ") || "nothing" : "not applied")],
     ...Array.from({ length: roundCount }, (_, index) => [`Round ${index + 1}`, (record) => summarizeHistoryRound(record.rounds?.[index])])
   ];
@@ -6637,8 +6796,9 @@ function AiActivityDetail({ record, onDelete }) {
         <div><dt>Model</dt><dd>{record.endpoint === "local_rules" ? "Local rules" : record.model || "Configured endpoint"}</dd></div>
         <div><dt>Duration</dt><dd>{Number.isFinite(record.durationMs) ? `${(record.durationMs / 1000).toFixed(1)}s` : "–"}</dd></div>
       </dl>
+      <p className="repair-history__usage-line" data-testid="ai-activity-usage">{formatUsageLine(record.usage)}</p>
       {record.instruction && <p className="repair-history__instruction">“{record.instruction}”</p>}
-      {record.selection && <p className="repair-history__agent">Selection: {record.selection.kind}{record.selection.cardId ? ` on ${record.selection.cardId}` : ""}{record.selection.text ? <>{" — "}<QuotedText text={record.selection.text} max={160} /></> : ""}</p>}
+      {record.selection &&<p className="repair-history__agent">Selection: {record.selection.kind}{record.selection.cardId ? ` on ${record.selection.cardId}` : ""}{record.selection.text ? <>{" — "}<QuotedText text={record.selection.text} max={160} /></> : ""}</p>}
       {record.status === "failed" && <p className="repair-history__error">Failed{record.error?.stage ? ` at ${record.error.stage}` : ""}: {record.error?.message}</p>}
       {record.status === "cancelled" && <p className="repair-history__stop">Cancelled by the author.</p>}
       {record.contextSelection && <ContextCardSelection selection={record.contextSelection} totalCards={(record.contextSelection.included ?? 0) + (record.contextSelection.omitted ?? 0)} />}
@@ -6658,9 +6818,10 @@ function AiActivityDetail({ record, onDelete }) {
       <RepairConversation entries={record.conversation ?? []} truncated={record.conversationTruncated} />
       <div className="repair-history__final">
         <strong>Author's choice</strong>
-        <span>{record.outcome === "applied" ? `Applied ${applied.map((id) => titles.get(id) ?? id).join(", ") || "nothing"}${record.appliedAt ? ` on ${formatHistoryTime(record.appliedAt)}` : ""}.` : record.status === "ready" ? "Not applied." : "Nothing to apply."}</span>
+        <span>{record.outcome === "applied" ? `Applied ${applied.map((id) => titles.get(id) ?? id).join(", ") || "nothing"}${record.appliedAt ? ` on ${formatHistoryTime(record.appliedAt)}` : ""}${record.undoneAt ? `, then undone on ${formatHistoryTime(record.undoneAt)}` : ""}.` : record.status === "ready" ? "Not applied." : "Nothing to apply."}</span>
         <button className="btn btn--ghost btn--compact" type="button" onClick={onDelete}>Delete record</button>
       </div>
+      <DeclinedProposals record={record} />
     </div>
   );
 }
@@ -6672,7 +6833,7 @@ function RepairConversation({ entries, truncated = false }) {
       <summary>Conversation · {entries.length} request{entries.length === 1 ? "" : "s"} · keys redacted{truncated ? " · shortened to fit the history limit" : ""}</summary>
       {entries.map((entry) => (
         <div key={`${entry.round}:${entry.call}`} className="repair-history__message">
-          <strong>Request {entry.call} · {entry.requestBytes ?? "?"} B → {entry.status ?? "no response"} · {entry.responseBytes ?? 0} B</strong>
+          <strong>Request {entry.call} · {entry.requestBytes ?? "?"} B → {entry.status ?? "no response"} · {entry.responseBytes ?? 0} B{formatUsageTokens(entry.usage) ? ` · ${formatUsageTokens(entry.usage)}` : ""}</strong>
           <span className="repair-history__role">Sent to the model</span>
           <pre className="output output--compact">{entry.requestBody}</pre>
           <span className="repair-history__role">Model answer</span>
@@ -6696,8 +6857,17 @@ function RepairHistoryDetail({ record, onDelete }) {
         <div><dt>Baseline</dt><dd>{Number.isFinite(record.baseline?.healthScore) ? `${record.baseline.healthScore}/100` : "–"}</dd></div>
         <div><dt>Duration</dt><dd>{Number.isFinite(record.durationMs) ? `${(record.durationMs / 1000).toFixed(1)}s` : "–"}</dd></div>
       </dl>
+      <p className="repair-history__usage-line" data-testid="repair-history-usage-line">{formatUsageLine(record.usage)}</p>
       {record.instruction && <p className="repair-history__instruction">“{record.instruction}”</p>}
-      {record.agentStop && <p className="repair-history__agent">The model stopped the loop in round {record.agentStop.round}: “{record.agentStop.reason}”</p>}
+      {record.agentStop &&<p className="repair-history__agent">The model stopped the loop in round {record.agentStop.round}: “{record.agentStop.reason}”</p>}
+      {(record.memory?.priorAttempts > 0 || record.memory?.authorDeclined > 0) && (
+        <p className="repair-history__agent" data-testid="repair-history-memory">
+          Sent from the activity log: {[
+            record.memory.priorAttempts > 0 ? `${record.memory.priorAttempts} blocked attempt${record.memory.priorAttempts === 1 ? "" : "s"} from earlier runs` : null,
+            record.memory.authorDeclined > 0 ? `${record.memory.authorDeclined} change${record.memory.authorDeclined === 1 ? "" : "s"} the author declined` : null
+          ].filter(Boolean).join(" · ")}.
+        </p>
+      )}
       <p className="repair-history__stop">
         {record.status === "failed"
           ? `Failed${record.error?.stage ? ` at ${record.error.stage}` : ""}: ${record.error?.message ?? record.stopReason}`
@@ -6712,6 +6882,7 @@ function RepairHistoryDetail({ record, onDelete }) {
               <span>{round.status === "evaluated" ? `${round.passedCount}/${round.proposalCount} passed` : round.status.replace(/_/g, " ")}</span>
               <span>{Number.isFinite(round.bestScore) ? `best ${round.bestScore}` : "not scored"}</span>
               {Number.isFinite(round.durationMs) && <span className="muted">{(round.durationMs / 1000).toFixed(1)}s</span>}
+              {formatUsageTokens(round.usage) && <span className="muted" data-testid="repair-round-usage" title={formatUsageLine(round.usage)}>{formatUsageTokens(round.usage)}</span>}
               {record.selectedRound === round.round && <span className="repair-status repair-status--verified">Shown to author</span>}
             </div>
             {round.error && <p className="repair-history__error">{round.error.code}: {round.error.message}</p>}
@@ -6741,7 +6912,7 @@ function RepairHistoryDetail({ record, onDelete }) {
         <strong>Author's choice</strong>
         <span>
           {record.outcome === "applied"
-            ? `Applied ${applied.map((id) => titles.get(id) ?? id).join(", ") || "nothing"}${record.appliedAt ? ` on ${formatHistoryTime(record.appliedAt)}` : ""}.`
+            ? `Applied ${applied.map((id) => titles.get(id) ?? id).join(", ") || "nothing"}${record.appliedAt ? ` on ${formatHistoryTime(record.appliedAt)}` : ""}${record.undoneAt ? `, then undone on ${formatHistoryTime(record.undoneAt)}` : ""}.`
             : record.status === "failed"
               ? "No draft was produced."
               : record.status === "cancelled"
@@ -6750,6 +6921,26 @@ function RepairHistoryDetail({ record, onDelete }) {
         </span>
         <button className="btn btn--ghost btn--compact" type="button" onClick={onDelete}>Delete record</button>
       </div>
+      <DeclinedProposals record={record} />
+    </div>
+  );
+}
+
+// What the next repair on this issue will be told the author did not want (deleting the record forgets it).
+function DeclinedProposals({ record }) {
+  const declined = record.declinedProposals ?? [];
+  if (declined.length === 0) return null;
+  // Only repair runs feed this back to the model; other requests just record the author's choice.
+  const isRepair = (record.kind ?? "repair_loop") === "repair_loop";
+  return (
+    <div className="repair-history__declined" data-testid="repair-history-declined">
+      <strong>{isRepair ? "Remembered as declined" : "Not taken by the author"}</strong>
+      <ul>
+        {declined.map((entry) => (
+          <li key={`${entry.id}:${entry.reason}`}>{entry.title || entry.id} <span className="muted">· {DECLINED_REASON_LABELS[entry.reason] ?? entry.reason}</span></li>
+        ))}
+      </ul>
+      {isRepair && <small className="muted">The next repair on the same issue sends these to the model as changes to avoid. Delete this record to forget them.</small>}
     </div>
   );
 }

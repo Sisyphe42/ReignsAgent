@@ -52,6 +52,7 @@ self.addEventListener("message", async (event) => {
       fetchImpl: countedFetch,
       signal: controller.signal,
       priorAttempts: input.priorAttempts ?? [],
+      authorDeclined: input.authorDeclined ?? [],
       onProgress: (progress) => self.postMessage({ id, type: "progress", event: progress })
     });
     self.postMessage({ id, type: "result", result: plan });

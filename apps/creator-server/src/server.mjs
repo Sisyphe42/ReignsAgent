@@ -14,11 +14,13 @@ import {
   buildImageOperationDraft,
   buildVerifiedRepairPlan,
   buildGenerationPlan,
+  collectRepairMemory,
   createAiActivityRecord,
   createCardEditor,
   createConnectorConfig,
   createRepairHistoryRecord,
   markRepairHistoryApplied,
+  markRepairHistoryUndone,
   createPlaySession,
   deriveStoryGroups,
   deriveTagCatalog,
@@ -415,6 +417,8 @@ async function handleApi(req, res, url) {
     const isRepairLoop = mode === "repair_diagnostics" && body?.verify !== false;
     const buildPlan = async (onProgress = null) => {
       if (isRepairLoop) {
+        // Same-issue memory from the activity log: blocked attempts and changes the author declined.
+        const memory = await collectRepairMemory({ list: () => workspace.listRepairHistory(), read: (id) => workspace.readRepairHistoryRecord(id), repairTarget: body?.repairTarget });
         // Verified repair loop: proposals are scored on copies; nothing is written here.
         return buildVerifiedRepairPlan({
           editor: store.editor,
@@ -428,7 +432,8 @@ async function handleApi(req, res, url) {
           onProgress,
           fetchImpl,
           signal: cancel.signal,
-          priorAttempts: await priorRepairAttempts(body?.repairTarget)
+          priorAttempts: memory.priorAttempts,
+          authorDeclined: memory.authorDeclined
         });
       }
       return buildAiEditPlanAsync({
@@ -487,6 +492,15 @@ async function handleApi(req, res, url) {
 
   if (path === "/api/ai/repair-history" && req.method === "DELETE") {
     return sendJson(res, await workspace.clearRepairHistory());
+  }
+
+  // The author undid an applied AI draft: its proposals become "declined" memory for that issue.
+  const undoRoute = path.match(/^\/api\/ai\/repair-history\/([^/]+)\/undo$/);
+  if (undoRoute && req.method === "POST") {
+    const historyId = decodeURIComponent(undoRoute[1]);
+    const proposalIds = Array.isArray(body?.proposalIds) ? body.proposalIds.map(String) : null;
+    const record = await workspace.updateRepairHistoryRecord(historyId, (entry) => markRepairHistoryUndone(entry, { proposalIds }), { projectId: typeof body?.projectId === "string" ? body.projectId : null });
+    return sendJson(res, { historyId, undoneAt: record.undoneAt ?? null, undoneProposalIds: record.undoneProposalIds ?? [] });
   }
 
   const historyRoute = path.match(/^\/api\/ai\/repair-history\/([^/]+)$/);
@@ -587,7 +601,7 @@ async function handleApi(req, res, url) {
       await recordAiActivity({ kind: "image", error: controller.signal.aborted ? Object.assign(error, { code: "ai_cancelled" }) : error, image: { operation: request.operation, prompt: request.prompt, model: body?.config?.modelId }, body: { source: "AI Assist" }, credentials: imageCredentials, projectId: imageProjectId, durationMs: Date.now() - imageStartedAt });
       throw error;
     }
-    await recordAiActivity({ kind: "image", image: { operation: generated.operation ?? request.operation, prompt: request.prompt, model: generated.provider?.model ?? body?.config?.modelId, outputs: generated.outputs?.length ?? 0 }, body: { source: "AI Assist" }, credentials: imageCredentials, projectId: imageProjectId, durationMs: Date.now() - imageStartedAt });
+    await recordAiActivity({ kind: "image", image: { operation: generated.operation ?? request.operation, prompt: request.prompt, model: generated.provider?.model ?? body?.config?.modelId, outputs: generated.outputs?.length ?? 0, usage: generated.usage ?? null }, body: { source: "AI Assist" }, credentials: imageCredentials, projectId: imageProjectId, durationMs: Date.now() - imageStartedAt });
     const outputs = [];
     for (const [index, output] of generated.outputs.entries()) {
       const extension = output.mimeType === "image/jpeg" ? "jpg" : output.mimeType.split("/")[1];
@@ -895,29 +909,6 @@ async function countedFetch() {
     aiRequestsUsed += 1;
     return fetch(input, init);
   };
-}
-
-// Blocked proposals from the last runs on the same issue, so round 1 does not repeat them.
-async function priorRepairAttempts(repairTarget) {
-  if (!repairTarget?.code) return [];
-  try {
-    const wanted = new Set((Array.isArray(repairTarget.cardIds) ? repairTarget.cardIds : []).map((cardId) => `card:${cardId}`));
-    const matches = (await workspace.listRepairHistory())
-      .filter((entry) => entry.kind === "repair_loop" && entry.targets.some((target) => target.code === repairTarget.code && (wanted.size === 0 || wanted.has(target.entity))))
-      .slice(0, 2);
-    const attempts = [];
-    for (const entry of matches) {
-      const stored = await workspace.readRepairHistoryRecord(entry.id);
-      for (const round of stored.rounds ?? []) {
-        for (const proposal of round.proposals ?? []) {
-          if (!proposal.passed && attempts.length < 4) attempts.push({ proposalId: proposal.id, title: proposal.title, failedChecks: (proposal.failedDetails ?? []).length ? proposal.failedDetails : (proposal.failedChecks ?? []).map((id) => ({ id })) });
-        }
-      }
-    }
-    return attempts;
-  } catch {
-    return [];
-  }
 }
 
 async function recordAiActivity({ kind, plan = null, error = null, image = null, body = {}, credentials = {}, projectId = null, durationMs = null }) {

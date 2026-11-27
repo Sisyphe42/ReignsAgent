@@ -137,12 +137,28 @@ export function summarizeRepairHistory(history) {
     bestScore: bestRecordScore(entry),
     outcome: entry.outcome ?? "draft",
     appliedProposalIds: Array.isArray(entry.appliedProposalIds) ? entry.appliedProposalIds : [],
+    undoneAt: typeof entry.undoneAt === "string" ? entry.undoneAt : null,
     model: typeof entry.model === "string" ? entry.model : null,
     endpoint: entry.endpoint ?? null,
     // Measured model request times (ms), newest record first; used for the UI wait estimate.
     requestMs: (Array.isArray(entry.rounds) ? entry.rounds : []).map((round) => round?.requestMs).filter((value) => Number.isFinite(value) && value >= 0),
+    // Tokens and bytes for the list row (the record's own totals; null for local rules).
+    usage: isRecord(entry.usage) ? clone(entry.usage) : null,
+    // Blocking-check counts over every round, for the "which check blocks most" summary.
+    blockedBy: sumBlockedBy(entry.rounds),
     truncated: Boolean(entry.truncated)
   }));
+}
+
+function sumBlockedBy(rounds) {
+  const counts = {};
+  for (const round of Array.isArray(rounds) ? rounds : []) {
+    for (const [id, count] of Object.entries(isRecord(round?.blockedBy) ? round.blockedBy : {})) {
+      const value = Number(count);
+      if (Number.isFinite(value) && value > 0) counts[id] = (counts[id] ?? 0) + value;
+    }
+  }
+  return counts;
 }
 
 function bestRecordScore(entry) {

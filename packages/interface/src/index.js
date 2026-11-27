@@ -19,6 +19,7 @@ import {
 import { analyzeCardGraph, runMonteCarloReview, runMonteCarloReviewAsync } from "../../reviewer/src/index.js";
 export { stitchPlayerRuntime } from "./player-build.js";
 export {
+  AUTHOR_DECLINED_ROLE,
   DEFAULT_REPAIR_LOOP_LIMITS,
   DEFAULT_REPAIR_SCORING,
   REPAIR_CHECKS,
@@ -30,7 +31,7 @@ export {
   evaluateRepairProposal,
   producerOnlyEdit
 } from "./repair-loop.js";
-export { REPAIR_HISTORY_RECORD_VERSION, createAiActivityRecord, createRepairHistoryRecord, markRepairHistoryApplied, scrubRecordSecrets } from "./repair-history.js";
+export { ESTIMATED_BYTES_PER_TOKEN, REPAIR_HISTORY_RECORD_VERSION, REPAIR_MEMORY_LIMITS, collectRepairMemory, compactDeclinedChange, createAiActivityRecord, createRepairHistoryRecord, exchangeEntryUsage, markRepairHistoryApplied, markRepairHistoryUndone, scrubRecordSecrets, summarizeExchangeUsage } from "./repair-history.js";
 
 const PLAYER_SCHEMA_VERSION = 1;
 const BUILD_SCHEMA_VERSION = 1;

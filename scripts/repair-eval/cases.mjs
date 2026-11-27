@@ -311,3 +311,22 @@ export const ANTI_SHORTCUT_CHECKS = new Set([
 // Demo-only script (not an eval case) for the Creator cancel state: round 1 answers at once with the
 // gate-wipe proposal (blocked), round 2 holds its answer for 60 s so the author can cancel while it waits.
 export const SLOW_ROUND_2_SCRIPT = [[fog.wipeGate], { delayMs: 60_000, proposals: [fog.addProducer] }];
+
+// Demo-only script for the author-declined memory: every answer offers two different fixes that
+// both pass (a health-board card and a harbor-doctor card that can each lift the quarantine), so
+// the author can tick one, leave the other, undo, and build again on the same issue.
+const HARBOR_DOCTOR = {
+  id: "harbor-doctor",
+  title: "Let the harbor doctor declare it",
+  summary: "The harbor doctor can certify the docks clean and end the quarantine.",
+  patches: [{
+    op: "addCard",
+    card: card("harbor-doctor", {
+      text: "The harbor doctor has examined the docks all week and is ready to sign a clean bill.",
+      requirements: { allTags: ["onWatch"] },
+      left: { label: "Sign it", effects: { factions: { gauge0: 4, gauge2: -3 }, tags: { quarantineLifted: true } } },
+      right: { label: "Wait another week", effects: { factions: { gauge2: 3, gauge0: -4 } } }
+    })
+  }]
+};
+export const TWO_FIXES_SCRIPT = [{ proposals: [fog.addProducer, HARBOR_DOCTOR] }];
