@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  English | <a href="README_zh-CN.md">简体中文</a>
+  English | <a href="README_zh-CN.md">简体中文</a> | <a href="README_tr.md">Türkçe</a>
 </p>
 
 ReignsAgent is a modular authoring, validation, and publishing stack for [Reigns](https://www.devolverdigital.com/games/reigns)-like card narratives. It combines a creator workbench, a deterministic headless runtime, simulation-based diagnostics, content import/export tooling, and a deployable player build path.
